@@ -610,6 +610,7 @@ const els = {
   groupReservationNumber: document.getElementById("group-reservation-number"),
   groupName: document.getElementById("group-name"),
   groupEmail: document.getElementById("group-email"),
+  groupEmailProposalsHint: document.getElementById("group-email-proposals-hint"),
   groupCheckIn: document.getElementById("group-check-in"),
   groupCheckInPicker: document.getElementById("group-check-in-picker"),
   groupCheckOut: document.getElementById("group-check-out"),
@@ -1729,6 +1730,24 @@ function mapGroupRow(row) {
   };
 }
 
+function groupProposalCountByEmail(email) {
+  const needle = clean(email).toLowerCase();
+  if (!needle) return 0;
+  return state.groups.filter((row) => clean(row.email).toLowerCase() === needle).length;
+}
+
+function renderGroupEmailProposalHint() {
+  if (!els.groupEmailProposalsHint) return;
+  const count = groupProposalCountByEmail(state.groupDraft.email);
+  if (count > 1) {
+    els.groupEmailProposalsHint.hidden = false;
+    els.groupEmailProposalsHint.textContent = `${count} proposals found for this email`;
+  } else {
+    els.groupEmailProposalsHint.hidden = true;
+    els.groupEmailProposalsHint.textContent = "";
+  }
+}
+
 function renderGroups() {
   if (!els.groupsRows || !canApp("groups")) return;
   if (!els.groupEditorModal.hidden) renderGroupDraft();
@@ -1995,6 +2014,7 @@ function renderGroupDraft() {
   els.groupReservationNumber.value = draft.reservationNumber;
   els.groupName.value = draft.name;
   els.groupEmail.value = draft.email;
+  renderGroupEmailProposalHint();
   els.groupCheckIn.value = formatGroupDateInput(draft.checkIn);
   els.groupCheckInPicker.value = draft.checkIn || "";
   els.groupCheckOut.value = formatGroupDateInput(draft.checkOut);

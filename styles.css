@@ -1246,6 +1246,15 @@ select:disabled {
   font-size: 0.72rem;
 }
 
+.group-email-proposals-hint {
+  display: block;
+  margin-top: 0.08rem;
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
 .label-inline {
   display: inline-flex;
   align-items: baseline;
