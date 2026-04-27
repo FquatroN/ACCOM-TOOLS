@@ -291,7 +291,12 @@ function serviceEmailSubject(row, isUpdate) {
   return `${prefix}: ${cleanText(row?.service_type)}, ${cleanText(row?.request_number)}, - ${cleanText(row?.customer_name)} - ${formatDateDisplay(row?.service_date)}, ${formatTimeDisplay(row?.service_time)}, Pax: ${Math.max(1, Math.round(Number(row?.pax || 1)))}`;
 }
 
-function serviceCreatedEmailContent(row) {
+function serviceActorLabel(actor) {
+  return cleanText(actor?.email || actor?.user_metadata?.email || actor?.id) || "unknown";
+}
+
+function serviceCreatedEmailContent(row, actor) {
+  const actorLabel = serviceActorLabel(actor);
   const rows = serviceDetailRows(row)
     .map(
       ([label, value]) =>
@@ -301,18 +306,19 @@ function serviceCreatedEmailContent(row) {
   const html = `<!doctype html>
 <html>
   <body style="font-family:Arial,sans-serif;color:#1f2937;">
-    <p>Foi criado um novo pedido de servico com os seguintes dados:</p>
+    <p>Foi criado um novo pedido de servico com os seguintes dados (user: ${escapeHtml(actorLabel)}):</p>
     <table style="border-collapse:collapse;width:100%;max-width:760px;">${rows}</table>
   </body>
 </html>`;
   const text = [
-    "Foi criado um novo pedido de servico com os seguintes dados:",
+    `Foi criado um novo pedido de servico com os seguintes dados (user: ${actorLabel}):`,
     ...serviceDetailRows(row).map(([label, value]) => `${label}: ${value}`),
   ].join("\n");
   return { html, text };
 }
 
-function serviceUpdatedEmailContent(before, after) {
+function serviceUpdatedEmailContent(before, after, actor) {
+  const actorLabel = serviceActorLabel(actor);
   const changes = serviceChangedFields(before, after);
   const rows = (changes.length ? changes : [{ label: "Alteracoes", oldValue: "-", newValue: "Sem alteracoes visiveis" }])
     .map(
@@ -323,7 +329,7 @@ function serviceUpdatedEmailContent(before, after) {
   const html = `<!doctype html>
 <html>
   <body style="font-family:Arial,sans-serif;color:#1f2937;">
-    <p>Foram feitas as seguintes alteracoes neste servico:</p>
+    <p>Foram feitas as seguintes alteracoes neste servico (user: ${escapeHtml(actorLabel)}):</p>
     <table style="border-collapse:collapse;width:100%;max-width:860px;">
       <thead>
         <tr>
@@ -337,7 +343,7 @@ function serviceUpdatedEmailContent(before, after) {
   </body>
 </html>`;
   const text = [
-    "Foram feitas as seguintes alteracoes neste servico:",
+    `Foram feitas as seguintes alteracoes neste servico (user: ${actorLabel}):`,
     ...(changes.length
       ? changes.map((item) => `${item.label}: ${item.oldValue} -> ${item.newValue}`)
       : ["Alteracoes: - -> Sem alteracoes visiveis"]),
@@ -376,7 +382,7 @@ async function sendWithResend({ to, subject, html, text }) {
   return payload;
 }
 
-async function sendServiceNotification({ previousRow, row, settings }) {
+async function sendServiceNotification({ previousRow, row, settings, actor }) {
   const providerEmail =
     cleanText(row?.provider_email).toLowerCase() ||
     cleanText((settings?.serviceConfigs || []).find((item) => cleanText(item.serviceType) === cleanText(row?.service_type))?.providerEmail).toLowerCase();
@@ -385,7 +391,7 @@ async function sendServiceNotification({ previousRow, row, settings }) {
     providerEmail,
   ].filter(Boolean)));
   if (!recipients.length) return { skipped: true };
-  const content = previousRow ? serviceUpdatedEmailContent(previousRow, row) : serviceCreatedEmailContent(row);
+  const content = previousRow ? serviceUpdatedEmailContent(previousRow, row, actor) : serviceCreatedEmailContent(row, actor);
   return sendWithResend({
     to: recipients,
     subject: serviceEmailSubject(row, !!previousRow),
@@ -430,7 +436,7 @@ module.exports = async function handler(req, res) {
       let emailWarning = "";
       if (row) {
         try {
-          await sendServiceNotification({ previousRow: null, row, settings: serviceSettings });
+          await sendServiceNotification({ previousRow: null, row, settings: serviceSettings, actor: user });
         } catch (error) {
           emailWarning = error.message || "Could not send notification email.";
         }
@@ -469,7 +475,7 @@ module.exports = async function handler(req, res) {
       let emailWarning = "";
       if (row) {
         try {
-          await sendServiceNotification({ previousRow: existing, row, settings: serviceSettings });
+          await sendServiceNotification({ previousRow: existing, row, settings: serviceSettings, actor: user });
         } catch (error) {
           emailWarning = error.message || "Could not send notification email.";
         }
