@@ -430,17 +430,18 @@ function buildEmailContent(openRows, recentlyClosedRows, timeZone, categories) {
 
 async function sendWithResend({ to, subject, html, text }) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
+  const rawFrom = process.env.EMAIL_FROM;
   if (!apiKey) {
     const error = new Error("Missing server environment variable: RESEND_API_KEY");
     error.statusCode = 500;
     throw error;
   }
-  if (!from) {
+  if (!rawFrom) {
     const error = new Error("Missing server environment variable: EMAIL_FROM");
     error.statusCode = 500;
     throw error;
   }
+  const from = /<[^>]+>/.test(rawFrom) ? rawFrom : `ACOOM Tools <${rawFrom}>`;
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
