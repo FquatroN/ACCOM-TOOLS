@@ -1,0 +1,162 @@
+﻿[
+    {
+        "date":  "2026-04-03",
+        "time":  "00:00",
+        "person":  "Julia",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Panela para lavar // feito"
+    },
+    {
+        "date":  "2026-03-22",
+        "time":  "00:00",
+        "person":  "Luis",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "A porta da rua nao esta a fechar corretamente// por favor verificar , tiago verificou e está em ordem, o problema pode ser o botão, da recepção que precise ser trocado"
+    },
+    {
+        "date":  "2026-02-19",
+        "time":  "00:00",
+        "person":  "Julia",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Elena Fazio name 7003-575498313 pediu para adicionar uma noite extra na reserva, foi mandada a proposta  bloqueada cama, a esperar confirmação - extendido e enviado email de confirmação"
+    },
+    {
+        "date":  "2026-01-31",
+        "time":  "00:00",
+        "person":  "Afonso",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "A calha da parede ao fundo da cozinha saltou, pedir para ver de manhã - arranjado"
+    },
+    {
+        "date":  "2025-12-30",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Early Breakfast 07:00 - Naara (7003-574163053) - 111/2 + Soledad (9a71389c05cb5d3f) - 213/2 + Esin (EÇ7877) - 213/1 - Entregue"
+    },
+    {
+        "date":  "2025-12-30",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Não esquecer de enviar sempre mail de confirmação da reserva aos hóspedes com as condições de cancelamento.Reserva 5783275178 ( Sofia Neves ) cancelou parking no próprio dia , valor foi reembolsado ao hóspede ."
+    },
+    {
+        "date":  "2025-12-30",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Dossier envolvido em plástico , na recepção para entregar aos contabilistas // Entregue em 31/12, o novo esta no escritório"
+    },
+    {
+        "date":  "2025-11-28",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Miguel:5352506468 ( Florinda Ongtenco )  reserva de apartamentos caiu mail com reserva e migrou para FDM.Reserva já tinha sido efectuada no dia 05 de Outubro .Como o hóspede solicitou mais uma noite foi alterada a reserva ( 5352506468A ) caso existisse alguma alteração na mesma . Favor confirma se cancelamos a reserva 5352506468 em FDM como sendo duplicada.Verificando no FDM através das reservas criadas no dia 27/11 não aparece.No site do booking não aparece nenhuma indicação de alteração por parte dos hóspedes dai ter ficado a dúvida - Reserva cancelada"
+    },
+    {
+        "date":  "2025-11-28",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Miguel: Favor verifica se temos acesso a conta do WIX.Durante o turno da tarde necessitaram verificar algo e não conseguiram aceder . Nas passwords não temos a senha para poder aceder - feito"
+    },
+    {
+        "date":  "2025-10-20",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Verificar se ficou no Apartamento 2ºDrt uma chave da arrecadação .Falta 1 chave da arrecadação .Na planilha informa que tem 2 chaves de arrecadação mas apenas tem uma na gaveta // Fica só 1 chave, Tiago vai fazer uma suplente"
+    },
+    {
+        "date":  "2025-09-03",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Hóspede da reserva 5897459433 ( Milica Sakotic ) Hóspede deixou um radio de tour na recepção para entregarmos para um guia turistico, disse que vem pegar, não deu mais informações .Feito lost found e guardado na gaveta que está na recepção de lost found .Informar hóspede que empresa ainda não veio buscar// Foi informada e em resumo disse que não se importa// não vieram buscar até ao fim do turno da manha de 07/09"
+    },
+    {
+        "date":  "2025-09-03",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Hóspede da reserva 5897459433 ( Milica Sakotic ) Hóspede deixou um radio de tour na recepção para entregarmos para um guia turistico, disse que vem pegar, não deu mais informações .Feito lost found e guardado na gaveta que está na recepção de lost found .Informar hóspede que empresa ainda não veio buscar"
+    },
+    {
+        "date":  "2025-08-29",
+        "time":  "00:00",
+        "person":  "Vinicius",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Diferença de 20 euros no caixa possivelmente pubcrawl que nao foi pago, conferir com hospede amanhã 30/08 Reserva Arizona 7003-571770480. Pela gravação da camera parece que ela nao fez o pagamento// pago . Corrigido"
+    },
+    {
+        "date":  "2025-08-11",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Hosts quando fazem vistoria dos quartos devem chamar a atenção a pessoa da recepção se algo está errado.Reserva U 3811 ( UIOMPEM PEDRO DA SILVA ) estava alocado no 105/1 -Hóspede tem durmido no 105/7 segundo informação dada pelo hóspede .Na lista do housekeeping está uma nota a informar que a cama estava feita.Verificar cama 105/1 para confirmar se não foi usada // feito"
+    },
+    {
+        "date":  "2025-08-11",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Vai chegar uma mala perdida do aeroporto para entregar a hóspede Tasneem Amer ( Reserva 2221238158 / 213/3 ) // hóspede fez CO a mala não chegou"
+    },
+    {
+        "date":  "2025-06-20",
+        "time":  "00:00",
+        "person":  "Nuno",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Miguel , por favor ver a reserva  VR4820 , ao fazer o refund por uma diferença de 0,01€ , fiz refund da primeira noite pelo adyen, se conseguires dar uma olhada. // Miguel está a verificar , // Devolução foi feita no adyen,  o nuno vai falar com o hóspede para  explicar a situação e cobrar a primeira noite devolvida // nuno falou com o hospede estava tranquilo, entendeu a situação e voltou a apgar a primeira noite"
+    },
+    {
+        "date":  "2025-06-20",
+        "time":  "00:00",
+        "person":  "Nuno",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Eliete andrade solicitou transfer (E 9084) pedido enviado a smart bus, quando confirmado enviar a hospede // confirmação enviada à hóspede"
+    },
+    {
+        "date":  "2025-05-14",
+        "time":  "00:00",
+        "person":  "Carlos",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Averiguar quem está a dormir na cama 6 do 203 // Cama que era suposto ser do Emre Alphan estava a ser usada e apenas a 4 estava livre // Chaves foram bloqueadas // resolvido"
+    },
+    {
+        "date":  "2025-05-09",
+        "time":  "00:00",
+        "person":  "António",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Early breakfast 211-1 3:00am 09/05.Entregue .Apenas fez check out 04:20"
+    },
+    {
+        "date":  "2025-04-30",
+        "time":  "00:00",
+        "person":  "Marta",
+        "status":  "Open",
+        "category":  "Information",
+        "message":  "Assegurar a limpeza dos quartos- hóspede do 111 queixou-se da sujidade do quarto"
+    }
+]

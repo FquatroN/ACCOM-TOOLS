@@ -1,0 +1,23 @@
+{
+  "crons": [
+    { "path": "/api/email-automation", "schedule": "* * * * *" }
+  ],
+  "redirects": [
+    { "source": "/", "destination": "/gate.html", "permanent": false },
+    { "source": "/auth.html", "destination": "/index.html", "permanent": false }
+  ],
+  "headers": [
+    {
+      "source": "/(app-main|recent20|config|auth-guard).js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/(index|gate|auth).html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    }
+  ]
+}

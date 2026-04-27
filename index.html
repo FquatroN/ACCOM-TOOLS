@@ -1,0 +1,1292 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Accomodation Tools</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script defer src="config.js"></script>
+    <script defer src="auth-guard.js"></script>
+    <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script defer src="recent20.js?v=20260416-reviews-expedia"></script>
+    <script defer src="app-main.js?v=20260416-reviews-expedia"></script>
+  </head>
+  <body style="visibility: hidden">
+    <main id="app-shell" class="app-layout">
+      <div class="left-rail">
+        <div class="app-logo-wrap" aria-label="Accomtools">
+          <img class="app-logo" src="assets/app-icon-1024.png" alt="Accomtools" />
+        </div>
+        <aside class="left-nav">
+          <button id="nav-communications" type="button" class="nav-link active">Communications</button>
+          <button id="nav-groups" type="button" class="nav-link">Groups</button>
+          <button id="nav-services" type="button" class="nav-link">Services</button>
+          <button id="nav-reviews" type="button" class="nav-link">Reviews</button>
+        </aside>
+      </div>
+
+      <section class="app-main">
+        <header class="topbar">
+          <div class="session-box">
+            <span id="auth-user" class="user-pill">Signed in</span>
+            <button id="open-settings" type="button" class="ghost icon-btn" aria-label="Settings" title="Settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M19.14 12.94a7.6 7.6 0 0 0 .05-.94 7.6 7.6 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.26 7.26 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.13.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.03.31-.05.63-.05.94s.02.63.05.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.4.32.6.22l2.39-.96c.5.4 1.05.72 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.13-.54 1.63-.94l2.39.96c.2.1.47.01.6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
+                />
+              </svg>
+            </button>
+            <button id="auth-logout" type="button" class="ghost">Sign out</button>
+          </div>
+        </header>
+
+        <section id="view-communications" class="view active">
+          <section class="feature-title">
+            <h2>Communications</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Filters</h2>
+              <div class="actions filter-actions">
+                <label class="file-btn">
+                  Import Excel
+                  <input type="file" id="excel-input" accept=".xlsx,.xls" />
+                </label>
+                <button id="export-csv" type="button" class="ghost">Export CSV</button>
+              </div>
+            </div>
+
+            <div class="grid filters">
+              <label class="filter-checkbox">
+                Show Active
+                <input type="checkbox" id="show-active" checked />
+              </label>
+              <label>
+                Search text
+                <input type="text" id="search" placeholder="Search person or message" />
+              </label>
+              <label>
+                Status
+                <select id="status-filter">
+                  <option value="">All</option>
+                  <option value="Open">Open</option>
+                  <option value="Closed">Closed</option>
+                </select>
+              </label>
+              <label>
+                Category
+                <select id="category-filter"></select>
+              </label>
+              <label>
+                From date
+                <input type="date" id="from-date" />
+              </label>
+              <label>
+                To date
+                <input type="date" id="to-date" />
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Communications</h2>
+              <div class="actions">
+                <button id="reset-sort" type="button" class="ghost">Default sort</button>
+                <p id="count">0 records</p>
+              </div>
+            </div>
+            <div id="communications-table-wrap" class="table-wrap">
+              <table>
+                <colgroup>
+                  <col class="col-date" />
+                  <col class="col-time" />
+                  <col class="col-person" />
+                  <col class="col-category" />
+                  <col class="col-message" />
+                  <col class="col-status" />
+                  <col class="col-actions" />
+                </colgroup>
+                <thead id="communications-head">
+                  <tr>
+                    <th>
+                      <button type="button" class="sort-toggle active" data-sort="date" data-label="Date">
+                        Date <span class="sort-indicator">↓</span>
+                      </button>
+                    </th>
+                    <th>Time</th>
+                    <th>
+                      <button type="button" class="sort-toggle" data-sort="person" data-label="Person">
+                        Person <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th>
+                      <button type="button" class="sort-toggle" data-sort="category" data-label="Category">
+                        Category <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th>What happened?</th>
+                    <th>
+                      <button type="button" class="sort-toggle" data-sort="status" data-label="Status">
+                        Status <span class="sort-indicator"></span>
+                      </button>
+                    </th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="rows"></tbody>
+              </table>
+            </div>
+          </section>
+          <p id="db-status" class="auth-status"></p>
+        </section>
+
+        <section id="view-groups" class="view" hidden>
+          <section class="feature-title">
+            <h2>Groups</h2>
+          </section>
+
+          <section id="group-editor-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card group-modal-card">
+            <div class="bar">
+              <h2>Group Proposal</h2>
+              <div class="actions">
+                <p id="groups-status" class="auth-status"></p>
+                <button id="group-close-modal" type="button" class="ghost">Close</button>
+              </div>
+            </div>
+            <div class="actions group-editor-tabs">
+              <button id="group-tab-details" type="button" class="active-tab">Proposal</button>
+              <button id="group-tab-email" type="button" class="ghost">Proposal Text</button>
+              <button id="group-tab-confirmation" type="button" class="ghost">1st confirmation Text</button>
+              <button id="group-tab-final-confirmation" type="button" class="ghost">Final confirmation Text</button>
+            </div>
+            <section id="group-details-panel">
+              <div class="grid settings-grid">
+                <label>
+                  Reservation Number
+                  <input id="group-reservation-number" type="text" placeholder="Filled when accepted" />
+                </label>
+                <label>
+                  Name *
+                  <input id="group-name" type="text" />
+                </label>
+                <label>
+                  Email *
+                  <input id="group-email" type="email" />
+                </label>
+                <label>
+                  Check-in *
+                  <span class="date-input-pair">
+                    <input id="group-check-in" type="text" inputmode="numeric" placeholder="dd/mm/yyyy" />
+                    <input id="group-check-in-picker" class="date-picker-input" type="date" aria-label="Pick check-in date" />
+                  </span>
+                </label>
+                <label>
+                  <span class="label-inline">Check-out * <small id="group-nights-label" class="field-hint inline-hint">Nights: -</small></span>
+                  <span class="date-input-pair">
+                    <input id="group-check-out" type="text" inputmode="numeric" placeholder="dd/mm/yyyy" />
+                    <input id="group-check-out-picker" class="date-picker-input" type="date" aria-label="Pick check-out date" />
+                  </span>
+                </label>
+                <label>
+                  Guests *
+                  <input id="group-guests" type="number" min="1" max="60" step="1" />
+                </label>
+                <label>
+                  Option Date
+                  <input id="group-option-date" type="date" />
+                </label>
+                <label>
+                  Status
+                  <select id="group-status-field" class="group-status-select">
+                    <option value="Proposal">Proposal</option>
+                    <option value="Accepted">Accepted</option>
+                    <option value="Refused">Refused</option>
+                  </select>
+                </label>
+                <label>
+                  Last payment
+                  <input id="group-last-payment-limit" type="text" readonly />
+                </label>
+                <label class="settings-email-recipients">
+                  Observation
+                  <textarea id="group-observation" rows="3" placeholder="Internal notes for this proposal"></textarea>
+                </label>
+              </div>
+
+              <section class="settings-block">
+                <div class="bar">
+                  <h3>Room Types</h3>
+                  <div class="actions">
+                    <strong id="group-guest-counter">Guests remaining: 0</strong>
+                    <button id="group-add-room-item" type="button" class="ghost">Add room type</button>
+                  </div>
+                </div>
+                <div class="table-wrap compact-table-wrap">
+                  <table class="compact-table group-room-table">
+                    <thead><tr><th>Subgroup</th><th class="wide-col">Room Type</th><th>Nr Rooms</th><th>Guests</th><th>Under 13</th><th>Rate</th><th>Mode</th><th>Price</th><th>Rooms</th><th>Action</th></tr></thead>
+                    <tbody id="group-room-items-body"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <div class="group-total-grid">
+                <div><span>Accommodation</span><strong id="group-accommodation-total">0.00</strong></div>
+                <div><span>City tax</span><strong id="group-city-tax-total">0.00</strong></div>
+                <div><span>Total</span><strong id="group-total-value">0.00</strong></div>
+                <span id="group-deposit-preview" class="auth-status"></span>
+              </div>
+              <section class="settings-block group-audit-block">
+                <div class="bar">
+                  <h3>History</h3>
+                  <p class="auth-status">Saved changes for this proposal.</p>
+                </div>
+                <div id="group-audit-history" class="audit-list empty">No saved changes yet.</div>
+              </section>
+              <div class="actions">
+                <button id="group-save" type="button">Save Proposal</button>
+                <button id="group-delete" type="button" class="danger">Delete</button>
+              </div>
+            </section>
+
+            <section id="group-email-panel" class="settings-block" hidden>
+              <div class="bar">
+                <div>
+                  <h3 id="group-email-title">Proposal Text</h3>
+                  <p id="group-email-description" class="auth-status">Generated from the proposal and the configurable template in Groups settings.</p>
+                </div>
+                <div class="actions">
+                  <label class="compact-label">
+                    Language
+                    <select id="group-proposal-language">
+                      <option value="en">English</option>
+                      <option value="pt">Portuguese</option>
+                      <option value="es">Spanish</option>
+                    </select>
+                  </label>
+                  <button id="group-copy-email" type="button" class="ghost">Copy Email Text</button>
+                </div>
+              </div>
+              <div id="group-email-preview" class="generated-email-preview"></div>
+            </section>
+            </section>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Group Proposals</h2>
+              <div class="actions">
+                <button id="groups-new" type="button" class="ghost">New proposal</button>
+                <button id="groups-export-excel" type="button" class="ghost">Export Excel</button>
+                <button id="groups-export-pdf" type="button" class="ghost">Export PDF</button>
+                <label class="filter-checkbox">
+                  Show Active
+                  <input type="checkbox" id="groups-show-active" checked />
+                </label>
+                <p id="groups-count">0 proposals</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="groups-table">
+                <colgroup>
+                  <col />
+                  <col />
+                  <col />
+                  <col class="narrow-col" />
+                  <col />
+                  <col class="room-types-col" />
+                  <col class="summary-col" />
+                  <col class="narrow-col" />
+                  <col class="reservation-col" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th><button type="button" class="sort-toggle" data-group-sort="created">Created <span class="sort-indicator"></span></button></th>
+                    <th>Name</th>
+                    <th><button type="button" class="sort-toggle" data-group-sort="dates">Dates <span class="sort-indicator"></span></button></th>
+                    <th>Guests</th>
+                    <th>Total</th>
+                    <th>Room Types</th>
+                    <th>Rooms</th>
+                    <th>Option</th>
+                    <th>Reservation</th>
+                  </tr>
+                </thead>
+                <tbody id="groups-rows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="view-reviews" class="view" hidden>
+          <section class="feature-title">
+            <h2>Reviews Dashboard</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Overview</h2>
+              <div class="actions reviews-screen-tabs">
+                <button id="reviews-screen-list" type="button" class="ghost active-tab">Review List</button>
+                <button id="reviews-screen-resume" type="button" class="ghost">Resume</button>
+                <button id="reviews-screen-rating" type="button" class="ghost">Review Analysis</button>
+              </div>
+            </div>
+
+            <div class="grid filters review-filters">
+              <label>
+                Property
+                <select id="reviews-property-filter"></select>
+              </label>
+              <label>
+                Source
+                <select id="reviews-source-filter">
+                  <option value="">All</option>
+                  <option value="booking">Booking.com</option>
+                  <option value="hostelworld">Hostelworld</option>
+                  <option value="expedia">Expedia</option>
+                  <option value="vrbo">VRBO</option>
+                  <option value="tripadvisor">Tripadvisor</option>
+                  <option value="google">Google</option>
+                </select>
+              </label>
+              <label>
+                Search text
+                <input type="text" id="reviews-search" placeholder="Search title, body, or reviewer" />
+              </label>
+              <label>
+                From date
+                <input type="date" id="reviews-from-date" />
+              </label>
+              <label>
+                To date
+                <input type="date" id="reviews-to-date" />
+              </label>
+              <label>
+                Score from
+                <input type="number" id="reviews-score-from" min="0" max="100" step="1" placeholder="0" />
+              </label>
+              <label>
+                Score to
+                <input type="number" id="reviews-score-to" min="0" max="100" step="1" placeholder="100" />
+              </label>
+            </div>
+          </section>
+
+          <section class="view-panel">
+            <section id="reviews-screen-panel-list" class="view-panel">
+              <section class="card">
+                <div class="bar">
+                  <h2>Review List</h2>
+                  <div class="actions">
+                    <button id="reviews-export" type="button" class="ghost">Export CSV</button>
+                    <button id="reviews-refresh" type="button" class="ghost">Refresh</button>
+                    <p id="reviews-count">0 reviews</p>
+                  </div>
+                </div>
+                <div class="table-wrap reviews-table-wrap">
+                  <table>
+                    <colgroup>
+                      <col class="col-date" />
+                      <col class="col-category" />
+                      <col class="col-person" />
+                      <col class="col-category" />
+                      <col class="col-message" />
+                      <col class="col-status" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Property</th>
+                        <th>Reviewer</th>
+                        <th>Source</th>
+                        <th>Review</th>
+                        <th>Score</th>
+                      </tr>
+                    </thead>
+                    <tbody id="reviews-rows"></tbody>
+                  </table>
+                </div>
+                <div id="reviews-pagination" class="pagination-bar">
+                  <button id="reviews-prev-page" type="button" class="ghost">Previous</button>
+                  <span id="reviews-page-status">Page 1 of 1</span>
+                  <button id="reviews-next-page" type="button" class="ghost">Next</button>
+                </div>
+                <p id="reviews-status" class="auth-status"></p>
+              </section>
+
+              <section class="card">
+                <div class="bar">
+                  <h2>Review Detail</h2>
+                </div>
+                <div id="reviews-detail" class="review-detail empty">Select a review to see the full detail.</div>
+              </section>
+            </section>
+
+            <section id="reviews-screen-panel-resume" class="view-panel" hidden>
+              <section class="card">
+                <div class="bar">
+                  <h2>Resume</h2>
+                  <p id="reviews-resume-status">Grouped by year/month</p>
+                </div>
+                <div class="kpi-grid">
+                  <article class="kpi-card">
+                    <span class="kpi-label">Average last 12 months</span>
+                    <strong id="reviews-kpi-average-12m">-</strong>
+                  </article>
+                  <article class="kpi-card">
+                    <span class="kpi-label">Average last 6 months</span>
+                    <strong id="reviews-kpi-average-year">-</strong>
+                  </article>
+                  <article class="kpi-card">
+                    <span class="kpi-label">Average last 60 days</span>
+                    <strong id="reviews-kpi-average-last-month">-</strong>
+                  </article>
+                  <article class="kpi-card">
+                    <span class="kpi-label">Average last 30 days</span>
+                    <strong id="reviews-kpi-average-this-month">-</strong>
+                  </article>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="bar">
+                  <h2>Monthly Aggregate</h2>
+                </div>
+                <div class="table-wrap reviews-table-wrap">
+                  <table class="resume-table">
+                    <thead>
+                      <tr>
+                        <th>Year / Month</th>
+                        <th>Reviews</th>
+                        <th class="subscore-col">Staff</th>
+                        <th class="subscore-col">Cleanliness</th>
+                        <th class="subscore-col">Location</th>
+                        <th class="subscore-col">Facilities</th>
+                        <th class="subscore-col">Comfort</th>
+                        <th class="subscore-col">Value</th>
+                        <th>Avg. Rating</th>
+                      </tr>
+                    </thead>
+                    <tbody id="reviews-resume-rows"></tbody>
+                  </table>
+                </div>
+              </section>
+            </section>
+
+            <section id="reviews-screen-panel-rating" class="view-panel" hidden>
+              <section class="card">
+                <div class="bar">
+                  <h2>Review Analysis</h2>
+                  <p id="reviews-analysis-status">Month/year vs score</p>
+                </div>
+                <div id="reviews-analysis-chart" class="review-analysis-chart"></div>
+                <div id="reviews-analysis-legend" class="review-analysis-legend"></div>
+              </section>
+
+              <section class="card">
+                <div class="bar">
+                  <h2>Ask AI</h2>
+                </div>
+                <div class="grid settings-grid">
+                  <label class="settings-email-recipients">
+                    Ask about the current filtered reviews
+                    <textarea
+                      id="reviews-qa-prompt"
+                      rows="4"
+                      placeholder="Example: What are the main complaints in the last 90 days, and which property is most affected?"
+                    ></textarea>
+                  </label>
+                </div>
+                <div class="actions">
+                  <button id="reviews-qa-submit" type="button">Ask AI</button>
+                  <p id="reviews-qa-status" class="auth-status"></p>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="bar">
+                  <h2>AI Answer</h2>
+                </div>
+                <div id="reviews-qa-answer" class="review-detail empty">Ask a question to analyze the filtered reviews.</div>
+              </section>
+            </section>
+          </section>
+        </section>
+
+        <section id="view-services" class="view" hidden>
+          <section class="feature-title">
+            <h2>Services</h2>
+          </section>
+
+          <section id="service-editor-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card service-modal-card">
+              <div class="bar">
+                <h2>Service Request <span id="service-request-number-label" class="inline-request-number"></span></h2>
+                <div class="actions">
+                  <p id="services-status" class="auth-status"></p>
+                  <button id="service-close-modal" type="button" class="ghost">Close</button>
+                </div>
+              </div>
+              <div class="actions service-editor-tabs">
+                <button id="service-tab-details" type="button" class="active-tab">Details</button>
+                <button id="service-tab-confirmation" type="button" class="ghost">Confirmation Text</button>
+              </div>
+              <section id="service-details-panel">
+                <div class="grid settings-grid service-form-grid">
+                  <label class="service-type-field">
+                    Service Type *
+                    <select id="service-type"></select>
+                  </label>
+                  <div class="service-provider-display">
+                    <span class="service-provider-caption">Service Provider</span>
+                    <small id="service-provider-email" class="service-provider-note"></small>
+                  </div>
+                  <label>
+                    Customer Name *
+                    <input id="service-customer-name" type="text" />
+                  </label>
+                  <label>
+                    Customer Email
+                    <input id="service-customer-email" type="email" />
+                  </label>
+                  <label>
+                    Customer Phone
+                    <span class="phone-flag-input">
+                      <span id="service-customer-phone-flag" class="phone-flag-badge" title="Add country code to show flag">🌐</span>
+                      <input id="service-customer-phone" type="tel" placeholder="+351 912 345 678" pattern="^\+[0-9][0-9\s().-]{5,20}$" title="Use phone number with country code, for example +351 912 345 678" />
+                    </span>
+                  </label>
+                  <label>
+                    Nr persons *
+                    <input id="service-pax" type="number" min="1" max="60" step="1" />
+                  </label>
+                  <label>
+                    Pickup Location
+                    <input id="service-pickup-location" type="text" />
+                  </label>
+                  <label>
+                    Drop Off Location
+                    <input id="service-dropoff-location" type="text" />
+                  </label>
+                  <label id="service-flight-field">
+                    Flight Number
+                    <input id="service-flight-number" type="text" />
+                  </label>
+                  <label>
+                    Date *
+                    <span class="date-input-pair">
+                      <input id="service-date" type="text" inputmode="numeric" placeholder="yyyy/mm/dd" />
+                      <input id="service-date-picker" class="date-picker-input" type="date" aria-label="Pick service date" />
+                    </span>
+                  </label>
+                  <label>
+                    Time * <small id="service-time-prediction" class="service-flight-status-note inline" hidden></small>
+                    <input id="service-time" type="time" step="300" />
+                  </label>
+                  <label>
+                    Return?
+                    <select id="service-has-return">
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </label>
+                  <label>
+                    Price
+                    <input id="service-price" type="number" min="0" step="0.01" />
+                  </label>
+                  <label>
+                    Status
+                    <select id="service-status">
+                      <option value="Submitted">Submitted</option>
+                      <option value="Approved">Approved</option>
+                      <option value="Cancelled">Cancelled</option>
+                    </select>
+                  </label>
+                </div>
+                <label class="services-notes-field">
+                  Notes
+                  <textarea id="service-notes" rows="3"></textarea>
+                </label>
+                <section id="service-return-fields" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Return Details</h3>
+                  </div>
+                  <div class="grid service-return-grid service-return-grid-top">
+                    <label>
+                      Return Pickup
+                      <input id="service-return-pickup" type="text" />
+                    </label>
+                    <label>
+                      Return Drop Off
+                      <input id="service-return-dropoff" type="text" />
+                    </label>
+                  </div>
+                  <div class="grid service-return-grid service-return-grid-bottom">
+                    <label id="service-return-flight-field">
+                      Return Flight
+                      <input id="service-return-flight" type="text" />
+                    </label>
+                    <label>
+                      Return Date
+                      <span class="date-input-pair">
+                        <input id="service-return-date" type="text" inputmode="numeric" placeholder="yyyy/mm/dd" />
+                        <input id="service-return-date-picker" class="date-picker-input" type="date" aria-label="Pick return date" />
+                      </span>
+                    </label>
+                    <label>
+                      Return Time <small id="service-return-time-prediction" class="service-flight-status-note inline" hidden></small>
+                      <input id="service-return-time" type="time" step="300" />
+                    </label>
+                  </div>
+                </section>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>History</h3>
+                    <p class="auth-status">Saved changes for this service.</p>
+                  </div>
+                  <div id="service-audit-history" class="audit-list empty">No saved changes yet.</div>
+                </section>
+                <div class="actions">
+                  <button id="service-save" type="button">Save Service</button>
+                  <button id="service-delete" type="button" class="danger" hidden>Delete</button>
+                </div>
+              </section>
+              <section id="service-confirmation-panel" hidden>
+                <div class="bar">
+                  <h3>Confirmation Text</h3>
+                  <div class="actions">
+                    <label>
+                      Language
+                      <select id="service-confirmation-language">
+                        <option value="en">English</option>
+                        <option value="pt">Português</option>
+                        <option value="es">Español</option>
+                      </select>
+                    </label>
+                    <button id="service-copy-confirmation" type="button" class="ghost">Copy Confirmation Text</button>
+                  </div>
+                </div>
+                <div id="service-confirmation-preview" class="generated-email-preview"></div>
+              </section>
+            </section>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Active Services</h2>
+              <div class="actions">
+                <button id="services-new" type="button" class="ghost">New service</button>
+                <button id="services-export-excel" type="button" class="ghost">Export Excel</button>
+                <label class="filter-checkbox services-show-active-toggle">
+                  Show Active
+                  <input id="services-show-active" type="checkbox" checked />
+                </label>
+                <p id="services-count">0 services</p>
+              </div>
+            </div>
+            <div class="grid filters services-filters">
+              <label>
+                Create From
+                <input id="services-filter-created-from" type="date" />
+              </label>
+              <label>
+                Create To
+                <input id="services-filter-created-to" type="date" />
+              </label>
+              <label>
+                Date From
+                <input id="services-filter-date-from" type="date" />
+              </label>
+              <label>
+                Date To
+                <input id="services-filter-date-to" type="date" />
+              </label>
+              <label>
+                Name
+                <input id="services-filter-name" type="text" placeholder="Search customer name" />
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table class="services-table">
+                <thead>
+                  <tr>
+                    <th>Request #</th>
+                    <th>Service Type</th>
+                    <th>Customer</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Pax</th>
+                    <th>Pick Up</th>
+                    <th>Flight Nr</th>
+                    <th>Drop Off</th>
+                    <th>Price</th>
+                  </tr>
+                </thead>
+                <tbody id="services-rows"></tbody>
+              </table>
+            </div>
+          </section>
+          <p id="services-db-status" class="auth-status"></p>
+        </section>
+
+        <section id="view-settings" class="view" hidden>
+          <section class="card settings-shell">
+            <aside class="settings-nav">
+              <p class="eyebrow">Settings</p>
+              <button id="settings-menu-communications" type="button" class="nav-link active">
+                Communications
+              </button>
+              <button id="settings-menu-groups" type="button" class="nav-link">
+                Groups
+              </button>
+              <button id="settings-menu-services" type="button" class="nav-link">
+                Services
+              </button>
+              <button id="settings-menu-reviews" type="button" class="nav-link">
+                Reviews
+              </button>
+              <button id="settings-menu-admin-users" type="button" class="nav-link">
+                Admin Users
+              </button>
+            </aside>
+            <div class="settings-content">
+              <div id="settings-view-communications">
+                <div class="actions">
+                  <button id="close-settings" type="button" class="ghost">Back To App</button>
+                </div>
+
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Categories</h3>
+                    <button id="add-category" type="button" class="ghost">Add Category</button>
+                  </div>
+                  <table class="settings-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Color</th>
+                        <th>Auto-close days</th>
+                        <th>Preview</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="settings-categories-body"></tbody>
+                  </table>
+                </section>
+
+                <section class="settings-block">
+                  <h3>Automatic Emails</h3>
+                  <div class="grid settings-grid">
+                    <label>
+                      Enable automatic emails
+                      <input id="setting-email-enabled" type="checkbox" />
+                    </label>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Frequency 1
+                      <select id="setting-email-frequency">
+                        <option value="everyday">Everyday</option>
+                        <option value="every1h">Every 1h</option>
+                        <option value="every4h">Every 4h</option>
+                        <option value="every8h">Every 8h</option>
+                      </select>
+                    </label>
+                    <label>
+                      Time of day 1
+                      <input id="setting-email-time" type="time" value="00:00" />
+                    </label>
+                    <label class="settings-email-recipients">
+                      Recipient emails 1 (one per line or comma-separated)
+                      <textarea
+                        id="setting-email-recipients"
+                        rows="4"
+                        placeholder="ops@company.com, manager@company.com"
+                      ></textarea>
+                    </label>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Frequency 2
+                      <select id="setting-email-frequency-2">
+                        <option value="everyday">Everyday</option>
+                        <option value="every1h">Every 1h</option>
+                        <option value="every4h">Every 4h</option>
+                        <option value="every8h">Every 8h</option>
+                      </select>
+                    </label>
+                    <label>
+                      Time of day 2
+                      <input id="setting-email-time-2" type="time" value="00:00" />
+                    </label>
+                    <label class="settings-email-recipients">
+                      Recipient emails 2 (one per line or comma-separated)
+                      <textarea
+                        id="setting-email-recipients-2"
+                        rows="4"
+                        placeholder="ops@company.com, manager@company.com"
+                      ></textarea>
+                    </label>
+                  </div>
+                  <p id="setting-email-preview" class="auth-status"></p>
+                  <p id="setting-email-next-preview" class="auth-status"></p>
+                  <div class="actions">
+                    <label>
+                      Test recipient email
+                      <input id="setting-email-test-recipient" type="email" placeholder="name@company.com" />
+                    </label>
+                    <button id="test-email-now" type="button" class="ghost">Test now</button>
+                  </div>
+                </section>
+
+                <div class="actions">
+                  <button id="save-settings" type="button">Save Settings</button>
+                  <p id="settings-status" class="auth-status"></p>
+                </div>
+              </div>
+
+              <div id="settings-view-admin-users" hidden>
+                <div class="actions">
+                  <button id="close-settings-admin" type="button" class="ghost">Back To App</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Profiles</h3>
+                    <button id="add-profile" type="button" class="ghost">Add Profile</button>
+                  </div>
+                  <table class="settings-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>App: Communications</th>
+                        <th>App: Reviews</th>
+                        <th>App: Groups</th>
+                        <th>App: Services</th>
+                        <th>Settings: Communications</th>
+                        <th>Settings: Reviews</th>
+                        <th>Settings: Groups</th>
+                        <th>Settings: Services</th>
+                        <th>Settings: Admin Users</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="profiles-body"></tbody>
+                  </table>
+                  <p id="profiles-status" class="auth-status"></p>
+                </section>
+
+                <section class="settings-block">
+                  <h3>Create User</h3>
+                  <div class="grid settings-grid">
+                    <label>
+                      Email
+                      <input id="admin-user-email" type="email" placeholder="user@company.com" />
+                    </label>
+                    <label>
+                      Password
+                      <input id="admin-user-password" type="password" placeholder="At least 8 characters" />
+                    </label>
+                    <label>
+                      Profile
+                      <select id="admin-user-profile"></select>
+                    </label>
+                    <div class="actions">
+                      <button id="admin-create-user" type="button">Create User</button>
+                      <button id="admin-refresh-users" type="button" class="ghost">Refresh</button>
+                    </div>
+                  </div>
+                  <p id="admin-users-status" class="auth-status"></p>
+                </section>
+
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Users</h3>
+                  </div>
+                  <table class="settings-table">
+                    <thead>
+                      <tr>
+                        <th>Email</th>
+                        <th>Created</th>
+                        <th>Last Sign In</th>
+                        <th>Email Confirmed</th>
+                        <th>Profile</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-users-body"></tbody>
+                  </table>
+                </section>
+              </div>
+
+              <div id="settings-view-services" hidden>
+                <div class="actions">
+                  <button id="close-settings-services" type="button" class="ghost">Back To App</button>
+                  <button id="services-settings-config-tab" type="button" class="active-tab">Configuration</button>
+                  <button id="services-settings-confirmation-tab" type="button" class="ghost">Confirmation text</button>
+                </div>
+                <section id="services-settings-config-panel" class="settings-block">
+                  <div class="bar">
+                    <h3>Services Configuration</h3>
+                    <button id="services-save-settings" type="button" class="ghost">Save Configuration</button>
+                  </div>
+                  <label class="settings-email-recipients">
+                    Automatic email recipients
+                    <textarea id="services-automatic-email-recipients" rows="3" placeholder="email1@example.com, email2@example.com"></textarea>
+                    <small class="field-hint">Used on automatic create/update service emails. Separate addresses with commas or new lines.</small>
+                  </label>
+                  <div class="table-wrap">
+                    <table class="settings-table">
+                      <thead>
+                        <tr>
+                          <th>Service Type</th>
+                          <th>Service Provider</th>
+                          <th>Airport transfer?</th>
+                          <th>Has Return?</th>
+                          <th>Approved by default</th>
+                          <th>Price Configuration</th>
+                        </tr>
+                      </thead>
+                      <tbody id="services-configs-body"></tbody>
+                    </table>
+                  </div>
+                  <div class="service-price-matrix-card">
+                    <h4>Airport Transfer Price Matrix</h4>
+                    <div class="table-wrap compact-table-wrap">
+                      <table class="settings-table compact-table">
+                        <thead>
+                          <tr>
+                            <th></th>
+                            <th>1 to 3 Persons</th>
+                            <th>4 to 7 Persons</th>
+                            <th>8 to 11 Persons</th>
+                            <th>12 to 16 Persons</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <th>One way</th>
+                            <td><input id="services-price-oneway-1-3" type="number" min="0" step="0.01" /></td>
+                            <td><input id="services-price-oneway-4-7" type="number" min="0" step="0.01" /></td>
+                            <td><input id="services-price-oneway-8-11" type="number" min="0" step="0.01" /></td>
+                            <td><input id="services-price-oneway-12-16" type="number" min="0" step="0.01" /></td>
+                          </tr>
+                          <tr>
+                            <th>Arrival+Return</th>
+                            <td><input id="services-price-return-1-3" type="number" min="0" step="0.01" /></td>
+                            <td><input id="services-price-return-4-7" type="number" min="0" step="0.01" /></td>
+                            <td><input id="services-price-return-8-11" type="number" min="0" step="0.01" /></td>
+                            <td><input id="services-price-return-12-16" type="number" min="0" step="0.01" /></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <p id="services-settings-status" class="auth-status"></p>
+                </section>
+                <section id="services-settings-confirmation-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Confirmation text</h3>
+                    <button id="services-save-settings-confirmation" type="button" class="ghost">Save Configuration</button>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Service Type
+                      <select id="services-template-service-type"></select>
+                    </label>
+                    <label>
+                      Preview language
+                      <select id="services-template-language">
+                        <option value="en">English</option>
+                        <option value="pt">Português</option>
+                        <option value="es">Español</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label class="settings-email-recipients">
+                    Confirmation email template
+                    <textarea id="services-confirmation-template" rows="20"></textarea>
+                    <small class="field-hint">Placeholders: {{customer_name}}, {{customer_email}}, {{customer_phone}}, {{service_type}}, {{request_number}}, {{date}}, {{time}}, {{pax}}, {{pickup_location}}, {{dropoff_location}}, {{flight_number}}, {{return_date}}, {{return_time}}, {{return_pickup}}, {{return_dropoff}}, {{return_flight}}, {{price}}, {{status}}, {{service_provider}}, {{service_table}}</small>
+                  </label>
+                  <div id="services-confirmation-template-preview" class="template-preview"></div>
+                </section>
+              </div>
+
+              <div id="settings-view-groups" hidden>
+                <div class="actions">
+                  <button id="close-settings-groups" type="button" class="ghost">Back To App</button>
+                  <button id="groups-settings-config-tab" type="button" class="active-tab">Configuration</button>
+                  <button id="groups-settings-proposal-tab" type="button" class="ghost">Proposal text</button>
+                  <button id="groups-settings-confirmation-tab" type="button" class="ghost">1st confirmation text</button>
+                  <button id="groups-settings-final-confirmation-tab" type="button" class="ghost">Final confirmation text</button>
+                </div>
+                <section id="groups-settings-config-panel" class="settings-block">
+                  <div class="bar">
+                    <h3>Groups Configuration</h3>
+                    <button id="groups-save-settings" type="button" class="ghost">Save Configuration</button>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Deposit %
+                      <input id="groups-deposit-percentage" type="number" min="0" max="100" step="0.01" />
+                    </label>
+                    <label>
+                      Last payment days
+                      <input id="groups-last-payment-days" type="number" min="0" max="365" step="1" />
+                    </label>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="settings-table">
+                      <thead>
+                        <tr>
+                          <th>Room Type</th>
+                          <th>Guests</th>
+                          <th>Possible Rooms (comma-separated)</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="groups-room-types-body"></tbody>
+                    </table>
+                  </div>
+                  <div class="actions">
+                    <button id="groups-add-room-type" type="button" class="ghost">Add Room Type</button>
+                    <p id="groups-settings-status" class="auth-status"></p>
+                  </div>
+                </section>
+                <section id="groups-settings-proposal-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Proposal text</h3>
+                    <button id="groups-save-settings-proposal" type="button" class="ghost">Save Configuration</button>
+                  </div>
+                  <label class="settings-email-recipients">
+                    Proposal email template
+                    <textarea id="groups-email-template" rows="24"></textarea>
+                    <small class="field-hint">Placeholders: {{name}}, {{arrival}}, {{departure}}, {{nights}}, {{guests}}, {{city_tax_guests}}, {{room_table}}, {{accommodation_total}}, {{city_tax_nights}}, {{city_tax_total}}, {{total}}, {{deposit_percentage}}, {{deposit_value}}, {{last_payment_days}}, {{last_payment_date}}, {{option_date}}, {{reservation_number}}</small>
+                  </label>
+                  <div id="groups-proposal-template-preview" class="template-preview"></div>
+                </section>
+                <section id="groups-settings-confirmation-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>1st confirmation text</h3>
+                    <button id="groups-save-settings-confirmation" type="button" class="ghost">Save Configuration</button>
+                  </div>
+                  <label class="settings-email-recipients">
+                    1st confirmation email template
+                    <textarea id="groups-confirmation-template" rows="22"></textarea>
+                    <small class="field-hint">Placeholders: {{name}}, {{arrival}}, {{departure}}, {{nights}}, {{guests}}, {{city_tax_guests}}, {{confirmation_table}}, {{rooms_booked}}, {{accommodation_total}}, {{city_tax_total}}, {{total}}, {{deposit_percentage}}, {{deposit_value}}, {{balance_due}}, {{last_payment_days}}, {{last_payment_date}}, {{option_date}}, {{reservation_number}}</small>
+                  </label>
+                  <div id="groups-confirmation-template-preview" class="template-preview"></div>
+                </section>
+                <section id="groups-settings-final-confirmation-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Final confirmation text</h3>
+                    <button id="groups-save-settings-final-confirmation" type="button" class="ghost">Save Configuration</button>
+                  </div>
+                  <label class="settings-email-recipients">
+                    Final confirmation email template
+                    <textarea id="groups-final-confirmation-template" rows="18"></textarea>
+                    <small class="field-hint">Placeholders: {{name}}, {{arrival}}, {{departure}}, {{nights}}, {{guests}}, {{city_tax_guests}}, {{confirmation_table}}, {{rooms_booked}}, {{accommodation_total}}, {{city_tax_total}}, {{total}}, {{deposit_percentage}}, {{deposit_value}}, {{balance_due}}, {{last_payment_days}}, {{last_payment_date}}, {{option_date}}, {{reservation_number}}</small>
+                  </label>
+                  <div id="groups-final-confirmation-template-preview" class="template-preview"></div>
+                </section>
+              </div>
+
+              <div id="settings-view-reviews" hidden>
+                <div class="actions settings-review-tabs">
+                  <button id="close-settings-reviews" type="button" class="ghost">Back To App</button>
+                  <button id="settings-reviews-import-tab" type="button" class="active-tab">Import</button>
+                  <button id="settings-reviews-config-tab" type="button" class="ghost">Configuration</button>
+                </div>
+
+                <div id="settings-reviews-import-panel">
+                  <div class="settings-split">
+                    <section class="settings-block">
+                      <div class="bar">
+                        <h3>Import Reviews</h3>
+                        <p id="reviews-import-status" class="auth-status"></p>
+                      </div>
+                      <div class="grid settings-grid">
+                        <label>
+                          Property
+                          <select id="reviews-import-property"></select>
+                        </label>
+                        <label>
+                          Source
+                          <select id="reviews-import-source"></select>
+                        </label>
+                        <label>
+                          File type
+                          <select id="reviews-import-kind">
+                            <option value="">Select file type</option>
+                            <option value="csv">CSV / XLSX</option>
+                            <option value="json">JSON</option>
+                            <option value="image">Screenshot / Image</option>
+                          </select>
+                        </label>
+                        <div class="settings-email-recipients field-group">
+                          <span>Files</span>
+                          <div id="reviews-import-dropzone" class="file-dropzone" tabindex="0" role="textbox" aria-label="Drop or paste review files">
+                            <strong>Drop or paste files here</strong>
+                            <span>Focus this field, then press Ctrl+V to paste a copied file or screenshot.</span>
+                            <small id="reviews-import-file-summary">No files selected</small>
+                          </div>
+                          <button id="reviews-browse-files" type="button" class="ghost">Choose files</button>
+                          <input id="reviews-import-files" class="sr-only-file" type="file" multiple accept=".csv,.xlsx,.xls,.json,application/json,image/*" />
+                        </div>
+                      </div>
+                      <div class="actions">
+                        <button id="reviews-parse-upload" type="button">Parse upload</button>
+                        <button id="reviews-confirm-import" type="button" class="ghost">Confirm import</button>
+                      </div>
+                    </section>
+
+                    <section class="settings-block">
+                      <div class="bar">
+                        <h3>Last Review Dates</h3>
+                      </div>
+                      <div class="table-wrap compact-table-wrap">
+                        <table class="compact-table">
+                          <thead>
+                            <tr>
+                              <th>Property</th>
+                              <th>Source</th>
+                              <th>Last review date</th>
+                            </tr>
+                          </thead>
+                          <tbody id="reviews-last-dates-body"></tbody>
+                        </table>
+                      </div>
+                    </section>
+                  </div>
+
+                  <section class="settings-block">
+                    <div class="bar">
+                      <h3>Staging Preview</h3>
+                      <p id="reviews-staging-count">0 staged rows</p>
+                    </div>
+                    <div class="table-wrap reviews-table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Use</th>
+                            <th>Date</th>
+                            <th>Reviewer</th>
+                            <th>Score</th>
+                            <th>Confidence</th>
+                            <th>Title</th>
+                            <th>Body</th>
+                            <th>Flags</th>
+                          </tr>
+                        </thead>
+                        <tbody id="reviews-staging-rows"></tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section class="settings-block">
+                    <div class="bar">
+                      <h3>Recent Imports</h3>
+                    </div>
+                    <div class="table-wrap reviews-table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Property</th>
+                            <th>Source</th>
+                            <th>File</th>
+                            <th>Status</th>
+                            <th>Rows</th>
+                          </tr>
+                        </thead>
+                        <tbody id="reviews-import-runs"></tbody>
+                      </table>
+                    </div>
+                  </section>
+                </div>
+
+                <div id="settings-reviews-config-panel" hidden>
+                  <section class="settings-block">
+                    <div class="bar">
+                      <h3>Properties</h3>
+                      <button id="reviews-add-property" type="button" class="ghost">Add Property</button>
+                    </div>
+                    <div class="table-wrap">
+                      <table class="settings-table">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Active</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody id="reviews-properties-body"></tbody>
+                      </table>
+                    </div>
+                    <p id="reviews-properties-status" class="auth-status"></p>
+                  </section>
+
+                  <section class="settings-block">
+                    <div class="bar">
+                      <h3>Sources Configuration</h3>
+                      <button id="reviews-save-sources" type="button" class="ghost">Save Sources</button>
+                    </div>
+                    <div class="table-wrap">
+                      <table class="settings-table">
+                        <thead>
+                          <tr>
+                            <th>Key</th>
+                            <th>Label</th>
+                            <th>Active</th>
+                          </tr>
+                        </thead>
+                        <tbody id="reviews-sources-body"></tbody>
+                      </table>
+                    </div>
+                    <p id="reviews-sources-status" class="auth-status"></p>
+                  </section>
+
+                  <section class="settings-block">
+                    <div class="bar">
+                      <h3>Google API Connection</h3>
+                      <div class="row-actions">
+                        <button id="reviews-google-connect" type="button" class="ghost">Connect Google</button>
+                        <button id="reviews-google-load-locations" type="button" class="ghost">Load Locations</button>
+                        <button id="reviews-google-save-mapping" type="button" class="ghost">Save Mapping</button>
+                        <button id="reviews-google-sync" type="button" class="primary">Sync Reviews</button>
+                      </div>
+                    </div>
+                    <p id="reviews-google-status" class="auth-status">Google Business Profile is not connected.</p>
+                    <div class="table-wrap">
+                      <table class="settings-table">
+                        <thead>
+                          <tr>
+                            <th>Property</th>
+                            <th>Google location</th>
+                          </tr>
+                        </thead>
+                        <tbody id="reviews-google-mappings-body"></tbody>
+                      </table>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

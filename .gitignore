@@ -1,0 +1,5 @@
+config.js
+.vercel
+.env*.local
+publish-repo/
+publish-repo-2/
