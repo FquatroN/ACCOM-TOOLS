@@ -4598,7 +4598,6 @@ function getFilteredServices() {
   const serviceDateTo = clean(filters.dateTo);
   const nameNeedle = clean(filters.name).toLowerCase();
   return [...state.services]
-    .filter((row) => !filters.showActive || (["Submitted", "Approved"].includes(normalizeServiceStatus(row.status)) && clean(row.date) >= today))
     .filter((row) => {
       const createdDate = formatDateInLisbon(row.createdAt);
       if (createdFrom && (!createdDate || createdDate < createdFrom)) return false;
@@ -4614,6 +4613,7 @@ function getFilteredServices() {
     })
     .filter((row) => !nameNeedle || clean(row.customerName).toLowerCase().includes(nameNeedle))
     .flatMap(expandServiceListRows)
+    .filter((row) => !filters.showActive || (["Submitted", "Approved"].includes(normalizeServiceStatus(row.status)) && clean(row.date) >= today))
     .sort((a, b) => {
       const aKey = `${clean(a.date)} ${clean(a.time)} ${clean(a.requestNumber)} ${clean(a.legType)}`;
       const bKey = `${clean(b.date)} ${clean(b.time)} ${clean(b.requestNumber)} ${clean(b.legType)}`;
