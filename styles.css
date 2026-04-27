@@ -1049,6 +1049,15 @@ select:disabled {
   background: rgba(177, 32, 48, 0.14);
 }
 
+.service-date-hint {
+  display: block;
+  margin-top: 0.14rem;
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
 .services-filters {
   margin: 0.7rem 0 0.9rem;
   grid-template-columns:

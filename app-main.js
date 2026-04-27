@@ -4589,6 +4589,25 @@ function serviceStatusTone(status) {
   return "submitted";
 }
 
+function serviceRelativeDateHint(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const dateOnly = raw.slice(0, 10);
+  if (dateOnly === formatDate(today)) return "Today";
+  if (dateOnly === formatDate(tomorrow)) return "Tomorrow";
+  return "";
+}
+
+function renderServiceDateCell(value) {
+  const dateText = escape(formatDateOnly(value));
+  const hint = serviceRelativeDateHint(value);
+  if (!hint) return dateText;
+  return `${dateText}<small class="service-date-hint">${escape(hint)}</small>`;
+}
+
 function getFilteredServices() {
   const today = formatDate(new Date());
   const filters = state.serviceFilters || {};
@@ -4655,7 +4674,7 @@ function renderServices() {
       <td>${escape(row.serviceType)}</td>
       <td>${escape(row.customerName)}</td>
       <td><span class="service-status-pill ${serviceStatusTone(row.status)}">${escape(row.status || "-")}</span></td>
-      <td>${escape(formatDateOnly(row.date))}</td>
+      <td>${renderServiceDateCell(row.date)}</td>
       <td>${escape(clean(row.time) || "-")}</td>
       <td>${escape(String(row.pax || 0))}</td>
       <td>${escape(row.pickupLocation || "-")}</td>
