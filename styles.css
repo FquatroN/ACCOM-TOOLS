@@ -1642,6 +1642,210 @@ select:disabled {
   .service-return-grid-bottom {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .services-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    font-size: 13px;
+  }
+
+  .app-layout,
+  .app-layout.settings-mode {
+    padding: 0.7rem;
+    gap: 0.7rem;
+  }
+
+  .left-nav,
+  .settings-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0.65rem;
+    gap: 0.4rem;
+  }
+
+  .nav-link {
+    min-height: 2.5rem;
+    text-align: center;
+  }
+
+  .app-main,
+  .view,
+  .view-panel,
+  .settings-content {
+    gap: 0.7rem;
+  }
+
+  .card,
+  .settings-block {
+    padding: 0.8rem;
+  }
+
+  .hero {
+    padding: 0.95rem 1rem;
+  }
+
+  .feature-title h2 {
+    font-size: 1.18rem;
+  }
+
+  .topbar {
+    justify-content: stretch;
+  }
+
+  .session-box {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filters,
+  .review-filters,
+  .settings-grid,
+  .kpi-grid,
+  .services-filters,
+  .service-form-grid,
+  .service-return-grid-top,
+  .service-return-grid-bottom,
+  .group-total-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .service-type-field {
+    grid-column: auto;
+  }
+
+  .service-provider-display {
+    min-height: 0;
+  }
+
+  .settings-shell {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+  }
+
+  .actions,
+  .bar {
+    align-items: stretch;
+  }
+
+  .bar > .actions {
+    width: 100%;
+  }
+
+  .pagination-bar {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .table-wrap {
+    margin-inline: -0.8rem;
+    padding-inline: 0.8rem;
+    max-height: none;
+  }
+
+  .reviews-table-wrap,
+  .compact-table-wrap {
+    max-height: none;
+  }
+
+  table {
+    min-width: 760px;
+  }
+
+  .resume-table {
+    min-width: 820px;
+  }
+
+  .groups-table {
+    min-width: 940px;
+  }
+
+  .group-room-table {
+    min-width: 980px;
+  }
+
+  .services-table {
+    min-width: 820px;
+  }
+
+  .settings-table {
+    min-width: 560px;
+  }
+
+  th,
+  td {
+    padding: 0.52rem;
+  }
+
+  td {
+    font-size: 0.8rem;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  .date-input-pair {
+    align-items: stretch;
+  }
+
+  .date-picker-input {
+    flex: 0 0 3rem;
+    min-width: 3rem;
+  }
+
+  .phone-flag-input {
+    gap: 0.45rem;
+  }
+
+  .generated-email-preview,
+  .template-preview {
+    min-height: 18rem;
+    padding: 0.8rem;
+  }
+
+  .modal-backdrop {
+    padding: 0;
+    align-items: stretch;
+    justify-items: stretch;
+  }
+
+  .modal-card {
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .group-modal-card,
+  .service-modal-card {
+    margin: 0;
+  }
+
+  .review-detail-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-review-tabs,
+  .group-editor-tabs,
+  .service-editor-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 0.15rem;
+  }
+
+  .settings-review-tabs button,
+  .group-editor-tabs button,
+  .service-editor-tabs button {
+    flex: 0 0 auto;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1666,7 +1870,51 @@ select:disabled {
     align-items: flex-start;
   }
 
+  .left-nav,
+  .settings-nav {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .app-logo {
+    width: 76px;
+  }
+
   .session-box {
+    width: 100%;
+  }
+
+  .card,
+  .settings-block {
+    padding: 0.72rem;
+  }
+
+  .table-wrap {
+    margin-inline: -0.72rem;
+    padding-inline: 0.72rem;
+  }
+
+  table {
+    min-width: 700px;
+  }
+
+  .settings-table {
+    min-width: 520px;
+  }
+
+  .services-table {
+    min-width: 780px;
+  }
+
+  .groups-table {
+    min-width: 900px;
+  }
+
+  .group-room-table {
+    min-width: 940px;
+  }
+
+  .topbar .actions,
+  .bar .actions {
     width: 100%;
   }
 }
