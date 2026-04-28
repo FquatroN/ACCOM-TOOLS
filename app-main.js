@@ -5595,7 +5595,7 @@ function render() {
 function renderLostFound() {
   if (!canApp("lost-found")) {
     els.lostFoundCount.textContent = "0 records";
-    els.lostFoundRows.innerHTML = '<tr><td colspan="10" class="empty">Your profile has no access to Lost&Found.</td></tr>';
+    els.lostFoundRows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Lost&Found.</td></tr>';
     return;
   }
   const rows = getFilteredLostFoundRecords();
@@ -5604,7 +5604,7 @@ function renderLostFound() {
   els.lostFoundRows.appendChild(buildLostFoundInlineRow());
   if (!rows.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="10" class="empty">No Lost&Found records found.</td>';
+    tr.innerHTML = '<td colspan="7" class="empty">No Lost&Found records found.</td>';
     els.lostFoundRows.appendChild(tr);
     return;
   }
@@ -5620,16 +5620,15 @@ function buildLostFoundInlineRow() {
   const now = new Date();
   const tr = document.createElement("tr");
   tr.className = "inline-editor sticky-new-row";
-  tr.innerHTML = `<td><span class="auto-stamp">Auto</span></td>
-    <td class="lost-found-timestamp"><div>${formatDate(now)}</div><small>${formatTime(now)}</small></td>
-    <td><input data-field="whoFound" data-scope="new" value="${escape(draft.whoFound)}" /></td>
-    <td><input data-field="whoRecorded" data-scope="new" value="${escape(draft.whoRecorded)}" /></td>
-    <td><input data-field="location" data-scope="new" value="${escape(draft.location)}" /></td>
+  tr.innerHTML = `<td class="lost-found-timestamp"><span class="auto-stamp">Auto</span><small>${formatDate(now)} ${formatTime(now)}</small></td>
+    <td><input data-field="whoFound" data-scope="new" value="${escape(draft.whoFound)}" placeholder="Found" />
+    <input data-field="whoRecorded" data-scope="new" value="${escape(draft.whoRecorded)}" placeholder="Record" /></td>
+    <td><input data-field="location" data-scope="new" value="${escape(draft.location)}" placeholder="Where" />
+    <select data-field="stored" data-scope="new">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
     <td><input data-field="objectDescription" data-scope="new" value="${escape(draft.objectDescription)}" /></td>
     <td><textarea data-field="notes" data-scope="new" rows="2">${escape(draft.notes)}</textarea></td>
-    <td><select data-field="stored" data-scope="new">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
-    <td><label class="status-toggle"><input type="checkbox" data-field="status" data-scope="new" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label></td>
-    <td class="row-actions"><button type="button" data-lost-found-action="save-inline">Add</button></td>`;
+    <td class="lost-found-status-cell"><label class="status-toggle"><input type="checkbox" data-field="status" data-scope="new" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label></td>
+    <td class="row-actions lost-found-actions-compact"><button type="button" data-lost-found-action="save-inline">Add</button></td>`;
   tr.style.backgroundColor = "#ffffff";
   return tr;
 }
@@ -5639,16 +5638,13 @@ function buildLostFoundReadOnlyRow(record) {
   const closedStamp = isClosedStatus(record.status) && record.closedAt
     ? `<div class="status-closed-at">${escape(formatDateTimeShort(record.closedAt))}</div>`
     : "";
-  tr.innerHTML = `<td>${escape(record.number)}</td>
-    <td class="lost-found-timestamp"><div>${escape(lostFoundTimestampDate(record) || "-")}</div><small>${escape(lostFoundTimestampTime(record) || "-")}</small></td>
-    <td>${escape(record.whoFound)}</td>
-    <td>${escape(record.whoRecorded)}</td>
-    <td>${escape(record.location)}</td>
+  tr.innerHTML = `<td class="lost-found-timestamp"><span class="lost-found-meta-strong">#${escape(record.number)}</span><small>${escape(formatDateTimeShort(record.createdAt) || "-")}</small></td>
+    <td><span class="lost-found-meta-strong">Found: ${escape(record.whoFound || "-")}</span><span class="lost-found-meta-sub">Record: ${escape(record.whoRecorded || "-")}</span></td>
+    <td><span class="lost-found-meta-strong">${escape(record.location || "-")}</span><span class="lost-found-meta-sub">Stored: ${escape(record.stored)}</span></td>
     <td class="message">${escape(record.objectDescription)}</td>
-    <td class="message">${escape(record.notes)}</td>
-    <td>${escape(record.stored)}</td>
-    <td><label class="status-toggle"><input type="checkbox" data-lost-found-action="toggle-status" data-id="${escape(record.id)}" ${isClosedStatus(record.status) ? "checked" : ""} /><span>${escape(record.status)}</span></label>${closedStamp}</td>
-    <td class="row-actions"><button type="button" data-lost-found-action="edit" data-id="${escape(record.id)}">Edit</button></td>`;
+    <td class="lost-found-notes-cell" title="${escape(record.notes)}"><span class="lost-found-notes-preview">${escape(record.notes || "-")}</span></td>
+    <td class="lost-found-status-cell"><label class="status-toggle"><input type="checkbox" data-lost-found-action="toggle-status" data-id="${escape(record.id)}" ${isClosedStatus(record.status) ? "checked" : ""} /><span>${escape(record.status)}</span></label>${closedStamp}</td>
+    <td class="row-actions lost-found-actions-compact"><button type="button" data-lost-found-action="edit" data-id="${escape(record.id)}" class="ghost">Edit</button></td>`;
   tr.style.backgroundColor = lostFoundRowBackground(record.status);
   return tr;
 }
@@ -5657,16 +5653,15 @@ function buildLostFoundEditableRow(record) {
   const draft = state.lostFoundEditDraft || emptyLostFoundDraft();
   const tr = document.createElement("tr");
   tr.className = "inline-editor";
-  tr.innerHTML = `<td>${escape(record.number)}</td>
-    <td class="lost-found-timestamp"><div>${escape(lostFoundTimestampDate(record) || "-")}</div><small>${escape(lostFoundTimestampTime(record) || "-")}</small></td>
-    <td><input data-field="whoFound" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoFound)}" /></td>
-    <td><input data-field="whoRecorded" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoRecorded)}" /></td>
-    <td><input data-field="location" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.location)}" /></td>
+  tr.innerHTML = `<td class="lost-found-timestamp"><span class="lost-found-meta-strong">#${escape(record.number)}</span><small>${escape(formatDateTimeShort(record.createdAt) || "-")}</small></td>
+    <td><input data-field="whoFound" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoFound)}" placeholder="Found" />
+    <input data-field="whoRecorded" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoRecorded)}" placeholder="Record" /></td>
+    <td><input data-field="location" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.location)}" placeholder="Where" />
+    <select data-field="stored" data-scope="edit" data-id="${escape(record.id)}">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
     <td><input data-field="objectDescription" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.objectDescription)}" /></td>
     <td><textarea data-field="notes" data-scope="edit" data-id="${escape(record.id)}" rows="2">${escape(draft.notes)}</textarea></td>
-    <td><select data-field="stored" data-scope="edit" data-id="${escape(record.id)}">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
-    <td><label class="status-toggle"><input type="checkbox" data-field="status" data-scope="edit" data-id="${escape(record.id)}" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label></td>
-    <td class="row-actions"><button type="button" data-lost-found-action="save-edit" data-id="${escape(record.id)}">Save</button>
+    <td class="lost-found-status-cell"><label class="status-toggle"><input type="checkbox" data-field="status" data-scope="edit" data-id="${escape(record.id)}" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label></td>
+    <td class="row-actions lost-found-actions-compact"><button type="button" data-lost-found-action="save-edit" data-id="${escape(record.id)}">Save</button>
     <button type="button" data-lost-found-action="cancel-edit" data-id="${escape(record.id)}" class="ghost">Cancel</button></td>`;
   tr.style.backgroundColor = lostFoundRowBackground(draft.status);
   return tr;

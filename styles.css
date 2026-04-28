@@ -1041,32 +1041,32 @@ select:disabled {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.lost-found-col-number {
-  width: 62px;
+.lost-found-col-meta {
+  width: 132px;
 }
 
-.lost-found-col-timestamp {
-  width: 128px;
+.lost-found-col-people {
+  width: 150px;
+}
+
+.lost-found-col-place {
+  width: 140px;
 }
 
 .lost-found-col-object {
-  width: 220px;
+  width: 300px;
 }
 
 .lost-found-col-notes {
-  width: 200px;
-}
-
-.lost-found-col-stored {
-  width: 110px;
+  width: 170px;
 }
 
 .lost-found-col-status {
-  width: 120px;
+  width: 66px;
 }
 
 .lost-found-col-actions {
-  width: 126px;
+  width: 74px;
 }
 
 .lost-found-timestamp small {
@@ -1074,6 +1074,51 @@ select:disabled {
   margin-top: 0.16rem;
   color: var(--muted);
   font-size: 0.7rem;
+}
+
+.lost-found-meta-strong,
+.lost-found-meta-sub {
+  display: block;
+}
+
+.lost-found-meta-strong {
+  font-weight: 700;
+}
+
+.lost-found-meta-sub {
+  color: var(--muted);
+  font-size: 0.72rem;
+  margin-top: 0.14rem;
+}
+
+.lost-found-notes-cell {
+  font-size: 0.76rem;
+  color: #5f666d;
+}
+
+.lost-found-notes-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lost-found-status-cell {
+  text-align: center;
+}
+
+.lost-found-status-cell .status-toggle {
+  justify-content: center;
+}
+
+.lost-found-status-cell .status-toggle span {
+  display: none;
+}
+
+.lost-found-actions-compact button {
+  padding-inline: 0.5rem;
+  min-width: 0;
 }
 
 .service-status-pill {
