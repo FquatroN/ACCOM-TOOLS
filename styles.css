@@ -1029,6 +1029,16 @@ select:disabled {
   vertical-align: top;
 }
 
+.services-table th:nth-child(4),
+.services-table td:nth-child(4) {
+  width: 7.1rem;
+}
+
+.services-table th:nth-child(5),
+.services-table td:nth-child(5) {
+  width: 6.2rem;
+}
+
 .lost-found-table th,
 .lost-found-table td {
   white-space: normal;
@@ -1154,7 +1164,10 @@ select:disabled {
 }
 
 .service-inline-status {
-  min-width: 6.2rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
   padding: 0.14rem 1.45rem 0.14rem 0.42rem;
   border-radius: 999px;
   font-size: 0.72rem;
