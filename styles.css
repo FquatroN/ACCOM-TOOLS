@@ -1024,6 +1024,52 @@ select:disabled {
   vertical-align: top;
 }
 
+.lost-found-table th,
+.lost-found-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.lost-found-filters {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.lost-found-col-number {
+  width: 62px;
+}
+
+.lost-found-col-timestamp {
+  width: 128px;
+}
+
+.lost-found-col-object {
+  width: 220px;
+}
+
+.lost-found-col-notes {
+  width: 200px;
+}
+
+.lost-found-col-stored {
+  width: 110px;
+}
+
+.lost-found-col-status {
+  width: 120px;
+}
+
+.lost-found-col-actions {
+  width: 126px;
+}
+
+.lost-found-timestamp small {
+  display: block;
+  margin-top: 0.16rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
 .service-status-pill {
   display: inline-flex;
   align-items: center;
@@ -1664,6 +1710,10 @@ select:disabled {
   .services-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .lost-found-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 768px) {
@@ -1723,6 +1773,7 @@ select:disabled {
   .settings-grid,
   .kpi-grid,
   .services-filters,
+  .lost-found-filters,
   .service-form-grid,
   .service-return-grid-top,
   .service-return-grid-bottom,
@@ -1786,6 +1837,10 @@ select:disabled {
 
   .services-table {
     min-width: 820px;
+  }
+
+  .lost-found-table {
+    min-width: 980px;
   }
 
   .settings-table {
@@ -1921,6 +1976,10 @@ select:disabled {
 
   .services-table {
     min-width: 780px;
+  }
+
+  .lost-found-table {
+    min-width: 920px;
   }
 
   .groups-table {

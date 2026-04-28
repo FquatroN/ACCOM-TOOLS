@@ -28,6 +28,7 @@
         </div>
         <aside class="left-nav">
           <button id="nav-communications" type="button" class="nav-link active">Communications</button>
+          <button id="nav-lost-found" type="button" class="nav-link">Lost&amp;Found</button>
           <button id="nav-groups" type="button" class="nav-link">Groups</button>
           <button id="nav-services" type="button" class="nav-link">Services</button>
           <button id="nav-reviews" type="button" class="nav-link">Reviews</button>
@@ -149,6 +150,104 @@
             </div>
           </section>
           <p id="db-status" class="auth-status"></p>
+        </section>
+
+        <section id="view-lost-found" class="view" hidden>
+          <section class="feature-title">
+            <h2>Lost&amp;Found</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Filters</h2>
+              <div class="actions">
+                <label class="filter-checkbox">
+                  Only open
+                  <input type="checkbox" id="lost-found-only-open" checked />
+                </label>
+              </div>
+            </div>
+
+            <div class="grid filters lost-found-filters">
+              <label>
+                #
+                <input type="text" id="lost-found-filter-number" placeholder="Number" />
+              </label>
+              <label>
+                Date
+                <input type="date" id="lost-found-filter-date" />
+              </label>
+              <label>
+                Who Found?
+                <input type="text" id="lost-found-filter-who-found" />
+              </label>
+              <label>
+                Who Record?
+                <input type="text" id="lost-found-filter-who-recorded" />
+              </label>
+              <label>
+                Where?
+                <input type="text" id="lost-found-filter-where" />
+              </label>
+              <label>
+                Object Description
+                <input type="text" id="lost-found-filter-object" />
+              </label>
+              <label>
+                Notes
+                <input type="text" id="lost-found-filter-notes" />
+              </label>
+              <label>
+                Stored
+                <select id="lost-found-filter-stored">
+                  <option value="">All</option>
+                  <option value="Receção">Receção</option>
+                  <option value="Arrecadação 21">Arrecadação 21</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Objects</h2>
+              <div class="actions">
+                <p id="lost-found-count">0 records</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="lost-found-table">
+                <colgroup>
+                  <col class="lost-found-col-number" />
+                  <col class="lost-found-col-timestamp" />
+                  <col />
+                  <col />
+                  <col />
+                  <col class="lost-found-col-object" />
+                  <col class="lost-found-col-notes" />
+                  <col class="lost-found-col-stored" />
+                  <col class="lost-found-col-status" />
+                  <col class="lost-found-col-actions" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Timestamp</th>
+                    <th>Who Found?</th>
+                    <th>Who Record?</th>
+                    <th>Where?</th>
+                    <th>Object Description</th>
+                    <th>Notes</th>
+                    <th>Stored</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="lost-found-rows"></tbody>
+              </table>
+            </div>
+          </section>
+          <p id="lost-found-status" class="auth-status"></p>
         </section>
 
         <section id="view-groups" class="view" hidden>
@@ -873,6 +972,7 @@
                       <tr>
                         <th>Name</th>
                         <th>App: Communications</th>
+                        <th>App: Lost&amp;Found</th>
                         <th>App: Reviews</th>
                         <th>App: Groups</th>
                         <th>App: Services</th>

@@ -15,6 +15,10 @@ const DEFAULT_REVIEW_SOURCES = [
   { key: "google", label: "Google", active: true },
 ];
 
+const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
+const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services"];
+const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "admin-users"];
+
 const DEFAULT_SETTINGS = {
   communications: {
     categories: [
@@ -449,6 +453,7 @@ const GROUP_ROOM_TYPE_TRANSLATIONS = {
 
 const state = {
   entries: [],
+  lostFound: [],
   groups: [],
   reviews: [],
   reviewProperties: [],
@@ -500,12 +505,15 @@ const state = {
   editingId: null,
   newDraft: { person: "", status: "Open", category: "Information", message: "" },
   editDraft: null,
+  lostFoundEditingId: null,
+  lostFoundDraft: emptyLostFoundDraft(),
+  lostFoundEditDraft: null,
   sort: { key: "date", dir: "desc" },
   pendingDelete: null,
   access: {
     profile: { id: "", name: "Full access" },
-    appFeatures: ["communications", "reviews", "groups", "services"],
-    settingsFeatures: ["communications", "reviews", "groups", "services", "admin-users"],
+    appFeatures: [...APP_FEATURE_OPTIONS],
+    settingsFeatures: [...SETTINGS_FEATURE_OPTIONS],
   },
   profiles: [],
   profilesLoaded: false,
@@ -518,6 +526,7 @@ const state = {
   adminUsers: [],
   adminUsersLoaded: false,
   communicationsLoaded: false,
+  lostFoundLoaded: false,
   communicationsSettingsLoaded: false,
   groupsLoaded: false,
   groupSettingsLoaded: false,
@@ -536,12 +545,14 @@ const els = {
   leftNav: document.querySelector(".left-nav"),
   topbar: document.querySelector(".topbar"),
   navCommunications: document.getElementById("nav-communications"),
+  navLostFound: document.getElementById("nav-lost-found"),
   navReviews: document.getElementById("nav-reviews"),
   navGroups: document.getElementById("nav-groups"),
   navServices: document.getElementById("nav-services"),
   openSettings: document.getElementById("open-settings"),
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
+  viewLostFound: document.getElementById("view-lost-found"),
   viewReviews: document.getElementById("view-reviews"),
   viewServices: document.getElementById("view-services"),
   viewSettings: document.getElementById("view-settings"),
@@ -574,6 +585,18 @@ const els = {
   addProfile: document.getElementById("add-profile"),
   profilesStatus: document.getElementById("profiles-status"),
   rows: document.getElementById("rows"),
+  lostFoundRows: document.getElementById("lost-found-rows"),
+  lostFoundCount: document.getElementById("lost-found-count"),
+  lostFoundDbStatus: document.getElementById("lost-found-status"),
+  lostFoundOnlyOpen: document.getElementById("lost-found-only-open"),
+  lostFoundFilterNumber: document.getElementById("lost-found-filter-number"),
+  lostFoundFilterDate: document.getElementById("lost-found-filter-date"),
+  lostFoundFilterWhoFound: document.getElementById("lost-found-filter-who-found"),
+  lostFoundFilterWhoRecorded: document.getElementById("lost-found-filter-who-recorded"),
+  lostFoundFilterWhere: document.getElementById("lost-found-filter-where"),
+  lostFoundFilterObject: document.getElementById("lost-found-filter-object"),
+  lostFoundFilterNotes: document.getElementById("lost-found-filter-notes"),
+  lostFoundFilterStored: document.getElementById("lost-found-filter-stored"),
   tableWrap: document.getElementById("communications-table-wrap"),
   tableHead: document.getElementById("communications-head"),
   resetSort: document.getElementById("reset-sort"),
@@ -821,9 +844,10 @@ async function init() {
   bindEvents();
   await initAuth();
   await loadAccess();
-  if (!canApp("communications") && canApp("reviews")) state.currentView = "reviews";
-  else if (!canApp("communications") && !canApp("reviews") && canApp("groups")) state.currentView = "groups";
-  else if (!canApp("communications") && !canApp("reviews") && !canApp("groups") && canApp("services")) state.currentView = "services";
+  if (!canApp("communications") && canApp("lost-found")) state.currentView = "lost-found";
+  else if (!canApp("communications") && !canApp("lost-found") && canApp("groups")) state.currentView = "groups";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   if (!canSettings("communications") && canSettings("reviews")) state.settingsSection = "reviews";
   else if (!canSettings("communications") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
@@ -840,6 +864,7 @@ async function init() {
 
 function bindEvents() {
   els.navCommunications.addEventListener("click", () => setView("communications"));
+  els.navLostFound.addEventListener("click", () => setView("lost-found"));
   els.navReviews.addEventListener("click", () => setView("reviews"));
   els.navGroups.addEventListener("click", () => setView("groups"));
   els.navServices.addEventListener("click", () => setView("services"));
@@ -860,6 +885,10 @@ function bindEvents() {
   els.rows.addEventListener("input", onRowDraftInput);
   els.rows.addEventListener("keydown", onRowKeydown);
   els.rows.addEventListener("change", onRowStatusToggle);
+  els.lostFoundRows.addEventListener("click", onLostFoundAction);
+  els.lostFoundRows.addEventListener("input", onLostFoundDraftInput);
+  els.lostFoundRows.addEventListener("keydown", onLostFoundKeydown);
+  els.lostFoundRows.addEventListener("change", onLostFoundStatusToggle);
   els.tableHead.addEventListener("click", onSortToggle);
   els.resetSort.addEventListener("click", () => {
     resetSortDefault();
@@ -870,6 +899,19 @@ function bindEvents() {
     el.addEventListener("input", render)
   );
   els.showActive.addEventListener("change", render);
+  [
+    els.lostFoundOnlyOpen,
+    els.lostFoundFilterNumber,
+    els.lostFoundFilterDate,
+    els.lostFoundFilterWhoFound,
+    els.lostFoundFilterWhoRecorded,
+    els.lostFoundFilterWhere,
+    els.lostFoundFilterObject,
+    els.lostFoundFilterNotes,
+    els.lostFoundFilterStored,
+  ].forEach((el) => el.addEventListener("input", renderLostFound));
+  els.lostFoundOnlyOpen.addEventListener("change", renderLostFound);
+  els.lostFoundFilterStored.addEventListener("change", renderLostFound);
   els.excelInput.addEventListener("change", importFromExcel);
   els.exportCsv.addEventListener("click", exportToCsv);
   els.authLogout.addEventListener("click", signOut);
@@ -1053,13 +1095,13 @@ async function loadAccess() {
   try {
     const result = await api("/api/access");
     state.access.profile = result.profile || state.access.profile;
-    state.access.appFeatures = normalizeFeatureListClient(result.appFeatures, ["communications", "reviews", "groups", "services"]);
-    state.access.settingsFeatures = normalizeFeatureListClient(result.settingsFeatures, ["communications", "reviews", "groups", "services", "admin-users"]);
+    state.access.appFeatures = normalizeFeatureListClient(result.appFeatures, APP_FEATURE_OPTIONS);
+    state.access.settingsFeatures = normalizeFeatureListClient(result.settingsFeatures, SETTINGS_FEATURE_OPTIONS);
   } catch (e) {
     state.access = {
       profile: { id: "", name: "Full access (fallback)" },
-      appFeatures: ["communications", "reviews", "groups", "services"],
-      settingsFeatures: ["communications", "reviews", "groups", "services", "admin-users"],
+      appFeatures: [...APP_FEATURE_OPTIONS],
+      settingsFeatures: [...SETTINGS_FEATURE_OPTIONS],
     };
     showToast(`Access fallback enabled: ${e.message}`, "info");
   }
@@ -1083,6 +1125,7 @@ function canSettings(feature) {
 
 async function setView(view) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
+  if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
   if (view === "groups" && !canApp("groups")) return showToast("No groups access.", "error");
   if (view === "services" && !canApp("services")) return showToast("No services access.", "error");
@@ -1103,6 +1146,12 @@ async function setView(view) {
 async function ensureCurrentViewData() {
   if (state.currentView === "communications") {
     await ensureCommunicationsData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "lost-found") {
+    await ensureLostFoundData();
     renderSettingsSection();
     render();
     return;
@@ -1158,6 +1207,13 @@ async function refreshCurrentViewData(reason = "timer") {
       state.lastAutoRefreshAt = now;
       return;
     }
+    if (state.currentView === "lost-found" && canApp("lost-found")) {
+      await loadLostFound({ silent: true });
+      state.lostFoundLoaded = true;
+      renderLostFound();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
     if (state.currentView === "reviews" && canApp("reviews")) {
       await loadReviews({ useFilters: true, silent: true });
       state.reviewsLoaded = true;
@@ -1186,6 +1242,7 @@ async function refreshCurrentViewData(reason = "timer") {
 function shouldSkipAutoRefresh() {
   if (state.currentView === "settings") return true;
   if (state.currentView === "communications" && (state.editingId || hasCommunicationDraft())) return true;
+  if (state.currentView === "lost-found" && (state.lostFoundEditingId || hasLostFoundDraft())) return true;
   if (state.currentView === "groups" && els.groupEditorModal && !els.groupEditorModal.hidden) return true;
   if (state.currentView === "services" && els.serviceEditorModal && !els.serviceEditorModal.hidden) return true;
   if (state.reviewQa.loading) return true;
@@ -1194,6 +1251,17 @@ function shouldSkipAutoRefresh() {
 
 function hasCommunicationDraft() {
   return !!(clean(state.newDraft.person) || clean(state.newDraft.message));
+}
+
+function hasLostFoundDraft() {
+  const draft = state.lostFoundDraft || {};
+  return !!(
+    clean(draft.whoFound) ||
+    clean(draft.whoRecorded) ||
+    clean(draft.location) ||
+    clean(draft.objectDescription) ||
+    clean(draft.notes)
+  );
 }
 
 async function ensureCommunicationsData() {
@@ -1206,6 +1274,13 @@ async function ensureCommunicationsData() {
   if (canApp("communications") && !state.communicationsLoaded) {
     await loadEntries();
     state.communicationsLoaded = true;
+  }
+}
+
+async function ensureLostFoundData() {
+  if (canApp("lost-found") && !state.lostFoundLoaded) {
+    await loadLostFound();
+    state.lostFoundLoaded = true;
   }
 }
 
@@ -1289,21 +1364,25 @@ async function ensureSettingsSectionData() {
 
 function renderLayout() {
   const comm = state.currentView === "communications";
+  const lostFound = state.currentView === "lost-found";
   const reviews = state.currentView === "reviews";
   const groups = state.currentView === "groups";
   const services = state.currentView === "services";
   const settingsMode = state.currentView === "settings";
   const canComm = canApp("communications");
+  const canLostFound = canApp("lost-found");
   const canReviews = canApp("reviews");
   const canGroups = canApp("groups");
   const canServices = canApp("services");
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
   els.navCommunications.classList.toggle("active", comm);
+  els.navLostFound.classList.toggle("active", lostFound);
   els.navReviews.classList.toggle("active", reviews);
   els.navGroups.classList.toggle("active", groups);
   els.navServices.classList.toggle("active", services);
   els.navCommunications.hidden = !canComm;
+  els.navLostFound.hidden = !canLostFound;
   els.navReviews.hidden = !canReviews;
   els.navGroups.hidden = !canGroups;
   els.navServices.hidden = !canServices;
@@ -1311,6 +1390,7 @@ function renderLayout() {
   els.leftNav.hidden = settingsMode;
   els.topbar.hidden = false;
   els.viewCommunications.hidden = !comm;
+  els.viewLostFound.hidden = !lostFound;
   els.viewReviews.hidden = !reviews;
   els.viewGroups.hidden = !groups;
   els.viewServices.hidden = !services;
@@ -1445,8 +1525,8 @@ async function loadProfiles(forceRefresh = false) {
   state.profiles = (Array.isArray(result.profiles) ? result.profiles : []).map((p) => ({
     id: clean(p.id),
     name: clean(p.name),
-    appFeatures: normalizeFeatureListClient(p.app_features || p.appFeatures, ["communications", "reviews", "groups", "services"]),
-    settingsFeatures: normalizeFeatureListClient(p.settings_features || p.settingsFeatures, ["communications", "reviews", "groups", "services", "admin-users"]),
+    appFeatures: normalizeFeatureListClient(p.app_features || p.appFeatures, APP_FEATURE_OPTIONS),
+    settingsFeatures: normalizeFeatureListClient(p.settings_features || p.settingsFeatures, SETTINGS_FEATURE_OPTIONS),
   }));
   state.profilesLoaded = true;
   renderProfiles();
@@ -1519,7 +1599,7 @@ function renderProfiles() {
   els.profilesBody.innerHTML = "";
   if (state.profiles.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="5" class="empty">No profiles yet.</td>';
+    tr.innerHTML = '<td colspan="12" class="empty">No profiles yet.</td>';
     els.profilesBody.appendChild(tr);
     return;
   }
@@ -1527,6 +1607,7 @@ function renderProfiles() {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td><input data-profile-name="${escape(profile.id)}" value="${escape(profile.name)}" /></td>
       <td><input type="checkbox" data-profile-app-communications="${escape(profile.id)}" ${profile.appFeatures.includes("communications") ? "checked" : ""} /></td>
+      <td><input type="checkbox" data-profile-app-lost-found="${escape(profile.id)}" ${profile.appFeatures.includes("lost-found") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-app-reviews="${escape(profile.id)}" ${profile.appFeatures.includes("reviews") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-app-groups="${escape(profile.id)}" ${profile.appFeatures.includes("groups") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-app-services="${escape(profile.id)}" ${profile.appFeatures.includes("services") ? "checked" : ""} /></td>
@@ -1549,7 +1630,7 @@ async function createProfile() {
       method: "POST",
       body: {
         name: `Profile ${state.profiles.length + 1}`,
-        appFeatures: ["communications", "reviews", "groups", "services"],
+        appFeatures: [...APP_FEATURE_OPTIONS],
         settingsFeatures: [],
       },
     });
@@ -1613,6 +1694,7 @@ function collectProfilePayload(id) {
   }
   const appFeatures = [];
   if (els.profilesBody.querySelector(`[data-profile-app-communications="${id}"]`)?.checked) appFeatures.push("communications");
+  if (els.profilesBody.querySelector(`[data-profile-app-lost-found="${id}"]`)?.checked) appFeatures.push("lost-found");
   if (els.profilesBody.querySelector(`[data-profile-app-reviews="${id}"]`)?.checked) appFeatures.push("reviews");
   if (els.profilesBody.querySelector(`[data-profile-app-groups="${id}"]`)?.checked) appFeatures.push("groups");
   if (els.profilesBody.querySelector(`[data-profile-app-services="${id}"]`)?.checked) appFeatures.push("services");
@@ -3192,6 +3274,34 @@ async function loadEntries({ silent = false } = {}) {
   }
 }
 
+function setLostFoundStatus(message) {
+  if (els.lostFoundDbStatus) els.lostFoundDbStatus.textContent = message;
+}
+
+async function loadLostFound({ silent = false } = {}) {
+  try {
+    const result = await api("/api/lost-found");
+    state.lostFound = (result.rows || []).map((row) => ({
+      id: row.id,
+      number: Number(row.item_number) || 0,
+      createdAt: clean(row.created_at),
+      updatedAt: clean(row.updated_at),
+      closedAt: clean(row.closed_at),
+      whoFound: clean(row.who_found),
+      whoRecorded: clean(row.who_recorded),
+      location: clean(row.location_found),
+      objectDescription: clean(row.object_description),
+      notes: clean(row.notes),
+      stored: normalizeLostFoundStored(clean(row.stored_location)),
+      status: normalizeStatusUi(row.status),
+    }));
+    if (!silent) setLostFoundStatus(`Loaded ${state.lostFound.length} records.`);
+  } catch (error) {
+    setLostFoundStatus(`DB error: ${error.message}`);
+    showToast(`DB error: ${error.message}`, "error");
+  }
+}
+
 function renderSettings() {
   const cfg = state.settings.communications;
   els.settingsCategoriesBody.innerHTML = "";
@@ -3489,6 +3599,226 @@ async function saveEdit(id) {
   } catch (error) {
     showToast(`Update failed: ${error.message}`, "error");
   }
+}
+
+function normalizeLostFoundStored(value) {
+  const raw = clean(value).toLowerCase();
+  return LOST_FOUND_STORED_OPTIONS.find((item) => item.toLowerCase() === raw) || LOST_FOUND_STORED_OPTIONS[0];
+}
+
+function emptyLostFoundDraft() {
+  return {
+    whoFound: "",
+    whoRecorded: "",
+    location: "",
+    objectDescription: "",
+    notes: "",
+    stored: LOST_FOUND_STORED_OPTIONS[0],
+    status: "Open",
+  };
+}
+
+function lostFoundTimestampDate(record) {
+  const dt = new Date(clean(record?.createdAt));
+  return Number.isNaN(dt.getTime()) ? "" : formatDate(dt);
+}
+
+function lostFoundTimestampTime(record) {
+  const dt = new Date(clean(record?.createdAt));
+  return Number.isNaN(dt.getTime()) ? "" : formatTime(dt);
+}
+
+function lostFoundRowBackground(status) {
+  return isClosedStatus(status) ? hexToRgba("#2e9f42", 0.25) : "#ffffff";
+}
+
+async function onLostFoundAction(event) {
+  const button = event.target.closest("button[data-lost-found-action]");
+  if (!button) return;
+  const action = clean(button.dataset.lostFoundAction);
+  if (action === "save-inline") return saveNewLostFound();
+  if (action === "cancel-edit") {
+    state.lostFoundEditingId = null;
+    state.lostFoundEditDraft = null;
+    showToast("Edit canceled.", "info");
+    renderLostFound();
+    return;
+  }
+  const id = clean(button.dataset.id);
+  const record = state.lostFound.find((item) => item.id === id);
+  if (!record) return;
+  if (action === "edit") {
+    state.lostFoundEditingId = id;
+    state.lostFoundEditDraft = {
+      whoFound: record.whoFound,
+      whoRecorded: record.whoRecorded,
+      location: record.location,
+      objectDescription: record.objectDescription,
+      notes: record.notes,
+      stored: record.stored,
+      status: record.status,
+    };
+    renderLostFound();
+    return;
+  }
+  if (action === "save-edit") {
+    await saveLostFoundEdit(id);
+  }
+}
+
+function onLostFoundDraftInput(event) {
+  const target = event.target;
+  const field = clean(target?.dataset?.field);
+  const scope = clean(target?.dataset?.scope);
+  if (!field || !scope) return;
+  const value = field === "status"
+    ? (target.checked ? "Closed" : "Open")
+    : field === "stored"
+      ? normalizeLostFoundStored(target.value)
+      : clean(target.value);
+  if (scope === "new") {
+    state.lostFoundDraft[field] = value;
+    const row = target.closest("tr");
+    if (row) row.style.backgroundColor = "#ffffff";
+  }
+  if (scope === "edit" && state.lostFoundEditingId && clean(target.dataset.id) === state.lostFoundEditingId) {
+    state.lostFoundEditDraft[field] = value;
+    const row = target.closest("tr");
+    if (row) row.style.backgroundColor = lostFoundRowBackground(state.lostFoundEditDraft.status);
+  }
+}
+
+function onLostFoundKeydown(event) {
+  const target = event.target;
+  const scope = clean(target?.dataset?.scope);
+  const id = clean(target?.dataset?.id);
+  if (!scope) return;
+  if (event.key === "Escape" && scope === "edit") {
+    event.preventDefault();
+    state.lostFoundEditingId = null;
+    state.lostFoundEditDraft = null;
+    showToast("Edit canceled.", "info");
+    renderLostFound();
+    return;
+  }
+  if (event.key !== "Enter" || event.shiftKey) return;
+  if (target.tagName === "TEXTAREA") event.preventDefault();
+  if (scope === "new") {
+    event.preventDefault();
+    saveNewLostFound().catch((error) => showToast(`Save failed: ${error.message}`, "error"));
+    return;
+  }
+  if (scope === "edit" && id && state.lostFoundEditingId === id) {
+    event.preventDefault();
+    saveLostFoundEdit(id).catch((error) => showToast(`Update failed: ${error.message}`, "error"));
+  }
+}
+
+async function onLostFoundStatusToggle(event) {
+  const input = event.target;
+  if (!input.matches('input[data-lost-found-action="toggle-status"]')) return;
+  const id = clean(input.dataset.id);
+  const record = state.lostFound.find((item) => item.id === id);
+  if (!record) return;
+  const nextStatus = input.checked ? "Closed" : "Open";
+  input.disabled = true;
+  try {
+    await api(`/api/lost-found?id=${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: { status: nextStatus },
+    });
+    await loadLostFound({ silent: true });
+    renderLostFound();
+    showToast(`Status changed to ${nextStatus}.`, "success");
+  } catch (error) {
+    input.checked = !input.checked;
+    showToast(`Status update failed: ${error.message}`, "error");
+  } finally {
+    input.disabled = false;
+  }
+}
+
+async function saveNewLostFound() {
+  const draft = state.lostFoundDraft || emptyLostFoundDraft();
+  if (!clean(draft.objectDescription)) return showToast("Please fill Object Description.", "error");
+  try {
+    await api("/api/lost-found", {
+      method: "POST",
+      body: {
+        who_found: clean(draft.whoFound),
+        who_recorded: clean(draft.whoRecorded),
+        location_found: clean(draft.location),
+        object_description: clean(draft.objectDescription),
+        notes: clean(draft.notes),
+        stored_location: normalizeLostFoundStored(draft.stored),
+        status: normalizeStatusUi(draft.status),
+      },
+    });
+    state.lostFoundDraft = emptyLostFoundDraft();
+    await loadLostFound();
+    renderLostFound();
+    showToast("Lost&Found record added.", "success");
+  } catch (error) {
+    showToast(`Save failed: ${error.message}`, "error");
+  }
+}
+
+async function saveLostFoundEdit(id) {
+  const draft = state.lostFoundEditDraft;
+  if (!id || !draft) return;
+  if (!clean(draft.objectDescription)) return showToast("Please fill Object Description.", "error");
+  try {
+    await api(`/api/lost-found?id=${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: {
+        who_found: clean(draft.whoFound),
+        who_recorded: clean(draft.whoRecorded),
+        location_found: clean(draft.location),
+        object_description: clean(draft.objectDescription),
+        notes: clean(draft.notes),
+        stored_location: normalizeLostFoundStored(draft.stored),
+        status: normalizeStatusUi(draft.status),
+      },
+    });
+    state.lostFoundEditingId = null;
+    state.lostFoundEditDraft = null;
+    await loadLostFound();
+    renderLostFound();
+    showToast("Lost&Found record updated.", "success");
+  } catch (error) {
+    showToast(`Update failed: ${error.message}`, "error");
+  }
+}
+
+function getFilteredLostFoundRecords() {
+  const number = clean(els.lostFoundFilterNumber.value).toLowerCase();
+  const date = clean(els.lostFoundFilterDate.value);
+  const whoFound = clean(els.lostFoundFilterWhoFound.value).toLowerCase();
+  const whoRecorded = clean(els.lostFoundFilterWhoRecorded.value).toLowerCase();
+  const where = clean(els.lostFoundFilterWhere.value).toLowerCase();
+  const objectDescription = clean(els.lostFoundFilterObject.value).toLowerCase();
+  const notes = clean(els.lostFoundFilterNotes.value).toLowerCase();
+  const stored = clean(els.lostFoundFilterStored.value);
+  const onlyOpen = !!els.lostFoundOnlyOpen.checked;
+  return state.lostFound
+    .filter((record) => {
+      const createdDate = lostFoundTimestampDate(record);
+      return (!onlyOpen || !isClosedStatus(record.status)) &&
+        (!number || String(record.number).toLowerCase().includes(number)) &&
+        (!date || createdDate === date) &&
+        (!whoFound || record.whoFound.toLowerCase().includes(whoFound)) &&
+        (!whoRecorded || record.whoRecorded.toLowerCase().includes(whoRecorded)) &&
+        (!where || record.location.toLowerCase().includes(where)) &&
+        (!objectDescription || record.objectDescription.toLowerCase().includes(objectDescription)) &&
+        (!notes || record.notes.toLowerCase().includes(notes)) &&
+        (!stored || record.stored === stored);
+    })
+    .sort((a, b) => {
+      const at = new Date(clean(a.createdAt)).getTime() || 0;
+      const bt = new Date(clean(b.createdAt)).getTime() || 0;
+      if (at !== bt) return bt - at;
+      return (Number(b.number) || 0) - (Number(a.number) || 0);
+    });
 }
 
 function getFilteredEntries() {
@@ -5224,6 +5554,10 @@ function exportServicesToExcel() {
 }
 
 function render() {
+  if (state.currentView === "lost-found") {
+    renderLostFound();
+    return;
+  }
   if (state.currentView === "reviews") {
     renderReviews();
     return;
@@ -5256,6 +5590,86 @@ function render() {
   rows.forEach((entry) => els.rows.appendChild(state.editingId === entry.id ? buildEditableRow(entry) : buildReadOnlyRow(entry)));
   updateSortIndicators();
   syncStickyRows();
+}
+
+function renderLostFound() {
+  if (!canApp("lost-found")) {
+    els.lostFoundCount.textContent = "0 records";
+    els.lostFoundRows.innerHTML = '<tr><td colspan="10" class="empty">Your profile has no access to Lost&Found.</td></tr>';
+    return;
+  }
+  const rows = getFilteredLostFoundRecords();
+  els.lostFoundCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  els.lostFoundRows.innerHTML = "";
+  els.lostFoundRows.appendChild(buildLostFoundInlineRow());
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="10" class="empty">No Lost&Found records found.</td>';
+    els.lostFoundRows.appendChild(tr);
+    return;
+  }
+  rows.forEach((record) => {
+    els.lostFoundRows.appendChild(
+      state.lostFoundEditingId === record.id ? buildLostFoundEditableRow(record) : buildLostFoundReadOnlyRow(record)
+    );
+  });
+}
+
+function buildLostFoundInlineRow() {
+  const draft = state.lostFoundDraft || emptyLostFoundDraft();
+  const now = new Date();
+  const tr = document.createElement("tr");
+  tr.className = "inline-editor sticky-new-row";
+  tr.innerHTML = `<td><span class="auto-stamp">Auto</span></td>
+    <td class="lost-found-timestamp"><div>${formatDate(now)}</div><small>${formatTime(now)}</small></td>
+    <td><input data-field="whoFound" data-scope="new" value="${escape(draft.whoFound)}" /></td>
+    <td><input data-field="whoRecorded" data-scope="new" value="${escape(draft.whoRecorded)}" /></td>
+    <td><input data-field="location" data-scope="new" value="${escape(draft.location)}" /></td>
+    <td><input data-field="objectDescription" data-scope="new" value="${escape(draft.objectDescription)}" /></td>
+    <td><textarea data-field="notes" data-scope="new" rows="2">${escape(draft.notes)}</textarea></td>
+    <td><select data-field="stored" data-scope="new">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
+    <td><label class="status-toggle"><input type="checkbox" data-field="status" data-scope="new" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label></td>
+    <td class="row-actions"><button type="button" data-lost-found-action="save-inline">Add</button></td>`;
+  tr.style.backgroundColor = "#ffffff";
+  return tr;
+}
+
+function buildLostFoundReadOnlyRow(record) {
+  const tr = document.createElement("tr");
+  const closedStamp = isClosedStatus(record.status) && record.closedAt
+    ? `<div class="status-closed-at">${escape(formatDateTimeShort(record.closedAt))}</div>`
+    : "";
+  tr.innerHTML = `<td>${escape(record.number)}</td>
+    <td class="lost-found-timestamp"><div>${escape(lostFoundTimestampDate(record) || "-")}</div><small>${escape(lostFoundTimestampTime(record) || "-")}</small></td>
+    <td>${escape(record.whoFound)}</td>
+    <td>${escape(record.whoRecorded)}</td>
+    <td>${escape(record.location)}</td>
+    <td class="message">${escape(record.objectDescription)}</td>
+    <td class="message">${escape(record.notes)}</td>
+    <td>${escape(record.stored)}</td>
+    <td><label class="status-toggle"><input type="checkbox" data-lost-found-action="toggle-status" data-id="${escape(record.id)}" ${isClosedStatus(record.status) ? "checked" : ""} /><span>${escape(record.status)}</span></label>${closedStamp}</td>
+    <td class="row-actions"><button type="button" data-lost-found-action="edit" data-id="${escape(record.id)}">Edit</button></td>`;
+  tr.style.backgroundColor = lostFoundRowBackground(record.status);
+  return tr;
+}
+
+function buildLostFoundEditableRow(record) {
+  const draft = state.lostFoundEditDraft || emptyLostFoundDraft();
+  const tr = document.createElement("tr");
+  tr.className = "inline-editor";
+  tr.innerHTML = `<td>${escape(record.number)}</td>
+    <td class="lost-found-timestamp"><div>${escape(lostFoundTimestampDate(record) || "-")}</div><small>${escape(lostFoundTimestampTime(record) || "-")}</small></td>
+    <td><input data-field="whoFound" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoFound)}" /></td>
+    <td><input data-field="whoRecorded" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoRecorded)}" /></td>
+    <td><input data-field="location" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.location)}" /></td>
+    <td><input data-field="objectDescription" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.objectDescription)}" /></td>
+    <td><textarea data-field="notes" data-scope="edit" data-id="${escape(record.id)}" rows="2">${escape(draft.notes)}</textarea></td>
+    <td><select data-field="stored" data-scope="edit" data-id="${escape(record.id)}">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
+    <td><label class="status-toggle"><input type="checkbox" data-field="status" data-scope="edit" data-id="${escape(record.id)}" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label></td>
+    <td class="row-actions"><button type="button" data-lost-found-action="save-edit" data-id="${escape(record.id)}">Save</button>
+    <button type="button" data-lost-found-action="cancel-edit" data-id="${escape(record.id)}" class="ghost">Cancel</button></td>`;
+  tr.style.backgroundColor = lostFoundRowBackground(draft.status);
+  return tr;
 }
 
 function buildInlineRow() {

@@ -14,6 +14,21 @@ create table if not exists public.communications (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.lost_found (
+  id uuid primary key default gen_random_uuid(),
+  item_number bigint generated always as identity unique,
+  who_found text not null default '',
+  who_recorded text not null default '',
+  location_found text not null default '',
+  object_description text not null default '',
+  notes text not null default '',
+  stored_location text not null default 'Receção',
+  status text not null default 'Open',
+  closed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 alter table public.communications
   add column if not exists updated_at timestamptz not null default now();
 
@@ -34,6 +49,11 @@ $$;
 drop trigger if exists communications_set_updated_at on public.communications;
 create trigger communications_set_updated_at
 before update on public.communications
+for each row execute function public.set_updated_at();
+
+drop trigger if exists lost_found_set_updated_at on public.lost_found;
+create trigger lost_found_set_updated_at
+before update on public.lost_found
 for each row execute function public.set_updated_at();
 
 create table if not exists public.app_settings (
@@ -240,6 +260,7 @@ before update on public.reviews
 for each row execute function public.set_updated_at();
 
 alter table public.communications enable row level security;
+alter table public.lost_found enable row level security;
 alter table public.app_settings enable row level security;
 alter table public.app_profiles enable row level security;
 alter table public.user_profile_assignments enable row level security;
@@ -404,6 +425,7 @@ $$;
 -- Ensure authenticated users can access the table at the SQL permission layer
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on table public.communications to authenticated;
+grant select, insert, update, delete on table public.lost_found to authenticated;
 grant select, insert, update, delete on table public.app_settings to authenticated;
 grant select, insert, update, delete on table public.app_profiles to authenticated;
 grant select, insert, update, delete on table public.user_profile_assignments to authenticated;
@@ -415,6 +437,7 @@ grant select, insert, update, delete on table public.review_import_staging to au
 grant select, insert, update, delete on table public.reviews to authenticated;
 grant usage on schema public to anon;
 grant select, insert, update, delete on table public.communications to anon;
+grant select, insert, update, delete on table public.lost_found to anon;
 grant select, insert, update, delete on table public.app_settings to anon;
 grant select, insert, update, delete on table public.app_profiles to anon;
 grant select, insert, update, delete on table public.user_profile_assignments to anon;
@@ -447,6 +470,36 @@ with check (auth.uid() is not null);
 
 create policy "communications_delete_authenticated"
 on public.communications
+for delete
+to public
+using (auth.uid() is not null);
+
+drop policy if exists "lost_found_select_authenticated" on public.lost_found;
+drop policy if exists "lost_found_insert_authenticated" on public.lost_found;
+drop policy if exists "lost_found_update_authenticated" on public.lost_found;
+drop policy if exists "lost_found_delete_authenticated" on public.lost_found;
+
+create policy "lost_found_select_authenticated"
+on public.lost_found
+for select
+to public
+using (auth.uid() is not null);
+
+create policy "lost_found_insert_authenticated"
+on public.lost_found
+for insert
+to public
+with check (auth.uid() is not null);
+
+create policy "lost_found_update_authenticated"
+on public.lost_found
+for update
+to public
+using (auth.uid() is not null)
+with check (auth.uid() is not null);
+
+create policy "lost_found_delete_authenticated"
+on public.lost_found
 for delete
 to public
 using (auth.uid() is not null);
@@ -677,12 +730,15 @@ to public
 using (auth.uid() is not null);
 
 insert into public.app_profiles (name, app_features, settings_features)
-values ('Administrator', '["communications","reviews","groups","services"]'::jsonb, '["communications","reviews","groups","services","admin-users"]'::jsonb)
+values ('Administrator', '["communications","lost-found","reviews","groups","services"]'::jsonb, '["communications","reviews","groups","services","admin-users"]'::jsonb)
 on conflict (name) do nothing;
 
 update public.app_profiles
 set
-  app_features = (case when app_features ? 'groups' then app_features else app_features || '["groups"]'::jsonb end) || case when app_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end,
+  app_features = (
+    case when app_features ? 'groups' then app_features else app_features || '["groups"]'::jsonb end
+  ) || case when app_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end
+    || case when app_features ? 'lost-found' then '[]'::jsonb else '["lost-found"]'::jsonb end,
   settings_features = (case when settings_features ? 'groups' then settings_features else settings_features || '["groups"]'::jsonb end) || case when settings_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end
 where name = 'Administrator';
 

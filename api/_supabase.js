@@ -1,5 +1,5 @@
 const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
-const APP_FEATURES = ["communications", "reviews", "groups", "services"];
+const APP_FEATURES = ["communications", "lost-found", "reviews", "groups", "services"];
 const SETTINGS_FEATURES = ["communications", "reviews", "groups", "services", "admin-users"];
 const FALLBACK_PROFILE = {
   id: "",
