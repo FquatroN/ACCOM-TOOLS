@@ -1176,6 +1176,110 @@ select:disabled {
   min-height: 2.1rem;
 }
 
+.services-mobile-cards {
+  display: none;
+}
+
+.service-mobile-card {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid #e2d8cf;
+  border-radius: 14px;
+  background: #fffdfa;
+  box-shadow: 0 10px 24px rgba(117, 84, 54, 0.06);
+  cursor: pointer;
+}
+
+.service-mobile-card:hover {
+  border-color: #e0c7af;
+  background: #fff8f1;
+}
+
+.service-mobile-card.selected-card {
+  border-color: #a7d4bf;
+  background: #f3fbf7;
+}
+
+.service-mobile-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.service-mobile-request {
+  font-weight: 700;
+  color: #2d241b;
+}
+
+.service-mobile-request small {
+  color: #7a6553;
+}
+
+.service-mobile-type {
+  margin-top: 0.12rem;
+  color: #72563a;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.service-mobile-customer {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #183246;
+}
+
+.service-mobile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 0.8rem;
+}
+
+.service-mobile-field {
+  min-width: 0;
+}
+
+.service-mobile-field small,
+.service-mobile-price-row small {
+  display: block;
+  margin-bottom: 0.16rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.service-mobile-field > div {
+  color: #2b2014;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.service-mobile-price-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.2rem;
+  border-top: 1px solid #efe2d7;
+}
+
+.service-mobile-price-row strong {
+  color: #183246;
+  font-size: 1rem;
+}
+
+.services-mobile-empty {
+  padding: 1rem;
+  border: 1px dashed #d9c6b6;
+  border-radius: 12px;
+  background: #fffdfa;
+  color: var(--muted);
+  text-align: center;
+}
+
 .inline-request-number {
   color: var(--muted);
   font-size: 0.88rem;
@@ -1830,7 +1934,6 @@ select:disabled {
   .review-filters,
   .settings-grid,
   .kpi-grid,
-  .services-filters,
   .lost-found-filters,
   .service-form-grid,
   .service-return-grid-top,
@@ -1875,6 +1978,21 @@ select:disabled {
   .reviews-table-wrap,
   .compact-table-wrap {
     max-height: none;
+  }
+
+  .services-filters,
+  .services-desktop-table-wrap {
+    display: none;
+  }
+
+  .services-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
+  .service-mobile-grid {
+    grid-template-columns: 1fr;
   }
 
   table {

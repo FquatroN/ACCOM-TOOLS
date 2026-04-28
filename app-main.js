@@ -699,6 +699,7 @@ const els = {
   groupsSettingsStatus: document.getElementById("groups-settings-status"),
   servicesNew: document.getElementById("services-new"),
   servicesRows: document.getElementById("services-rows"),
+  servicesMobileCards: document.getElementById("services-mobile-cards"),
   servicesCount: document.getElementById("services-count"),
   servicesShowActive: document.getElementById("services-show-active"),
   servicesFilterCreatedFrom: document.getElementById("services-filter-created-from"),
@@ -994,6 +995,7 @@ function bindEvents() {
     renderServiceConfirmationPreview();
   });
   els.servicesRows.addEventListener("click", onServiceRowClick);
+  els.servicesMobileCards?.addEventListener("click", onServiceRowClick);
   els.serviceCloseModal.addEventListener("click", closeServiceModal);
   els.serviceEditorModal.addEventListener("click", (event) => {
     if (event.target === els.serviceEditorModal) closeServiceModal();
@@ -5060,8 +5062,12 @@ function renderServices() {
   const rows = getFilteredServices();
   els.servicesCount.textContent = `${rows.length} service line${rows.length === 1 ? "" : "s"}`;
   els.servicesRows.innerHTML = "";
+  if (els.servicesMobileCards) els.servicesMobileCards.innerHTML = "";
   if (!rows.length) {
     els.servicesRows.innerHTML = '<tr><td colspan="11" class="empty">No services found.</td></tr>';
+    if (els.servicesMobileCards) {
+      els.servicesMobileCards.innerHTML = '<div class="services-mobile-empty">No services found.</div>';
+    }
     return;
   }
   rows.forEach((row) => {
@@ -5081,6 +5087,51 @@ function renderServices() {
       <td>${escape(row.dropoffLocation || "-")}</td>
       <td>${escape(formatMoney(row.price))}</td>`;
     els.servicesRows.appendChild(tr);
+    if (els.servicesMobileCards) {
+      const card = document.createElement("article");
+      card.className = `service-mobile-card${row.serviceId === state.serviceSelectedId ? " selected-card" : ""}${row.legType === "return" ? " service-return-row" : ""}`;
+      card.dataset.serviceId = row.serviceId;
+      card.title = clean(state.services.find((item) => item.id === row.serviceId)?.notes) || "-";
+      card.innerHTML = `<div class="service-mobile-header">
+          <div>
+            <div class="service-mobile-request">${escape(row.requestNumber || "-")}${row.legType === "return" ? ' <small>(return)</small>' : ""}</div>
+            <div class="service-mobile-type">${escape(row.serviceType)}</div>
+          </div>
+          <span class="service-status-pill ${serviceStatusTone(row.status)}">${escape(row.status || "-")}</span>
+        </div>
+        <div class="service-mobile-customer">${escape(row.customerName)}</div>
+        <div class="service-mobile-grid">
+          <div class="service-mobile-field">
+            <small>Date</small>
+            <div>${renderServiceDateCell(row.date)}</div>
+          </div>
+          <div class="service-mobile-field">
+            <small>Time</small>
+            <div>${escape(clean(row.time) || "-")}</div>
+          </div>
+          <div class="service-mobile-field">
+            <small>Pax</small>
+            <div>${escape(String(row.pax || 0))}</div>
+          </div>
+          <div class="service-mobile-field">
+            <small>Pick Up</small>
+            <div>${escape(row.pickupLocation || "-")}</div>
+          </div>
+          <div class="service-mobile-field">
+            <small>Flight Nr</small>
+            <div>${renderServiceFlightCell(row)}</div>
+          </div>
+          <div class="service-mobile-field">
+            <small>Drop Off</small>
+            <div>${escape(row.dropoffLocation || "-")}</div>
+          </div>
+        </div>
+        <div class="service-mobile-price-row">
+          <small>Price</small>
+          <strong>${escape(formatMoney(row.price))}</strong>
+        </div>`;
+      els.servicesMobileCards.appendChild(card);
+    }
   });
   refreshVisibleServiceStatuses();
 }
@@ -5353,7 +5404,7 @@ function tryOpenDeepLinkedService() {
 }
 
 function onServiceRowClick(event) {
-  const row = event.target.closest("tr[data-service-id]");
+  const row = event.target.closest("[data-service-id]");
   if (!row) return;
   openServiceById(clean(row.dataset.serviceId), { updateUrl: true });
 }
