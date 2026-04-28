@@ -5631,8 +5631,8 @@ function buildLostFoundInlineRow() {
   const tr = document.createElement("tr");
   tr.className = "inline-editor sticky-new-row";
   tr.innerHTML = `<td class="lost-found-timestamp"><span class="auto-stamp">#${escape(nextLostFoundDisplayNumber())}</span><small>${formatDate(now)} ${formatTime(now)}</small></td>
-    <td><input data-field="whoFound" data-scope="new" value="${escape(draft.whoFound)}" placeholder="Found" />
-    <input data-field="whoRecorded" data-scope="new" value="${escape(draft.whoRecorded)}" placeholder="Record" /></td>
+    <td><input data-field="whoFound" data-scope="new" value="${escape(draft.whoFound)}" placeholder="Who Found" />
+    <input data-field="whoRecorded" data-scope="new" value="${escape(draft.whoRecorded)}" placeholder="Who Register" /></td>
     <td><input data-field="location" data-scope="new" value="${escape(draft.location)}" placeholder="Where" />
     <select data-field="stored" data-scope="new">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
     <td><textarea data-field="objectDescription" data-scope="new" rows="2">${escape(draft.objectDescription)}</textarea></td>
