@@ -486,6 +486,7 @@ const state = {
   serviceFilters: { showActive: true, createdFrom: "", createdTo: "", dateFrom: "", dateTo: "", name: "" },
   serviceDraft: emptyServiceDraft(),
   serviceSelectedId: "",
+  pendingServiceDeepLinkId: "",
   serviceFlightStatuses: {
     cache: {},
     timer: null,
@@ -850,6 +851,7 @@ async function init() {
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
+  applyInitialRouteFromUrl();
   if (!canSettings("communications") && canSettings("reviews")) state.settingsSection = "reviews";
   else if (!canSettings("communications") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
@@ -1124,6 +1126,37 @@ function canSettings(feature) {
   return state.access.settingsFeatures.includes(clean(feature).toLowerCase());
 }
 
+function applyInitialRouteFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const view = clean(params.get("view")).toLowerCase();
+    const serviceId = clean(params.get("service"));
+    if (view === "services" && canApp("services")) {
+      state.currentView = "services";
+    }
+    if (serviceId && canApp("services")) {
+      state.pendingServiceDeepLinkId = serviceId;
+      state.currentView = "services";
+    }
+  } catch {}
+}
+
+function syncAppRoute() {
+  try {
+    const url = new URL(window.location.href);
+    if (state.currentView === "services") {
+      url.searchParams.set("view", "services");
+      if (clean(state.serviceSelectedId)) url.searchParams.set("service", clean(state.serviceSelectedId));
+      else url.searchParams.delete("service");
+    } else {
+      url.searchParams.delete("view");
+      url.searchParams.delete("service");
+    }
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, "", next);
+  } catch {}
+}
+
 async function setView(view) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
   if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
@@ -1138,6 +1171,11 @@ async function setView(view) {
     else if (canSettings("services")) state.settingsSection = "services";
     else if (canSettings("admin-users")) state.settingsSection = "admin-users";
   }
+  if (view !== "services") {
+    state.serviceSelectedId = "";
+    state.pendingServiceDeepLinkId = "";
+  }
+  syncAppRoute();
   renderLayout();
   renderSettingsSection();
   render();
@@ -1339,6 +1377,7 @@ async function ensureServicesData() {
     await loadServices();
     state.servicesLoaded = true;
   }
+  tryOpenDeepLinkedService();
   renderServices();
   renderServiceSettings();
 }
@@ -5290,16 +5329,33 @@ function closeServiceModal() {
   els.serviceEditorModal.hidden = true;
   document.body.classList.remove("modal-open");
   resetServiceDraftPredictionState({ keepCache: true });
+  state.serviceSelectedId = "";
+  syncAppRoute();
+}
+
+function openServiceById(serviceId, { updateUrl = true } = {}) {
+  const service = state.services.find((item) => item.id === clean(serviceId));
+  if (!service) return false;
+  state.serviceSelectedId = service.id;
+  state.serviceDraft = { ...clone(service), language: normalizeServiceConfirmationLanguage(service.language), priceManual: false };
+  state.pendingServiceDeepLinkId = "";
+  if (updateUrl) syncAppRoute();
+  openServiceModal();
+  return true;
+}
+
+function tryOpenDeepLinkedService() {
+  const serviceId = clean(state.pendingServiceDeepLinkId);
+  if (!serviceId || !state.services.length || !canApp("services")) return;
+  if (!openServiceById(serviceId, { updateUrl: true })) {
+    state.pendingServiceDeepLinkId = "";
+  }
 }
 
 function onServiceRowClick(event) {
   const row = event.target.closest("tr[data-service-id]");
   if (!row) return;
-  const service = state.services.find((item) => item.id === clean(row.dataset.serviceId));
-  if (!service) return;
-  state.serviceSelectedId = service.id;
-  state.serviceDraft = { ...clone(service), language: normalizeServiceConfirmationLanguage(service.language), priceManual: false };
-  openServiceModal();
+  openServiceById(clean(row.dataset.serviceId), { updateUrl: true });
 }
 
 function onServiceDatePickerInput(event) {

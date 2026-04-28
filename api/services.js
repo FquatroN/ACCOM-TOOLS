@@ -291,12 +291,28 @@ function serviceEmailSubject(row, isUpdate) {
   return `${prefix}: ${cleanText(row?.service_type)}, ${cleanText(row?.request_number)}, - ${cleanText(row?.customer_name)} - ${formatDateDisplay(row?.service_date)}, ${formatTimeDisplay(row?.service_time)}, Pax: ${Math.max(1, Math.round(Number(row?.pax || 1)))}`;
 }
 
+function appBaseUrl() {
+  return (
+    cleanText(process.env.APP_BASE_URL) ||
+    cleanText(process.env.PUBLIC_APP_URL) ||
+    cleanText(process.env.NEXT_PUBLIC_APP_URL) ||
+    "https://accomtools.com"
+  ).replace(/\/+$/, "");
+}
+
+function serviceDeepLink(row) {
+  const serviceId = cleanText(row?.id);
+  if (!serviceId) return appBaseUrl();
+  return `${appBaseUrl()}/?view=services&service=${encodeURIComponent(serviceId)}`;
+}
+
 function serviceActorLabel(actor) {
   return cleanText(actor?.email || actor?.user_metadata?.email || actor?.id) || "unknown";
 }
 
 function serviceCreatedEmailContent(row, actor) {
   const actorLabel = serviceActorLabel(actor);
+  const link = serviceDeepLink(row);
   const rows = serviceDetailRows(row)
     .map(
       ([label, value]) =>
@@ -307,11 +323,13 @@ function serviceCreatedEmailContent(row, actor) {
 <html>
   <body style="font-family:Arial,sans-serif;color:#1f2937;">
     <p>Foi criado um novo pedido de servico com os seguintes dados (user: ${escapeHtml(actorLabel)}):</p>
+    <p><a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Abrir este serviço no Accomtools</a></p>
     <table style="border-collapse:collapse;width:100%;max-width:760px;">${rows}</table>
   </body>
 </html>`;
   const text = [
     `Foi criado um novo pedido de servico com os seguintes dados (user: ${actorLabel}):`,
+    `Abrir este serviço: ${link}`,
     ...serviceDetailRows(row).map(([label, value]) => `${label}: ${value}`),
   ].join("\n");
   return { html, text };
@@ -319,6 +337,7 @@ function serviceCreatedEmailContent(row, actor) {
 
 function serviceUpdatedEmailContent(before, after, actor) {
   const actorLabel = serviceActorLabel(actor);
+  const link = serviceDeepLink(after);
   const changes = serviceChangedFields(before, after);
   const rows = (changes.length ? changes : [{ label: "Alteracoes", oldValue: "-", newValue: "Sem alteracoes visiveis" }])
     .map(
@@ -330,6 +349,7 @@ function serviceUpdatedEmailContent(before, after, actor) {
 <html>
   <body style="font-family:Arial,sans-serif;color:#1f2937;">
     <p>Foram feitas as seguintes alteracoes neste servico (user: ${escapeHtml(actorLabel)}):</p>
+    <p><a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Abrir este serviço no Accomtools</a></p>
     <table style="border-collapse:collapse;width:100%;max-width:860px;">
       <thead>
         <tr>
@@ -344,6 +364,7 @@ function serviceUpdatedEmailContent(before, after, actor) {
 </html>`;
   const text = [
     `Foram feitas as seguintes alteracoes neste servico (user: ${actorLabel}):`,
+    `Abrir este serviço: ${link}`,
     ...(changes.length
       ? changes.map((item) => `${item.label}: ${item.oldValue} -> ${item.newValue}`)
       : ["Alteracoes: - -> Sem alteracoes visiveis"]),
