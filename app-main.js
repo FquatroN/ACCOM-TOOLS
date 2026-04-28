@@ -5625,7 +5625,7 @@ function buildLostFoundInlineRow() {
     <input data-field="whoRecorded" data-scope="new" value="${escape(draft.whoRecorded)}" placeholder="Record" /></td>
     <td><input data-field="location" data-scope="new" value="${escape(draft.location)}" placeholder="Where" />
     <select data-field="stored" data-scope="new">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
-    <td><input data-field="objectDescription" data-scope="new" value="${escape(draft.objectDescription)}" /></td>
+    <td><textarea data-field="objectDescription" data-scope="new" rows="2">${escape(draft.objectDescription)}</textarea></td>
     <td><textarea data-field="notes" data-scope="new" rows="2">${escape(draft.notes)}</textarea></td>
     <td class="lost-found-status-cell"><label class="status-toggle"><input type="checkbox" data-field="status" data-scope="new" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label></td>
     <td class="row-actions lost-found-actions-compact"><button type="button" data-lost-found-action="save-inline">Add</button></td>`;
@@ -5658,7 +5658,7 @@ function buildLostFoundEditableRow(record) {
     <input data-field="whoRecorded" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoRecorded)}" placeholder="Record" /></td>
     <td><input data-field="location" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.location)}" placeholder="Where" />
     <select data-field="stored" data-scope="edit" data-id="${escape(record.id)}">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select></td>
-    <td><input data-field="objectDescription" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.objectDescription)}" /></td>
+    <td><textarea data-field="objectDescription" data-scope="edit" data-id="${escape(record.id)}" rows="2">${escape(draft.objectDescription)}</textarea></td>
     <td><textarea data-field="notes" data-scope="edit" data-id="${escape(record.id)}" rows="2">${escape(draft.notes)}</textarea></td>
     <td class="lost-found-status-cell"><label class="status-toggle"><input type="checkbox" data-field="status" data-scope="edit" data-id="${escape(record.id)}" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label></td>
     <td class="row-actions lost-found-actions-compact"><button type="button" data-lost-found-action="save-edit" data-id="${escape(record.id)}">Save</button>
