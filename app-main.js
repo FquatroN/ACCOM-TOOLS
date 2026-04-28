@@ -16,6 +16,7 @@ const DEFAULT_REVIEW_SOURCES = [
 ];
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
+const LOST_FOUND_NUMBER_OFFSET = 8719;
 const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services"];
 const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "admin-users"];
 
@@ -3278,12 +3279,17 @@ function setLostFoundStatus(message) {
   if (els.lostFoundDbStatus) els.lostFoundDbStatus.textContent = message;
 }
 
+function lostFoundDisplayNumber(value) {
+  const num = Number(value) || 0;
+  return num > 0 ? num + LOST_FOUND_NUMBER_OFFSET : 0;
+}
+
 async function loadLostFound({ silent = false } = {}) {
   try {
     const result = await api("/api/lost-found");
     state.lostFound = (result.rows || []).map((row) => ({
       id: row.id,
-      number: Number(row.item_number) || 0,
+      number: lostFoundDisplayNumber(row.item_number),
       createdAt: clean(row.created_at),
       updatedAt: clean(row.updated_at),
       closedAt: clean(row.closed_at),
@@ -3626,6 +3632,10 @@ function lostFoundTimestampDate(record) {
 function lostFoundTimestampTime(record) {
   const dt = new Date(clean(record?.createdAt));
   return Number.isNaN(dt.getTime()) ? "" : formatTime(dt);
+}
+
+function nextLostFoundDisplayNumber() {
+  return state.lostFound.reduce((max, record) => Math.max(max, Number(record.number) || 0), LOST_FOUND_NUMBER_OFFSET) + 1;
 }
 
 function lostFoundRowBackground(status) {
@@ -5620,7 +5630,7 @@ function buildLostFoundInlineRow() {
   const now = new Date();
   const tr = document.createElement("tr");
   tr.className = "inline-editor sticky-new-row";
-  tr.innerHTML = `<td class="lost-found-timestamp"><span class="auto-stamp">Auto</span><small>${formatDate(now)} ${formatTime(now)}</small></td>
+  tr.innerHTML = `<td class="lost-found-timestamp"><span class="auto-stamp">#${escape(nextLostFoundDisplayNumber())}</span><small>${formatDate(now)} ${formatTime(now)}</small></td>
     <td><input data-field="whoFound" data-scope="new" value="${escape(draft.whoFound)}" placeholder="Found" />
     <input data-field="whoRecorded" data-scope="new" value="${escape(draft.whoRecorded)}" placeholder="Record" /></td>
     <td><input data-field="location" data-scope="new" value="${escape(draft.location)}" placeholder="Where" />
