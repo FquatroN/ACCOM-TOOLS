@@ -1154,13 +1154,13 @@ select:disabled {
 }
 
 .service-inline-status {
-  min-width: 7.4rem;
-  padding: 0.22rem 1.8rem 0.22rem 0.55rem;
+  min-width: 6.2rem;
+  padding: 0.14rem 1.45rem 0.14rem 0.42rem;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  line-height: 1.25;
-  background-position: right 0.6rem center;
+  line-height: 1.15;
+  background-position: right 0.45rem center;
 }
 
 .service-inline-status.approved {
