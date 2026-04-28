@@ -594,6 +594,11 @@ td {
   margin-bottom: 0.32rem;
 }
 
+.lost-found-timestamp .auto-stamp {
+  font-size: 0.84rem;
+  padding: 0.24rem 0.5rem;
+}
+
 .row-actions {
   white-space: nowrap;
 }
