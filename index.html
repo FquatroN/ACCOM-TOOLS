@@ -174,10 +174,6 @@
             <section id="group-details-panel">
               <div class="grid settings-grid">
                 <label>
-                  Reservation Number
-                  <input id="group-reservation-number" type="text" placeholder="Filled when accepted" />
-                </label>
-                <label>
                   Name *
                   <input id="group-name" type="text" />
                 </label>
@@ -185,6 +181,14 @@
                   Email *
                   <input id="group-email" type="email" />
                   <small id="group-email-proposals-hint" class="group-email-proposals-hint" hidden></small>
+                </label>
+                <label>
+                  Status
+                  <select id="group-status-field" class="group-status-select">
+                    <option value="Proposal">Proposal</option>
+                    <option value="Accepted">Accepted</option>
+                    <option value="Refused">Refused</option>
+                  </select>
                 </label>
                 <label>
                   Check-in *
@@ -205,16 +209,12 @@
                   <input id="group-guests" type="number" min="1" max="60" step="1" />
                 </label>
                 <label>
-                  Option Date
-                  <input id="group-option-date" type="date" />
+                  Reservation Number
+                  <input id="group-reservation-number" type="text" placeholder="Filled when accepted" />
                 </label>
                 <label>
-                  Status
-                  <select id="group-status-field" class="group-status-select">
-                    <option value="Proposal">Proposal</option>
-                    <option value="Accepted">Accepted</option>
-                    <option value="Refused">Refused</option>
-                  </select>
+                  Option Date
+                  <input id="group-option-date" type="date" />
                 </label>
                 <label>
                   Last payment
