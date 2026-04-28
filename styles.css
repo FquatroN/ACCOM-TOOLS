@@ -1153,6 +1153,39 @@ select:disabled {
   background: rgba(177, 32, 48, 0.14);
 }
 
+.service-inline-status {
+  min-width: 7.4rem;
+  padding: 0.22rem 1.8rem 0.22rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.25;
+  background-position: right 0.6rem center;
+}
+
+.service-inline-status.approved {
+  color: #116b2d;
+  background-color: rgba(46, 159, 66, 0.14);
+  border-color: rgba(46, 159, 66, 0.34);
+}
+
+.service-inline-status.submitted {
+  color: #1457a6;
+  background-color: rgba(58, 124, 214, 0.14);
+  border-color: rgba(58, 124, 214, 0.34);
+}
+
+.service-inline-status.cancelled {
+  color: #a2252b;
+  background-color: rgba(177, 32, 48, 0.14);
+  border-color: rgba(177, 32, 48, 0.34);
+}
+
+.service-inline-status:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
 .service-date-hint {
   display: block;
   margin-top: 0.14rem;

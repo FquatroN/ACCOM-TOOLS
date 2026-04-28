@@ -493,6 +493,7 @@ const state = {
     sequence: 0,
     initialized: false,
   },
+  serviceInlineStatusSaving: {},
   serviceDraftFlightPredictions: {
     cache: {},
     timer: null,
@@ -996,6 +997,8 @@ function bindEvents() {
   });
   els.servicesRows.addEventListener("click", onServiceRowClick);
   els.servicesMobileCards?.addEventListener("click", onServiceRowClick);
+  els.servicesRows.addEventListener("change", onInlineServiceStatusChange);
+  els.servicesMobileCards?.addEventListener("change", onInlineServiceStatusChange);
   els.serviceCloseModal.addEventListener("click", closeServiceModal);
   els.serviceEditorModal.addEventListener("click", (event) => {
     if (event.target === els.serviceEditorModal) closeServiceModal();
@@ -4990,6 +4993,26 @@ function serviceStatusTone(status) {
   return "submitted";
 }
 
+function canInlineChangeServiceStatus() {
+  return clean(state.access?.profile?.name).toLowerCase() === "service provider";
+}
+
+function serviceStatusOptions(selected) {
+  const normalized = normalizeServiceStatus(selected);
+  return ["Submitted", "Approved", "Cancelled"].map((value) => option(value, normalized)).join("");
+}
+
+function renderServiceStatusCell(row) {
+  const normalized = normalizeServiceStatus(row.status);
+  if (!canInlineChangeServiceStatus()) {
+    return `<span class="service-status-pill ${serviceStatusTone(normalized)}">${escape(normalized || "-")}</span>`;
+  }
+  const disabled = state.serviceInlineStatusSaving[row.serviceId] ? "disabled" : "";
+  return `<select class="service-inline-status ${serviceStatusTone(normalized)}" data-inline-service-status="${escape(row.serviceId)}" ${disabled}>
+    ${serviceStatusOptions(normalized)}
+  </select>`;
+}
+
 function serviceRelativeDateHint(value) {
   const raw = clean(value);
   if (!raw) return "";
@@ -5078,7 +5101,7 @@ function renderServices() {
     tr.innerHTML = `<td>${escape(row.requestNumber || "-")}${row.legType === "return" ? ' <small>(return)</small>' : ""}</td>
       <td>${escape(row.serviceType)}</td>
       <td>${escape(row.customerName)}</td>
-      <td><span class="service-status-pill ${serviceStatusTone(row.status)}">${escape(row.status || "-")}</span></td>
+      <td>${renderServiceStatusCell(row)}</td>
       <td>${renderServiceDateCell(row.date)}</td>
       <td>${escape(clean(row.time) || "-")}</td>
       <td>${escape(String(row.pax || 0))}</td>
@@ -5097,7 +5120,7 @@ function renderServices() {
             <div class="service-mobile-request">${escape(row.requestNumber || "-")}${row.legType === "return" ? ' <small>(return)</small>' : ""}</div>
             <div class="service-mobile-type">${escape(row.serviceType)}</div>
           </div>
-          <span class="service-status-pill ${serviceStatusTone(row.status)}">${escape(row.status || "-")}</span>
+          ${renderServiceStatusCell(row)}
         </div>
         <div class="service-mobile-customer">${escape(row.customerName)}</div>
         <div class="service-mobile-grid">
@@ -5404,9 +5427,79 @@ function tryOpenDeepLinkedService() {
 }
 
 function onServiceRowClick(event) {
+  if (event.target.closest("[data-inline-service-status]")) return;
   const row = event.target.closest("[data-service-id]");
   if (!row) return;
   openServiceById(clean(row.dataset.serviceId), { updateUrl: true });
+}
+
+function buildServicePayload(draft, previous) {
+  return {
+    serviceType: draft.serviceType,
+    customerName: draft.customerName,
+    customerEmail: draft.customerEmail,
+    customerPhone: draft.customerPhone,
+    pax: draft.pax,
+    notes: draft.notes,
+    serviceDate: draft.date,
+    serviceTime: draft.time,
+    pickupLocation: draft.pickupLocation,
+    dropoffLocation: draft.dropoffLocation,
+    flightNumber: draft.flightNumber,
+    hasReturn: draft.hasReturn,
+    returnPickupLocation: draft.returnPickup,
+    returnDropoffLocation: draft.returnDropoff,
+    returnDate: draft.returnDate,
+    returnTime: draft.returnTime,
+    returnFlightNumber: draft.returnFlight,
+    price: Number(draft.price || 0),
+    status: draft.status,
+    providerUserId: draft.providerUserId || null,
+    providerEmail: draft.providerEmail,
+    auditLog: appendServiceAudit(draft, previous),
+  };
+}
+
+async function updateServiceStatusInline(serviceId, status) {
+  const previous = state.services.find((item) => item.id === clean(serviceId));
+  if (!previous) return;
+  const nextStatus = normalizeServiceStatus(status);
+  if (normalizeServiceStatus(previous.status) === nextStatus) return;
+  const draft = { ...clone(previous), status: nextStatus };
+  state.serviceInlineStatusSaving[serviceId] = true;
+  renderServices();
+  try {
+    const result = await api(`/api/services?id=${encodeURIComponent(previous.id)}`, {
+      method: "PUT",
+      body: buildServicePayload(draft, previous),
+    });
+    const row = result?.row ? mapServiceRow(result.row) : null;
+    if (row) {
+      const index = state.services.findIndex((item) => item.id === row.id);
+      if (index === -1) state.services.push(row);
+      else state.services.splice(index, 1, row);
+    }
+    await loadServices({ silent: true, throwOnError: true });
+    state.servicesLoaded = true;
+    const baseStatus = "Service status updated.";
+    const emailWarning = clean(result?.emailWarning);
+    setServicesStatus(emailWarning ? `${baseStatus} Email warning: ${emailWarning}` : baseStatus);
+    setServicesDbStatus(`Loaded ${state.services.length} service request${state.services.length === 1 ? "" : "s"}.`);
+    showToast(emailWarning ? `${baseStatus} Email warning: ${emailWarning}` : baseStatus, emailWarning ? "warning" : "success");
+  } catch (e) {
+    setServicesStatus(`Status update failed: ${e.message}`);
+    showToast(`Status update failed: ${e.message}`, "error");
+  } finally {
+    delete state.serviceInlineStatusSaving[serviceId];
+    renderServices();
+  }
+}
+
+function onInlineServiceStatusChange(event) {
+  const select = event.target.closest("[data-inline-service-status]");
+  if (!select) return;
+  event.stopPropagation();
+  updateServiceStatusInline(clean(select.dataset.inlineServiceStatus), clean(select.value));
 }
 
 function onServiceDatePickerInput(event) {
@@ -5581,30 +5674,7 @@ async function saveService() {
     return setServicesStatus("Return date cannot be before the main service date.");
   }
   const previous = draft.id ? state.services.find((item) => item.id === draft.id) : null;
-  const payload = {
-    serviceType: draft.serviceType,
-    customerName: draft.customerName,
-    customerEmail: draft.customerEmail,
-    customerPhone: draft.customerPhone,
-    pax: draft.pax,
-    notes: draft.notes,
-    serviceDate: draft.date,
-    serviceTime: draft.time,
-    pickupLocation: draft.pickupLocation,
-    dropoffLocation: draft.dropoffLocation,
-    flightNumber: draft.flightNumber,
-    hasReturn: draft.hasReturn,
-    returnPickupLocation: draft.returnPickup,
-    returnDropoffLocation: draft.returnDropoff,
-    returnDate: draft.returnDate,
-    returnTime: draft.returnTime,
-    returnFlightNumber: draft.returnFlight,
-    price: Number(draft.price || 0),
-    status: draft.status,
-    providerUserId: draft.providerUserId || null,
-    providerEmail: draft.providerEmail,
-    auditLog: appendServiceAudit(draft, previous),
-  };
+  const payload = buildServicePayload(draft, previous);
   try {
     const result = previous?.id
       ? await api(`/api/services?id=${encodeURIComponent(previous.id)}`, { method: "PUT", body: payload })
