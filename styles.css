@@ -1096,6 +1096,10 @@ select:disabled {
   color: #5f666d;
 }
 
+.lost-found-preview-cell {
+  font-size: 0.78rem;
+}
+
 .lost-found-notes-preview {
   display: -webkit-box;
   -webkit-line-clamp: 1;

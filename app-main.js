@@ -5641,7 +5641,7 @@ function buildLostFoundReadOnlyRow(record) {
   tr.innerHTML = `<td class="lost-found-timestamp"><span class="lost-found-meta-strong">#${escape(record.number)}</span><small>${escape(formatDateTimeShort(record.createdAt) || "-")}</small></td>
     <td><span class="lost-found-meta-strong">Found: ${escape(record.whoFound || "-")}</span><span class="lost-found-meta-sub">Record: ${escape(record.whoRecorded || "-")}</span></td>
     <td><span class="lost-found-meta-strong">${escape(record.location || "-")}</span><span class="lost-found-meta-sub">Stored: ${escape(record.stored)}</span></td>
-    <td class="message">${escape(record.objectDescription)}</td>
+    <td class="lost-found-preview-cell" title="${escape(record.objectDescription)}"><span class="lost-found-notes-preview">${escape(record.objectDescription || "-")}</span></td>
     <td class="lost-found-notes-cell" title="${escape(record.notes)}"><span class="lost-found-notes-preview">${escape(record.notes || "-")}</span></td>
     <td class="lost-found-status-cell"><label class="status-toggle"><input type="checkbox" data-lost-found-action="toggle-status" data-id="${escape(record.id)}" ${isClosedStatus(record.status) ? "checked" : ""} /><span>${escape(record.status)}</span></label>${closedStamp}</td>
     <td class="row-actions lost-found-actions-compact"><button type="button" data-lost-found-action="edit" data-id="${escape(record.id)}" class="ghost">Edit</button></td>`;
