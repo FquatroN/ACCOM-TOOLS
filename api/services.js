@@ -391,6 +391,9 @@ async function sendServiceNotification({ previousRow, row, settings, actor }) {
     providerEmail,
   ].filter(Boolean)));
   if (!recipients.length) return { skipped: true };
+  if (previousRow && serviceChangedFields(previousRow, row).length === 0) {
+    return { skipped: true, reason: "no_major_field_changes" };
+  }
   const content = previousRow ? serviceUpdatedEmailContent(previousRow, row, actor) : serviceCreatedEmailContent(row, actor);
   return sendWithResend({
     to: recipients,
