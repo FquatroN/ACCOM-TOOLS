@@ -1254,6 +1254,10 @@ select:disabled {
   display: none;
 }
 
+.communications-mobile-cards {
+  display: none;
+}
+
 .service-mobile-card {
   display: grid;
   gap: 0.72rem;
@@ -1352,6 +1356,70 @@ select:disabled {
   background: #fffdfa;
   color: var(--muted);
   text-align: center;
+}
+
+.communication-mobile-card {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid #e2d8cf;
+  border-radius: 14px;
+  background: #fffdfa;
+}
+
+.communication-mobile-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.communication-mobile-meta {
+  color: #7a6553;
+  font-size: 0.84rem;
+}
+
+.communication-mobile-message {
+  color: #2b2014;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.communication-mobile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 0.8rem;
+}
+
+.communication-mobile-field {
+  min-width: 0;
+}
+
+.communication-mobile-field small {
+  display: block;
+  margin-bottom: 0.16rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.communication-mobile-field-full {
+  grid-column: 1 / -1;
+}
+
+.communication-mobile-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.communication-mobile-status {
+  display: grid;
+  gap: 0.25rem;
 }
 
 .inline-request-number {
@@ -2076,12 +2144,23 @@ select:disabled {
     display: none;
   }
 
+  #communications-table-wrap {
+    display: none;
+  }
+
+  .communications-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
   .services-mobile-cards {
     display: grid;
     gap: 0.75rem;
     margin-top: 0.85rem;
   }
 
+  .communication-mobile-grid,
   .service-mobile-grid {
     grid-template-columns: 1fr;
   }

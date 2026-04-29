@@ -591,6 +591,7 @@ const els = {
   addProfile: document.getElementById("add-profile"),
   profilesStatus: document.getElementById("profiles-status"),
   rows: document.getElementById("rows"),
+  communicationsMobileCards: document.getElementById("communications-mobile-cards"),
   lostFoundRows: document.getElementById("lost-found-rows"),
   lostFoundCount: document.getElementById("lost-found-count"),
   lostFoundDbStatus: document.getElementById("lost-found-status"),
@@ -898,6 +899,10 @@ function bindEvents() {
   els.rows.addEventListener("input", onRowDraftInput);
   els.rows.addEventListener("keydown", onRowKeydown);
   els.rows.addEventListener("change", onRowStatusToggle);
+  els.communicationsMobileCards?.addEventListener("click", onRowAction);
+  els.communicationsMobileCards?.addEventListener("input", onRowDraftInput);
+  els.communicationsMobileCards?.addEventListener("keydown", onRowKeydown);
+  els.communicationsMobileCards?.addEventListener("change", onRowStatusToggle);
   els.lostFoundRows.addEventListener("click", onLostFoundAction);
   els.lostFoundRows.addEventListener("input", onLostFoundDraftInput);
   els.lostFoundRows.addEventListener("keydown", onLostFoundKeydown);
@@ -3603,11 +3608,13 @@ function onRowDraftInput(event) {
   const value = field === "status" ? (t.checked ? "Closed" : "Open") : clean(t.value);
   if (scope === "new") {
     state.newDraft[field] = value;
-    t.closest("tr")?.style && (t.closest("tr").style.backgroundColor = "#ffffff");
+    const row = t.closest("tr, .communication-mobile-card");
+    if (row?.style) row.style.backgroundColor = "#ffffff";
   }
   if (scope === "edit" && state.editingId && t.dataset.id === state.editingId) {
     state.editDraft[field] = value;
-    t.closest("tr")?.style && (t.closest("tr").style.backgroundColor = rowBackgroundColor(state.editDraft.status, state.editDraft.category));
+    const row = t.closest("tr, .communication-mobile-card");
+    if (row?.style) row.style.backgroundColor = rowBackgroundColor(state.editDraft.status, state.editDraft.category);
   }
 }
 
@@ -5849,19 +5856,21 @@ function render() {
   if (!canApp("communications")) {
     els.count.textContent = "0 records";
     els.rows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Communications.</td></tr>';
+    if (els.communicationsMobileCards) {
+      els.communicationsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Communications.</div>';
+    }
     return;
   }
   const rows = getFilteredEntries();
   els.count.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   els.rows.innerHTML = "";
+  if (els.communicationsMobileCards) els.communicationsMobileCards.innerHTML = "";
   els.rows.appendChild(buildInlineRow());
+  renderCommunicationsMobileCards(rows);
   if (rows.length === 0) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td colspan="7" class="empty">No communications found.</td>`;
     els.rows.appendChild(tr);
-    updateSortIndicators();
-    syncStickyRows();
-    return;
   }
   rows.forEach((entry) => els.rows.appendChild(state.editingId === entry.id ? buildEditableRow(entry) : buildReadOnlyRow(entry)));
   updateSortIndicators();
@@ -5984,6 +5993,111 @@ function buildEditableRow(entry) {
     <button data-action="cancel-edit" data-id="${entry.id}" class="ghost">Cancel</button></td>`;
   tr.style.backgroundColor = rowBackgroundColor(d.status, d.category);
   return tr;
+}
+
+function renderCommunicationsMobileCards(rows) {
+  if (!els.communicationsMobileCards) return;
+  const list = els.communicationsMobileCards;
+  list.innerHTML = "";
+  list.appendChild(buildCommunicationInlineCard());
+  if (!rows.length) {
+    list.innerHTML += '<div class="services-mobile-empty">No communications found.</div>';
+    return;
+  }
+  rows.forEach((entry) => {
+    list.appendChild(state.editingId === entry.id ? buildCommunicationEditableCard(entry) : buildCommunicationReadOnlyCard(entry));
+  });
+}
+
+function buildCommunicationInlineCard() {
+  const now = new Date();
+  const card = document.createElement("article");
+  card.className = "communication-mobile-card communication-mobile-inline";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div class="service-mobile-request">New row</div>
+      <div class="communication-mobile-meta">${escape(formatDate(now))} ${escape(formatTime(now))}</div>
+    </div>
+    <div class="communication-mobile-grid">
+      <label class="communication-mobile-field">
+        <small>Person</small>
+        <input data-field="person" data-scope="new" value="${escape(state.newDraft.person)}" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Category</small>
+        <select data-field="category" data-scope="new">${getCategories().map((c) => option(c.name, state.newDraft.category)).join("")}</select>
+      </label>
+      <label class="communication-mobile-field communication-mobile-field-full">
+        <small>What happened</small>
+        <textarea data-field="message" data-scope="new" rows="3">${escape(state.newDraft.message)}</textarea>
+      </label>
+    </div>
+    <div class="communication-mobile-footer">
+      <label class="status-toggle"><input type="checkbox" data-field="status" data-scope="new" ${isClosedStatus(state.newDraft.status) ? "checked" : ""} /><span>Closed</span></label>
+      <div class="row-actions"><button type="button" data-action="save-inline">Add</button></div>
+    </div>`;
+  card.style.backgroundColor = "#ffffff";
+  return card;
+}
+
+function buildCommunicationReadOnlyCard(entry) {
+  const card = document.createElement("article");
+  const closedStamp = isClosedStatus(entry.status) ? `<div class="status-closed-at">${escape(formatDateTimeShort(entry.updatedAt || entry.createdAt))}</div>` : "";
+  card.className = "communication-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(entry.person)}</div>
+        <div class="communication-mobile-meta">${escape(entry.date)} ${escape(entry.time)}</div>
+      </div>
+      <span class="chip" style="${chipStyle(getCategory(entry.category).color)}">${escape(entry.category)}</span>
+    </div>
+    <div class="communication-mobile-message">${escape(entry.message)}</div>
+    <div class="communication-mobile-footer">
+      <div class="communication-mobile-status">
+        <label class="status-toggle"><input type="checkbox" data-action="toggle-status" data-id="${entry.id}" ${isClosedStatus(entry.status) ? "checked" : ""} /><span>${escape(entry.status)}</span></label>
+        ${closedStamp}
+      </div>
+      <div class="row-actions">
+        <button data-action="edit" data-id="${entry.id}">Edit</button>
+        <button data-action="delete" data-id="${entry.id}" class="danger">Delete</button>
+      </div>
+    </div>`;
+  card.style.backgroundColor = rowBackgroundColor(entry.status, entry.category);
+  return card;
+}
+
+function buildCommunicationEditableCard(entry) {
+  const d = state.editDraft;
+  const card = document.createElement("article");
+  card.className = "communication-mobile-card communication-mobile-editing";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(entry.date)} ${escape(entry.time)}</div>
+        <div class="communication-mobile-meta">Editing communication</div>
+      </div>
+      <label class="status-toggle"><input type="checkbox" data-field="status" data-scope="edit" data-id="${entry.id}" ${isClosedStatus(d.status) ? "checked" : ""} /><span>Closed</span></label>
+    </div>
+    <div class="communication-mobile-grid">
+      <label class="communication-mobile-field">
+        <small>Person</small>
+        <input data-field="person" data-scope="edit" data-id="${entry.id}" value="${escape(d.person)}" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Category</small>
+        <select data-field="category" data-scope="edit" data-id="${entry.id}">${getCategories().map((c) => option(c.name, d.category)).join("")}</select>
+      </label>
+      <label class="communication-mobile-field communication-mobile-field-full">
+        <small>What happened</small>
+        <textarea data-field="message" data-scope="edit" data-id="${entry.id}" rows="3">${escape(d.message)}</textarea>
+      </label>
+    </div>
+    <div class="communication-mobile-footer">
+      <div class="row-actions">
+        <button data-action="save-edit" data-id="${entry.id}">Save</button>
+        <button data-action="cancel-edit" data-id="${entry.id}" class="ghost">Cancel</button>
+      </div>
+    </div>`;
+  card.style.backgroundColor = rowBackgroundColor(d.status, d.category);
+  return card;
 }
 
 async function importFromExcel(event) {
