@@ -478,6 +478,7 @@ const state = {
   groupSettingsTab: "config",
   groupSettings: clone(DEFAULT_GROUP_SETTINGS),
   groupsShowActive: true,
+  groupFilters: { createdFrom: "", createdTo: "", dateFrom: "", dateTo: "", search: "" },
   services: [],
   servicesLoaded: false,
   serviceSettings: clone(DEFAULT_SERVICE_SETTINGS),
@@ -675,6 +676,11 @@ const els = {
   groupsExportPdf: document.getElementById("groups-export-pdf"),
   groupsCount: document.getElementById("groups-count"),
   groupsRows: document.getElementById("groups-rows"),
+  groupsFilterCreatedFrom: document.getElementById("groups-filter-created-from"),
+  groupsFilterCreatedTo: document.getElementById("groups-filter-created-to"),
+  groupsFilterDateFrom: document.getElementById("groups-filter-date-from"),
+  groupsFilterDateTo: document.getElementById("groups-filter-date-to"),
+  groupsFilterSearch: document.getElementById("groups-filter-search"),
   groupsDepositPercentage: document.getElementById("groups-deposit-percentage"),
   groupsLastPaymentDays: document.getElementById("groups-last-payment-days"),
   groupsEmailTemplate: document.getElementById("groups-email-template"),
@@ -965,6 +971,9 @@ function bindEvents() {
     state.groupsShowActive = els.groupsShowActive.checked;
     renderGroups();
   });
+  [els.groupsFilterCreatedFrom, els.groupsFilterCreatedTo, els.groupsFilterDateFrom, els.groupsFilterDateTo, els.groupsFilterSearch].forEach((el) =>
+    el?.addEventListener("input", onGroupFilterInput)
+  );
   els.groupsRows.addEventListener("click", onGroupRowClick);
   els.groupsRows.closest("table").querySelector("thead").addEventListener("click", onGroupSortToggle);
   els.groupsSettingsConfigTab.addEventListener("click", () => setGroupSettingsTab("config"));
@@ -1878,6 +1887,11 @@ function renderGroupEmailProposalHint() {
 function renderGroups() {
   if (!els.groupsRows || !canApp("groups")) return;
   if (!els.groupEditorModal.hidden) renderGroupDraft();
+  if (els.groupsFilterCreatedFrom) els.groupsFilterCreatedFrom.value = clean(state.groupFilters.createdFrom);
+  if (els.groupsFilterCreatedTo) els.groupsFilterCreatedTo.value = clean(state.groupFilters.createdTo);
+  if (els.groupsFilterDateFrom) els.groupsFilterDateFrom.value = clean(state.groupFilters.dateFrom);
+  if (els.groupsFilterDateTo) els.groupsFilterDateTo.value = clean(state.groupFilters.dateTo);
+  if (els.groupsFilterSearch) els.groupsFilterSearch.value = clean(state.groupFilters.search);
   const rows = getFilteredGroups();
   updateGroupSortIndicators();
   els.groupsCount.textContent = `${rows.length} proposal${rows.length === 1 ? "" : "s"}`;
@@ -1908,9 +1922,40 @@ function renderGroups() {
 
 function getFilteredGroups() {
   const today = formatDate(new Date());
+  const createdFrom = clean(state.groupFilters.createdFrom);
+  const createdTo = clean(state.groupFilters.createdTo);
+  const dateFrom = clean(state.groupFilters.dateFrom);
+  const dateTo = clean(state.groupFilters.dateTo);
+  const searchNeedle = clean(state.groupFilters.search).toLowerCase();
   return state.groups
     .filter((row) => !state.groupsShowActive || clean(row.checkOut) >= today)
+    .filter((row) => {
+      const created = clean(row.creationDate).slice(0, 10);
+      if (createdFrom && (!created || created < createdFrom)) return false;
+      if (createdTo && (!created || created > createdTo)) return false;
+      return true;
+    })
+    .filter((row) => {
+      const checkIn = clean(row.checkIn);
+      const checkOut = clean(row.checkOut);
+      if (dateFrom && checkOut && checkOut < dateFrom) return false;
+      if (dateTo && checkIn && checkIn > dateTo) return false;
+      return true;
+    })
+    .filter((row) => {
+      if (!searchNeedle) return true;
+      return clean(row.name).toLowerCase().includes(searchNeedle) || clean(row.reservationNumber).toLowerCase().includes(searchNeedle);
+    })
     .sort(compareGroupRows);
+}
+
+function onGroupFilterInput() {
+  state.groupFilters.createdFrom = clean(els.groupsFilterCreatedFrom?.value);
+  state.groupFilters.createdTo = clean(els.groupsFilterCreatedTo?.value);
+  state.groupFilters.dateFrom = clean(els.groupsFilterDateFrom?.value);
+  state.groupFilters.dateTo = clean(els.groupsFilterDateTo?.value);
+  state.groupFilters.search = clean(els.groupsFilterSearch?.value);
+  renderGroups();
 }
 
 function compareGroupRows(a, b) {
