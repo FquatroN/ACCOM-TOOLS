@@ -938,9 +938,6 @@ function bindEvents() {
     openGroupModal();
   });
   els.groupCloseModal.addEventListener("click", closeGroupModal);
-  els.groupEditorModal.addEventListener("click", (event) => {
-    if (event.target === els.groupEditorModal) closeGroupModal();
-  });
   els.groupTabDetails.addEventListener("click", () => setGroupEditorTab("details"));
   els.groupTabEmail.addEventListener("click", () => setGroupEditorTab("email"));
   els.groupTabConfirmation.addEventListener("click", () => setGroupEditorTab("confirmation"));
@@ -1004,9 +1001,6 @@ function bindEvents() {
   els.servicesRows.addEventListener("change", onInlineServiceStatusChange);
   els.servicesMobileCards?.addEventListener("change", onInlineServiceStatusChange);
   els.serviceCloseModal.addEventListener("click", closeServiceModal);
-  els.serviceEditorModal.addEventListener("click", (event) => {
-    if (event.target === els.serviceEditorModal) closeServiceModal();
-  });
   [els.serviceType, els.serviceStatus, els.serviceCustomerName, els.serviceCustomerEmail, els.serviceCustomerPhone, els.servicePax, els.serviceDate, els.serviceTime, els.servicePickupLocation, els.serviceDropoffLocation, els.serviceFlightNumber, els.serviceHasReturn, els.servicePrice, els.serviceNotes, els.serviceReturnPickup, els.serviceReturnDropoff, els.serviceReturnDate, els.serviceReturnTime, els.serviceReturnFlight].forEach((el) =>
     el.addEventListener("input", onServiceDraftInput)
   );
