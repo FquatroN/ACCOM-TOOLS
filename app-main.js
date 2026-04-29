@@ -595,6 +595,7 @@ const els = {
   lostFoundOnlyOpen: document.getElementById("lost-found-only-open"),
   lostFoundFilterNumber: document.getElementById("lost-found-filter-number"),
   lostFoundFilterDate: document.getElementById("lost-found-filter-date"),
+  lostFoundFilterDatePicker: document.getElementById("lost-found-filter-date-picker"),
   lostFoundFilterWhoFound: document.getElementById("lost-found-filter-who-found"),
   lostFoundFilterWhoRecorded: document.getElementById("lost-found-filter-who-recorded"),
   lostFoundFilterWhere: document.getElementById("lost-found-filter-where"),
@@ -610,7 +611,9 @@ const els = {
   statusFilter: document.getElementById("status-filter"),
   categoryFilter: document.getElementById("category-filter"),
   fromDate: document.getElementById("from-date"),
+  fromDatePicker: document.getElementById("from-date-picker"),
   toDate: document.getElementById("to-date"),
+  toDatePicker: document.getElementById("to-date-picker"),
   excelInput: document.getElementById("excel-input"),
   exportCsv: document.getElementById("export-csv"),
   dbStatus: document.getElementById("db-status"),
@@ -677,9 +680,13 @@ const els = {
   groupsCount: document.getElementById("groups-count"),
   groupsRows: document.getElementById("groups-rows"),
   groupsFilterCreatedFrom: document.getElementById("groups-filter-created-from"),
+  groupsFilterCreatedFromPicker: document.getElementById("groups-filter-created-from-picker"),
   groupsFilterCreatedTo: document.getElementById("groups-filter-created-to"),
+  groupsFilterCreatedToPicker: document.getElementById("groups-filter-created-to-picker"),
   groupsFilterDateFrom: document.getElementById("groups-filter-date-from"),
+  groupsFilterDateFromPicker: document.getElementById("groups-filter-date-from-picker"),
   groupsFilterDateTo: document.getElementById("groups-filter-date-to"),
+  groupsFilterDateToPicker: document.getElementById("groups-filter-date-to-picker"),
   groupsFilterSearch: document.getElementById("groups-filter-search"),
   groupsDepositPercentage: document.getElementById("groups-deposit-percentage"),
   groupsLastPaymentDays: document.getElementById("groups-last-payment-days"),
@@ -789,7 +796,9 @@ const els = {
   reviewsSourceFilter: document.getElementById("reviews-source-filter"),
   reviewsSearch: document.getElementById("reviews-search"),
   reviewsFromDate: document.getElementById("reviews-from-date"),
+  reviewsFromDatePicker: document.getElementById("reviews-from-date-picker"),
   reviewsToDate: document.getElementById("reviews-to-date"),
+  reviewsToDatePicker: document.getElementById("reviews-to-date-picker"),
   reviewsScoreFrom: document.getElementById("reviews-score-from"),
   reviewsScoreTo: document.getElementById("reviews-score-to"),
   reviewsCount: document.getElementById("reviews-count"),
@@ -906,14 +915,17 @@ function bindEvents() {
     render();
     showToast("Default sort applied: Date/Time newest first.", "info");
   });
-  [els.search, els.showActive, els.statusFilter, els.categoryFilter, els.fromDate, els.toDate].forEach((el) =>
+  [els.search, els.showActive, els.statusFilter, els.categoryFilter].forEach((el) =>
     el.addEventListener("input", render)
   );
   els.showActive.addEventListener("change", render);
+  els.fromDate?.addEventListener("input", onCommunicationsDateFilterInput);
+  els.toDate?.addEventListener("input", onCommunicationsDateFilterInput);
+  els.fromDatePicker?.addEventListener("input", () => onDatePickerFieldInput(els.fromDate, els.fromDatePicker, render));
+  els.toDatePicker?.addEventListener("input", () => onDatePickerFieldInput(els.toDate, els.toDatePicker, render));
   [
     els.lostFoundOnlyOpen,
     els.lostFoundFilterNumber,
-    els.lostFoundFilterDate,
     els.lostFoundFilterWhoFound,
     els.lostFoundFilterWhoRecorded,
     els.lostFoundFilterWhere,
@@ -923,6 +935,8 @@ function bindEvents() {
   ].forEach((el) => el.addEventListener("input", renderLostFound));
   els.lostFoundOnlyOpen.addEventListener("change", renderLostFound);
   els.lostFoundFilterStored.addEventListener("change", renderLostFound);
+  els.lostFoundFilterDate?.addEventListener("input", onLostFoundDateFilterInput);
+  els.lostFoundFilterDatePicker?.addEventListener("input", () => onDatePickerFieldInput(els.lostFoundFilterDate, els.lostFoundFilterDatePicker, renderLostFound));
   els.excelInput.addEventListener("change", importFromExcel);
   els.exportCsv.addEventListener("click", exportToCsv);
   els.authLogout.addEventListener("click", signOut);
@@ -973,6 +987,9 @@ function bindEvents() {
   });
   [els.groupsFilterCreatedFrom, els.groupsFilterCreatedTo, els.groupsFilterDateFrom, els.groupsFilterDateTo, els.groupsFilterSearch].forEach((el) =>
     el?.addEventListener("input", onGroupFilterInput)
+  );
+  [els.groupsFilterCreatedFromPicker, els.groupsFilterCreatedToPicker, els.groupsFilterDateFromPicker, els.groupsFilterDateToPicker].forEach((el) =>
+    el?.addEventListener("input", onGroupFilterPickerInput)
   );
   els.groupsRows.addEventListener("click", onGroupRowClick);
   els.groupsRows.closest("table").querySelector("thead").addEventListener("click", onGroupSortToggle);
@@ -1046,9 +1063,13 @@ function bindEvents() {
   els.reviewsScreenResume.addEventListener("click", () => setReviewScreen("resume"));
   els.reviewsScreenRating.addEventListener("click", () => setReviewScreen("rating"));
   els.reviewsQaSubmit.addEventListener("click", submitReviewQuestion);
-  [els.reviewsPropertyFilter, els.reviewsSourceFilter, els.reviewsSearch, els.reviewsFromDate, els.reviewsToDate, els.reviewsScoreFrom, els.reviewsScoreTo].forEach((el) =>
+  [els.reviewsPropertyFilter, els.reviewsSourceFilter, els.reviewsSearch, els.reviewsScoreFrom, els.reviewsScoreTo].forEach((el) =>
     el.addEventListener("input", onReviewFilterInput)
   );
+  els.reviewsFromDate?.addEventListener("input", onReviewDateFilterInput);
+  els.reviewsToDate?.addEventListener("input", onReviewDateFilterInput);
+  els.reviewsFromDatePicker?.addEventListener("input", () => onDatePickerFieldInput(els.reviewsFromDate, els.reviewsFromDatePicker, onReviewFilterInput));
+  els.reviewsToDatePicker?.addEventListener("input", () => onDatePickerFieldInput(els.reviewsToDate, els.reviewsToDatePicker, onReviewFilterInput));
   els.reviewsRefresh.addEventListener("click", async () => {
     await loadReviews({ useFilters: true });
     render();
@@ -1887,10 +1908,10 @@ function renderGroupEmailProposalHint() {
 function renderGroups() {
   if (!els.groupsRows || !canApp("groups")) return;
   if (!els.groupEditorModal.hidden) renderGroupDraft();
-  if (els.groupsFilterCreatedFrom) els.groupsFilterCreatedFrom.value = clean(state.groupFilters.createdFrom);
-  if (els.groupsFilterCreatedTo) els.groupsFilterCreatedTo.value = clean(state.groupFilters.createdTo);
-  if (els.groupsFilterDateFrom) els.groupsFilterDateFrom.value = clean(state.groupFilters.dateFrom);
-  if (els.groupsFilterDateTo) els.groupsFilterDateTo.value = clean(state.groupFilters.dateTo);
+  syncDateFilterFieldPair(els.groupsFilterCreatedFrom, els.groupsFilterCreatedFromPicker, state.groupFilters.createdFrom);
+  syncDateFilterFieldPair(els.groupsFilterCreatedTo, els.groupsFilterCreatedToPicker, state.groupFilters.createdTo);
+  syncDateFilterFieldPair(els.groupsFilterDateFrom, els.groupsFilterDateFromPicker, state.groupFilters.dateFrom);
+  syncDateFilterFieldPair(els.groupsFilterDateTo, els.groupsFilterDateToPicker, state.groupFilters.dateTo);
   if (els.groupsFilterSearch) els.groupsFilterSearch.value = clean(state.groupFilters.search);
   const rows = getFilteredGroups();
   updateGroupSortIndicators();
@@ -1950,12 +1971,31 @@ function getFilteredGroups() {
 }
 
 function onGroupFilterInput() {
-  state.groupFilters.createdFrom = clean(els.groupsFilterCreatedFrom?.value);
-  state.groupFilters.createdTo = clean(els.groupsFilterCreatedTo?.value);
-  state.groupFilters.dateFrom = clean(els.groupsFilterDateFrom?.value);
-  state.groupFilters.dateTo = clean(els.groupsFilterDateTo?.value);
+  state.groupFilters.createdFrom = syncDateFilterFieldPair(els.groupsFilterCreatedFrom, els.groupsFilterCreatedFromPicker, els.groupsFilterCreatedFrom?.value);
+  state.groupFilters.createdTo = syncDateFilterFieldPair(els.groupsFilterCreatedTo, els.groupsFilterCreatedToPicker, els.groupsFilterCreatedTo?.value);
+  state.groupFilters.dateFrom = syncDateFilterFieldPair(els.groupsFilterDateFrom, els.groupsFilterDateFromPicker, els.groupsFilterDateFrom?.value);
+  state.groupFilters.dateTo = syncDateFilterFieldPair(els.groupsFilterDateTo, els.groupsFilterDateToPicker, els.groupsFilterDateTo?.value);
   state.groupFilters.search = clean(els.groupsFilterSearch?.value);
   renderGroups();
+}
+
+function onGroupFilterPickerInput(event) {
+  const picker = event?.target;
+  if (picker === els.groupsFilterCreatedFromPicker) {
+    onDatePickerFieldInput(els.groupsFilterCreatedFrom, els.groupsFilterCreatedFromPicker, onGroupFilterInput);
+    return;
+  }
+  if (picker === els.groupsFilterCreatedToPicker) {
+    onDatePickerFieldInput(els.groupsFilterCreatedTo, els.groupsFilterCreatedToPicker, onGroupFilterInput);
+    return;
+  }
+  if (picker === els.groupsFilterDateFromPicker) {
+    onDatePickerFieldInput(els.groupsFilterDateFrom, els.groupsFilterDateFromPicker, onGroupFilterInput);
+    return;
+  }
+  if (picker === els.groupsFilterDateToPicker) {
+    onDatePickerFieldInput(els.groupsFilterDateTo, els.groupsFilterDateToPicker, onGroupFilterInput);
+  }
 }
 
 function compareGroupRows(a, b) {
@@ -3904,7 +3944,7 @@ async function saveLostFoundEdit(id) {
 
 function getFilteredLostFoundRecords() {
   const number = clean(els.lostFoundFilterNumber.value).toLowerCase();
-  const date = clean(els.lostFoundFilterDate.value);
+  const date = parseUiDateInputValue(els.lostFoundFilterDate?.value);
   const whoFound = clean(els.lostFoundFilterWhoFound.value).toLowerCase();
   const whoRecorded = clean(els.lostFoundFilterWhoRecorded.value).toLowerCase();
   const where = clean(els.lostFoundFilterWhere.value).toLowerCase();
@@ -3938,8 +3978,8 @@ function getFilteredEntries() {
   const showActive = !!els.showActive.checked;
   const status = clean(els.statusFilter.value);
   const category = clean(els.categoryFilter.value);
-  const from = clean(els.fromDate.value);
-  const to = clean(els.toDate.value);
+  const from = parseUiDateInputValue(els.fromDate?.value);
+  const to = parseUiDateInputValue(els.toDate?.value);
   const filtered = state.entries.filter((e) => {
     const text = `${e.person} ${e.message}`.toLowerCase();
     return (!showActive || isEntryActive(e)) &&
@@ -5821,6 +5861,8 @@ function render() {
     els.rows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Communications.</td></tr>';
     return;
   }
+  syncDateFilterFieldPair(els.fromDate, els.fromDatePicker, els.fromDate?.value);
+  syncDateFilterFieldPair(els.toDate, els.toDatePicker, els.toDate?.value);
   const rows = getFilteredEntries();
   els.count.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   els.rows.innerHTML = "";
@@ -5844,6 +5886,7 @@ function renderLostFound() {
     els.lostFoundRows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Lost&Found.</td></tr>';
     return;
   }
+  syncDateFilterFieldPair(els.lostFoundFilterDate, els.lostFoundFilterDatePicker, els.lostFoundFilterDate?.value);
   const rows = getFilteredLostFoundRecords();
   els.lostFoundCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   els.lostFoundRows.innerHTML = "";
@@ -5859,6 +5902,16 @@ function renderLostFound() {
       state.lostFoundEditingId === record.id ? buildLostFoundEditableRow(record) : buildLostFoundReadOnlyRow(record)
     );
   });
+}
+
+function onCommunicationsDateFilterInput(event) {
+  const textInput = event?.target;
+  const pickerInput = textInput === els.toDate ? els.toDatePicker : els.fromDatePicker;
+  onDateTextFieldInput(textInput, pickerInput, render);
+}
+
+function onLostFoundDateFilterInput(event) {
+  onDateTextFieldInput(event?.target, els.lostFoundFilterDatePicker, renderLostFound);
 }
 
 function buildLostFoundInlineRow() {
@@ -6416,6 +6469,36 @@ function formatDate(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function parseUiDateInputValue(value) {
+  return parseGroupDateInput(value) || parseServiceDateInput(value) || "";
+}
+
+function formatUiDateInputValue(value) {
+  const parsed = parseUiDateInputValue(value);
+  return parsed ? formatServiceDateInput(parsed) : clean(value);
+}
+
+function syncDateFilterFieldPair(textInput, pickerInput, value) {
+  const parsed = parseUiDateInputValue(value);
+  if (textInput) textInput.value = parsed ? formatUiDateInputValue(parsed) : clean(value);
+  if (pickerInput) pickerInput.value = parsed;
+  return parsed;
+}
+
+function onDateTextFieldInput(textInput, pickerInput, callback) {
+  if (!textInput) return;
+  const parsed = parseUiDateInputValue(textInput.value);
+  if (pickerInput) pickerInput.value = parsed;
+  if (parsed) textInput.value = formatUiDateInputValue(parsed);
+  callback?.();
+}
+
+function onDatePickerFieldInput(textInput, pickerInput, callback) {
+  if (!pickerInput) return;
+  syncDateFilterFieldPair(textInput, pickerInput, pickerInput.value);
+  callback?.();
+}
+
 function formatTime(date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
@@ -6439,7 +6522,7 @@ function applyDefaultReviewDateFilter() {
   const today = new Date();
   const defaultFrom = new Date(today.getFullYear() - 1, 0, 1);
   state.reviewFilters.dateFrom = formatDate(defaultFrom);
-  if (els.reviewsFromDate) els.reviewsFromDate.value = state.reviewFilters.dateFrom;
+  syncDateFilterFieldPair(els.reviewsFromDate, els.reviewsFromDatePicker, state.reviewFilters.dateFrom);
 }
 
 function setReviewScreen(screen) {
@@ -6482,13 +6565,19 @@ function onReviewFilterInput() {
   state.reviewFilters.propertyId = clean(els.reviewsPropertyFilter.value);
   state.reviewFilters.source = clean(els.reviewsSourceFilter.value);
   state.reviewFilters.search = clean(els.reviewsSearch.value).toLowerCase();
-  state.reviewFilters.dateFrom = clean(els.reviewsFromDate.value);
-  state.reviewFilters.dateTo = clean(els.reviewsToDate.value);
+  state.reviewFilters.dateFrom = syncDateFilterFieldPair(els.reviewsFromDate, els.reviewsFromDatePicker, els.reviewsFromDate?.value);
+  state.reviewFilters.dateTo = syncDateFilterFieldPair(els.reviewsToDate, els.reviewsToDatePicker, els.reviewsToDate?.value);
   state.reviewFilters.scoreFrom = clean(els.reviewsScoreFrom.value);
   state.reviewFilters.scoreTo = clean(els.reviewsScoreTo.value);
   state.reviewListPage = 1;
   if (state.reviewScreen !== "list") state.reviewSelectedId = "";
   renderReviews();
+}
+
+function onReviewDateFilterInput(event) {
+  const textInput = event?.target;
+  const pickerInput = textInput === els.reviewsToDate ? els.reviewsToDatePicker : els.reviewsFromDatePicker;
+  onDateTextFieldInput(textInput, pickerInput, onReviewFilterInput);
 }
 
 async function loadReviewProperties() {
@@ -6620,6 +6709,8 @@ function renderReviews() {
     return;
   }
   setReviewScreen(state.reviewScreen);
+  syncDateFilterFieldPair(els.reviewsFromDate, els.reviewsFromDatePicker, state.reviewFilters.dateFrom);
+  syncDateFilterFieldPair(els.reviewsToDate, els.reviewsToDatePicker, state.reviewFilters.dateTo);
   renderReviewPropertyOptions();
   renderReviewSettings();
   const rows = getFilteredReviews();
