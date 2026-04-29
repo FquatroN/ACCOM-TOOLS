@@ -1262,6 +1262,10 @@ select:disabled {
   display: none;
 }
 
+.groups-mobile-cards {
+  display: none;
+}
+
 .service-mobile-card {
   display: grid;
   gap: 0.72rem;
@@ -1433,6 +1437,43 @@ select:disabled {
   border: 1px solid #e2d8cf;
   border-radius: 14px;
   background: #fffdfa;
+}
+
+.group-mobile-card {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid #e2d8cf;
+  border-radius: 14px;
+  background: #fffdfa;
+  cursor: pointer;
+}
+
+.group-mobile-card.selected-card {
+  border-color: #a7d4bf;
+  background: #f3fbf7;
+}
+
+.group-mobile-card.accepted-row {
+  background: rgba(46, 159, 66, 0.18);
+}
+
+.group-mobile-card.refused-row {
+  background: rgba(212, 76, 76, 0.2);
+}
+
+.group-mobile-total {
+  text-align: right;
+}
+
+.group-mobile-total strong,
+.group-mobile-total small {
+  display: block;
+}
+
+.group-mobile-total small {
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .inline-request-number {
@@ -2165,6 +2206,10 @@ select:disabled {
     display: none;
   }
 
+  #view-groups .table-wrap {
+    display: none;
+  }
+
   .communications-mobile-cards {
     display: grid;
     gap: 0.75rem;
@@ -2172,6 +2217,12 @@ select:disabled {
   }
 
   .lost-found-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
+  .groups-mobile-cards {
     display: grid;
     gap: 0.75rem;
     margin-top: 0.85rem;

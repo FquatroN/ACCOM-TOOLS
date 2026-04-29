@@ -678,6 +678,7 @@ const els = {
   groupsExportPdf: document.getElementById("groups-export-pdf"),
   groupsCount: document.getElementById("groups-count"),
   groupsRows: document.getElementById("groups-rows"),
+  groupsMobileCards: document.getElementById("groups-mobile-cards"),
   groupsStatusFooter: document.getElementById("groups-status-footer"),
   groupsFilterCreatedFrom: document.getElementById("groups-filter-created-from"),
   groupsFilterCreatedTo: document.getElementById("groups-filter-created-to"),
@@ -981,6 +982,7 @@ function bindEvents() {
     el?.addEventListener("input", onGroupFilterInput)
   );
   els.groupsRows.addEventListener("click", onGroupRowClick);
+  els.groupsMobileCards?.addEventListener("click", onGroupRowClick);
   els.groupsRows.closest("table").querySelector("thead").addEventListener("click", onGroupSortToggle);
   els.groupsSettingsConfigTab.addEventListener("click", () => setGroupSettingsTab("config"));
   els.groupsSettingsProposalTab.addEventListener("click", () => setGroupSettingsTab("proposal"));
@@ -1934,8 +1936,12 @@ function renderGroups() {
   updateGroupSortIndicators();
   els.groupsCount.textContent = `${rows.length} proposal${rows.length === 1 ? "" : "s"}`;
   els.groupsRows.innerHTML = "";
+  if (els.groupsMobileCards) els.groupsMobileCards.innerHTML = "";
   if (rows.length === 0) {
     els.groupsRows.innerHTML = '<tr><td colspan="9" class="empty">No group proposals found.</td></tr>';
+    if (els.groupsMobileCards) {
+      els.groupsMobileCards.innerHTML = '<div class="services-mobile-empty">No group proposals found.</div>';
+    }
     return;
   }
   rows.forEach((row) => {
@@ -1955,7 +1961,56 @@ function renderGroups() {
       <td>${escape(row.optionDate || "-")}</td>
       <td>${escape(row.reservationNumber || "-")}</td>`;
     els.groupsRows.appendChild(tr);
+    if (els.groupsMobileCards) {
+      els.groupsMobileCards.appendChild(buildGroupMobileCard(row));
+    }
   });
+}
+
+function buildGroupMobileCard(row) {
+  const roomTypeSummary = groupRoomTypeSummary(row.roomItems);
+  const roomSummary = groupRoomSelectionSummary(row.roomItems);
+  const card = document.createElement("article");
+  const statusClass = row.status === "Accepted" ? " accepted-row" : row.status === "Refused" ? " refused-row" : "";
+  card.className = `group-mobile-card${statusClass}${row.id === state.groupSelectedId ? " selected-card" : ""}`;
+  card.dataset.groupId = row.id;
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(row.name)}</div>
+        <div class="communication-mobile-meta">Created: ${escape(formatDateOnly(row.creationDate))}</div>
+      </div>
+      <div class="group-mobile-total">
+        <strong>${escape(formatMoney(row.totalValue))}</strong>
+        <small>${escape(groupDepositText(row.totalValue))}</small>
+      </div>
+    </div>
+    <div class="communication-mobile-grid">
+      <div class="communication-mobile-field">
+        <small>Dates</small>
+        <div class="communication-mobile-message">${escape(formatGroupDateDisplay(row.checkIn))} - ${escape(formatGroupDateDisplay(row.checkOut))}<br><small>${escape(String(dateDiffDays(row.checkIn, row.checkOut)))} nights</small></div>
+      </div>
+      <div class="communication-mobile-field">
+        <small>Guests</small>
+        <div class="communication-mobile-message">${escape(String(row.guests || 0))}</div>
+      </div>
+      <div class="communication-mobile-field">
+        <small>Option</small>
+        <div class="communication-mobile-message">${escape(row.optionDate || "-")}</div>
+      </div>
+      <div class="communication-mobile-field">
+        <small>Reservation</small>
+        <div class="communication-mobile-message">${escape(row.reservationNumber || "-")}</div>
+      </div>
+      <div class="communication-mobile-field communication-mobile-field-full">
+        <small>Room Types</small>
+        <div class="communication-mobile-message">${escape(roomTypeSummary || "-")}</div>
+      </div>
+      <div class="communication-mobile-field communication-mobile-field-full">
+        <small>Rooms</small>
+        <div class="communication-mobile-message">${escape(roomSummary || "-")}</div>
+      </div>
+    </div>`;
+  return card;
 }
 
 function getFilteredGroups() {
@@ -2896,7 +2951,7 @@ function onGroupRoomItemAction(event) {
 }
 
 async function onGroupRowClick(event) {
-  const row = event.target.closest("tr[data-group-id]");
+  const row = event.target.closest("[data-group-id]");
   if (!row) return;
   const group = state.groups.find((item) => item.id === clean(row.dataset.groupId));
   if (!group) return;
