@@ -674,6 +674,7 @@ const els = {
   groupsExportPdf: document.getElementById("groups-export-pdf"),
   groupsCount: document.getElementById("groups-count"),
   groupsRows: document.getElementById("groups-rows"),
+  groupsStatusFooter: document.getElementById("groups-status-footer"),
   groupsFilterCreatedFrom: document.getElementById("groups-filter-created-from"),
   groupsFilterCreatedTo: document.getElementById("groups-filter-created-to"),
   groupsFilterDateFrom: document.getElementById("groups-filter-date-from"),
@@ -8526,9 +8527,15 @@ function isErrorStatusMessage(text) {
 }
 
 function setGroupsStatus(text) {
-  if (!els.groupsStatus) return;
-  els.groupsStatus.textContent = text;
-  els.groupsStatus.classList.toggle("status-error", isErrorStatusMessage(text));
+  const isError = isErrorStatusMessage(text);
+  if (els.groupsStatus) {
+    els.groupsStatus.textContent = text;
+    els.groupsStatus.classList.toggle("status-error", isError);
+  }
+  if (els.groupsStatusFooter) {
+    els.groupsStatusFooter.textContent = text;
+    els.groupsStatusFooter.classList.toggle("status-error", isError);
+  }
 }
 
 function setGroupsSettingsStatus(text) {

@@ -450,6 +450,16 @@ button.danger {
   color: #c2410c;
 }
 
+.group-editor-footer {
+  align-items: center;
+}
+
+.group-footer-status {
+  margin: 0;
+  margin-right: auto;
+  text-align: right;
+}
+
 .file-btn {
   position: relative;
   overflow: hidden;
