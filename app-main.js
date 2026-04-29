@@ -2873,6 +2873,9 @@ function groupDraftPayload(previous = null) {
   const draft = state.groupDraft;
   if (!draft.name) return setGroupsStatus("Name is required."), null;
   if (!draft.email || !draft.email.includes("@")) return setGroupsStatus("A valid email is required."), null;
+  if (normalizeGroupStatus(draft.status) === "Accepted" && !clean(draft.reservationNumber)) {
+    return setGroupsStatus("Reservation Number is required when the proposal is Accepted."), null;
+  }
   if (!draft.checkIn || !draft.checkOut) return setGroupsStatus("Check-in and check-out are required."), null;
   if (draft.checkOut <= draft.checkIn) return setGroupsStatus("Check-out must be after check-in."), null;
   const guests = normalizeGroupGuests(draft.guests);
