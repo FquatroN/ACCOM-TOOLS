@@ -894,6 +894,11 @@ td {
   max-width: 980px;
 }
 
+.review-modal-card {
+  margin: 0 auto;
+  max-width: 980px;
+}
+
 .service-editor-tabs {
   margin: 0.8rem 0 1rem;
 }
@@ -2318,7 +2323,8 @@ select:disabled {
   }
 
   .group-modal-card,
-  .service-modal-card {
+  .service-modal-card,
+  .review-modal-card {
     margin: 0;
   }
 

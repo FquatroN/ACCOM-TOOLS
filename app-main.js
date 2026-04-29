@@ -808,6 +808,8 @@ const els = {
   reviewsRows: document.getElementById("reviews-rows"),
   reviewsResumeRows: document.getElementById("reviews-resume-rows"),
   reviewsResumeStatus: document.getElementById("reviews-resume-status"),
+  reviewDetailModal: document.getElementById("review-detail-modal"),
+  reviewDetailClose: document.getElementById("review-detail-close"),
   reviewsDetail: document.getElementById("reviews-detail"),
   reviewsStatus: document.getElementById("reviews-status"),
   reviewsQaPrompt: document.getElementById("reviews-qa-prompt"),
@@ -1059,6 +1061,7 @@ function bindEvents() {
     render();
   });
   els.reviewsRows.addEventListener("click", onReviewRowClick);
+  els.reviewDetailClose.addEventListener("click", closeReviewDetailModal);
   els.reviewsExport.addEventListener("click", exportReviewsToCsv);
   els.reviewsPrevPage.addEventListener("click", () => setReviewListPage(state.reviewListPage - 1));
   els.reviewsNextPage.addEventListener("click", () => setReviewListPage(state.reviewListPage + 1));
@@ -6814,6 +6817,7 @@ function setReviewScreen(screen) {
   els.reviewsScreenPanelList.hidden = state.reviewScreen !== "list";
   els.reviewsScreenPanelResume.hidden = state.reviewScreen !== "resume";
   els.reviewsScreenPanelRating.hidden = state.reviewScreen !== "rating";
+  if (state.reviewScreen !== "list") closeReviewDetailModal();
   renderReviewQa();
 }
 
@@ -6991,7 +6995,7 @@ function renderReviews() {
   const visibleRows = getReviewListPageRows(rows);
   renderReviewRows(visibleRows);
   renderReviewPagination(rows.length);
-  renderReviewDetail(rows);
+  syncReviewDetailModal(rows);
   renderReviewResume(rows);
   renderReviewAnalysisChart(rows);
   renderReviewQa();
@@ -7265,38 +7269,63 @@ function setReviewListPage(page) {
   renderReviews();
 }
 
-function renderReviewDetail(rows) {
+function findReviewById(reviewId, rows = state.reviews) {
+  const id = clean(reviewId);
+  if (!id) return null;
+  return rows.find((row) => clean(row.id) === id) || null;
+}
+
+function openReviewDetailModal() {
+  if (!els.reviewDetailModal) return;
+  els.reviewDetailModal.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
+function closeReviewDetailModal() {
+  if (!els.reviewDetailModal) return;
+  els.reviewDetailModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function renderReviewDetail(review) {
   if (!els.reviewsDetail) return;
-  const selected = rows.find((row) => clean(row.id) === clean(state.reviewSelectedId)) || rows[0] || null;
-  if (!selected) {
-    state.reviewSelectedId = "";
+  if (!review) {
     els.reviewsDetail.className = "review-detail empty";
     els.reviewsDetail.textContent = "Select a review to see the full detail.";
     return;
   }
-  state.reviewSelectedId = clean(selected.id);
   const meta = [
-    ["Date", clean(selected.review_date) || "-"],
-    ["Property", clean(selected.properties?.name || reviewPropertyName(selected.property_id) || "-")],
-    ["Reviewer", clean(selected.reviewer_name) || "Anonymous"],
-    ["Source", reviewSourceLabel(selected.source)],
-    ["Score", formatReviewScore(selected.rating_normalized_100, selected.rating_raw, selected.rating_scale)],
+    ["Date", clean(review.review_date) || "-"],
+    ["Property", clean(review.properties?.name || reviewPropertyName(review.property_id) || "-")],
+    ["Reviewer", clean(review.reviewer_name) || "Anonymous"],
+    ["Source", reviewSourceLabel(review.source)],
+    ["Score", formatReviewScore(review.rating_normalized_100, review.rating_raw, review.rating_scale)],
   ];
-  const reservationValue = clean(selected.source_reservation_id) || (clean(selected.source).toLowerCase() === "hostelworld" ? clean(selected.source_review_id) : "");
+  const reservationValue = clean(review.source_reservation_id) || (clean(review.source).toLowerCase() === "hostelworld" ? clean(review.source_review_id) : "");
   if (reservationValue) meta.push(["Booking / Reservation", reservationValue]);
-  else if (clean(selected.source_review_id)) meta.push(["Source Reference", clean(selected.source_review_id)]);
+  else if (clean(review.source_review_id)) meta.push(["Source Reference", clean(review.source_review_id)]);
   const detail = [
-    `<p class="review-detail-title"><strong>${escape(clean(selected.title) || "(no title)")}</strong></p>`,
+    `<p class="review-detail-title"><strong>${escape(clean(review.title) || "(no title)")}</strong></p>`,
     `<div class="review-detail-meta">${meta.map(([label, value]) => `<div class="review-detail-meta-item"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join("")}</div>`,
   ];
-  const subscoreHtml = renderReviewSubscores(selected.subscores);
+  const subscoreHtml = renderReviewSubscores(review.subscores);
   if (subscoreHtml) detail.push(`<div class="review-detail-section"><strong>Partial scores:</strong>${subscoreHtml}</div>`);
-  if (clean(selected.positive_review_text)) detail.push(`<p class="review-detail-section"><strong>Positive:</strong> ${escape(clean(selected.positive_review_text))}</p>`);
-  if (clean(selected.negative_review_text)) detail.push(`<p class="review-detail-section"><strong>Negative:</strong> ${escape(clean(selected.negative_review_text))}</p>`);
-  if (clean(selected.body)) detail.push(`<p class="review-detail-section"><strong>Full review:</strong><br />${escape(clean(selected.body))}</p>`);
-  if (clean(selected.host_reply_text)) detail.push(`<p class="review-detail-section"><strong>Property reply:</strong><br />${escape(clean(selected.host_reply_text))}</p>`);
+  if (clean(review.positive_review_text)) detail.push(`<p class="review-detail-section"><strong>Positive:</strong> ${escape(clean(review.positive_review_text))}</p>`);
+  if (clean(review.negative_review_text)) detail.push(`<p class="review-detail-section"><strong>Negative:</strong> ${escape(clean(review.negative_review_text))}</p>`);
+  if (clean(review.body)) detail.push(`<p class="review-detail-section"><strong>Full review:</strong><br />${escape(clean(review.body))}</p>`);
+  if (clean(review.host_reply_text)) detail.push(`<p class="review-detail-section"><strong>Property reply:</strong><br />${escape(clean(review.host_reply_text))}</p>`);
   els.reviewsDetail.className = "review-detail";
   els.reviewsDetail.innerHTML = detail.join("");
+}
+
+function syncReviewDetailModal(rows) {
+  if (!els.reviewDetailModal || els.reviewDetailModal.hidden) return;
+  const selected = findReviewById(state.reviewSelectedId, rows);
+  if (!selected) {
+    closeReviewDetailModal();
+    return;
+  }
+  renderReviewDetail(selected);
 }
 
 function renderReviewResume(rows) {
@@ -7786,7 +7815,10 @@ function onReviewRowClick(event) {
   const row = event.target.closest("tr[data-review-id]");
   if (!row) return;
   state.reviewSelectedId = clean(row.dataset.reviewId);
+  const selected = findReviewById(state.reviewSelectedId, getFilteredReviews());
   renderReviews();
+  renderReviewDetail(selected);
+  openReviewDetailModal();
 }
 
 async function createReviewProperty() {

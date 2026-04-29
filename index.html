@@ -556,13 +556,6 @@
                 </div>
                 <p id="reviews-status" class="auth-status"></p>
               </section>
-
-              <section class="card">
-                <div class="bar">
-                  <h2>Review Detail</h2>
-                </div>
-                <div id="reviews-detail" class="review-detail empty">Select a review to see the full detail.</div>
-              </section>
             </section>
 
             <section id="reviews-screen-panel-resume" class="view-panel" hidden>
@@ -652,6 +645,18 @@
                 </div>
                 <div id="reviews-qa-answer" class="review-detail empty">Ask a question to analyze the filtered reviews.</div>
               </section>
+            </section>
+          </section>
+
+          <section id="review-detail-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card review-modal-card">
+              <div class="bar">
+                <h2>Review Detail</h2>
+                <div class="actions">
+                  <button id="review-detail-close" type="button" class="ghost">Close</button>
+                </div>
+              </div>
+              <div id="reviews-detail" class="review-detail empty">Select a review to see the full detail.</div>
             </section>
           </section>
         </section>
