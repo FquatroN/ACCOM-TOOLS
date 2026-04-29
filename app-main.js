@@ -2036,6 +2036,20 @@ function groupExportRows() {
   }));
 }
 
+function groupFilterSummaryParts() {
+  const parts = [state.groupsShowActive ? "Active only" : "All proposals"];
+  if (clean(state.groupFilters.createdFrom) || clean(state.groupFilters.createdTo)) {
+    parts.push(`Created: ${clean(state.groupFilters.createdFrom) || "-"} to ${clean(state.groupFilters.createdTo) || "-"}`);
+  }
+  if (clean(state.groupFilters.dateFrom) || clean(state.groupFilters.dateTo)) {
+    parts.push(`Dates: ${clean(state.groupFilters.dateFrom) || "-"} to ${clean(state.groupFilters.dateTo) || "-"}`);
+  }
+  if (clean(state.groupFilters.search)) {
+    parts.push(`Search: ${clean(state.groupFilters.search)}`);
+  }
+  return parts;
+}
+
 function exportGroupsToExcel() {
   const rows = groupExportRows();
   const headers = ["Created", "Name", "Email", "Check-in", "Check-out", "Nights", "Guests", "Status", "Language", "Total", "Deposit", "Room Types", "Rooms", "Option", "Reservation", "Observation"];
@@ -2070,6 +2084,7 @@ function exportGroupsToExcel() {
 function exportGroupsToPdf() {
   const rows = groupExportRows();
   const date = formatGroupDateDisplay(formatDate(new Date()));
+  const filterSummary = groupFilterSummaryParts().join(" · ");
   const tableRows = rows.map((row) => `<tr class="${row.status === "Accepted" ? "accepted" : row.status === "Refused" ? "refused" : ""}">
     <td>${escape(row.created)}</td>
     <td>${escape(row.name)}</td>
@@ -2095,7 +2110,8 @@ function exportGroupsToPdf() {
           .toolbar span { color: #5f554c; font-size: 13px; }
           h1 { margin: 0 0 4px; font-size: 22px; }
           p { margin: 0 0 14px; color: #666; }
-          body > p:not(.summary) { display: none; }
+          .filters { margin-top: -8px; margin-bottom: 14px; color: #5f554c; font-size: 12px; }
+          body > p:not(.summary):not(.filters) { display: none; }
           table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
           th { background: #0a5f57; color: white; border: 1px solid #0a5f57; padding: 6px; text-align: left; }
           td { border: 1px solid #cfc7bd; padding: 6px; vertical-align: top; word-wrap: break-word; }
@@ -2111,7 +2127,8 @@ function exportGroupsToPdf() {
           <span>If the print dialog does not open automatically, press this button and choose "Save as PDF".</span>
         </div>
         <h1>Group Proposals</h1>
-        <p class="summary">Exported ${escape(date)} &middot; ${escape(String(rows.length))} proposal${rows.length === 1 ? "" : "s"} &middot; ${state.groupsShowActive ? "Active only" : "All proposals"}</p>
+        <p class="summary">Exported ${escape(date)} &middot; ${escape(String(rows.length))} proposal${rows.length === 1 ? "" : "s"}</p>
+        <p class="filters"><strong>Filters:</strong> ${escape(filterSummary || "None")}</p>
         <p>Exported ${escape(date)} · ${escape(String(rows.length))} proposal${rows.length === 1 ? "" : "s"} · ${state.groupsShowActive ? "Active only" : "All proposals"}</p>
         <table>
           <thead>
