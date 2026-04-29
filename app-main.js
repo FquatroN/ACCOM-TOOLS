@@ -1135,7 +1135,7 @@ function applyInitialRouteFromUrl() {
   try {
     const params = new URLSearchParams(window.location.search);
     const view = clean(params.get("view")).toLowerCase();
-    const serviceId = clean(params.get("service"));
+    const serviceId = clean(params.get("service") || params.get("request"));
     if (view === "services" && canApp("services")) {
       state.currentView = "services";
     }
@@ -5408,7 +5408,8 @@ function closeServiceModal() {
 }
 
 function openServiceById(serviceId, { updateUrl = true } = {}) {
-  const service = state.services.find((item) => item.id === clean(serviceId));
+  const needle = clean(serviceId);
+  const service = state.services.find((item) => item.id === needle || item.requestNumber === needle);
   if (!service) return false;
   state.serviceSelectedId = service.id;
   state.serviceDraft = { ...clone(service), language: normalizeServiceConfirmationLanguage(service.language), priceManual: false };
