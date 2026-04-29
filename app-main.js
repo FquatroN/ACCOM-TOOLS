@@ -806,6 +806,7 @@ const els = {
   reviewsKpiAverageLastMonth: document.getElementById("reviews-kpi-average-last-month"),
   reviewsKpiAverageThisMonth: document.getElementById("reviews-kpi-average-this-month"),
   reviewsRows: document.getElementById("reviews-rows"),
+  reviewsMobileCards: document.getElementById("reviews-mobile-cards"),
   reviewsResumeRows: document.getElementById("reviews-resume-rows"),
   reviewsResumeStatus: document.getElementById("reviews-resume-status"),
   reviewDetailModal: document.getElementById("review-detail-modal"),
@@ -1061,6 +1062,7 @@ function bindEvents() {
     render();
   });
   els.reviewsRows.addEventListener("click", onReviewRowClick);
+  els.reviewsMobileCards?.addEventListener("click", onReviewRowClick);
   els.reviewDetailClose.addEventListener("click", closeReviewDetailModal);
   els.reviewsExport.addEventListener("click", exportReviewsToCsv);
   els.reviewsPrevPage.addEventListener("click", () => setReviewListPage(state.reviewListPage - 1));
@@ -6985,6 +6987,9 @@ function renderReviews() {
   if (!canApp("reviews")) {
     els.reviewsCount.textContent = "0 reviews";
     els.reviewsRows.innerHTML = '<tr><td colspan="6" class="empty">Your profile has no access to Reviews.</td></tr>';
+    if (els.reviewsMobileCards) {
+      els.reviewsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Reviews.</div>';
+    }
     return;
   }
   setReviewScreen(state.reviewScreen);
@@ -7225,8 +7230,12 @@ function reviewDateCellHtml(row) {
 
 function renderReviewRows(rows) {
   els.reviewsRows.innerHTML = "";
+  if (els.reviewsMobileCards) els.reviewsMobileCards.innerHTML = "";
   if (rows.length === 0) {
     els.reviewsRows.innerHTML = '<tr><td colspan="6" class="empty">No reviews match the current filters.</td></tr>';
+    if (els.reviewsMobileCards) {
+      els.reviewsMobileCards.innerHTML = '<div class="services-mobile-empty">No reviews match the current filters.</div>';
+    }
     return;
   }
   rows.forEach((row) => {
@@ -7242,6 +7251,26 @@ function renderReviewRows(rows) {
       <td>${escape(formatReviewScore(row.rating_normalized_100, row.rating_raw, row.rating_scale))}</td>`;
     if (tintStyle) tr.style.backgroundColor = tintStyle;
     els.reviewsRows.appendChild(tr);
+    if (els.reviewsMobileCards) {
+      const card = document.createElement("article");
+      card.className = `review-mobile-card${clean(state.reviewSelectedId) === clean(row.id) ? " selected-card" : ""}`;
+      card.dataset.reviewId = clean(row.id);
+      card.innerHTML = `<div class="service-mobile-header">
+          <div>
+            <div class="service-mobile-request">${reviewDateCellHtml(row)}</div>
+            <div class="service-mobile-type">${escape(clean(row.properties?.name || reviewPropertyName(row.property_id) || "-"))}</div>
+          </div>
+          <div class="review-mobile-score">${escape(formatReviewScore(row.rating_normalized_100, row.rating_raw, row.rating_scale))}</div>
+        </div>
+        <div class="review-mobile-meta">
+          <span>${reviewSourceIconHtml(row.source)}</span>
+          <span>${escape(clean(row.reviewer_name) || "Anonymous")}</span>
+        </div>
+        <div class="review-mobile-title">${escape(clean(row.title) || "(no title)")}</div>
+        <div class="review-mobile-snippet">${escape(buildReviewSnippet(row))}</div>`;
+      if (tintStyle) card.style.backgroundColor = tintStyle;
+      els.reviewsMobileCards.appendChild(card);
+    }
   });
 }
 
@@ -7812,7 +7841,7 @@ async function onReviewImportRunClick(event) {
 }
 
 function onReviewRowClick(event) {
-  const row = event.target.closest("tr[data-review-id]");
+  const row = event.target.closest("[data-review-id]");
   if (!row) return;
   state.reviewSelectedId = clean(row.dataset.reviewId);
   const selected = findReviewById(state.reviewSelectedId, getFilteredReviews());

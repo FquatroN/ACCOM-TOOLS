@@ -1271,6 +1271,10 @@ select:disabled {
   display: none;
 }
 
+.reviews-mobile-cards {
+  display: none;
+}
+
 .service-mobile-card {
   display: grid;
   gap: 0.72rem;
@@ -1479,6 +1483,50 @@ select:disabled {
 .group-mobile-total small {
   color: var(--muted);
   font-size: 0.72rem;
+}
+
+.review-mobile-card {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid #e2d8cf;
+  border-radius: 14px;
+  background: #fffdfa;
+  box-shadow: 0 10px 24px rgba(117, 84, 54, 0.06);
+  cursor: pointer;
+}
+
+.review-mobile-card.selected-card {
+  border-color: #a7d4bf;
+  background: #f3fbf7;
+}
+
+.review-mobile-score {
+  color: #183246;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.review-mobile-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #7a6553;
+  font-size: 0.84rem;
+  flex-wrap: wrap;
+}
+
+.review-mobile-title {
+  color: #2d241b;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.review-mobile-snippet {
+  color: #2b2014;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .inline-request-number {
@@ -2215,6 +2263,10 @@ select:disabled {
     display: none;
   }
 
+  #reviews-screen-panel-list .reviews-table-wrap {
+    display: none;
+  }
+
   .communications-mobile-cards {
     display: grid;
     gap: 0.75rem;
@@ -2234,6 +2286,12 @@ select:disabled {
   }
 
   .services-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
+  .reviews-mobile-cards {
     display: grid;
     gap: 0.75rem;
     margin-top: 0.85rem;
