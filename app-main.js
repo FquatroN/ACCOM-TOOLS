@@ -1130,6 +1130,10 @@ function canSettings(feature) {
   return state.access.settingsFeatures.includes(clean(feature).toLowerCase());
 }
 
+function isAdministratorProfile() {
+  return clean(state.access?.profile?.name).toLowerCase() === "administrator";
+}
+
 function applyInitialRouteFromUrl() {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -2187,7 +2191,7 @@ function renderGroupDraft() {
   renderGroupRoomItems();
   renderGroupTotals();
   renderGroupAuditHistory();
-  els.groupDelete.hidden = !draft.id;
+  els.groupDelete.hidden = !draft.id || !isAdministratorProfile();
 }
 
 function renderGroupTotals() {
@@ -2870,6 +2874,11 @@ async function saveGroupProposal() {
 }
 
 async function deleteGroupProposal() {
+  if (!isAdministratorProfile()) {
+    setGroupsStatus("Only Administrator can delete group proposals.");
+    showToast("Only Administrator can delete group proposals.", "error");
+    return;
+  }
   const id = clean(state.groupDraft.id);
   if (!id || !window.confirm("Delete this group proposal?")) return;
   try {
