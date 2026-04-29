@@ -593,6 +593,7 @@ const els = {
   rows: document.getElementById("rows"),
   communicationsMobileCards: document.getElementById("communications-mobile-cards"),
   lostFoundRows: document.getElementById("lost-found-rows"),
+  lostFoundMobileCards: document.getElementById("lost-found-mobile-cards"),
   lostFoundCount: document.getElementById("lost-found-count"),
   lostFoundDbStatus: document.getElementById("lost-found-status"),
   lostFoundOnlyOpen: document.getElementById("lost-found-only-open"),
@@ -907,6 +908,10 @@ function bindEvents() {
   els.lostFoundRows.addEventListener("input", onLostFoundDraftInput);
   els.lostFoundRows.addEventListener("keydown", onLostFoundKeydown);
   els.lostFoundRows.addEventListener("change", onLostFoundStatusToggle);
+  els.lostFoundMobileCards?.addEventListener("click", onLostFoundAction);
+  els.lostFoundMobileCards?.addEventListener("input", onLostFoundDraftInput);
+  els.lostFoundMobileCards?.addEventListener("keydown", onLostFoundKeydown);
+  els.lostFoundMobileCards?.addEventListener("change", onLostFoundStatusToggle);
   els.tableHead.addEventListener("click", onSortToggle);
   els.resetSort.addEventListener("click", () => {
     resetSortDefault();
@@ -3827,12 +3832,12 @@ function onLostFoundDraftInput(event) {
       : clean(target.value);
   if (scope === "new") {
     state.lostFoundDraft[field] = value;
-    const row = target.closest("tr");
+    const row = target.closest("tr, .lost-found-mobile-card");
     if (row) row.style.backgroundColor = "#ffffff";
   }
   if (scope === "edit" && state.lostFoundEditingId && clean(target.dataset.id) === state.lostFoundEditingId) {
     state.lostFoundEditDraft[field] = value;
-    const row = target.closest("tr");
+    const row = target.closest("tr, .lost-found-mobile-card");
     if (row) row.style.backgroundColor = lostFoundRowBackground(state.lostFoundEditDraft.status);
   }
 }
@@ -5881,12 +5886,17 @@ function renderLostFound() {
   if (!canApp("lost-found")) {
     els.lostFoundCount.textContent = "0 records";
     els.lostFoundRows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Lost&Found.</td></tr>';
+    if (els.lostFoundMobileCards) {
+      els.lostFoundMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Lost&Found.</div>';
+    }
     return;
   }
   const rows = getFilteredLostFoundRecords();
   els.lostFoundCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   els.lostFoundRows.innerHTML = "";
+  if (els.lostFoundMobileCards) els.lostFoundMobileCards.innerHTML = "";
   els.lostFoundRows.appendChild(buildLostFoundInlineRow());
+  renderLostFoundMobileCards(rows);
   if (!rows.length) {
     const tr = document.createElement("tr");
     tr.innerHTML = '<td colspan="7" class="empty">No Lost&Found records found.</td>';
@@ -5897,6 +5907,20 @@ function renderLostFound() {
     els.lostFoundRows.appendChild(
       state.lostFoundEditingId === record.id ? buildLostFoundEditableRow(record) : buildLostFoundReadOnlyRow(record)
     );
+  });
+}
+
+function renderLostFoundMobileCards(rows) {
+  if (!els.lostFoundMobileCards) return;
+  const list = els.lostFoundMobileCards;
+  list.innerHTML = "";
+  list.appendChild(buildLostFoundInlineCard());
+  if (!rows.length) {
+    list.innerHTML += '<div class="services-mobile-empty">No Lost&Found records found.</div>';
+    return;
+  }
+  rows.forEach((record) => {
+    list.appendChild(state.lostFoundEditingId === record.id ? buildLostFoundEditableCardMobile(record) : buildLostFoundReadOnlyCardMobile(record));
   });
 }
 
@@ -5950,6 +5974,147 @@ function buildLostFoundEditableRow(record) {
     <button type="button" data-lost-found-action="cancel-edit" data-id="${escape(record.id)}" class="ghost">Cancel</button></td>`;
   tr.style.backgroundColor = lostFoundRowBackground(draft.status);
   return tr;
+}
+
+function buildLostFoundInlineCard() {
+  const draft = state.lostFoundDraft || emptyLostFoundDraft();
+  const now = new Date();
+  const card = document.createElement("article");
+  card.className = "lost-found-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">#${escape(nextLostFoundDisplayNumber())}</div>
+        <div class="communication-mobile-meta">${escape(formatDate(now))} ${escape(formatTime(now))}</div>
+      </div>
+      <label class="status-toggle"><input type="checkbox" data-field="status" data-scope="new" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label>
+    </div>
+    <div class="communication-mobile-grid">
+      <label class="communication-mobile-field">
+        <small>Who Found</small>
+        <input data-field="whoFound" data-scope="new" value="${escape(draft.whoFound)}" placeholder="Who Found" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Who Register</small>
+        <input data-field="whoRecorded" data-scope="new" value="${escape(draft.whoRecorded)}" placeholder="Who Register" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Where</small>
+        <input data-field="location" data-scope="new" value="${escape(draft.location)}" placeholder="Where" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Stored</small>
+        <select data-field="stored" data-scope="new">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select>
+      </label>
+      <label class="communication-mobile-field communication-mobile-field-full">
+        <small>Object Description</small>
+        <textarea data-field="objectDescription" data-scope="new" rows="3">${escape(draft.objectDescription)}</textarea>
+      </label>
+      <label class="communication-mobile-field communication-mobile-field-full">
+        <small>Notes</small>
+        <textarea data-field="notes" data-scope="new" rows="3">${escape(draft.notes)}</textarea>
+      </label>
+    </div>
+    <div class="communication-mobile-footer">
+      <div class="row-actions"><button type="button" data-lost-found-action="save-inline">Add</button></div>
+    </div>`;
+  card.style.backgroundColor = "#ffffff";
+  return card;
+}
+
+function buildLostFoundReadOnlyCardMobile(record) {
+  const closedStamp = isClosedStatus(record.status) && record.closedAt
+    ? `<div class="status-closed-at">${escape(formatDateTimeShort(record.closedAt))}</div>`
+    : "";
+  const card = document.createElement("article");
+  card.className = "lost-found-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">#${escape(record.number)}</div>
+        <div class="communication-mobile-meta">${escape(formatDateTimeShort(record.createdAt) || "-")}</div>
+      </div>
+      <div class="communication-mobile-status">
+        <label class="status-toggle"><input type="checkbox" data-lost-found-action="toggle-status" data-id="${escape(record.id)}" ${isClosedStatus(record.status) ? "checked" : ""} /><span>${escape(record.status)}</span></label>
+        ${closedStamp}
+      </div>
+    </div>
+    <div class="communication-mobile-grid">
+      <div class="communication-mobile-field">
+        <small>Who Found</small>
+        <div class="communication-mobile-message">${escape(record.whoFound || "-")}</div>
+      </div>
+      <div class="communication-mobile-field">
+        <small>Who Register</small>
+        <div class="communication-mobile-message">${escape(record.whoRecorded || "-")}</div>
+      </div>
+      <div class="communication-mobile-field">
+        <small>Where</small>
+        <div class="communication-mobile-message">${escape(record.location || "-")}</div>
+      </div>
+      <div class="communication-mobile-field">
+        <small>Stored</small>
+        <div class="communication-mobile-message">${escape(record.stored || "-")}</div>
+      </div>
+      <div class="communication-mobile-field communication-mobile-field-full">
+        <small>Object Description</small>
+        <div class="communication-mobile-message">${escape(record.objectDescription || "-")}</div>
+      </div>
+      <div class="communication-mobile-field communication-mobile-field-full">
+        <small>Notes</small>
+        <div class="communication-mobile-message">${escape(record.notes || "-")}</div>
+      </div>
+    </div>
+    <div class="communication-mobile-footer">
+      <div class="row-actions"><button type="button" data-lost-found-action="edit" data-id="${escape(record.id)}" class="ghost">Edit</button></div>
+    </div>`;
+  card.style.backgroundColor = lostFoundRowBackground(record.status);
+  return card;
+}
+
+function buildLostFoundEditableCardMobile(record) {
+  const draft = state.lostFoundEditDraft || emptyLostFoundDraft();
+  const card = document.createElement("article");
+  card.className = "lost-found-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">#${escape(record.number)}</div>
+        <div class="communication-mobile-meta">${escape(formatDateTimeShort(record.createdAt) || "-")}</div>
+      </div>
+      <label class="status-toggle"><input type="checkbox" data-field="status" data-scope="edit" data-id="${escape(record.id)}" ${isClosedStatus(draft.status) ? "checked" : ""} /><span>Closed</span></label>
+    </div>
+    <div class="communication-mobile-grid">
+      <label class="communication-mobile-field">
+        <small>Who Found</small>
+        <input data-field="whoFound" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoFound)}" placeholder="Who Found" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Who Register</small>
+        <input data-field="whoRecorded" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoRecorded)}" placeholder="Who Register" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Where</small>
+        <input data-field="location" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.location)}" placeholder="Where" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Stored</small>
+        <select data-field="stored" data-scope="edit" data-id="${escape(record.id)}">${LOST_FOUND_STORED_OPTIONS.map((item) => option(item, draft.stored)).join("")}</select>
+      </label>
+      <label class="communication-mobile-field communication-mobile-field-full">
+        <small>Object Description</small>
+        <textarea data-field="objectDescription" data-scope="edit" data-id="${escape(record.id)}" rows="3">${escape(draft.objectDescription)}</textarea>
+      </label>
+      <label class="communication-mobile-field communication-mobile-field-full">
+        <small>Notes</small>
+        <textarea data-field="notes" data-scope="edit" data-id="${escape(record.id)}" rows="3">${escape(draft.notes)}</textarea>
+      </label>
+    </div>
+    <div class="communication-mobile-footer">
+      <div class="row-actions">
+        <button type="button" data-lost-found-action="save-edit" data-id="${escape(record.id)}">Save</button>
+        <button type="button" data-lost-found-action="cancel-edit" data-id="${escape(record.id)}" class="ghost">Cancel</button>
+      </div>
+    </div>`;
+  card.style.backgroundColor = lostFoundRowBackground(draft.status);
+  return card;
 }
 
 function buildInlineRow() {
