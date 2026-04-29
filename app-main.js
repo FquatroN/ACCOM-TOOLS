@@ -639,9 +639,7 @@ const els = {
   groupEmail: document.getElementById("group-email"),
   groupEmailProposalsHint: document.getElementById("group-email-proposals-hint"),
   groupCheckIn: document.getElementById("group-check-in"),
-  groupCheckInPicker: document.getElementById("group-check-in-picker"),
   groupCheckOut: document.getElementById("group-check-out"),
-  groupCheckOutPicker: document.getElementById("group-check-out-picker"),
   groupNightsLabel: document.getElementById("group-nights-label"),
   groupGuests: document.getElementById("group-guests"),
   groupOptionDate: document.getElementById("group-option-date"),
@@ -955,9 +953,6 @@ function bindEvents() {
   els.groupCopyEmail.addEventListener("click", copyGroupEmailText);
   [els.groupReservationNumber, els.groupName, els.groupEmail, els.groupCheckIn, els.groupCheckOut, els.groupGuests, els.groupOptionDate, els.groupStatusField, els.groupObservation].forEach((el) =>
     el.addEventListener("input", onGroupDraftInput)
-  );
-  [els.groupCheckInPicker, els.groupCheckOutPicker].forEach((el) =>
-    el.addEventListener("input", onGroupDatePickerInput)
   );
   els.groupAddRoomItem.addEventListener("click", addGroupRoomItem);
   els.groupRoomItemsBody.addEventListener("input", onGroupRoomItemInput);
@@ -2187,10 +2182,8 @@ function renderGroupDraft() {
   els.groupName.value = draft.name;
   els.groupEmail.value = draft.email;
   renderGroupEmailProposalHint();
-  els.groupCheckIn.value = formatGroupDateInput(draft.checkIn);
-  els.groupCheckInPicker.value = draft.checkIn || "";
-  els.groupCheckOut.value = formatGroupDateInput(draft.checkOut);
-  els.groupCheckOutPicker.value = draft.checkOut || "";
+  els.groupCheckIn.value = draft.checkIn || "";
+  els.groupCheckOut.value = draft.checkOut || "";
   els.groupGuests.value = draft.guests;
   els.groupOptionDate.value = draft.optionDate;
   els.groupStatusField.value = draft.status;
@@ -2799,26 +2792,8 @@ function onGroupDraftInput(event) {
   state.groupDraft.optionDate = clean(els.groupOptionDate.value);
   state.groupDraft.status = normalizeGroupStatus(els.groupStatusField.value);
   state.groupDraft.observation = clean(els.groupObservation.value);
-  syncGroupDatePickers();
   renderGroupStatusColor();
   renderGroupTotals();
-}
-
-function onGroupDatePickerInput(event) {
-  if (event.target === els.groupCheckInPicker) {
-    state.groupDraft.checkIn = clean(els.groupCheckInPicker.value);
-    els.groupCheckIn.value = formatGroupDateInput(state.groupDraft.checkIn);
-  }
-  if (event.target === els.groupCheckOutPicker) {
-    state.groupDraft.checkOut = clean(els.groupCheckOutPicker.value);
-    els.groupCheckOut.value = formatGroupDateInput(state.groupDraft.checkOut);
-  }
-  renderGroupTotals();
-}
-
-function syncGroupDatePickers() {
-  els.groupCheckInPicker.value = state.groupDraft.checkIn || "";
-  els.groupCheckOutPicker.value = state.groupDraft.checkOut || "";
 }
 
 function addGroupRoomItem() {
