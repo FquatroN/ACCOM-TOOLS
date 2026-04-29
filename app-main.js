@@ -3079,7 +3079,7 @@ function dateDiffDays(start, end) {
 function formatGroupDateInput(value) {
   const raw = clean(value);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  return `${raw.slice(8, 10)}/${raw.slice(5, 7)}/${raw.slice(0, 4)}`;
+  return raw;
 }
 
 function formatGroupDateDisplay(value) {
@@ -3091,6 +3091,16 @@ function parseGroupDateInput(value) {
   const raw = clean(value);
   if (!raw) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const isoLike = raw.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})$/);
+  if (isoLike) {
+    const year = isoLike[1];
+    const month = isoLike[2].padStart(2, "0");
+    const day = isoLike[3].padStart(2, "0");
+    const iso = `${year}-${month}-${day}`;
+    const dt = new Date(iso);
+    if (Number.isNaN(dt.getTime())) return "";
+    return formatDate(dt) === iso ? iso : "";
+  }
   const match = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
   if (!match) return "";
   const day = match[1].padStart(2, "0");
@@ -4467,7 +4477,7 @@ function queueServiceDraftPredictionRefresh() {
 function formatServiceDateInput(value) {
   const raw = clean(value);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  return `${raw.slice(0, 4)}/${raw.slice(5, 7)}/${raw.slice(8, 10)}`;
+  return raw;
 }
 
 function parseServiceDateInput(value) {
