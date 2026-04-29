@@ -527,6 +527,7 @@ const state = {
   autoRefreshTimer: null,
   lastAutoRefreshAt: 0,
   autoRefreshRunning: false,
+  mobileNavOpen: false,
   adminUsers: [],
   adminUsersLoaded: false,
   communicationsLoaded: false,
@@ -548,6 +549,7 @@ const els = {
   appShell: document.getElementById("app-shell"),
   leftNav: document.querySelector(".left-nav"),
   topbar: document.querySelector(".topbar"),
+  mobileMenuToggle: document.getElementById("mobile-menu-toggle"),
   navCommunications: document.getElementById("nav-communications"),
   navLostFound: document.getElementById("nav-lost-found"),
   navReviews: document.getElementById("nav-reviews"),
@@ -878,6 +880,7 @@ function bindEvents() {
   els.navReviews.addEventListener("click", () => setView("reviews"));
   els.navGroups.addEventListener("click", () => setView("groups"));
   els.navServices.addEventListener("click", () => setView("services"));
+  els.mobileMenuToggle?.addEventListener("click", toggleMobileNav);
   els.openSettings.addEventListener("click", () => setView("settings"));
   els.closeSettings.addEventListener("click", () => setView("communications"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
@@ -1081,6 +1084,7 @@ function bindEvents() {
   });
   els.addProfile.addEventListener("click", createProfile);
   els.profilesBody.addEventListener("click", onProfileAction);
+  window.addEventListener("resize", syncMobileNavLayout);
 }
 
 async function initAuth() {
@@ -1130,6 +1134,32 @@ function canSettings(feature) {
   return state.access.settingsFeatures.includes(clean(feature).toLowerCase());
 }
 
+function isMobileNavLayout() {
+  return typeof window !== "undefined" && window.innerWidth <= 768;
+}
+
+function setMobileNavOpen(nextOpen) {
+  state.mobileNavOpen = !!nextOpen && isMobileNavLayout() && state.currentView !== "settings";
+  if (els.appShell) els.appShell.classList.toggle("mobile-nav-open", state.mobileNavOpen);
+  if (els.mobileMenuToggle) {
+    els.mobileMenuToggle.setAttribute("aria-expanded", state.mobileNavOpen ? "true" : "false");
+    els.mobileMenuToggle.setAttribute("aria-label", state.mobileNavOpen ? "Close menu" : "Open menu");
+    els.mobileMenuToggle.title = state.mobileNavOpen ? "Close menu" : "Open menu";
+  }
+}
+
+function toggleMobileNav() {
+  setMobileNavOpen(!state.mobileNavOpen);
+}
+
+function syncMobileNavLayout() {
+  if (!isMobileNavLayout()) {
+    state.mobileNavOpen = false;
+    if (els.appShell) els.appShell.classList.remove("mobile-nav-open");
+  }
+  setMobileNavOpen(state.mobileNavOpen);
+}
+
 function isAdministratorProfile() {
   return clean(state.access?.profile?.name).toLowerCase() === "administrator";
 }
@@ -1171,6 +1201,7 @@ async function setView(view) {
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
   if (view === "groups" && !canApp("groups")) return showToast("No groups access.", "error");
   if (view === "services" && !canApp("services")) return showToast("No services access.", "error");
+  setMobileNavOpen(false);
   state.currentView = view;
   if (view === "settings") {
     if (canSettings("communications")) state.settingsSection = "communications";
@@ -1437,6 +1468,7 @@ function renderLayout() {
   els.openSettings.hidden = !state.access.settingsFeatures.length;
   els.leftNav.hidden = settingsMode;
   els.topbar.hidden = false;
+  if (els.mobileMenuToggle) els.mobileMenuToggle.hidden = settingsMode || !isMobileNavLayout();
   els.viewCommunications.hidden = !comm;
   els.viewLostFound.hidden = !lostFound;
   els.viewReviews.hidden = !reviews;
@@ -1453,6 +1485,7 @@ function renderLayout() {
   els.settingsMenuGroups.classList.toggle("active", state.settingsSection === "groups");
   els.settingsMenuServices.classList.toggle("active", state.settingsSection === "services");
   els.settingsMenuAdminUsers.classList.toggle("active", state.settingsSection === "admin-users");
+  syncMobileNavLayout();
 }
 
 async function setSettingsSection(section) {
@@ -1461,6 +1494,7 @@ async function setSettingsSection(section) {
   if (section === "groups" && !canSettings("groups")) return;
   if (section === "services" && !canSettings("services")) return;
   if (section === "admin-users" && !canSettings("admin-users")) return;
+  setMobileNavOpen(false);
   state.settingsSection = section === "admin-users"
     ? "admin-users"
     : section === "services"

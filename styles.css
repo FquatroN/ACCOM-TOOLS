@@ -111,6 +111,10 @@ body {
   box-shadow: none;
 }
 
+.mobile-menu-toggle {
+  display: none;
+}
+
 .session-box {
   display: inline-flex;
   gap: 0.5rem;
@@ -1955,6 +1959,19 @@ select:disabled {
 @media (max-width: 768px) {
   body {
     font-size: 13px;
+  }
+
+  .mobile-menu-toggle {
+    display: inline-flex;
+    align-self: flex-start;
+  }
+
+  .left-rail {
+    display: none;
+  }
+
+  .app-layout.mobile-nav-open .left-rail {
+    display: grid;
   }
 
   .app-layout,
