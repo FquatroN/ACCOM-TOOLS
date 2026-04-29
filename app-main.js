@@ -8511,8 +8511,24 @@ function setReviewsStatus(text) {
   els.reviewsStatus.textContent = text;
 }
 
+function isErrorStatusMessage(text) {
+  const raw = clean(text).toLowerCase();
+  if (!raw) return false;
+  return [
+    "failed",
+    "could not",
+    "required",
+    "must",
+    "invalid",
+    "error",
+    "no ",
+  ].some((token) => raw.includes(token));
+}
+
 function setGroupsStatus(text) {
-  if (els.groupsStatus) els.groupsStatus.textContent = text;
+  if (!els.groupsStatus) return;
+  els.groupsStatus.textContent = text;
+  els.groupsStatus.classList.toggle("status-error", isErrorStatusMessage(text));
 }
 
 function setGroupsSettingsStatus(text) {

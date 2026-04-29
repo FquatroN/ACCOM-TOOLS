@@ -446,6 +446,10 @@ button.danger {
   font-size: 0.8rem;
 }
 
+.auth-status.status-error {
+  color: #c2410c;
+}
+
 .file-btn {
   position: relative;
   overflow: hidden;
