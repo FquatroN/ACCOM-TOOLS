@@ -45,6 +45,26 @@ function redirectRecoveryUrl() {
   return new URL("/gate.html?mode=recovery", window.location.origin).toString();
 }
 
+function safeNextPath(raw) {
+  const value = String(raw || "").trim();
+  if (!value.startsWith("/") || value.startsWith("//")) return "/index.html";
+  return value;
+}
+
+function nextTargetPath() {
+  const search = new URLSearchParams(window.location.search || "");
+  return safeNextPath(search.get("next"));
+}
+
+function gateSigninUrl() {
+  const next = nextTargetPath();
+  return next && next !== "/index.html" ? `/gate.html?next=${encodeURIComponent(next)}` : "/gate.html";
+}
+
+function goToPostAuthDestination() {
+  window.location.replace(nextTargetPath());
+}
+
 function applyMode(mode) {
   gateState.mode = mode;
   const isSignIn = mode === "signin";
@@ -108,7 +128,7 @@ async function signIn(client) {
     setStatus(error.message, true);
     return;
   }
-  window.location.href = "/index.html";
+  goToPostAuthDestination();
 }
 
 async function signUp(client) {
@@ -198,7 +218,7 @@ async function wire(client) {
       gateState.recoverySessionReady = false;
     }
     applyMode("signin");
-    window.history.replaceState({}, "", "/gate.html");
+    window.history.replaceState({}, "", gateSigninUrl());
     setStatus("");
   });
   [emailEl, passwordEl, confirmPasswordEl].forEach((input) => {
@@ -216,7 +236,7 @@ async function wire(client) {
       return;
     }
     if (event === "SIGNED_IN" && gateState.mode !== "update-password") {
-      window.location.replace("/index.html");
+      goToPostAuthDestination();
     }
   });
 

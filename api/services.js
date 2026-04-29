@@ -302,8 +302,8 @@ function appBaseUrl() {
 
 function serviceDeepLink(row) {
   const serviceId = cleanText(row?.id);
-  if (!serviceId) return appBaseUrl();
-  return `${appBaseUrl()}/?view=services&service=${encodeURIComponent(serviceId)}`;
+  if (!serviceId) return `${appBaseUrl()}/index.html`;
+  return `${appBaseUrl()}/index.html?view=services&service=${encodeURIComponent(serviceId)}`;
 }
 
 function serviceActorLabel(actor) {

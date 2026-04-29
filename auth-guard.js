@@ -3,8 +3,23 @@
     if (document.body) document.body.style.visibility = "visible";
   }
 
+  function safeNextPath(raw) {
+    const value = String(raw || "").trim();
+    if (!value.startsWith("/") || value.startsWith("//")) return "/index.html";
+    return value;
+  }
+
+  function currentPathWithQuery() {
+    return `${window.location.pathname || "/index.html"}${window.location.search || ""}${window.location.hash || ""}`;
+  }
+
+  function gateUrlFor(nextPath) {
+    const target = safeNextPath(nextPath || currentPathWithQuery());
+    return `/gate.html?next=${encodeURIComponent(target)}`;
+  }
+
   const path = (window.location.pathname || "").toLowerCase();
-  const isGate = path === "/" || path.endsWith("/gate.html");
+  const isGate = path.endsWith("/gate.html");
   const search = new URLSearchParams(window.location.search || "");
   const hash = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
   const recoveryIntent = search.get("mode") === "recovery" || search.get("type") === "recovery" || hash.get("type") === "recovery";
@@ -18,7 +33,7 @@
       showPage();
       return;
     }
-    window.location.replace("/gate.html");
+    window.location.replace(gateUrlFor());
     return;
   }
 
@@ -29,7 +44,7 @@
 
     if (isGate) {
       if (authed && !recoveryIntent) {
-        window.location.replace("/index.html");
+        window.location.replace(safeNextPath(search.get("next")));
         return;
       }
       showPage();
@@ -37,7 +52,7 @@
     }
 
     if (!authed) {
-      window.location.replace("/gate.html");
+      window.location.replace(gateUrlFor());
       return;
     }
 
@@ -47,6 +62,6 @@
       showPage();
       return;
     }
-    window.location.replace("/gate.html");
+    window.location.replace(gateUrlFor());
   }
 })();
