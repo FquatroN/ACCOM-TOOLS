@@ -201,13 +201,16 @@ function sanitizeOrderItems(value, settingsItems = []) {
     .map((item, index) => {
       const id = cleanText(item?.id);
       const config = configMap.get(id) || {};
+      const hasConfigQuantityRequired = Object.prototype.hasOwnProperty.call(config, "quantityRequired");
       return {
         id: id || cleanText(config.id) || `shopping-order-item-${index + 1}`,
         category: normalizeShoppingCategory(item?.category || config.category),
         item: cleanText(item?.item || config.item),
         supplier: cleanText(item?.supplier || config.supplier),
         stored: normalizeShoppingStored(item?.stored || config.stored),
-        quantityRequired: parseShoppingBool(item?.quantityRequired ?? item?.quantity_required ?? config.quantityRequired),
+        quantityRequired: hasConfigQuantityRequired
+          ? parseShoppingBool(config.quantityRequired)
+          : parseShoppingBool(item?.quantityRequired ?? item?.quantity_required),
         existingQuantity: cleanText(item?.existingQuantity ?? item?.existing_quantity),
         order: parseShoppingBool(item?.order),
       };

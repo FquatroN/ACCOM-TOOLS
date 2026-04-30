@@ -6196,9 +6196,28 @@ function normalizeShoppingOrderItemClient(item = {}) {
   };
 }
 
-function normalizeShoppingOrderClient(order) {
+function applyShoppingSettingsToOrderItemsClient(items, settingsItems = []) {
+  const configMap = new Map((Array.isArray(settingsItems) ? settingsItems : []).map((item) => [clean(item.id), item]));
+  return (Array.isArray(items) ? items : []).map((item) => {
+    const config = configMap.get(clean(item.id)) || null;
+    if (!config) return item;
+    return {
+      ...item,
+      category: clean(config.category) || item.category,
+      item: clean(config.item) || item.item,
+      supplier: clean(config.supplier) || item.supplier,
+      stored: clean(config.stored) || item.stored,
+      quantityRequired: parseShoppingBoolClient(config.quantityRequired),
+    };
+  });
+}
+
+function normalizeShoppingOrderClient(order, settingsItems = []) {
   if (!order) return null;
-  const items = (Array.isArray(order.items) ? order.items : []).map(normalizeShoppingOrderItemClient).filter((item) => item.item);
+  const items = applyShoppingSettingsToOrderItemsClient(
+    (Array.isArray(order.items) ? order.items : []).map(normalizeShoppingOrderItemClient).filter((item) => item.item),
+    settingsItems
+  );
   return {
     id: clean(order.id),
     orderNumber: Number(order.orderNumber || order.order_number || 0) || 0,
@@ -6287,12 +6306,14 @@ async function loadShoppingSettings({ silent = false } = {}) {
 async function loadShoppingData({ silent = false } = {}) {
   try {
     const result = await api("/api/shopping");
-    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.openOrder);
-    state.shoppingHistory = (Array.isArray(result.history) ? result.history : []).map(normalizeShoppingOrderClient).filter(Boolean);
     if (result.settings) {
       state.shoppingSettings = normalizeShoppingSettingsClient(result.settings);
       state.shoppingSettingsLoaded = true;
     }
+    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.openOrder, state.shoppingSettings.items);
+    state.shoppingHistory = (Array.isArray(result.history) ? result.history : [])
+      .map((order) => normalizeShoppingOrderClient(order, state.shoppingSettings.items))
+      .filter(Boolean);
     if (!state.shoppingOpenOrder) {
       state.shoppingSubmitName = "";
       state.shoppingSubmitNotes = "";
@@ -6664,7 +6685,7 @@ function onShoppingFilterChange() {
 async function createShoppingOrder() {
   try {
     const result = await api("/api/shopping", { method: "POST", body: { action: "create" } });
-    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
+    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order, state.shoppingSettings.items);
     state.shoppingLoaded = true;
     state.shoppingSubmitName = "";
     state.shoppingSubmitNotes = "";
@@ -6691,7 +6712,7 @@ async function saveShoppingOrderDraft(showSuccess = true) {
         items: state.shoppingOpenOrder.items,
       },
     });
-    const updatedOrder = normalizeShoppingOrderClient(result.order);
+    const updatedOrder = normalizeShoppingOrderClient(result.order, state.shoppingSettings.items);
     state.shoppingOpenOrder = updatedOrder?.id ? updatedOrder : fallbackOrder;
     setShoppingTab("current");
     renderShopping();
@@ -6766,7 +6787,7 @@ async function reopenLatestShoppingOrder(sourceId = "") {
         sourceOrderId: latestId,
       },
     });
-    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
+    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order, state.shoppingSettings.items);
     state.shoppingSubmitName = "";
     state.shoppingSubmitNotes = "";
     state.shoppingSubmitPromptOpen = false;
