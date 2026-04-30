@@ -6675,6 +6675,7 @@ async function createShoppingOrder() {
 async function saveShoppingOrderDraft(showSuccess = true) {
   if (!state.shoppingOpenOrder?.id) return;
   try {
+    const fallbackOrder = clone(state.shoppingOpenOrder);
     const result = await api(`/api/shopping?id=${encodeURIComponent(state.shoppingOpenOrder.id)}`, {
       method: "PUT",
       body: {
@@ -6682,7 +6683,8 @@ async function saveShoppingOrderDraft(showSuccess = true) {
         items: state.shoppingOpenOrder.items,
       },
     });
-    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
+    const updatedOrder = normalizeShoppingOrderClient(result.order);
+    state.shoppingOpenOrder = updatedOrder || fallbackOrder;
     setShoppingTab("current");
     renderShopping();
     if (showSuccess) {
