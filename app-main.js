@@ -6413,23 +6413,15 @@ function renderShoppingCurrentRows(order) {
       const card = document.createElement("article");
       card.className = `shopping-mobile-card${item.order ? " selected-card" : ""}`;
       if (rowColor) card.style.background = rowColor;
-      const existingQuantityField = `<label class="communication-mobile-field shopping-mobile-quantity-field">
-            <small>Existing Quantity</small>
-            <input class="shopping-existing-qty-input${item.order ? "" : " is-disabled"}" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${escape(quantityPlaceholder)}" ${quantityDisabled} />
-          </label>`;
-      card.innerHTML = `<div class="service-mobile-header">
-          <div>
+      card.innerHTML = `<div class="shopping-mobile-row">
+          <div class="shopping-mobile-main">
             <div class="service-mobile-request">${escape(item.item || "-")}</div>
-            <div class="service-mobile-type">${escape(item.category || "-")}</div>
+            <div class="service-mobile-type">${escape(item.category || "-")}${item.supplier ? ` · ${escape(item.supplier)}` : ""}</div>
           </div>
-          <div class="shopping-mobile-supplier">${escape(item.supplier || "-")}</div>
-        </div>
-        <div class="shopping-mobile-grid">
-          ${existingQuantityField}
-          <label class="communication-mobile-field shopping-mobile-order-toggle">
-            <small>Order</small>
-            <span class="status-toggle"><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} /><span>Selected</span></span>
+          <label class="shopping-mobile-inline-order" aria-label="Order item">
+            <input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} />
           </label>
+          <input class="shopping-existing-qty-input shopping-mobile-inline-qty${item.order ? "" : " is-disabled"}" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${escape(quantityPlaceholder)}" ${quantityDisabled} />
         </div>`;
       els.shoppingMobileCards.appendChild(card);
     }
