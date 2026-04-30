@@ -6684,7 +6684,7 @@ async function saveShoppingOrderDraft(showSuccess = true) {
       },
     });
     const updatedOrder = normalizeShoppingOrderClient(result.order);
-    state.shoppingOpenOrder = updatedOrder || fallbackOrder;
+    state.shoppingOpenOrder = updatedOrder?.id ? updatedOrder : fallbackOrder;
     setShoppingTab("current");
     renderShopping();
     if (showSuccess) {
