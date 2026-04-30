@@ -77,6 +77,22 @@ function sanitizeShoppingOrderRow(row = {}) {
   };
 }
 
+function buildShoppingOrderFallback(existing = {}, patch = {}) {
+  return sanitizeShoppingOrderRow({
+    id: existing.id,
+    order_number: existing.orderNumber,
+    status: patch.status || existing.status,
+    created_at: existing.createdAt,
+    updated_at: patch.updated_at || existing.updatedAt,
+    submitted_at: patch.submitted_at || existing.submittedAt,
+    submitted_by_name: patch.submitted_by_name || existing.submittedByName,
+    submitted_by_user_email: patch.submitted_by_user_email || existing.submittedByUserEmail,
+    notes: patch.notes ?? existing.notes,
+    reopened_from_id: existing.reopenedFromId,
+    items: patch.items || existing.items,
+  });
+}
+
 async function loadOpenOrder() {
   const rows = await restQuery(
     "shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at&status=eq.open&limit=1",
@@ -242,6 +258,7 @@ module.exports = async function handler(req, res) {
         const created = await restQuery("shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at", {
           method: "POST",
           body: [payload],
+          preferRepresentation: true,
         });
         res.status(201).json({ order: sanitizeShoppingOrderRow(Array.isArray(created) ? created[0] : {}) });
         return;
@@ -256,6 +273,7 @@ module.exports = async function handler(req, res) {
       const created = await restQuery("shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at", {
         method: "POST",
         body: [payload],
+        preferRepresentation: true,
       });
       res.status(201).json({ order: sanitizeShoppingOrderRow(Array.isArray(created) ? created[0] : {}) });
       return;
@@ -317,17 +335,19 @@ module.exports = async function handler(req, res) {
         {
           method: "PATCH",
           body: patch,
+          preferRepresentation: true,
         }
       );
       const order = sanitizeShoppingOrderRow(Array.isArray(updatedRows) ? updatedRows[0] : {});
+      const effectiveOrder = order.id ? order : buildShoppingOrderFallback(existing, patch);
       if (action === "submit") {
         try {
-          emailResult = await sendShoppingEmail(order, settings, cleanText(body?.notes));
+          emailResult = await sendShoppingEmail(effectiveOrder, settings, cleanText(body?.notes));
         } catch (error) {
           emailResult = { error: error.message || "Could not send shopping email." };
         }
       }
-      res.status(200).json({ order, emailResult });
+      res.status(200).json({ order: effectiveOrder, emailResult });
       return;
     }
 
