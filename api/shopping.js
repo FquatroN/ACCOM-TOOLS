@@ -70,6 +70,7 @@ function sanitizeShoppingOrderRow(row = {}) {
     submittedAt: cleanText(row.submitted_at || row.submittedAt),
     submittedByName: cleanText(row.submitted_by_name || row.submittedByName),
     submittedByUserEmail: cleanText(row.submitted_by_user_email || row.submittedByUserEmail).toLowerCase(),
+    notes: cleanText(row.notes),
     reopenedFromId: cleanText(row.reopened_from_id || row.reopenedFromId),
     items,
     orderedCount: countOrderedItems(items),
@@ -78,7 +79,7 @@ function sanitizeShoppingOrderRow(row = {}) {
 
 async function loadOpenOrder() {
   const rows = await restQuery(
-    "shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,reopened_from_id,items,created_at,updated_at&status=eq.open&limit=1",
+    "shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at&status=eq.open&limit=1",
     { method: "GET" }
   );
   return Array.isArray(rows) && rows[0] ? sanitizeShoppingOrderRow(rows[0]) : null;
@@ -86,7 +87,7 @@ async function loadOpenOrder() {
 
 async function loadSubmittedHistory() {
   const rows = await restQuery(
-    "shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,reopened_from_id,items,created_at,updated_at&status=eq.submitted&order=submitted_at.desc,updated_at.desc,order_number.desc",
+    "shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at&status=eq.submitted&order=submitted_at.desc,updated_at.desc,order_number.desc",
     { method: "GET" }
   );
   return Array.isArray(rows) ? rows.map(sanitizeShoppingOrderRow) : [];
@@ -94,7 +95,7 @@ async function loadSubmittedHistory() {
 
 async function loadOrderById(id) {
   const rows = await restQuery(
-    `shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,reopened_from_id,items,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+    `shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`,
     { method: "GET" }
   );
   return Array.isArray(rows) && rows[0] ? sanitizeShoppingOrderRow(rows[0]) : null;
@@ -236,8 +237,9 @@ module.exports = async function handler(req, res) {
           submitted_by_name: "",
           submitted_by_user_email: "",
           submitted_at: null,
+          notes: "",
         };
-        const created = await restQuery("shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,reopened_from_id,items,created_at,updated_at", {
+        const created = await restQuery("shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at", {
           method: "POST",
           body: [payload],
         });
@@ -248,9 +250,10 @@ module.exports = async function handler(req, res) {
       const settings = await loadShoppingSettings();
       const payload = {
         status: "open",
+        notes: "",
         items: buildOrderItemsFromSettings(settings),
       };
-      const created = await restQuery("shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,reopened_from_id,items,created_at,updated_at", {
+      const created = await restQuery("shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at", {
         method: "POST",
         body: [payload],
       });
@@ -306,10 +309,11 @@ module.exports = async function handler(req, res) {
         patch.submitted_by_name = submittedByName;
         patch.submitted_by_user_email = cleanText(user?.email).toLowerCase();
         patch.submitted_at = new Date().toISOString();
+        patch.notes = cleanText(body?.notes);
       }
 
       const updatedRows = await restQuery(
-        `shopping_orders?id=eq.${encodeURIComponent(id)}&select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,reopened_from_id,items,created_at,updated_at`,
+        `shopping_orders?id=eq.${encodeURIComponent(id)}&select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at`,
         {
           method: "PATCH",
           body: patch,

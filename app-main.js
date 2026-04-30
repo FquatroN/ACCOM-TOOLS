@@ -6227,6 +6227,7 @@ function normalizeShoppingOrderClient(order, settingsItems = []) {
     submittedAt: clean(order.submittedAt || order.submitted_at),
     submittedByName: clean(order.submittedByName || order.submitted_by_name),
     submittedByUserEmail: clean(order.submittedByUserEmail || order.submitted_by_user_email).toLowerCase(),
+    notes: clean(order.notes),
     reopenedFromId: clean(order.reopenedFromId || order.reopened_from_id),
     items,
     orderedCount: items.filter((item) => item.order).length,
@@ -6482,6 +6483,9 @@ function renderShoppingDetail(order) {
   const detail = [
     `<div class="review-detail-meta">${meta.map(([label, value]) => `<div class="review-detail-meta-item"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join("")}</div>`,
   ];
+  if (clean(order.notes)) {
+    detail.push(`<div class="review-detail-section"><strong>Notes</strong><div class="communication-mobile-message">${escape(order.notes)}</div></div>`);
+  }
   if (!selectedItems.length) {
     detail.push('<p class="review-detail-section">No selected items in this order.</p>');
   } else {

@@ -131,11 +131,15 @@ create table if not exists public.shopping_orders (
   submitted_by_name text not null default '',
   submitted_by_user_email text not null default '',
   submitted_at timestamptz,
+  notes text not null default '',
   reopened_from_id uuid references public.shopping_orders(id) on delete set null,
   items jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.shopping_orders
+add column if not exists notes text not null default '';
 
 create unique index if not exists shopping_orders_single_open_unique
 on public.shopping_orders (status)
