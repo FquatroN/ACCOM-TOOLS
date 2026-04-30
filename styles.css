@@ -110,12 +110,12 @@ body {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 0.75rem;
+  font-size: 0.68rem;
 }
 
 .sidebar-summary-table th,
 .sidebar-summary-table td {
-  padding: 0.38rem 0.18rem;
+  padding: 0.3rem 0.08rem;
   border-bottom: 1px solid var(--line);
   text-align: right;
   vertical-align: middle;
@@ -124,11 +124,16 @@ body {
 
 .sidebar-summary-table th:first-child,
 .sidebar-summary-table td:first-child {
+  width: 34%;
+}
+
+.sidebar-summary-table th:first-child,
+.sidebar-summary-table td:first-child {
   text-align: left;
 }
 
 .sidebar-summary-table thead th {
-  font-size: 0.67rem;
+  font-size: 0.6rem;
   color: var(--muted);
   font-weight: 600;
 }
@@ -142,6 +147,8 @@ body {
   flex-direction: column;
   gap: 0.08rem;
   min-width: 0;
+  font-size: 0.64rem;
+  line-height: 1.15;
 }
 
 .sidebar-summary-label small {
@@ -152,6 +159,8 @@ body {
 .sidebar-summary-value {
   font-weight: 700;
   color: var(--brand-2);
+  font-size: 0.72rem;
+  white-space: nowrap;
 }
 
 .sidebar-summary-empty {
