@@ -1628,19 +1628,20 @@ select:disabled {
   display: grid;
   gap: 0.45rem;
   align-content: start;
+  grid-column: 1 / -1;
 }
 
 .shopping-weekdays-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.4rem 1.1rem;
-  font-size: 0.76rem;
-  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.45rem;
   width: 100%;
 }
 
 .shopping-weekdays-grid .filter-checkbox {
   display: grid;
+  flex: 1 1 0;
   justify-items: center;
   align-content: start;
   text-align: center;
@@ -1652,6 +1653,8 @@ select:disabled {
 .shopping-weekdays-grid .filter-checkbox span {
   width: 100%;
   white-space: nowrap;
+  font-size: clamp(0.58rem, 0.78vw, 0.72rem);
+  line-height: 1.12;
 }
 
 .shopping-weekdays-grid .filter-checkbox input[type="checkbox"] {
