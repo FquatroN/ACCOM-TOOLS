@@ -53,6 +53,14 @@ function normalizeColor(value, fallback = "#F3E7DB") {
   return /^#[0-9A-F]{6}$/.test(raw) ? raw : fallback;
 }
 
+function parseShoppingBool(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const raw = cleanText(value).toLowerCase();
+  if (!raw) return false;
+  return ["true", "1", "yes", "y", "sim", "on"].includes(raw);
+}
+
 function slugify(value) {
   return cleanText(value)
     .toLowerCase()
@@ -114,7 +122,7 @@ function sanitizeShoppingItem(item = {}, fallbackIndex = 0) {
     item: label,
     supplier: cleanText(item.supplier || item.suppliers),
     stored: normalizeShoppingStored(item.stored),
-    quantityRequired: !!(item.quantityRequired ?? item.quantity_required ?? item.mandatoryExistingQuantity ?? item.mandatory_existing_quantity),
+    quantityRequired: parseShoppingBool(item.quantityRequired ?? item.quantity_required ?? item.mandatoryExistingQuantity ?? item.mandatory_existing_quantity),
   };
 }
 
@@ -199,9 +207,9 @@ function sanitizeOrderItems(value, settingsItems = []) {
         item: cleanText(item?.item || config.item),
         supplier: cleanText(item?.supplier || config.supplier),
         stored: normalizeShoppingStored(item?.stored || config.stored),
-        quantityRequired: !!(item?.quantityRequired ?? item?.quantity_required ?? config.quantityRequired),
+        quantityRequired: parseShoppingBool(item?.quantityRequired ?? item?.quantity_required ?? config.quantityRequired),
         existingQuantity: cleanText(item?.existingQuantity ?? item?.existing_quantity),
-        order: !!item?.order,
+        order: parseShoppingBool(item?.order),
       };
     })
     .filter((item) => item.item);

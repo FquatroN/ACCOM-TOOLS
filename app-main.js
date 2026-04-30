@@ -6144,6 +6144,14 @@ function normalizeShoppingColorClient(value, fallback = "#F3E7DB") {
   return /^#[0-9A-F]{6}$/.test(raw) ? raw : fallback;
 }
 
+function parseShoppingBoolClient(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const raw = clean(value).toLowerCase();
+  if (!raw) return false;
+  return ["true", "1", "yes", "y", "sim", "on"].includes(raw);
+}
+
 function sanitizeShoppingSettingItemClient(item = {}, index = 0) {
   const label = clean(item.item || item.name);
   return {
@@ -6152,7 +6160,7 @@ function sanitizeShoppingSettingItemClient(item = {}, index = 0) {
     item: label,
     supplier: clean(item.supplier || item.suppliers),
     stored: normalizeShoppingStoredClient(item.stored),
-    quantityRequired: !!(item.quantityRequired ?? item.quantity_required ?? item.mandatoryExistingQuantity ?? item.mandatory_existing_quantity),
+    quantityRequired: parseShoppingBoolClient(item.quantityRequired ?? item.quantity_required ?? item.mandatoryExistingQuantity ?? item.mandatory_existing_quantity),
   };
 }
 
@@ -6182,9 +6190,9 @@ function normalizeShoppingOrderItemClient(item = {}) {
     item: clean(item.item),
     supplier: clean(item.supplier),
     stored: normalizeShoppingStoredClient(item.stored),
-    quantityRequired: !!(item.quantityRequired ?? item.quantity_required),
+    quantityRequired: parseShoppingBoolClient(item.quantityRequired ?? item.quantity_required),
     existingQuantity: clean(item.existingQuantity ?? item.existing_quantity),
-    order: !!item.order,
+    order: parseShoppingBoolClient(item.order),
   };
 }
 
