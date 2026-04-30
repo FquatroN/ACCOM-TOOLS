@@ -124,6 +124,23 @@ create table if not exists public.services (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.shopping_orders (
+  id uuid primary key default gen_random_uuid(),
+  order_number bigint generated always as identity unique,
+  status text not null default 'open',
+  submitted_by_name text not null default '',
+  submitted_by_user_email text not null default '',
+  submitted_at timestamptz,
+  reopened_from_id uuid references public.shopping_orders(id) on delete set null,
+  items jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists shopping_orders_single_open_unique
+on public.shopping_orders (status)
+where status = 'open';
+
 drop trigger if exists group_proposals_set_updated_at on public.group_proposals;
 create trigger group_proposals_set_updated_at
 before update on public.group_proposals
@@ -132,6 +149,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists services_set_updated_at on public.services;
 create trigger services_set_updated_at
 before update on public.services
+for each row execute function public.set_updated_at();
+
+drop trigger if exists shopping_orders_set_updated_at on public.shopping_orders;
+create trigger shopping_orders_set_updated_at
+before update on public.shopping_orders
 for each row execute function public.set_updated_at();
 
 create table if not exists public.properties (
@@ -266,6 +288,7 @@ alter table public.app_profiles enable row level security;
 alter table public.user_profile_assignments enable row level security;
 alter table public.group_proposals enable row level security;
 alter table public.services enable row level security;
+alter table public.shopping_orders enable row level security;
 alter table public.properties enable row level security;
 alter table public.review_import_runs enable row level security;
 alter table public.review_import_staging enable row level security;
@@ -283,6 +306,21 @@ begin
       and tablename = 'group_proposals'
   loop
     execute format('drop policy if exists %I on public.group_proposals', p.policyname);
+  end loop;
+end
+$$;
+
+do $$
+declare
+  p record;
+begin
+  for p in
+    select policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'shopping_orders'
+  loop
+    execute format('drop policy if exists %I on public.shopping_orders', p.policyname);
   end loop;
 end
 $$;
@@ -431,6 +469,7 @@ grant select, insert, update, delete on table public.app_profiles to authenticat
 grant select, insert, update, delete on table public.user_profile_assignments to authenticated;
 grant select, insert, update, delete on table public.group_proposals to authenticated;
 grant select, insert, update, delete on table public.services to authenticated;
+grant select, insert, update, delete on table public.shopping_orders to authenticated;
 grant select, insert, update, delete on table public.properties to authenticated;
 grant select, insert, update, delete on table public.review_import_runs to authenticated;
 grant select, insert, update, delete on table public.review_import_staging to authenticated;
@@ -443,6 +482,7 @@ grant select, insert, update, delete on table public.app_profiles to anon;
 grant select, insert, update, delete on table public.user_profile_assignments to anon;
 grant select, insert, update, delete on table public.group_proposals to anon;
 grant select, insert, update, delete on table public.services to anon;
+grant select, insert, update, delete on table public.shopping_orders to anon;
 grant select, insert, update, delete on table public.properties to anon;
 grant select, insert, update, delete on table public.review_import_runs to anon;
 grant select, insert, update, delete on table public.review_import_staging to anon;
@@ -525,6 +565,31 @@ with check (auth.uid() is not null);
 
 create policy "services_delete_authenticated"
 on public.services
+for delete
+to public
+using (auth.uid() is not null);
+
+create policy "shopping_orders_select_authenticated"
+on public.shopping_orders
+for select
+to public
+using (auth.uid() is not null);
+
+create policy "shopping_orders_insert_authenticated"
+on public.shopping_orders
+for insert
+to public
+with check (auth.uid() is not null);
+
+create policy "shopping_orders_update_authenticated"
+on public.shopping_orders
+for update
+to public
+using (auth.uid() is not null)
+with check (auth.uid() is not null);
+
+create policy "shopping_orders_delete_authenticated"
+on public.shopping_orders
 for delete
 to public
 using (auth.uid() is not null);
@@ -730,7 +795,7 @@ to public
 using (auth.uid() is not null);
 
 insert into public.app_profiles (name, app_features, settings_features)
-values ('Administrator', '["communications","lost-found","reviews","groups","services"]'::jsonb, '["communications","reviews","groups","services","admin-users"]'::jsonb)
+values ('Administrator', '["communications","lost-found","reviews","groups","services","shopping"]'::jsonb, '["communications","reviews","groups","services","shopping","admin-users"]'::jsonb)
 on conflict (name) do nothing;
 
 update public.app_profiles
@@ -738,8 +803,10 @@ set
   app_features = (
     case when app_features ? 'groups' then app_features else app_features || '["groups"]'::jsonb end
   ) || case when app_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end
-    || case when app_features ? 'lost-found' then '[]'::jsonb else '["lost-found"]'::jsonb end,
+    || case when app_features ? 'lost-found' then '[]'::jsonb else '["lost-found"]'::jsonb end
+    || case when app_features ? 'shopping' then '[]'::jsonb else '["shopping"]'::jsonb end,
   settings_features = (case when settings_features ? 'groups' then settings_features else settings_features || '["groups"]'::jsonb end) || case when settings_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end
+    || case when settings_features ? 'shopping' then '[]'::jsonb else '["shopping"]'::jsonb end
 where name = 'Administrator';
 
 insert into public.app_profiles (name, app_features, settings_features)

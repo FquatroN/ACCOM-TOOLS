@@ -17,8 +17,18 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services"];
-const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services", "shopping"];
+const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "shopping", "admin-users"];
+const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
+const SHOPPING_WEEKDAY_OPTIONS = [
+  { key: "monday", label: "Monday" },
+  { key: "tuesday", label: "Tuesday" },
+  { key: "wednesday", label: "Wednesday" },
+  { key: "thursday", label: "Thursday" },
+  { key: "friday", label: "Friday" },
+  { key: "saturday", label: "Saturday" },
+  { key: "sunday", label: "Sunday" },
+];
 
 const DEFAULT_SETTINGS = {
   communications: {
@@ -271,6 +281,12 @@ const DEFAULT_SERVICE_SETTINGS = {
   ],
 };
 
+const DEFAULT_SHOPPING_SETTINGS = {
+  mandatoryWeekdays: [],
+  emailRecipients: [],
+  items: [],
+};
+
 const GROUP_PROPOSAL_TEMPLATES = {
   pt: `Caro/a {{name}},
 
@@ -483,6 +499,14 @@ const state = {
   servicesLoaded: false,
   serviceSettings: clone(DEFAULT_SERVICE_SETTINGS),
   serviceSettingsLoaded: false,
+  shoppingOpenOrder: null,
+  shoppingHistory: [],
+  shoppingLoaded: false,
+  shoppingSettings: clone(DEFAULT_SHOPPING_SETTINGS),
+  shoppingSettingsLoaded: false,
+  shoppingTab: "current",
+  shoppingSubmitName: "",
+  shoppingSelectedHistoryId: "",
   serviceProviders: [],
   serviceFilters: { showActive: true, createdFrom: "", createdTo: "", dateFrom: "", dateTo: "", name: "" },
   serviceDraft: emptyServiceDraft(),
@@ -555,22 +579,26 @@ const els = {
   navReviews: document.getElementById("nav-reviews"),
   navGroups: document.getElementById("nav-groups"),
   navServices: document.getElementById("nav-services"),
+  navShopping: document.getElementById("nav-shopping"),
   openSettings: document.getElementById("open-settings"),
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
   viewLostFound: document.getElementById("view-lost-found"),
   viewReviews: document.getElementById("view-reviews"),
   viewServices: document.getElementById("view-services"),
+  viewShopping: document.getElementById("view-shopping"),
   viewSettings: document.getElementById("view-settings"),
   settingsMenuCommunications: document.getElementById("settings-menu-communications"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
   settingsMenuGroups: document.getElementById("settings-menu-groups"),
   settingsMenuServices: document.getElementById("settings-menu-services"),
+  settingsMenuShopping: document.getElementById("settings-menu-shopping"),
   settingsMenuAdminUsers: document.getElementById("settings-menu-admin-users"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
   settingsViewGroups: document.getElementById("settings-view-groups"),
   settingsViewServices: document.getElementById("settings-view-services"),
+  settingsViewShopping: document.getElementById("settings-view-shopping"),
   settingsViewAdminUsers: document.getElementById("settings-view-admin-users"),
   settingsReviewsImportTab: document.getElementById("settings-reviews-import-tab"),
   settingsReviewsConfigTab: document.getElementById("settings-reviews-config-tab"),
@@ -580,6 +608,7 @@ const els = {
   closeSettingsReviews: document.getElementById("close-settings-reviews"),
   closeSettingsGroups: document.getElementById("close-settings-groups"),
   closeSettingsServices: document.getElementById("close-settings-services"),
+  closeSettingsShopping: document.getElementById("close-settings-shopping"),
   adminUserEmail: document.getElementById("admin-user-email"),
   adminUserPassword: document.getElementById("admin-user-password"),
   adminUserProfile: document.getElementById("admin-user-profile"),
@@ -783,6 +812,36 @@ const els = {
   servicesPriceReturn47: document.getElementById("services-price-return-4-7"),
   servicesPriceReturn811: document.getElementById("services-price-return-8-11"),
   servicesPriceReturn1216: document.getElementById("services-price-return-12-16"),
+  shoppingTabCurrent: document.getElementById("shopping-tab-current"),
+  shoppingTabHistory: document.getElementById("shopping-tab-history"),
+  shoppingPanelCurrent: document.getElementById("shopping-panel-current"),
+  shoppingPanelHistory: document.getElementById("shopping-panel-history"),
+  shoppingNewOrder: document.getElementById("shopping-new-order"),
+  shoppingSaveOrder: document.getElementById("shopping-save-order"),
+  shoppingOpenSummary: document.getElementById("shopping-open-summary"),
+  shoppingCurrentStatus: document.getElementById("shopping-current-status"),
+  shoppingOpenEmpty: document.getElementById("shopping-open-empty"),
+  shoppingOpenContent: document.getElementById("shopping-open-content"),
+  shoppingOpenRows: document.getElementById("shopping-open-rows"),
+  shoppingMobileCards: document.getElementById("shopping-mobile-cards"),
+  shoppingSubmitName: document.getElementById("shopping-submit-name"),
+  shoppingSubmitStatus: document.getElementById("shopping-submit-status"),
+  shoppingSubmitOrder: document.getElementById("shopping-submit-order"),
+  shoppingHistoryRows: document.getElementById("shopping-history-rows"),
+  shoppingHistoryMobileCards: document.getElementById("shopping-history-mobile-cards"),
+  shoppingHistoryCount: document.getElementById("shopping-history-count"),
+  shoppingHistoryStatus: document.getElementById("shopping-history-status"),
+  shoppingDetailModal: document.getElementById("shopping-detail-modal"),
+  shoppingDetailClose: document.getElementById("shopping-detail-close"),
+  shoppingReopenOrder: document.getElementById("shopping-reopen-order"),
+  shoppingDetailStatus: document.getElementById("shopping-detail-status"),
+  shoppingDetailBody: document.getElementById("shopping-detail-body"),
+  shoppingSaveSettings: document.getElementById("shopping-save-settings"),
+  shoppingSettingsEmailRecipients: document.getElementById("shopping-settings-email-recipients"),
+  shoppingSettingsWeekdays: document.getElementById("shopping-settings-weekdays"),
+  shoppingAddItem: document.getElementById("shopping-add-item"),
+  shoppingSettingsItemsBody: document.getElementById("shopping-settings-items-body"),
+  shoppingSettingsStatus: document.getElementById("shopping-settings-status"),
   reviewsScreenList: document.getElementById("reviews-screen-list"),
   reviewsScreenResume: document.getElementById("reviews-screen-resume"),
   reviewsScreenRating: document.getElementById("reviews-screen-rating"),
@@ -864,12 +923,14 @@ async function init() {
   if (!canApp("communications") && canApp("lost-found")) state.currentView = "lost-found";
   else if (!canApp("communications") && !canApp("lost-found") && canApp("groups")) state.currentView = "groups";
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("reviews")) state.currentView = "reviews";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("shopping")) state.currentView = "shopping";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   if (!canSettings("communications") && canSettings("reviews")) state.settingsSection = "reviews";
   else if (!canSettings("communications") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
+  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
   else if (!canSettings("communications") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
@@ -877,6 +938,7 @@ async function init() {
   renderReviewPropertyOptions();
   render();
   await ensureCurrentViewData();
+  if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
   startAutoRefresh();
 }
 
@@ -886,6 +948,7 @@ function bindEvents() {
   els.navReviews.addEventListener("click", () => setView("reviews"));
   els.navGroups.addEventListener("click", () => setView("groups"));
   els.navServices.addEventListener("click", () => setView("services"));
+  els.navShopping.addEventListener("click", () => setView("shopping"));
   els.mobileMenuToggle?.addEventListener("click", toggleMobileNav);
   els.openSettings.addEventListener("click", () => setView("settings"));
   els.closeSettings.addEventListener("click", () => setView("communications"));
@@ -893,11 +956,35 @@ function bindEvents() {
   els.closeSettingsReviews.addEventListener("click", () => setView("reviews"));
   els.closeSettingsGroups.addEventListener("click", () => setView("groups"));
   els.closeSettingsServices.addEventListener("click", () => setView("services"));
+  els.closeSettingsShopping.addEventListener("click", () => setView("shopping"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuGroups.addEventListener("click", () => setSettingsSection("groups"));
   els.settingsMenuServices.addEventListener("click", () => setSettingsSection("services"));
+  els.settingsMenuShopping.addEventListener("click", () => setSettingsSection("shopping"));
   els.settingsMenuAdminUsers.addEventListener("click", () => setSettingsSection("admin-users"));
+  els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
+  els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
+  els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
+  els.shoppingSaveOrder.addEventListener("click", () => saveShoppingOrderDraft(false));
+  els.shoppingSubmitOrder.addEventListener("click", submitShoppingOrder);
+  els.shoppingOpenRows.addEventListener("input", onShoppingOrderInput);
+  els.shoppingOpenRows.addEventListener("change", onShoppingOrderInput);
+  els.shoppingMobileCards?.addEventListener("input", onShoppingOrderInput);
+  els.shoppingMobileCards?.addEventListener("change", onShoppingOrderInput);
+  els.shoppingHistoryRows.addEventListener("click", onShoppingHistoryAction);
+  els.shoppingHistoryMobileCards?.addEventListener("click", onShoppingHistoryAction);
+  els.shoppingDetailClose.addEventListener("click", closeShoppingDetailModal);
+  els.shoppingReopenOrder.addEventListener("click", reopenLatestShoppingOrder);
+  els.shoppingSaveSettings.addEventListener("click", saveShoppingSettings);
+  els.shoppingAddItem.addEventListener("click", addShoppingSettingItem);
+  els.shoppingSettingsItemsBody.addEventListener("input", onShoppingSettingsInput);
+  els.shoppingSettingsItemsBody.addEventListener("change", onShoppingSettingsInput);
+  els.shoppingSettingsItemsBody.addEventListener("click", onShoppingSettingsAction);
+  els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
+  els.shoppingSubmitName.addEventListener("input", () => {
+    state.shoppingSubmitName = clean(els.shoppingSubmitName.value);
+  });
   els.settingsReviewsImportTab.addEventListener("click", () => setReviewSettingsScreen("import"));
   els.settingsReviewsConfigTab.addEventListener("click", () => setReviewSettingsScreen("config"));
   els.rows.addEventListener("click", onRowAction);
@@ -1189,6 +1276,9 @@ function applyInitialRouteFromUrl() {
     if (view === "services" && canApp("services")) {
       state.currentView = "services";
     }
+    if (view === "shopping" && canApp("shopping")) {
+      state.currentView = "shopping";
+    }
     if (serviceId && canApp("services")) {
       state.pendingServiceDeepLinkId = serviceId;
       state.currentView = "services";
@@ -1218,6 +1308,7 @@ async function setView(view) {
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
   if (view === "groups" && !canApp("groups")) return showToast("No groups access.", "error");
   if (view === "services" && !canApp("services")) return showToast("No services access.", "error");
+  if (view === "shopping" && !canApp("shopping")) return showToast("No shopping access.", "error");
   setMobileNavOpen(false);
   state.currentView = view;
   if (view === "settings") {
@@ -1225,11 +1316,15 @@ async function setView(view) {
     else if (canSettings("reviews")) state.settingsSection = "reviews";
     else if (canSettings("groups")) state.settingsSection = "groups";
     else if (canSettings("services")) state.settingsSection = "services";
+    else if (canSettings("shopping")) state.settingsSection = "shopping";
     else if (canSettings("admin-users")) state.settingsSection = "admin-users";
   }
   if (view !== "services") {
     state.serviceSelectedId = "";
     state.pendingServiceDeepLinkId = "";
+  }
+  if (view !== "shopping" && els.shoppingDetailModal && !els.shoppingDetailModal.hidden) {
+    closeShoppingDetailModal();
   }
   syncAppRoute();
   renderLayout();
@@ -1265,6 +1360,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "services") {
     await ensureServicesData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "shopping") {
+    await ensureShoppingData();
     renderSettingsSection();
     render();
     return;
@@ -1328,6 +1429,14 @@ async function refreshCurrentViewData(reason = "timer") {
       state.servicesLoaded = true;
       renderServices();
       state.lastAutoRefreshAt = now;
+      return;
+    }
+    if (state.currentView === "shopping" && canApp("shopping")) {
+      await loadShoppingData({ silent: true });
+      state.shoppingLoaded = true;
+      renderShopping();
+      renderLayout();
+      state.lastAutoRefreshAt = now;
     }
   } finally {
     state.autoRefreshRunning = false;
@@ -1340,6 +1449,7 @@ function shouldSkipAutoRefresh() {
   if (state.currentView === "lost-found" && (state.lostFoundEditingId || hasLostFoundDraft())) return true;
   if (state.currentView === "groups" && els.groupEditorModal && !els.groupEditorModal.hidden) return true;
   if (state.currentView === "services" && els.serviceEditorModal && !els.serviceEditorModal.hidden) return true;
+  if (state.currentView === "shopping" && state.shoppingOpenOrder) return true;
   if (state.reviewQa.loading) return true;
   return false;
 }
@@ -1438,6 +1548,20 @@ async function ensureServicesData() {
   renderServiceSettings();
 }
 
+async function ensureShoppingData() {
+  if (!canApp("shopping") && !canSettings("shopping")) return;
+  if (canSettings("shopping") && !state.shoppingSettingsLoaded) {
+    await loadShoppingSettings();
+    state.shoppingSettingsLoaded = true;
+  }
+  if (canApp("shopping") && !state.shoppingLoaded) {
+    await loadShoppingData();
+    state.shoppingLoaded = true;
+  }
+  renderShopping();
+  renderShoppingSettings();
+}
+
 async function ensureSettingsSectionData() {
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
@@ -1455,6 +1579,10 @@ async function ensureSettingsSectionData() {
     await ensureServicesData();
     return;
   }
+  if (state.settingsSection === "shopping") {
+    await ensureShoppingData();
+    return;
+  }
   if (state.settingsSection === "admin-users") await ensureAdminUsersData();
 }
 
@@ -1464,12 +1592,14 @@ function renderLayout() {
   const reviews = state.currentView === "reviews";
   const groups = state.currentView === "groups";
   const services = state.currentView === "services";
+  const shopping = state.currentView === "shopping";
   const settingsMode = state.currentView === "settings";
   const canComm = canApp("communications");
   const canLostFound = canApp("lost-found");
   const canReviews = canApp("reviews");
   const canGroups = canApp("groups");
   const canServices = canApp("services");
+  const canShopping = canApp("shopping");
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
   els.navCommunications.classList.toggle("active", comm);
@@ -1477,11 +1607,14 @@ function renderLayout() {
   els.navReviews.classList.toggle("active", reviews);
   els.navGroups.classList.toggle("active", groups);
   els.navServices.classList.toggle("active", services);
+  els.navShopping.classList.toggle("active", shopping);
   els.navCommunications.hidden = !canComm;
   els.navLostFound.hidden = !canLostFound;
   els.navReviews.hidden = !canReviews;
   els.navGroups.hidden = !canGroups;
   els.navServices.hidden = !canServices;
+  els.navShopping.hidden = !canShopping;
+  els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
   els.openSettings.hidden = !state.access.settingsFeatures.length;
   els.leftNav.hidden = settingsMode;
   els.topbar.hidden = false;
@@ -1491,16 +1624,19 @@ function renderLayout() {
   els.viewReviews.hidden = !reviews;
   els.viewGroups.hidden = !groups;
   els.viewServices.hidden = !services;
+  els.viewShopping.hidden = !shopping;
   els.viewSettings.hidden = !settingsMode;
   els.settingsMenuCommunications.hidden = !canSettings("communications");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
   els.settingsMenuGroups.hidden = !canSettings("groups");
   els.settingsMenuServices.hidden = !canSettings("services");
+  els.settingsMenuShopping.hidden = !canSettings("shopping");
   els.settingsMenuAdminUsers.hidden = !canSettings("admin-users");
   els.settingsMenuCommunications.classList.toggle("active", state.settingsSection === "communications");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
   els.settingsMenuGroups.classList.toggle("active", state.settingsSection === "groups");
   els.settingsMenuServices.classList.toggle("active", state.settingsSection === "services");
+  els.settingsMenuShopping.classList.toggle("active", state.settingsSection === "shopping");
   els.settingsMenuAdminUsers.classList.toggle("active", state.settingsSection === "admin-users");
   syncMobileNavLayout();
 }
@@ -1510,10 +1646,13 @@ async function setSettingsSection(section) {
   if (section === "reviews" && !canSettings("reviews")) return;
   if (section === "groups" && !canSettings("groups")) return;
   if (section === "services" && !canSettings("services")) return;
+  if (section === "shopping" && !canSettings("shopping")) return;
   if (section === "admin-users" && !canSettings("admin-users")) return;
   setMobileNavOpen(false);
   state.settingsSection = section === "admin-users"
     ? "admin-users"
+    : section === "shopping"
+      ? "shopping"
     : section === "services"
       ? "services"
       : section === "groups"
@@ -1549,11 +1688,13 @@ function renderSettingsSection() {
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
   const isGroups = state.settingsSection === "groups" && canSettings("groups");
   const isServices = state.settingsSection === "services" && canSettings("services");
+  const isShopping = state.settingsSection === "shopping" && canSettings("shopping");
   const isAdmin = state.settingsSection === "admin-users" && canSettings("admin-users");
   els.settingsViewCommunications.hidden = !isComm;
   els.settingsViewReviews.hidden = !isReviews;
   els.settingsViewGroups.hidden = !isGroups;
   els.settingsViewServices.hidden = !isServices;
+  els.settingsViewShopping.hidden = !isShopping;
   els.settingsViewAdminUsers.hidden = !isAdmin;
   if (isReviews) setReviewSettingsScreen(state.reviewSettingsScreen, false);
 }
@@ -1698,7 +1839,7 @@ function renderProfiles() {
   els.profilesBody.innerHTML = "";
   if (state.profiles.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="12" class="empty">No profiles yet.</td>';
+    tr.innerHTML = '<td colspan="14" class="empty">No profiles yet.</td>';
     els.profilesBody.appendChild(tr);
     return;
   }
@@ -1710,10 +1851,12 @@ function renderProfiles() {
       <td><input type="checkbox" data-profile-app-reviews="${escape(profile.id)}" ${profile.appFeatures.includes("reviews") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-app-groups="${escape(profile.id)}" ${profile.appFeatures.includes("groups") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-app-services="${escape(profile.id)}" ${profile.appFeatures.includes("services") ? "checked" : ""} /></td>
+      <td><input type="checkbox" data-profile-app-shopping="${escape(profile.id)}" ${profile.appFeatures.includes("shopping") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-settings-communications="${escape(profile.id)}" ${profile.settingsFeatures.includes("communications") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-settings-reviews="${escape(profile.id)}" ${profile.settingsFeatures.includes("reviews") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-settings-groups="${escape(profile.id)}" ${profile.settingsFeatures.includes("groups") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-settings-services="${escape(profile.id)}" ${profile.settingsFeatures.includes("services") ? "checked" : ""} /></td>
+      <td><input type="checkbox" data-profile-settings-shopping="${escape(profile.id)}" ${profile.settingsFeatures.includes("shopping") ? "checked" : ""} /></td>
       <td><input type="checkbox" data-profile-settings-admin-users="${escape(profile.id)}" ${profile.settingsFeatures.includes("admin-users") ? "checked" : ""} /></td>
       <td class="row-actions">
         <button type="button" class="ghost" data-action="save-profile" data-id="${escape(profile.id)}">Save</button>
@@ -1797,11 +1940,13 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-reviews="${id}"]`)?.checked) appFeatures.push("reviews");
   if (els.profilesBody.querySelector(`[data-profile-app-groups="${id}"]`)?.checked) appFeatures.push("groups");
   if (els.profilesBody.querySelector(`[data-profile-app-services="${id}"]`)?.checked) appFeatures.push("services");
+  if (els.profilesBody.querySelector(`[data-profile-app-shopping="${id}"]`)?.checked) appFeatures.push("shopping");
   const settingsFeatures = [];
   if (els.profilesBody.querySelector(`[data-profile-settings-communications="${id}"]`)?.checked) settingsFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-settings-reviews="${id}"]`)?.checked) settingsFeatures.push("reviews");
   if (els.profilesBody.querySelector(`[data-profile-settings-groups="${id}"]`)?.checked) settingsFeatures.push("groups");
   if (els.profilesBody.querySelector(`[data-profile-settings-services="${id}"]`)?.checked) settingsFeatures.push("services");
+  if (els.profilesBody.querySelector(`[data-profile-settings-shopping="${id}"]`)?.checked) settingsFeatures.push("shopping");
   if (els.profilesBody.querySelector(`[data-profile-settings-admin-users="${id}"]`)?.checked) settingsFeatures.push("admin-users");
   return { name, appFeatures, settingsFeatures };
 }
@@ -5901,6 +6046,536 @@ function exportServicesToExcel() {
   showToast(`Exported ${rows.length} active services to Excel.`, "success");
 }
 
+function normalizeShoppingWeekdaysClient(value) {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return source
+    .map((item) => clean(item).toLowerCase())
+    .filter((item) => SHOPPING_WEEKDAY_OPTIONS.some((entry) => entry.key === item))
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
+function normalizeShoppingCategoryClient(value) {
+  const raw = clean(value).toLowerCase();
+  if (raw === "breakfast" || raw === "pequeno almoço" || raw === "pequeno almoco") return "Breakfast";
+  if (raw === "cleaning" || raw === "limpeza") return "Cleaning";
+  if (raw === "sales" || raw === "vendas") return "Sales";
+  if (raw === "activities" || raw === "atividades" || raw === "actividades") return "Activities";
+  if (raw === "other" || raw === "outros") return "Other";
+  if (raw === "tapas" || raw.includes("terça") || raw.includes("terca")) return "Tapas";
+  if (raw === "utensils" || raw === "utensilios" || raw === "utensílios") return "Utensils";
+  return SHOPPING_CATEGORY_OPTIONS.includes(clean(value)) ? clean(value) : "Other";
+}
+
+function sanitizeShoppingSettingItemClient(item = {}, index = 0) {
+  const label = clean(item.item || item.name);
+  return {
+    id: clean(item.id) || `shopping-item-${index + 1}`,
+    category: normalizeShoppingCategoryClient(item.category),
+    item: label,
+    supplier: clean(item.supplier || item.suppliers),
+    quantityRequired: !!(item.quantityRequired ?? item.quantity_required ?? item.mandatoryExistingQuantity ?? item.mandatory_existing_quantity),
+  };
+}
+
+function normalizeShoppingSettingsClient(settings = {}) {
+  const sourceItems = Array.isArray(settings.items) ? settings.items : [];
+  return {
+    mandatoryWeekdays: normalizeShoppingWeekdaysClient(settings.mandatoryWeekdays || settings.mandatory_weekdays),
+    emailRecipients: parseEmailList(settings.emailRecipients || settings.email_recipients),
+    items: sourceItems.map((item, index) => sanitizeShoppingSettingItemClient(item, index)).filter((item) => item.item),
+  };
+}
+
+function normalizeShoppingOrderItemClient(item = {}) {
+  return {
+    id: clean(item.id),
+    category: normalizeShoppingCategoryClient(item.category),
+    item: clean(item.item),
+    supplier: clean(item.supplier),
+    quantityRequired: !!(item.quantityRequired ?? item.quantity_required),
+    existingQuantity: clean(item.existingQuantity ?? item.existing_quantity),
+    order: !!item.order,
+  };
+}
+
+function normalizeShoppingOrderClient(order) {
+  if (!order) return null;
+  const items = (Array.isArray(order.items) ? order.items : []).map(normalizeShoppingOrderItemClient).filter((item) => item.item);
+  return {
+    id: clean(order.id),
+    orderNumber: Number(order.orderNumber || order.order_number || 0) || 0,
+    status: clean(order.status).toLowerCase() === "submitted" ? "submitted" : "open",
+    createdAt: clean(order.createdAt || order.created_at),
+    updatedAt: clean(order.updatedAt || order.updated_at),
+    submittedAt: clean(order.submittedAt || order.submitted_at),
+    submittedByName: clean(order.submittedByName || order.submitted_by_name),
+    submittedByUserEmail: clean(order.submittedByUserEmail || order.submitted_by_user_email).toLowerCase(),
+    reopenedFromId: clean(order.reopenedFromId || order.reopened_from_id),
+    items,
+    orderedCount: items.filter((item) => item.order).length,
+  };
+}
+
+function setShoppingCurrentStatus(text) {
+  if (els.shoppingCurrentStatus) els.shoppingCurrentStatus.textContent = text;
+}
+
+function setShoppingSubmitStatus(text) {
+  if (els.shoppingSubmitStatus) els.shoppingSubmitStatus.textContent = text;
+}
+
+function setShoppingHistoryStatus(text) {
+  if (els.shoppingHistoryStatus) els.shoppingHistoryStatus.textContent = text;
+}
+
+function setShoppingSettingsStatus(text) {
+  if (els.shoppingSettingsStatus) els.shoppingSettingsStatus.textContent = text;
+}
+
+function setShoppingDetailStatus(text) {
+  if (els.shoppingDetailStatus) els.shoppingDetailStatus.textContent = text;
+}
+
+async function loadShoppingSettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/shopping-settings");
+    state.shoppingSettings = normalizeShoppingSettingsClient(result.settings);
+    renderShoppingSettings();
+    if (!silent) setShoppingSettingsStatus(`Loaded ${state.shoppingSettings.items.length} shopping items.`);
+  } catch (e) {
+    state.shoppingSettings = clone(DEFAULT_SHOPPING_SETTINGS);
+    renderShoppingSettings();
+    if (!silent) setShoppingSettingsStatus(`Using default shopping settings (${e.message}).`);
+  }
+}
+
+async function loadShoppingData({ silent = false } = {}) {
+  try {
+    const result = await api("/api/shopping");
+    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.openOrder);
+    state.shoppingHistory = (Array.isArray(result.history) ? result.history : []).map(normalizeShoppingOrderClient).filter(Boolean);
+    if (result.settings) {
+      state.shoppingSettings = normalizeShoppingSettingsClient(result.settings);
+      state.shoppingSettingsLoaded = true;
+    }
+    if (!state.shoppingOpenOrder) state.shoppingSubmitName = "";
+    renderShopping();
+    renderShoppingSettings();
+    if (!silent) setShoppingCurrentStatus(state.shoppingOpenOrder ? "Open shopping order loaded." : "No open shopping order.");
+  } catch (e) {
+    if (!silent) setShoppingCurrentStatus(`Could not load shopping data: ${e.message}`);
+  }
+}
+
+function setShoppingTab(tab) {
+  state.shoppingTab = tab === "history" ? "history" : "current";
+  if (els.shoppingTabCurrent) {
+    els.shoppingTabCurrent.classList.toggle("active-tab", state.shoppingTab === "current");
+    els.shoppingTabCurrent.classList.toggle("ghost", state.shoppingTab !== "current");
+  }
+  if (els.shoppingTabHistory) {
+    els.shoppingTabHistory.classList.toggle("active-tab", state.shoppingTab === "history");
+    els.shoppingTabHistory.classList.toggle("ghost", state.shoppingTab !== "history");
+  }
+  if (els.shoppingPanelCurrent) els.shoppingPanelCurrent.hidden = state.shoppingTab !== "current";
+  if (els.shoppingPanelHistory) els.shoppingPanelHistory.hidden = state.shoppingTab !== "history";
+}
+
+function shouldShowShoppingAlert() {
+  if (!canApp("shopping")) return false;
+  const weekdays = normalizeShoppingWeekdaysClient(state.shoppingSettings?.mandatoryWeekdays);
+  if (!weekdays.length) return false;
+  const today = new Date();
+  const weekdayKey = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][today.getDay()];
+  if (!weekdays.includes(weekdayKey)) return false;
+  const todayIso = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Lisbon",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(today);
+  return !state.shoppingHistory.some((order) => clean(order.submittedAt).slice(0, 10) === todayIso);
+}
+
+function groupedShoppingItems(items) {
+  const groups = [];
+  const map = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const key = clean(item.category) || "Other";
+    if (!map.has(key)) {
+      const group = { category: key, items: [] };
+      map.set(key, group);
+      groups.push(group);
+    }
+    map.get(key).items.push(item);
+  });
+  return groups;
+}
+
+function renderShoppingCurrentRows(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = "";
+  if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = "";
+  items.forEach((item) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escape(item.category || "-")}</td>
+      <td>${escape(item.item || "-")}</td>
+      <td>${escape(item.supplier || "-")}</td>
+      <td><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${item.quantityRequired ? "Required" : ""}" /></td>
+      <td><label class="status-toggle"><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} /><span>Order</span></label></td>`;
+    els.shoppingOpenRows.appendChild(tr);
+    if (els.shoppingMobileCards) {
+      const card = document.createElement("article");
+      card.className = `shopping-mobile-card${item.order ? " selected-card" : ""}`;
+      card.innerHTML = `<div class="service-mobile-header">
+          <div>
+            <div class="service-mobile-request">${escape(item.item || "-")}</div>
+            <div class="service-mobile-type">${escape(item.category || "-")}</div>
+          </div>
+          <div class="shopping-mobile-supplier">${escape(item.supplier || "-")}</div>
+        </div>
+        <div class="shopping-mobile-grid">
+          <label class="communication-mobile-field">
+            <small>Existing Quantity</small>
+            <input data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${item.quantityRequired ? "Required" : ""}" />
+          </label>
+          <label class="communication-mobile-field shopping-mobile-order-toggle">
+            <small>Order</small>
+            <span class="status-toggle"><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} /><span>Selected</span></span>
+          </label>
+        </div>`;
+      els.shoppingMobileCards.appendChild(card);
+    }
+  });
+}
+
+function renderShoppingHistoryRows() {
+  const rows = Array.isArray(state.shoppingHistory) ? state.shoppingHistory : [];
+  if (els.shoppingHistoryRows) els.shoppingHistoryRows.innerHTML = "";
+  if (els.shoppingHistoryMobileCards) els.shoppingHistoryMobileCards.innerHTML = "";
+  els.shoppingHistoryCount.textContent = `${rows.length} order${rows.length === 1 ? "" : "s"}`;
+  if (!rows.length) {
+    els.shoppingHistoryRows.innerHTML = '<tr><td colspan="4" class="empty">No submitted shopping orders yet.</td></tr>';
+    if (els.shoppingHistoryMobileCards) {
+      els.shoppingHistoryMobileCards.innerHTML = '<div class="services-mobile-empty">No submitted shopping orders yet.</div>';
+    }
+    return;
+  }
+  rows.forEach((order, index) => {
+    const canReopen = !state.shoppingOpenOrder && index === 0;
+    const tr = document.createElement("tr");
+    tr.className = "clickable-row";
+    tr.dataset.shoppingHistoryId = order.id;
+    tr.innerHTML = `<td>${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}</td>
+      <td>${escape(order.submittedByName || "-")}</td>
+      <td>${escape(String(order.orderedCount || 0))}</td>
+      <td>${canReopen ? `<button type="button" class="ghost" data-action="reopen-shopping-order" data-id="${escape(order.id)}">Reopen</button>` : ""}</td>`;
+    els.shoppingHistoryRows.appendChild(tr);
+    if (els.shoppingHistoryMobileCards) {
+      const card = document.createElement("article");
+      card.className = "shopping-history-card";
+      card.dataset.shoppingHistoryId = order.id;
+      card.innerHTML = `<div class="service-mobile-header">
+          <div>
+            <div class="service-mobile-request">${escape(order.submittedByName || "-")}</div>
+            <div class="service-mobile-type">${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}</div>
+          </div>
+          <div class="review-mobile-score">${escape(String(order.orderedCount || 0))}</div>
+        </div>
+        ${canReopen ? `<div class="row-actions"><button type="button" class="ghost" data-action="reopen-shopping-order" data-id="${escape(order.id)}">Reopen</button></div>` : ""}`;
+      els.shoppingHistoryMobileCards.appendChild(card);
+    }
+  });
+}
+
+function renderShoppingDetail(order) {
+  if (!order) {
+    els.shoppingDetailBody.className = "review-detail empty";
+    els.shoppingDetailBody.textContent = "Select an order to see the detail.";
+    return;
+  }
+  const selectedItems = order.items.filter((item) => item.order);
+  const meta = [
+    ["Order Date", formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt)],
+    ["Name", order.submittedByName || "-"],
+    ["Number Items", String(order.orderedCount || 0)],
+  ];
+  const detail = [
+    `<div class="review-detail-meta">${meta.map(([label, value]) => `<div class="review-detail-meta-item"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join("")}</div>`,
+  ];
+  if (!selectedItems.length) {
+    detail.push('<p class="review-detail-section">No selected items in this order.</p>');
+  } else {
+    detail.push(`<div class="table-wrap shopping-history-detail-wrap"><table class="shopping-history-table"><thead><tr><th>Category</th><th>Item</th><th>Supplier</th><th>Existing Quantity</th><th>Order</th></tr></thead><tbody>${selectedItems.map((item) => `<tr><td>${escape(item.category || "-")}</td><td>${escape(item.item || "-")}</td><td>${escape(item.supplier || "-")}</td><td>${escape(item.existingQuantity || "-")}</td><td>Yes</td></tr>`).join("")}</tbody></table></div>`);
+  }
+  els.shoppingDetailBody.className = "review-detail";
+  els.shoppingDetailBody.innerHTML = detail.join("");
+  const latestId = state.shoppingHistory[0]?.id || "";
+  els.shoppingReopenOrder.hidden = !!state.shoppingOpenOrder || clean(order.id) !== clean(latestId);
+}
+
+function openShoppingDetailModal(orderId) {
+  const order = state.shoppingHistory.find((item) => clean(item.id) === clean(orderId));
+  state.shoppingSelectedHistoryId = clean(orderId);
+  renderShoppingDetail(order || null);
+  els.shoppingDetailModal.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
+function closeShoppingDetailModal() {
+  els.shoppingDetailModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function renderShopping() {
+  if (!canApp("shopping")) {
+    setShoppingCurrentStatus("Your profile has no access to Shopping.");
+    if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = '<tr><td colspan="5" class="empty">Your profile has no access to Shopping.</td></tr>';
+    if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Shopping.</div>';
+    if (els.shoppingHistoryRows) els.shoppingHistoryRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Shopping.</td></tr>';
+    if (els.shoppingHistoryMobileCards) els.shoppingHistoryMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Shopping.</div>';
+    return;
+  }
+  setShoppingTab(state.shoppingTab);
+  const order = state.shoppingOpenOrder;
+  els.shoppingOpenSummary.textContent = order ? `Open order #${order.orderNumber} · ${order.orderedCount} selected item${order.orderedCount === 1 ? "" : "s"}` : "No open order";
+  els.shoppingOpenEmpty.hidden = !!order;
+  els.shoppingOpenContent.hidden = !order;
+  els.shoppingSaveOrder.hidden = !order;
+  els.shoppingNewOrder.hidden = !!order;
+  els.shoppingSubmitName.value = state.shoppingSubmitName;
+  if (order) renderShoppingCurrentRows(order);
+  else {
+    if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = "";
+    if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = "";
+  }
+  renderShoppingHistoryRows();
+}
+
+function renderShoppingSettings() {
+  if (!els.shoppingSettingsItemsBody) return;
+  const settings = state.shoppingSettings || clone(DEFAULT_SHOPPING_SETTINGS);
+  if (els.shoppingSettingsEmailRecipients) els.shoppingSettingsEmailRecipients.value = (settings.emailRecipients || []).join("\n");
+  if (els.shoppingSettingsWeekdays) {
+    els.shoppingSettingsWeekdays.innerHTML = SHOPPING_WEEKDAY_OPTIONS.map((weekday) => `<label class="filter-checkbox"><span>${escape(weekday.label)}</span><input type="checkbox" data-shopping-weekday="${escape(weekday.key)}" ${settings.mandatoryWeekdays.includes(weekday.key) ? "checked" : ""} /></label>`).join("");
+  }
+  els.shoppingSettingsItemsBody.innerHTML = "";
+  settings.items.forEach((item, index) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><select data-shopping-settings-field="category" data-index="${index}">${SHOPPING_CATEGORY_OPTIONS.map((category) => `<option value="${escape(category)}" ${category === item.category ? "selected" : ""}>${escape(category)}</option>`).join("")}</select></td>
+      <td><input data-shopping-settings-field="item" data-index="${index}" value="${escape(item.item)}" /></td>
+      <td><input data-shopping-settings-field="supplier" data-index="${index}" value="${escape(item.supplier)}" /></td>
+      <td><input data-shopping-settings-field="quantityRequired" data-index="${index}" type="checkbox" ${item.quantityRequired ? "checked" : ""} /></td>
+      <td class="row-actions"><button type="button" class="ghost" data-action="remove-shopping-item" data-index="${index}">Remove</button></td>`;
+    els.shoppingSettingsItemsBody.appendChild(tr);
+  });
+}
+
+function addShoppingSettingItem() {
+  state.shoppingSettings.items.push({
+    id: `shopping-item-${Date.now()}`,
+    category: SHOPPING_CATEGORY_OPTIONS[0],
+    item: "",
+    supplier: "",
+    quantityRequired: true,
+  });
+  renderShoppingSettings();
+}
+
+function onShoppingSettingsInput(event) {
+  const index = Number(event.target.dataset.index);
+  const field = clean(event.target.dataset.shoppingSettingsField);
+  if (!Number.isFinite(index) || index < 0 || !field) return;
+  const item = state.shoppingSettings.items[index];
+  if (!item) return;
+  if (field === "quantityRequired") item.quantityRequired = !!event.target.checked;
+  else if (field === "category") item.category = normalizeShoppingCategoryClient(event.target.value);
+  else item[field] = clean(event.target.value);
+  if (event.target.dataset.shoppingWeekday) {
+    const key = clean(event.target.dataset.shoppingWeekday).toLowerCase();
+    const set = new Set(state.shoppingSettings.mandatoryWeekdays);
+    if (event.target.checked) set.add(key);
+    else set.delete(key);
+    state.shoppingSettings.mandatoryWeekdays = Array.from(set);
+  }
+}
+
+function onShoppingSettingsAction(event) {
+  const button = event.target.closest("button[data-action]");
+  if (button?.dataset.action === "remove-shopping-item") {
+    const index = Number(button.dataset.index);
+    if (Number.isFinite(index) && index >= 0) {
+      state.shoppingSettings.items.splice(index, 1);
+      renderShoppingSettings();
+    }
+    return;
+  }
+  const weekdayCheckbox = event.target.closest("input[data-shopping-weekday]");
+  if (!weekdayCheckbox) return;
+  const key = clean(weekdayCheckbox.dataset.shoppingWeekday).toLowerCase();
+  const set = new Set(state.shoppingSettings.mandatoryWeekdays);
+  if (weekdayCheckbox.checked) set.add(key);
+  else set.delete(key);
+  state.shoppingSettings.mandatoryWeekdays = Array.from(set);
+}
+
+async function saveShoppingSettings() {
+  const payload = {
+    mandatoryWeekdays: state.shoppingSettings.mandatoryWeekdays,
+    emailRecipients: parseEmailList(els.shoppingSettingsEmailRecipients.value),
+    items: state.shoppingSettings.items.map((item) => ({
+      id: clean(item.id),
+      category: normalizeShoppingCategoryClient(item.category),
+      item: clean(item.item),
+      supplier: clean(item.supplier),
+      quantityRequired: !!item.quantityRequired,
+    })),
+  };
+  try {
+    const result = await api("/api/shopping-settings", { method: "PUT", body: { settings: payload } });
+    state.shoppingSettings = normalizeShoppingSettingsClient(result.settings);
+    state.shoppingSettingsLoaded = true;
+    renderShoppingSettings();
+    renderLayout();
+    setShoppingSettingsStatus("Shopping configuration saved.");
+    showToast("Shopping configuration saved.", "success");
+  } catch (e) {
+    setShoppingSettingsStatus(`Save failed: ${e.message}`);
+    showToast(`Save failed: ${e.message}`, "error");
+  }
+}
+
+function findShoppingOrderItem(itemId) {
+  if (!state.shoppingOpenOrder) return null;
+  return state.shoppingOpenOrder.items.find((item) => clean(item.id) === clean(itemId)) || null;
+}
+
+function onShoppingOrderInput(event) {
+  const itemId = clean(event.target.dataset.shoppingItemId);
+  const field = clean(event.target.dataset.shoppingField);
+  if (!itemId || !field || !state.shoppingOpenOrder) return;
+  const item = findShoppingOrderItem(itemId);
+  if (!item) return;
+  if (field === "order") {
+    item.order = !!event.target.checked;
+    state.shoppingOpenOrder.orderedCount = state.shoppingOpenOrder.items.filter((entry) => entry.order).length;
+    renderShopping();
+    return;
+  }
+  if (field === "existingQuantity") {
+    item.existingQuantity = clean(event.target.value);
+  }
+}
+
+async function createShoppingOrder() {
+  try {
+    const result = await api("/api/shopping", { method: "POST", body: { action: "create" } });
+    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
+    state.shoppingLoaded = true;
+    state.shoppingSubmitName = "";
+    setShoppingTab("current");
+    renderShopping();
+    renderLayout();
+    setShoppingCurrentStatus("Shopping order created.");
+    showToast("Shopping order created.", "success");
+  } catch (e) {
+    setShoppingCurrentStatus(`Create failed: ${e.message}`);
+    showToast(`Create failed: ${e.message}`, "error");
+  }
+}
+
+async function saveShoppingOrderDraft(showSuccess = true) {
+  if (!state.shoppingOpenOrder?.id) return;
+  try {
+    const result = await api(`/api/shopping?id=${encodeURIComponent(state.shoppingOpenOrder.id)}`, {
+      method: "PUT",
+      body: {
+        action: "save",
+        items: state.shoppingOpenOrder.items,
+      },
+    });
+    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
+    renderShopping();
+    if (showSuccess) {
+      setShoppingCurrentStatus("Shopping draft saved.");
+      showToast("Shopping draft saved.", "success");
+    }
+  } catch (e) {
+    setShoppingCurrentStatus(`Save failed: ${e.message}`);
+    showToast(`Save failed: ${e.message}`, "error");
+  }
+}
+
+async function submitShoppingOrder() {
+  if (!state.shoppingOpenOrder?.id) return;
+  try {
+    const result = await api(`/api/shopping?id=${encodeURIComponent(state.shoppingOpenOrder.id)}`, {
+      method: "PUT",
+      body: {
+        action: "submit",
+        submittedByName: clean(state.shoppingSubmitName || els.shoppingSubmitName.value),
+        items: state.shoppingOpenOrder.items,
+      },
+    });
+    const emailError = clean(result.emailResult?.error);
+    state.shoppingOpenOrder = null;
+    state.shoppingSubmitName = "";
+    await loadShoppingData({ silent: true });
+    state.shoppingLoaded = true;
+    setShoppingTab("history");
+    renderShopping();
+    renderLayout();
+    setShoppingSubmitStatus(emailError ? `Order submitted, but email failed: ${emailError}` : "Shopping order submitted.");
+    showToast(emailError ? `Order submitted, but email failed: ${emailError}` : "Shopping order submitted.", emailError ? "error" : "success");
+  } catch (e) {
+    setShoppingSubmitStatus(`Submit failed: ${e.message}`);
+    showToast(`Submit failed: ${e.message}`, "error");
+  }
+}
+
+function onShoppingHistoryAction(event) {
+  const button = event.target.closest("button[data-action]");
+  if (button?.dataset.action === "reopen-shopping-order") {
+    event.stopPropagation();
+    reopenLatestShoppingOrder(button.dataset.id);
+    return;
+  }
+  const row = event.target.closest("[data-shopping-history-id]");
+  if (!row) return;
+  openShoppingDetailModal(clean(row.dataset.shoppingHistoryId));
+}
+
+async function reopenLatestShoppingOrder(sourceId = "") {
+  const latestId = sourceId || state.shoppingHistory[0]?.id;
+  if (!latestId) return;
+  try {
+    const result = await api("/api/shopping", {
+      method: "POST",
+      body: {
+        action: "reopen",
+        sourceOrderId: latestId,
+      },
+    });
+    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
+    state.shoppingSubmitName = "";
+    state.shoppingLoaded = true;
+    setShoppingTab("current");
+    closeShoppingDetailModal();
+    renderShopping();
+    renderLayout();
+    setShoppingCurrentStatus("Latest shopping order reopened.");
+    showToast("Latest shopping order reopened.", "success");
+  } catch (e) {
+    setShoppingDetailStatus(`Reopen failed: ${e.message}`);
+    showToast(`Reopen failed: ${e.message}`, "error");
+  }
+}
+
 function render() {
   if (state.currentView === "lost-found") {
     renderLostFound();
@@ -5916,6 +6591,10 @@ function render() {
   }
   if (state.currentView === "services") {
     renderServices();
+    return;
+  }
+  if (state.currentView === "shopping") {
+    renderShopping();
     return;
   }
   if (!canApp("communications")) {

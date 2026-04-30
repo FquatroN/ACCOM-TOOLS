@@ -395,12 +395,25 @@ button.ghost,
 .nav-link {
   width: 100%;
   text-align: left;
+  position: relative;
 }
 
 .nav-link.active {
   background: #e7f7f4;
   border-color: #8fd4c9;
   color: #0a5f57;
+}
+
+.nav-link.has-alert::after {
+  content: "";
+  position: absolute;
+  top: 0.52rem;
+  right: 0.55rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #d22f27;
+  box-shadow: 0 0 0 2px #fff;
 }
 
 button.danger {
@@ -1275,6 +1288,11 @@ select:disabled {
   display: none;
 }
 
+.shopping-mobile-cards,
+.shopping-history-mobile-cards {
+  display: none;
+}
+
 .service-mobile-card {
   display: grid;
   gap: 0.72rem;
@@ -1527,6 +1545,72 @@ select:disabled {
   color: #2b2014;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.shopping-submit-block {
+  margin-top: 0.9rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #efe2d7;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.shopping-modal-card {
+  margin: 0 auto;
+  max-width: 980px;
+}
+
+.shopping-weekdays-field {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+}
+
+.shopping-weekdays-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.75rem;
+}
+
+.shopping-settings-items-bar {
+  margin-top: 1rem;
+}
+
+.shopping-mobile-card,
+.shopping-history-card {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid #e2d8cf;
+  border-radius: 14px;
+  background: #fffdfa;
+  box-shadow: 0 10px 24px rgba(117, 84, 54, 0.06);
+}
+
+.shopping-mobile-card.selected-card {
+  border-color: #a7d4bf;
+  background: #f3fbf7;
+}
+
+.shopping-mobile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 0.8rem;
+}
+
+.shopping-mobile-supplier {
+  color: #72563a;
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.shopping-mobile-order-toggle {
+  display: grid;
+  align-content: start;
+}
+
+.shopping-history-detail-wrap {
+  margin-top: 0.35rem;
 }
 
 .inline-request-number {
@@ -2267,6 +2351,11 @@ select:disabled {
     display: none;
   }
 
+  #view-shopping .shopping-table-wrap,
+  #view-shopping .shopping-history-table-wrap {
+    display: none;
+  }
+
   .communications-mobile-cards {
     display: grid;
     gap: 0.75rem;
@@ -2297,8 +2386,16 @@ select:disabled {
     margin-top: 0.85rem;
   }
 
+  .shopping-mobile-cards,
+  .shopping-history-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
   .communication-mobile-grid,
-  .service-mobile-grid {
+  .service-mobile-grid,
+  .shopping-mobile-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2382,7 +2479,8 @@ select:disabled {
 
   .group-modal-card,
   .service-modal-card,
-  .review-modal-card {
+  .review-modal-card,
+  .shopping-modal-card {
     margin: 0;
   }
 
