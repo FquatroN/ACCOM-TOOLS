@@ -71,6 +71,87 @@ body {
   align-content: flex-start;
 }
 
+.sidebar-summary-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.sidebar-summary-head {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.sidebar-summary-head h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.sidebar-summary-status {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.sidebar-summary-body {
+  min-height: 4rem;
+}
+
+.sidebar-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.sidebar-summary-table th,
+.sidebar-summary-table td {
+  padding: 0.38rem 0.18rem;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  vertical-align: middle;
+}
+
+.sidebar-summary-table th:first-child,
+.sidebar-summary-table td:first-child {
+  text-align: left;
+}
+
+.sidebar-summary-table thead th {
+  font-size: 0.67rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.sidebar-summary-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.sidebar-summary-label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.sidebar-summary-label small {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.sidebar-summary-value {
+  font-weight: 700;
+  color: var(--brand-2);
+}
+
+.sidebar-summary-empty {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .app-logo-wrap {
   display: grid;
   place-items: center;
@@ -2424,6 +2505,10 @@ select:disabled {
 
   .left-rail {
     display: none;
+  }
+
+  .sidebar-summary-card {
+    display: none !important;
   }
 
   .app-layout.mobile-nav-open .left-rail {

@@ -509,6 +509,8 @@ const state = {
   lostFound: [],
   groups: [],
   reviews: [],
+  sidebarReviewSummary: null,
+  sidebarReviewSummaryLoaded: false,
   reviewProperties: [],
   reviewImportRuns: [],
   reviewStagingRows: [],
@@ -611,6 +613,9 @@ const state = {
 const els = {
   appShell: document.getElementById("app-shell"),
   leftNav: document.querySelector(".left-nav"),
+  sidebarReviewSummaryCard: document.getElementById("sidebar-review-summary-card"),
+  sidebarReviewSummaryStatus: document.getElementById("sidebar-review-summary-status"),
+  sidebarReviewSummaryBody: document.getElementById("sidebar-review-summary-body"),
   topbar: document.querySelector(".topbar"),
   mobileMenuToggle: document.getElementById("mobile-menu-toggle"),
   navCommunications: document.getElementById("nav-communications"),
@@ -984,6 +989,7 @@ async function init() {
   renderCategoryFilterOptions();
   renderReviewPropertyOptions();
   render();
+  if (canApp("communications")) loadSidebarReviewSummary({ silent: true }).catch(() => {});
   await ensureCurrentViewData();
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
   startAutoRefresh();
@@ -1656,6 +1662,7 @@ function renderLayout() {
   const canGroups = canApp("groups");
   const canServices = canApp("services");
   const canShopping = canApp("shopping");
+  if (els.sidebarReviewSummaryCard) els.sidebarReviewSummaryCard.hidden = !canComm;
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
   els.navCommunications.classList.toggle("active", comm);
@@ -1694,6 +1701,7 @@ function renderLayout() {
   els.settingsMenuServices.classList.toggle("active", state.settingsSection === "services");
   els.settingsMenuShopping.classList.toggle("active", state.settingsSection === "shopping");
   els.settingsMenuAdminUsers.classList.toggle("active", state.settingsSection === "admin-users");
+  renderSidebarReviewSummary();
   syncMobileNavLayout();
 }
 
@@ -8880,6 +8888,7 @@ async function confirmReviewImport() {
       body: { importRunId: state.reviewImportRunId, rowIds: selectedIds },
     });
     await Promise.all([loadReviews(), loadReviewImportRuns()]);
+    loadSidebarReviewSummary({ silent: true }).catch(() => {});
     const replacedText = result.replacedCount ? `, replaced ${result.replacedCount} duplicate${result.replacedCount === 1 ? "" : "s"}` : "";
     const insertedText = Number.isFinite(Number(result.insertedCount)) ? ` (${result.insertedCount} new${replacedText})` : replacedText;
     setReviewImportStatus(`Imported ${result.importedCount} reviews${insertedText}.`);
@@ -9115,6 +9124,7 @@ async function syncGoogleBusinessReviews() {
     setReviewGoogleStatus("Syncing Google reviews...");
     const result = await api("/api/google-business?action=sync", { method: "POST", body: {} });
     await Promise.all([loadReviews({ useFilters: true }), loadReviewImportRuns()]);
+    loadSidebarReviewSummary({ silent: true }).catch(() => {});
     render();
     const inserted = Number(result.insertedCount || 0);
     const replaced = Number(result.replacedCount || 0);
@@ -10090,6 +10100,63 @@ function averageReviewScore(rows) {
 function formatAverageOnly(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num.toFixed(1) : "-";
+}
+
+function renderSidebarReviewSummary() {
+  if (!els.sidebarReviewSummaryCard || !els.sidebarReviewSummaryBody || !els.sidebarReviewSummaryStatus) return;
+  if (!canApp("communications")) {
+    els.sidebarReviewSummaryCard.hidden = true;
+    return;
+  }
+  els.sidebarReviewSummaryCard.hidden = false;
+  const summary = state.sidebarReviewSummary;
+  if (!summary) {
+    els.sidebarReviewSummaryStatus.textContent = state.sidebarReviewSummaryLoaded ? "No review data" : "Loading...";
+    els.sidebarReviewSummaryBody.innerHTML = '<p class="sidebar-summary-empty">Average ratings for Hostel and Cruz will appear here.</p>';
+    return;
+  }
+  els.sidebarReviewSummaryStatus.textContent = `${summary.months?.currentLabel || "Current month"} vs ${summary.months?.previousLabel || "Past month"}`;
+  const currentLabel = summary.months?.currentShortLabel || "Current";
+  const previousLabel = summary.months?.previousShortLabel || "Past";
+  const hostel = summary.properties?.hostel || {};
+  const cruz = summary.properties?.cruz || {};
+  els.sidebarReviewSummaryBody.innerHTML = `
+    <table class="sidebar-summary-table">
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>${escape(currentLabel)}</th>
+          <th>${escape(previousLabel)}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="sidebar-summary-label">Hostel<small>Lisboa Central Hostel</small></span></td>
+          <td><span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.currentAverage))}</span></td>
+          <td><span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.previousAverage))}</span></td>
+        </tr>
+        <tr>
+          <td><span class="sidebar-summary-label">Cruz<small>Cruz Apartments</small></span></td>
+          <td><span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.currentAverage))}</span></td>
+          <td><span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.previousAverage))}</span></td>
+        </tr>
+      </tbody>
+    </table>`;
+}
+
+async function loadSidebarReviewSummary({ silent = false } = {}) {
+  if (!canApp("communications")) return;
+  try {
+    const result = await api("/api/review-sidebar-summary");
+    state.sidebarReviewSummary = result.summary || null;
+    state.sidebarReviewSummaryLoaded = true;
+    if (!silent && !state.sidebarReviewSummary) showToast("No review summary data available.", "info");
+  } catch (e) {
+    state.sidebarReviewSummary = null;
+    state.sidebarReviewSummaryLoaded = true;
+    if (!silent) showToast(`Could not load review snapshot: ${e.message}`, "error");
+  }
+  renderSidebarReviewSummary();
 }
 
 function reviewPeriodBoundaries() {
