@@ -6315,7 +6315,7 @@ function renderShoppingCurrentRows(order) {
   if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = "";
   if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = "";
   items.forEach((item) => {
-    const rowColor = hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.5);
+    const rowColor = hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.25);
     const tr = document.createElement("tr");
     if (rowColor) tr.style.background = rowColor;
     tr.innerHTML = `<td>${escape(item.category || "-")}</td>
@@ -6409,7 +6409,7 @@ function renderShoppingDetail(order) {
   if (!selectedItems.length) {
     detail.push('<p class="review-detail-section">No selected items in this order.</p>');
   } else {
-    detail.push(`<div class="table-wrap shopping-history-detail-wrap"><table class="shopping-history-table"><thead><tr><th>Category</th><th>Item</th><th>Supplier</th><th>Stored</th><th>Existing Quantity</th><th>Order</th></tr></thead><tbody>${selectedItems.map((item) => `<tr${hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.5) ? ` style="background:${escape(hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.5))}"` : ""}><td>${escape(item.category || "-")}</td><td>${escape(item.item || "-")}</td><td>${escape(item.supplier || "-")}</td><td>${escape(item.stored || "-")}</td><td>${escape(item.existingQuantity || "-")}</td><td>Yes</td></tr>`).join("")}</tbody></table></div>`);
+    detail.push(`<div class="table-wrap shopping-history-detail-wrap"><table class="shopping-history-table"><thead><tr><th>Category</th><th>Item</th><th>Supplier</th><th>Stored</th><th>Existing Quantity</th><th>Order</th></tr></thead><tbody>${selectedItems.map((item) => `<tr${hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.25) ? ` style="background:${escape(hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.25))}"` : ""}><td>${escape(item.category || "-")}</td><td>${escape(item.item || "-")}</td><td>${escape(item.supplier || "-")}</td><td>${escape(item.stored || "-")}</td><td>${escape(item.existingQuantity || "-")}</td><td>Yes</td></tr>`).join("")}</tbody></table></div>`);
   }
   els.shoppingDetailBody.className = "review-detail";
   els.shoppingDetailBody.innerHTML = detail.join("");
