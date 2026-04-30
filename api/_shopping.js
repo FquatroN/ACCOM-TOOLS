@@ -1,159 +1,26 @@
+const shoppingDefaults = require("./_shopping-defaults.json");
+
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_WEEKDAY_OPTIONS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const SHOPPING_STORED_OPTIONS = Array.isArray(shoppingDefaults?.storedOptions)
+  ? shoppingDefaults.storedOptions.map((value) => String(value || "").trim()).filter(Boolean)
+  : [
+      "20 (10) -Frigorificos",
+      "11-Armario",
+      "11-Escritorio",
+      "20-Lavandaria",
+      "20-Limpeza",
+      "21-Comidas",
+      "146-Arrecadacao",
+    ];
 
-const DEFAULT_SHOPPING_ITEM_ROWS = [
-  ["Pequeno Almoço", "Cereais Chocopic", "Recheio"],
-  ["Pequeno Almoço", "Cereais Muesli", "Recheio"],
-  ["Pequeno Almoço", "Cereais CornFlakes", "Recheio"],
-  ["Pequeno Almoço", "Chá Preto", "Recheio"],
-  ["Pequeno Almoço", "Chá Tília", "Recheio"],
-  ["Pequeno Almoço", "Chá Verde", "Recheio"],
-  ["Pequeno Almoço", "Chá Descafeinado", "Recheio"],
-  ["Pequeno Almoço", "Sumo Pacote individual (early breakfast)", "Recheio"],
-  ["Pequeno Almoço", "Mel (Caixas)", "Recheio"],
-  ["Pequeno Almoço", "Manteigas (caixas)", "Recheio"],
-  ["Pequeno Almoço", "Café (frascos)", "Recheio"],
-  ["Pequeno Almoço", "Madalenas", "Lidl/ Recheio"],
-  ["Pequeno Almoço", "Pão de Forma", "Lidl / Recheio"],
-  ["Pequeno Almoço", "Garrafas de Sumo Sunquick", "Recheio"],
-  ["Pequeno Almoço", "Chocolate em Pó", "Recheio"],
-  ["Pequeno Almoço", "Açúcar (saquetas)", "Recheio"],
-  ["Pequeno Almoço", "Açúcar (kg)", "Recheio"],
-  ["Pequeno Almoço", "Adoçante", "Recheio"],
-  ["Pequeno Almoço", "Farinha (kg)", "Recheio"],
-  ["Pequeno Almoço", "Bebida Vegetal (Soja)", "Recheio"],
-  ["Pequeno Almoço", "Leite", "Recheio"],
-  ["Pequeno Almoço", "Ovos", "Recheio"],
-  ["Pequeno Almoço", "Doces morango (Caixas)", "Recheio"],
-  ["Pequeno Almoço", "Doces Pessego (caixas)", "Recheio"],
-  ["Pequeno Almoço", "Canela", "Recheio"],
-  ["Pequeno Almoço", "Croissants (pacotes)", "Lidl/ Recheio"],
-  ["Pequeno Almoço", "Creme barrar choco duo", "LIdl"],
-  ["Pequeno Almoço", "Chocolate para barrar", "Lidl"],
-  ["Pequeno Almoço", "Manteiga Amendoim", "Recheio"],
-  ["Pequeno Almoço", "Fruta - Limões", "Recheio"],
-  ["Pequeno Almoço", "Fruta - Maças ou Peras", "Recheio"],
-  ["Pequeno Almoço", "Fruta - Bananas", "Recheio"],
-  ["Pequeno Almoço", "Fruta - Laranjas", "Recheio"],
-  ["Pequeno Almoço", "Queijo", "Recheio"],
-  ["Pequeno Almoço", "Fiambre", "Recheio"],
-  ["Pequeno Almoço", "Rolos de papel de Cozinha", "Renova"],
-  ["Pequeno Almoço", "Papel Zig Zag", "Renova"],
-  ["Pequeno Almoço", "Guardanapos (Pacotes)", "Renova"],
-  ["Cleaning", "Papel Higienico (12x)", "Renova"],
-  ["Cleaning", "Toalhetes apartamento (wipes)", "Recheio"],
-  ["Cleaning", "Água Destilada", "Recheio"],
-  ["Cleaning", "Lixívia", "Recheio"],
-  ["Cleaning", "Panos cozinha lava-loiça (coloridos)", "Recheio"],
-  ["Cleaning", "Esfregão inox", "Recheio"],
-  ["Cleaning", "Esfregão (salva unhas)", "Recheio"],
-  ["Cleaning", "Spray Lixivia", "Recheio"],
-  ["Cleaning", "Spray Anti fungos", "Recheio / Leroy"],
-  ["Cleaning", "Spray tira nodoas", "Recheio"],
-  ["Cleaning", "Tira gorduras", "Recheio"],
-  ["Cleaning", "Limpa Vidros", "Recheio"],
-  ["Cleaning", "Gel Sanitario (wc pato)", "Recheio"],
-  ["Cleaning", "Luvas (S/M)", "MateriaAtiva"],
-  ["Cleaning", "Sabonete liquido (wcs)", "Renova"],
-  ["Cleaning", "Det. Loiça Cozinha", "Recheio"],
-  ["Cleaning", "Det. Máquina loiça em capsula (apt)", "Recheio"],
-  ["Cleaning", "Det. Máquina Roupa Liquido (Hospedes e Apart)", "Recheio"],
-  ["Cleaning", "Det. Máquina Roupa  Liquido", "Siali"],
-  ["Cleaning", "Branqueador Roupa", "Siali"],
-  ["Cleaning", "Det. Máquina Roupa capsulas  individuais (apt)", "Recheio"],
-  ["Cleaning", "Amaciador Roupa", "Recheio"],
-  ["Cleaning", "Saco Lixo Grande Cozinha e Apartamento \"Preto AD 80x90 (40rx10s)\"", "MateriaAtiva"],
-  ["Cleaning", "Saco Lixo Brancos Caixotes Quartos e Lavandaria\"15 L 45x50 (35rx50s)\"", "MateriaAtiva"],
-  ["Cleaning", "Sacos Lixo 10L WCS - Brancos", "Recheio"],
-  ["Cleaning", "H40 - Lemon - Det. Chão", "MateriaAtiva"],
-  ["Cleaning", "C90 - Cozinha - Det. Cozinha", "MateriaAtiva"],
-  ["Cleaning", "H30 - Multiusos - Det. Multiusos", "MateriaAtiva"],
-  ["Cleaning", "H150 - Det. Casas de Banho", "MateriaAtiva"],
-  ["Cleaning", "AIRNOR 13 ECO - Ambientador", "MateriaAtiva"],
-  ["Cleaning", "Higisol - Alcool Gel", "MateriaAtiva"],
-  ["Cleaning", "Pau de madeira para esfregonas/vassouras", "Recheio"],
-  ["Cleaning", "Cabeças de pá", "Chinês"],
-  ["Cleaning", "Cabeças de vassoura", "Recheio"],
-  ["Cleaning", "Cabeças de Esfregona", "Recheio"],
-  ["Sales", "Água", "Recheio"],
-  ["Sales", "Coca-Cola", "Recheio"],
-  ["Sales", "Coca-cola zero", "Recheio"],
-  ["Sales", "Guaraná", "Recheio"],
-  ["Sales", "Sumol", "Recheio"],
-  ["Sales", "Vinho Branco grande", "Recheio"],
-  ["Sales", "Vinho Branco pequeno", "Recheio"],
-  ["Sales", "Vinho Tinto grande", "Recheio"],
-  ["Sales", "Vinho Tinto pequeno", "Recheio"],
-  ["Sales", "7UP", "Recheio"],
-  ["Sales", "Cerveja", "Recheio"],
-  ["Sales", "Fanta", "Recheio"],
-  ["Sales", "Café nespresso", "Nespresso"],
-  ["Sales", "Chocolate  em pó maquina", "Nestle"],
-  ["Sales", "Leite em pó maquina", "Nestle"],
-  ["Sales", "Café em pó maquina", "Nestle"],
-  ["Activities", "Gelados baun/choc/mor (caixa)", "Recheio"],
-  ["Activities", "Ginjinha", "Recheio"],
-  ["Activities", "Pipocas doces e salgadas", "Recheio"],
-  ["Activities", "Chantilly", "Recheio"],
-  ["Activities", "Copos de Papel grandes (Sangria)", "Alpha"],
-  ["Activities", "Copos de papel pequenos (gelados)", "Alpha"],
-  ["Activities", "Groselha", "Recheio"],
-  ["Activities", "Vinho tinto para sangria (pacotes)", "Recheio"],
-  ["Activities", "Sangria Refill", "Recheio"],
-  ["Activities", "Gasosa para sangria", "Recheio"],
-  ["Activities", "Sumo de laranja para sangria", "Recheio"],
-  ["Other", "Azeite - garrafão", "Recheio"],
-  ["Other", "Sal Grosso", "Recheio"],
-  ["Other", "Feijão Branco", "Recheio"],
-  ["Other", "Grão de Bico", "Recheio"],
-  ["Other", "Abobora Congelada", "Recheio"],
-  ["Other", "Cenoura Congelada", "Recheio"],
-  ["Other", "Cogumelos", "Recheio"],
-  ["Other", "Cebola", "Recheio"],
-  ["Other", "Gengibre", "Recheio"],
-  ["Other", "Fita-Cola", "Staples"],
-  ["Other", "Rolos POS", "Recheio"],
-  ["Other", "Ear Plugs", "Miguel"],
-  ["Other", "escovas de dentes", "Lousani"],
-  ["Other", "Shampoo/ sabonete pequeno venda hóspedes", "Lousani"],
-  ["Other", "Agrafos", "Miguel"],
-  ["Other", "Pilhas Médias AA", "Recheio/ Leroy"],
-  ["Other", "Pilhas pequenas AAA", "Recheio/ Leroy"],
-  ["TAPAS\n (ver só à terça-feira)", "Baguetes Normais (x4)", "LIDL\\Continente"],
-  ["TAPAS\n (ver só à terça-feira)", "Baguetes Escuras (x4)", "LIDL\\Continente"],
-  ["TAPAS\n (ver só à terça-feira)", "Batata Frita Pacote", "Recheio"],
-  ["TAPAS\n (ver só à terça-feira)", "Paio", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Presunto", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Sardinha em Lata", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Tortilha de Batata", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Queijo Brie", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Queijo Fresco", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Tomate Cherry", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Manjericão", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Kiwi", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Melão", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Uvas", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Abacaxi", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Pão de Alho", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Queijo Barrar", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Geleia Morango", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Geleia Abobora", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Azeitonas", "Recheio/LIDL"],
-  ["TAPAS\n (ver só à terça-feira)", "Abacate", "Recheio/LIDL"],
-  ["Utensils", "Copos", "IKEA"],
-  ["Utensils", "Canecas", "IKEA"],
-  ["Utensils", "Facas", "tramontina"],
-  ["Utensils", "Garfos", "tramontina"],
-  ["Utensils", "Colheres de Sopa", "tramontina"],
-  ["Utensils", "Colheres de café", "tramontina"],
-  ["Utensils", "Pratos Grandes", "IKEA"],
-  ["Utensils", "Taparueres ikea", "IKEA"],
-  ["Utensils", "Pano de cozinha Hostel", "IKEA"],
-  ["Utensils", "Pano de cozinha ikea APT", "IKEA"],
-  ["Utensils", "Pratos Pequenos", "IKEA"],
-  ["Utensils", "Palitos Tapas", "Recheio"],
-  ["Utensils", "Saco papel Breakfast Box", "Recheio"],
-];
+const DEFAULT_SHOPPING_CATEGORY_COLORS = Object.freeze(
+  SHOPPING_CATEGORY_OPTIONS.reduce((acc, category) => {
+    const provided = String(shoppingDefaults?.categoryColors?.[category] || "").trim();
+    acc[category] = /^#[0-9a-f]{6}$/i.test(provided) ? provided.toUpperCase() : "#F3E7DB";
+    return acc;
+  }, {})
+);
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -171,6 +38,21 @@ function normalizeShoppingCategory(value) {
   return SHOPPING_CATEGORY_OPTIONS.includes(cleanText(value)) ? cleanText(value) : "Other";
 }
 
+function normalizeShoppingStored(value) {
+  const raw = cleanText(value);
+  if (!raw) return "";
+  const exact = SHOPPING_STORED_OPTIONS.find((option) => option === raw);
+  if (exact) return exact;
+  const normalized = raw.toLowerCase();
+  const match = SHOPPING_STORED_OPTIONS.find((option) => option.toLowerCase() === normalized);
+  return match || raw;
+}
+
+function normalizeColor(value, fallback = "#F3E7DB") {
+  const raw = cleanText(value).toUpperCase();
+  return /^#[0-9A-F]{6}$/.test(raw) ? raw : fallback;
+}
+
 function slugify(value) {
   return cleanText(value)
     .toLowerCase()
@@ -178,6 +60,10 @@ function slugify(value) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function shoppingItemKey(category, item) {
+  return `${normalizeShoppingCategory(category)}::${cleanText(item).toLowerCase()}`;
 }
 
 function isValidEmail(value) {
@@ -211,6 +97,14 @@ function normalizeWeekdays(value) {
     });
 }
 
+function sanitizeShoppingCategoryColors(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  return SHOPPING_CATEGORY_OPTIONS.reduce((acc, category) => {
+    acc[category] = normalizeColor(source[category], DEFAULT_SHOPPING_CATEGORY_COLORS[category]);
+    return acc;
+  }, {});
+}
+
 function sanitizeShoppingItem(item = {}, fallbackIndex = 0) {
   const category = normalizeShoppingCategory(item.category);
   const label = cleanText(item.item || item.name);
@@ -219,38 +113,62 @@ function sanitizeShoppingItem(item = {}, fallbackIndex = 0) {
     category,
     item: label,
     supplier: cleanText(item.supplier || item.suppliers),
+    stored: normalizeShoppingStored(item.stored),
     quantityRequired: !!(item.quantityRequired ?? item.quantity_required ?? item.mandatoryExistingQuantity ?? item.mandatory_existing_quantity),
   };
 }
 
-const DEFAULT_SHOPPING_ITEMS = DEFAULT_SHOPPING_ITEM_ROWS
-  .map(([category, item, supplier], index) =>
-    sanitizeShoppingItem({ category, item, supplier, quantityRequired: true }, index)
-  );
+const DEFAULT_SHOPPING_ITEMS = (Array.isArray(shoppingDefaults?.items) ? shoppingDefaults.items : [])
+  .map((item, index) => sanitizeShoppingItem(item, index))
+  .filter((item) => item.item);
 
 const DEFAULT_SHOPPING_SETTINGS = {
   mandatoryWeekdays: [],
   emailRecipients: [],
+  categoryColors: { ...DEFAULT_SHOPPING_CATEGORY_COLORS },
   items: DEFAULT_SHOPPING_ITEMS,
 };
 
 function sanitizeShoppingSettings(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const sourceItems = Array.isArray(source.items) ? source.items : [];
+  const sourceHasStored = sourceItems.some((item) => cleanText(item?.stored));
+  const sourceCategoryColors = source.categoryColors || source.category_colors;
+  const sourceHasCategoryColors =
+    sourceCategoryColors && typeof sourceCategoryColors === "object" && Object.keys(sourceCategoryColors).length > 0;
+  const defaultsByKey = new Map(DEFAULT_SHOPPING_ITEMS.map((item) => [shoppingItemKey(item.category, item.item), item]));
   const seen = new Set();
-  const items = sourceItems
-    .map((item, index) => sanitizeShoppingItem(item, index))
-    .filter((item) => item.item)
-    .filter((item) => {
-      const key = cleanText(item.id) || `${item.category}::${item.item}`.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+
+  let items = [];
+  if (sourceItems.length && sourceHasStored) {
+    items = sourceItems
+      .map((item, index) => {
+        const base = defaultsByKey.get(shoppingItemKey(item?.category, item?.item)) || {};
+        return sanitizeShoppingItem({ ...base, ...item, id: cleanText(item?.id) || cleanText(base.id) }, index);
+      })
+      .filter((item) => item.item)
+      .filter((item) => {
+        const key = cleanText(item.id) || shoppingItemKey(item.category, item.item);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    DEFAULT_SHOPPING_ITEMS.forEach((defaultItem, index) => {
+      const key = shoppingItemKey(defaultItem.category, defaultItem.item);
+      if (items.some((item) => shoppingItemKey(item.category, item.item) === key)) return;
+      items.push(sanitizeShoppingItem(defaultItem, sourceItems.length + index));
     });
+  } else {
+    items = DEFAULT_SHOPPING_ITEMS.map((item, index) => sanitizeShoppingItem(item, index));
+  }
+
   return {
     mandatoryWeekdays: normalizeWeekdays(source.mandatoryWeekdays || source.mandatory_weekdays),
     emailRecipients: normalizeRecipients(source.emailRecipients || source.email_recipients),
-    items: items.length ? items : DEFAULT_SHOPPING_ITEMS,
+    categoryColors: sourceHasCategoryColors
+      ? sanitizeShoppingCategoryColors(sourceCategoryColors)
+      : { ...DEFAULT_SHOPPING_CATEGORY_COLORS },
+    items,
   };
 }
 
@@ -261,6 +179,7 @@ function buildOrderItemsFromSettings(settings) {
     category: item.category,
     item: item.item,
     supplier: item.supplier,
+    stored: item.stored,
     quantityRequired: !!item.quantityRequired,
     existingQuantity: "",
     order: false,
@@ -279,6 +198,7 @@ function sanitizeOrderItems(value, settingsItems = []) {
         category: normalizeShoppingCategory(item?.category || config.category),
         item: cleanText(item?.item || config.item),
         supplier: cleanText(item?.supplier || config.supplier),
+        stored: normalizeShoppingStored(item?.stored || config.stored),
         quantityRequired: !!(item?.quantityRequired ?? item?.quantity_required ?? config.quantityRequired),
         existingQuantity: cleanText(item?.existingQuantity ?? item?.existing_quantity),
         order: !!item?.order,
@@ -292,17 +212,21 @@ function countOrderedItems(items) {
 }
 
 module.exports = {
+  DEFAULT_SHOPPING_CATEGORY_COLORS,
   DEFAULT_SHOPPING_ITEMS,
   DEFAULT_SHOPPING_SETTINGS,
   SHOPPING_CATEGORY_OPTIONS,
+  SHOPPING_STORED_OPTIONS,
   SHOPPING_WEEKDAY_OPTIONS,
   buildOrderItemsFromSettings,
   cleanText,
   countOrderedItems,
   normalizeRecipients,
   normalizeShoppingCategory,
+  normalizeShoppingStored,
   normalizeWeekdays,
   sanitizeOrderItems,
+  sanitizeShoppingCategoryColors,
   sanitizeShoppingItem,
   sanitizeShoppingSettings,
 };

@@ -1,0 +1,1086 @@
+{
+  "storedOptions": [
+    "20 (10) -Frigorificos",
+    "11-Armario",
+    "11-Escritorio",
+    "20-Lavandaria",
+    "20-Limpeza",
+    "21-Comidas",
+    "146-Arrecadacao"
+  ],
+  "categoryColors": {
+    "Breakfast": "#93CDDD",
+    "Cleaning": "#C3D69B",
+    "Sales": "#10253F",
+    "Activities": "#B3A2C7",
+    "Other": "#FAC090",
+    "Tapas": "#77933C",
+    "Utensils": "#D99694"
+  },
+  "items": [
+    {
+      "category": "Breakfast",
+      "item": "Cereais Chocopic",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Cereais Muesli",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Cereais CornFlakes",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Chá Preto",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Chá Tília",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Chá Verde",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Chá Descafeinado",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Sumo Pacote individual (early breakfast)",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Mel (Caixas)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Manteigas (caixas)",
+      "supplier": "Recheio",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": true
+    },
+    {
+      "category": "Breakfast",
+      "item": "Café (frascos)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Madalenas",
+      "supplier": "Lidl/ Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Pão de Forma",
+      "supplier": "Lidl / Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Garrafas de Sumo Sunquick",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Chocolate em Pó",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Açúcar (saquetas)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Açúcar (kg)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Adoçante",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Farinha (kg)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Bebida Vegetal (Soja)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Leite (packs de 6)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": true
+    },
+    {
+      "category": "Breakfast",
+      "item": "Ovos",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Doces morango (Caixas)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Doces Pessego (caixas)",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Canela",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Croissants (pacotes)",
+      "supplier": "Lidl/ Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Creme barrar choco duo",
+      "supplier": "LIdl",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Chocolate para barrar",
+      "supplier": "Lidl",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Manteiga Amendoim",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Fruta - Limões",
+      "supplier": "Recheio",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Fruta - Maças ou Peras",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Fruta - Bananas",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Fruta - Laranjas",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Queijo",
+      "supplier": "Recheio",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": true
+    },
+    {
+      "category": "Breakfast",
+      "item": "Fiambre",
+      "supplier": "Recheio",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": true
+    },
+    {
+      "category": "Breakfast",
+      "item": "Rolos de papel de Cozinha",
+      "supplier": "Renova",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Papel Zig Zag",
+      "supplier": "Renova",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Breakfast",
+      "item": "Guardanapos (Pacotes)",
+      "supplier": "Renova",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Papel Higienico (12x)",
+      "supplier": "Renova",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Toalhetes apartamento (wipes)",
+      "supplier": "Recheio",
+      "stored": "146-Arrecadacao",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Água Destilada",
+      "supplier": "Recheio",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Lixívia",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Panos cozinha lava-loiça (coloridos)",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Esfregão inox",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Esfregão (salva unhas)",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Spray Lixivia",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Spray Anti fungos",
+      "supplier": "Recheio / Leroy",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Spray tira nodoas",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Tira gorduras",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Limpa Vidros",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Gel Sanitario (wc pato)",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Luvas (S/M)",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Sabonete liquido (wcs)",
+      "supplier": "Renova",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Det. Loiça Cozinha",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Det. Máquina loiça em capsula (apt)",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Det. Máquina Roupa Liquido (Hospedes e Apart)",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Det. Máquina Roupa  Liquido",
+      "supplier": "Siali",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Branqueador Roupa",
+      "supplier": "Siali",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Det. Máquina Roupa capsulas  individuais (apt)",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Amaciador Roupa",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Saco Lixo Grande Cozinha e Apartamento \"Preto AD 80x90 (40rx10s)\"",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Saco Lixo Brancos Caixotes Quartos e Lavandaria\"15 L 45x50 (35rx50s)\"",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Sacos Lixo 10L WCS - Brancos",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "H40 - Lemon - Det. Chão",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "C90 - Cozinha - Det. Cozinha",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "H30 - Multiusos - Det. Multiusos",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "H150 - Det. Casas de Banho",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "AIRNOR 13 ECO - Ambientador",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Higisol - Alcool Gel",
+      "supplier": "MateriaAtiva",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Pau de madeira para esfregonas/vassouras",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Cabeças de pá",
+      "supplier": "Chinês",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Cabeças de vassoura",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Cleaning",
+      "item": "Cabeças de Esfregona",
+      "supplier": "Recheio",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Água",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Coca-Cola",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Coca-cola zero",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Guaraná",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Sumol",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Vinho Branco grande",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Vinho Branco pequeno",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Vinho Tinto grande",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Vinho Tinto pequeno",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "7UP",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Cerveja",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Fanta",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Café nespresso",
+      "supplier": "Nespresso",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Chocolate  em pó maquina",
+      "supplier": "Nestle",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Leite em pó maquina",
+      "supplier": "Nestle",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Sales",
+      "item": "Café em pó maquina",
+      "supplier": "Nestle",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Gelados baun/choc/mor (caixa)",
+      "supplier": "Recheio",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Ginjinha",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Pipocas doces e salgadas",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Chantilly",
+      "supplier": "Recheio",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Copos de Papel grandes (Sangria)",
+      "supplier": "Alpha",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Copos de papel pequenos (gelados)",
+      "supplier": "Alpha",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Groselha",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Vinho tinto para sangria (pacotes)",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Sangria Refill",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Gasosa para sangria",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Activities",
+      "item": "Sumo de laranja para sangria",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Azeite - garrafão",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Sal Grosso",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Feijão Branco",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Grão de Bico",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Abobora Congelada",
+      "supplier": "Recheio",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Cenoura Congelada",
+      "supplier": "Recheio",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Cogumelos",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Cebola",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Gengibre",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Fita-Cola",
+      "supplier": "Staples",
+      "stored": "11-Escritorio",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Rolos POS",
+      "supplier": "Recheio",
+      "stored": "11-Escritorio",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Ear Plugs",
+      "supplier": "Miguel",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "escovas de dentes",
+      "supplier": "Lousani",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Shampoo/ sabonete pequeno venda hóspedes",
+      "supplier": "Lousani",
+      "stored": "20-Limpeza",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Agrafos",
+      "supplier": "Miguel",
+      "stored": "11-Escritorio",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Pilhas Médias AA",
+      "supplier": "Recheio/ Leroy",
+      "stored": "11-Escritorio",
+      "quantityRequired": false
+    },
+    {
+      "category": "Other",
+      "item": "Pilhas pequenas AAA",
+      "supplier": "Recheio/ Leroy",
+      "stored": "11-Escritorio",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Baguetes Normais (x4)",
+      "supplier": "LIDL\\Continente",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Baguetes Escuras (x4)",
+      "supplier": "LIDL\\Continente",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Batata Frita Pacote",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Paio",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Presunto",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Sardinha em Lata",
+      "supplier": "Recheio/LIDL",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Tortilha de Batata",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Queijo Brie",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Queijo Fresco",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Tomate Cherry",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Manjericão",
+      "supplier": "Recheio/LIDL",
+      "stored": "11-Escritorio",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Kiwi",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Melão",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Uvas",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Abacaxi",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Pão de Alho",
+      "supplier": "Recheio/LIDL",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Queijo Barrar",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Geleia Morango",
+      "supplier": "Recheio/LIDL",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Geleia Abobora",
+      "supplier": "Recheio/LIDL",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Azeitonas",
+      "supplier": "Recheio/LIDL",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Abacate",
+      "supplier": "Recheio/LIDL",
+      "stored": "20 (10) -Frigorificos",
+      "quantityRequired": false
+    },
+    {
+      "category": "Tapas",
+      "item": "Palitos Tapas",
+      "supplier": "Recheio",
+      "stored": "21-Comidas",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Copos",
+      "supplier": "IKEA",
+      "stored": "11-Escritorio",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Copos Shot Ginja",
+      "supplier": "IKEA",
+      "stored": "11-Escritorio",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Canecas",
+      "supplier": "IKEA",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Facas",
+      "supplier": "tramontina",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Garfos",
+      "supplier": "tramontina",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Colheres de Sopa",
+      "supplier": "tramontina",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Colheres de café",
+      "supplier": "tramontina",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Pratos Grandes",
+      "supplier": "IKEA",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Taparueres ikea",
+      "supplier": "IKEA",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Pano de cozinha Hostel",
+      "supplier": "IKEA",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Pano de cozinha ikea APT",
+      "supplier": "IKEA",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Pratos Pequenos",
+      "supplier": "IKEA",
+      "stored": "20-Lavandaria",
+      "quantityRequired": false
+    },
+    {
+      "category": "Utensils",
+      "item": "Saco papel Breakfast Box",
+      "supplier": "Recheio",
+      "stored": "11-Armario",
+      "quantityRequired": false
+    }
+  ]
+}

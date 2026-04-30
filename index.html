@@ -915,6 +915,7 @@
                         <th>Category</th>
                         <th>Item</th>
                         <th>Supplier</th>
+                        <th>Stored</th>
                         <th>Existing Quantity</th>
                         <th>Order</th>
                       </tr>
@@ -923,7 +924,7 @@
                   </table>
                 </div>
                 <section class="shopping-submit-block">
-                  <div class="grid settings-grid">
+                  <div id="shopping-submit-name-wrap" class="grid settings-grid" hidden>
                     <label>
                       Name
                       <input id="shopping-submit-name" type="text" placeholder="Who is submitting this order?" />
@@ -1274,6 +1275,10 @@
                       <small class="field-hint">If today is one of these weekdays and no shopping order was submitted yet, the menu shows a red alert dot.</small>
                     </div>
                   </div>
+                  <div class="shopping-category-colors">
+                    <h4>Category colors</h4>
+                    <div id="shopping-settings-category-colors" class="shopping-category-colors-grid"></div>
+                  </div>
                   <div class="bar shopping-settings-items-bar">
                     <h4>Items</h4>
                     <button id="shopping-add-item" type="button" class="ghost">Add Item</button>
@@ -1285,6 +1290,7 @@
                           <th>Category</th>
                           <th>Item</th>
                           <th>Suppliers</th>
+                          <th>Stored?</th>
                           <th>Mandatory existing quantity?</th>
                           <th>Action</th>
                         </tr>

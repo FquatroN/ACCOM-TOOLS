@@ -1636,6 +1636,24 @@ select:disabled {
   gap: 0.55rem 0.75rem;
 }
 
+.shopping-category-colors {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.shopping-category-colors-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem 0.9rem;
+}
+
+.shopping-category-color-field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+}
+
 .shopping-settings-items-bar {
   margin-top: 1rem;
 }
@@ -1666,6 +1684,11 @@ select:disabled {
   color: #72563a;
   font-size: 0.82rem;
   text-align: right;
+}
+
+.shopping-mobile-stored {
+  color: #5a4a3f;
+  font-size: 0.82rem;
 }
 
 .shopping-mobile-order-toggle {
@@ -2459,7 +2482,8 @@ select:disabled {
 
   .communication-mobile-grid,
   .service-mobile-grid,
-  .shopping-mobile-grid {
+  .shopping-mobile-grid,
+  .shopping-category-colors-grid {
     grid-template-columns: 1fr;
   }
 
