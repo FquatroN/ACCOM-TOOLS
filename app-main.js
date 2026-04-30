@@ -876,6 +876,8 @@ const els = {
   shoppingHistoryCount: document.getElementById("shopping-history-count"),
   shoppingHistoryStatus: document.getElementById("shopping-history-status"),
   shoppingDetailModal: document.getElementById("shopping-detail-modal"),
+  shoppingExportExcel: document.getElementById("shopping-export-excel"),
+  shoppingExportPdf: document.getElementById("shopping-export-pdf"),
   shoppingDetailClose: document.getElementById("shopping-detail-close"),
   shoppingReopenOrder: document.getElementById("shopping-reopen-order"),
   shoppingDetailStatus: document.getElementById("shopping-detail-status"),
@@ -1021,6 +1023,8 @@ function bindEvents() {
   els.shoppingMobileCards?.addEventListener("change", onShoppingOrderInput);
   els.shoppingHistoryRows.addEventListener("click", onShoppingHistoryAction);
   els.shoppingHistoryMobileCards?.addEventListener("click", onShoppingHistoryAction);
+  els.shoppingExportExcel?.addEventListener("click", exportShoppingDetailToExcel);
+  els.shoppingExportPdf?.addEventListener("click", exportShoppingDetailToPdf);
   els.shoppingDetailClose.addEventListener("click", closeShoppingDetailModal);
   els.shoppingReopenOrder.addEventListener("click", reopenLatestShoppingOrder);
   els.shoppingSaveSettings.addEventListener("click", saveShoppingSettings);
@@ -6466,6 +6470,161 @@ function renderShoppingHistoryRows() {
       els.shoppingHistoryMobileCards.appendChild(card);
     }
   });
+}
+
+function getShoppingDetailOrder() {
+  return state.shoppingHistory.find((item) => clean(item.id) === clean(state.shoppingSelectedHistoryId)) || null;
+}
+
+function shoppingOrderExportFileStem(order) {
+  const number = String(order?.orderNumber || "order").padStart(4, "0");
+  return `shopping_order_${number}`;
+}
+
+function shoppingOrderMetaRows(order) {
+  return [
+    ["Order #", String(order?.orderNumber || "-")],
+    ["Order Date", formatDateTimeShort(order?.submittedAt || order?.updatedAt || order?.createdAt)],
+    ["Name", order?.submittedByName || "-"],
+    ["Number Items", String(order?.orderedCount || 0)],
+    ["Notes", order?.notes || "-"],
+  ];
+}
+
+function shoppingOrderSelectedItems(order) {
+  return (Array.isArray(order?.items) ? order.items : []).filter((item) => item.order);
+}
+
+function buildShoppingOrderExcelHtmlClient(order) {
+  const rows = shoppingOrderSelectedItems(order);
+  const metaRows = shoppingOrderMetaRows(order);
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    @page { size: A4 portrait; margin: 12mm; }
+    body { font-family: Calibri, Arial, sans-serif; color: #222; font-size: 12px; }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; mso-page-orientation: portrait; }
+    th, td { border: 1px solid #cfc7bf; padding: 6px; vertical-align: top; text-align: left; }
+    th { background: #f1ece6; }
+    .meta td:first-child { width: 150px; font-weight: 700; background: #faf7f2; }
+  </style></head><body>
+    <h1>Shopping Order Detail</h1>
+    <table class="meta"><tbody>${metaRows.map(([label, value]) => `<tr><td>${escape(label)}</td><td>${escape(value)}</td></tr>`).join("")}</tbody></table>
+    <table><thead><tr><th>Category</th><th>Item</th><th>Supplier</th><th>Stored</th><th>Existing Quantity</th><th>Order</th></tr></thead>
+    <tbody>${rows.map((item) => `<tr><td>${escape(item.category || "-")}</td><td>${escape(item.item || "-")}</td><td>${escape(item.supplier || "-")}</td><td>${escape(item.stored || "-")}</td><td>${escape(item.existingQuantity || "-")}</td><td>Yes</td></tr>`).join("")}</tbody></table>
+  </body></html>`;
+}
+
+function wrapShoppingPdfTextClient(text, width = 88) {
+  const words = String(text ?? "").split(/\s+/).filter(Boolean);
+  if (!words.length) return [""];
+  const lines = [];
+  let current = "";
+  words.forEach((word) => {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > width && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  });
+  if (current) lines.push(current);
+  return lines;
+}
+
+function pdfEscapeClient(text) {
+  return String(text ?? "").replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+}
+
+function buildSimplePdfClient(title, lines) {
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 40;
+  const lineHeight = 14;
+  const pages = [];
+  let currentPage = [];
+  let y = pageHeight - margin;
+  lines.forEach((line, index) => {
+    const fontSize = index === 0 ? 15 : 10;
+    if (index === 0) {
+      if (currentPage.length) pages.push(currentPage);
+      currentPage = [];
+      y = pageHeight - margin;
+    }
+    if (y < margin + lineHeight) {
+      pages.push(currentPage);
+      currentPage = [];
+      y = pageHeight - margin;
+    }
+    currentPage.push({ text: line, y, fontSize });
+    y -= lineHeight;
+  });
+  if (currentPage.length) pages.push(currentPage);
+  const objects = [];
+  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objects.push(`<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((_, i) => `${3 + i * 2} 0 R`).join(" ")}] >>`);
+  pages.forEach((page, index) => {
+    const pageObj = 3 + index * 2;
+    const contentObj = pageObj + 1;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${3 + pages.length * 2} 0 R /F2 ${4 + pages.length * 2} 0 R >> >> /Contents ${contentObj} 0 R >>`);
+    const stream = [
+      "BT",
+      ...page.map((entry) => `/${entry.fontSize > 10 ? "F2" : "F1"} ${entry.fontSize} Tf 1 0 0 1 ${margin} ${entry.y} Tm (${pdfEscapeClient(entry.text)}) Tj`),
+      "ET",
+    ].join("\n");
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  });
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((obj, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${obj}\nendobj\n`;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Uint8Array(Array.from(pdf, (char) => char.charCodeAt(0) & 0xff));
+}
+
+function buildShoppingOrderPdfBytesClient(order) {
+  const rows = shoppingOrderSelectedItems(order);
+  const lines = [
+    "Shopping Order Detail",
+    ...shoppingOrderMetaRows(order).flatMap(([label, value]) => wrapShoppingPdfTextClient(`${label}: ${value}`)),
+    "",
+    "Category | Item | Supplier | Stored | Existing Qty | Order",
+    ...rows.flatMap((item) =>
+      wrapShoppingPdfTextClient(
+        `${item.category || "-"} | ${item.item || "-"} | ${item.supplier || "-"} | ${item.stored || "-"} | ${item.existingQuantity || "-"} | Yes`
+      )
+    ),
+  ];
+  return buildSimplePdfClient("Shopping Order Detail", lines);
+}
+
+function exportShoppingDetailToExcel() {
+  const order = getShoppingDetailOrder();
+  if (!order) {
+    setShoppingDetailStatus("Could not find the selected shopping order.");
+    return;
+  }
+  downloadBlob(`${shoppingOrderExportFileStem(order)}.xls`, buildShoppingOrderExcelHtmlClient(order), "application/vnd.ms-excel;charset=utf-8;");
+  showToast("Shopping order exported to Excel.", "success");
+}
+
+function exportShoppingDetailToPdf() {
+  const order = getShoppingDetailOrder();
+  if (!order) {
+    setShoppingDetailStatus("Could not find the selected shopping order.");
+    return;
+  }
+  downloadBlob(`${shoppingOrderExportFileStem(order)}.pdf`, buildShoppingOrderPdfBytesClient(order), "application/pdf");
+  showToast("Shopping order exported to PDF.", "success");
 }
 
 function renderShoppingDetail(order) {
