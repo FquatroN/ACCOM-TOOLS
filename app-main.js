@@ -287,6 +287,23 @@ const DEFAULT_SHOPPING_SETTINGS = {
   items: [],
 };
 
+const PROFILE_MATRIX_ROWS = [
+  { label: "Profile Name", kind: "meta", key: "name" },
+  { label: "App: Communications", kind: "app", key: "communications" },
+  { label: "App: Lost&Found", kind: "app", key: "lost-found" },
+  { label: "App: Reviews", kind: "app", key: "reviews" },
+  { label: "App: Groups", kind: "app", key: "groups" },
+  { label: "App: Services", kind: "app", key: "services" },
+  { label: "App: Shopping", kind: "app", key: "shopping" },
+  { label: "Settings: Communications", kind: "settings", key: "communications" },
+  { label: "Settings: Reviews", kind: "settings", key: "reviews" },
+  { label: "Settings: Groups", kind: "settings", key: "groups" },
+  { label: "Settings: Services", kind: "settings", key: "services" },
+  { label: "Settings: Shopping", kind: "settings", key: "shopping" },
+  { label: "Settings: Admin Users", kind: "settings", key: "admin-users" },
+  { label: "Action", kind: "action", key: "action" },
+];
+
 const GROUP_PROPOSAL_TEMPLATES = {
   pt: `Caro/a {{name}},
 
@@ -616,6 +633,7 @@ const els = {
   adminRefreshUsers: document.getElementById("admin-refresh-users"),
   adminUsersStatus: document.getElementById("admin-users-status"),
   adminUsersBody: document.getElementById("admin-users-body"),
+  profilesHead: document.getElementById("profiles-head"),
   profilesBody: document.getElementById("profiles-body"),
   addProfile: document.getElementById("add-profile"),
   profilesStatus: document.getElementById("profiles-status"),
@@ -1836,32 +1854,39 @@ function renderAdminUsers() {
 }
 
 function renderProfiles() {
+  if (els.profilesHead) {
+    els.profilesHead.innerHTML = state.profiles.length
+      ? `<tr><th>Feature</th>${state.profiles
+          .map((profile) => `<th>${escape(profile.name || "Profile")}</th>`)
+          .join("")}</tr>`
+      : '<tr><th>Feature</th><th>Profiles</th></tr>';
+  }
   els.profilesBody.innerHTML = "";
   if (state.profiles.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="14" class="empty">No profiles yet.</td>';
+    tr.innerHTML = '<th scope="row">Profiles</th><td class="empty">No profiles yet.</td>';
     els.profilesBody.appendChild(tr);
     return;
   }
-  state.profiles.forEach((profile) => {
+  PROFILE_MATRIX_ROWS.forEach((row) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td><input data-profile-name="${escape(profile.id)}" value="${escape(profile.name)}" /></td>
-      <td><input type="checkbox" data-profile-app-communications="${escape(profile.id)}" ${profile.appFeatures.includes("communications") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-app-lost-found="${escape(profile.id)}" ${profile.appFeatures.includes("lost-found") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-app-reviews="${escape(profile.id)}" ${profile.appFeatures.includes("reviews") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-app-groups="${escape(profile.id)}" ${profile.appFeatures.includes("groups") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-app-services="${escape(profile.id)}" ${profile.appFeatures.includes("services") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-app-shopping="${escape(profile.id)}" ${profile.appFeatures.includes("shopping") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-settings-communications="${escape(profile.id)}" ${profile.settingsFeatures.includes("communications") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-settings-reviews="${escape(profile.id)}" ${profile.settingsFeatures.includes("reviews") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-settings-groups="${escape(profile.id)}" ${profile.settingsFeatures.includes("groups") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-settings-services="${escape(profile.id)}" ${profile.settingsFeatures.includes("services") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-settings-shopping="${escape(profile.id)}" ${profile.settingsFeatures.includes("shopping") ? "checked" : ""} /></td>
-      <td><input type="checkbox" data-profile-settings-admin-users="${escape(profile.id)}" ${profile.settingsFeatures.includes("admin-users") ? "checked" : ""} /></td>
-      <td class="row-actions">
-        <button type="button" class="ghost" data-action="save-profile" data-id="${escape(profile.id)}">Save</button>
-        <button type="button" class="danger" data-action="delete-profile" data-id="${escape(profile.id)}">Delete</button>
-      </td>`;
+    tr.innerHTML = `<th scope="row">${escape(row.label)}</th>${state.profiles
+      .map((profile) => {
+        if (row.kind === "meta") {
+          return `<td><input data-profile-name="${escape(profile.id)}" value="${escape(profile.name)}" /></td>`;
+        }
+        if (row.kind === "action") {
+          return `<td class="row-actions">
+            <button type="button" class="ghost" data-action="save-profile" data-id="${escape(profile.id)}">Save</button>
+            <button type="button" class="danger" data-action="delete-profile" data-id="${escape(profile.id)}">Delete</button>
+          </td>`;
+        }
+        const hasFeature = row.kind === "app"
+          ? profile.appFeatures.includes(row.key)
+          : profile.settingsFeatures.includes(row.key);
+        return `<td class="center-cell"><input type="checkbox" data-profile-${row.kind}-${escape(row.key)}="${escape(profile.id)}" ${hasFeature ? "checked" : ""} /></td>`;
+      })
+      .join("")}`;
     els.profilesBody.appendChild(tr);
   });
 }

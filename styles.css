@@ -797,6 +797,10 @@ td {
   gap: 0.35rem;
 }
 
+.center-cell {
+  text-align: center;
+}
+
 .settings-preview-chip {
   display: inline-flex;
   align-items: center;
