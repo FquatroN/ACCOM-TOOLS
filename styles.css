@@ -149,9 +149,10 @@ body {
 
 .sidebar-summary-label {
   min-width: 0;
-  font-size: 0.64rem;
+  font-size: 0.68rem;
   line-height: 1.15;
   text-align: left;
+  font-weight: 700;
 }
 
 .sidebar-summary-label small {
