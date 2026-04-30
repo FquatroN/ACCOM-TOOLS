@@ -6369,25 +6369,25 @@ function renderShoppingCurrentRows(order) {
   }
   items.forEach((item) => {
     const rowColor = hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.15);
+    const quantityPlaceholder = item.quantityRequired ? "Required" : "";
+    const quantityDisabled = item.order ? "" : "disabled";
     const tr = document.createElement("tr");
     if (rowColor) tr.style.background = rowColor;
     tr.innerHTML = `<td>${escape(item.category || "-")}</td>
       <td>${escape(item.item || "-")}</td>
       <td>${escape(item.supplier || "-")}</td>
       <td>${escape(item.stored || "-")}</td>
-      <td>${item.quantityRequired ? `<input class="shopping-existing-qty-input" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="Required" />` : ""}</td>
+      <td><input class="shopping-existing-qty-input${item.order ? "" : " is-disabled"}" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${escape(quantityPlaceholder)}" ${quantityDisabled} /></td>
       <td><label class="status-toggle"><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} /><span>Order</span></label></td>`;
     els.shoppingOpenRows.appendChild(tr);
     if (els.shoppingMobileCards) {
       const card = document.createElement("article");
       card.className = `shopping-mobile-card${item.order ? " selected-card" : ""}`;
       if (rowColor) card.style.background = rowColor;
-      const existingQuantityField = item.quantityRequired
-        ? `<label class="communication-mobile-field shopping-mobile-quantity-field">
+      const existingQuantityField = `<label class="communication-mobile-field shopping-mobile-quantity-field">
             <small>Existing Quantity</small>
-            <input class="shopping-existing-qty-input" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="Required" />
-          </label>`
-        : "";
+            <input class="shopping-existing-qty-input${item.order ? "" : " is-disabled"}" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${escape(quantityPlaceholder)}" ${quantityDisabled} />
+          </label>`;
       card.innerHTML = `<div class="service-mobile-header">
           <div>
             <div class="service-mobile-request">${escape(item.item || "-")}</div>
@@ -6395,7 +6395,7 @@ function renderShoppingCurrentRows(order) {
           </div>
           <div class="shopping-mobile-supplier">${escape(item.supplier || "-")}</div>
         </div>
-        <div class="shopping-mobile-grid${item.quantityRequired ? "" : " shopping-mobile-grid-compact"}">
+        <div class="shopping-mobile-grid">
           ${existingQuantityField}
           <label class="communication-mobile-field shopping-mobile-order-toggle">
             <small>Order</small>
@@ -6683,6 +6683,7 @@ async function saveShoppingOrderDraft(showSuccess = true) {
       },
     });
     state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
+    setShoppingTab("current");
     renderShopping();
     if (showSuccess) {
       setShoppingCurrentStatus("Shopping draft saved.");

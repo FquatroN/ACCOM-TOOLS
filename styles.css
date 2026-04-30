@@ -1621,10 +1621,14 @@ select:disabled {
 
 .shopping-current-filters {
   margin: 0 0 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: end;
 }
 
 .shopping-current-filters label {
-  min-width: 12rem;
+  min-width: 0;
 }
 
 .shopping-submit-notes-field {
@@ -1736,6 +1740,14 @@ select:disabled {
   min-height: 1.85rem;
 }
 
+.shopping-existing-qty-input.is-disabled,
+.shopping-existing-qty-input:disabled {
+  background: #ece7e1;
+  color: #7a6a5c;
+  border-color: #d3c7bc;
+  cursor: not-allowed;
+}
+
 .shopping-mobile-card,
 .shopping-history-card {
   display: grid;
@@ -1757,10 +1769,6 @@ select:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.35rem 0.55rem;
   align-items: end;
-}
-
-.shopping-mobile-grid-compact {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .shopping-mobile-supplier {
