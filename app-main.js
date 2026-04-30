@@ -10121,27 +10121,23 @@ function renderSidebarReviewSummary() {
   const hostel = summary.properties?.hostel || {};
   const cruz = summary.properties?.cruz || {};
   els.sidebarReviewSummaryBody.innerHTML = `
-    <table class="sidebar-summary-table">
-      <thead>
-        <tr>
-          <th>Property</th>
-          <th>${escape(currentLabel)}</th>
-          <th>${escape(previousLabel)}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><span class="sidebar-summary-label">Hostel</span></td>
-          <td><span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.currentAverage))}</span></td>
-          <td><span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.previousAverage))}</span></td>
-        </tr>
-        <tr>
-          <td><span class="sidebar-summary-label">Cruz</span></td>
-          <td><span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.currentAverage))}</span></td>
-          <td><span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.previousAverage))}</span></td>
-        </tr>
-      </tbody>
-    </table>`;
+    <div class="sidebar-summary-grid">
+      <div class="sidebar-summary-grid-head">
+        <span class="sidebar-summary-head-label">Property</span>
+        <span class="sidebar-summary-head-value">${escape(currentLabel)}</span>
+        <span class="sidebar-summary-head-value">${escape(previousLabel)}</span>
+      </div>
+      <div class="sidebar-summary-grid-row">
+        <span class="sidebar-summary-label">Hostel</span>
+        <span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.currentAverage))}</span>
+        <span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.previousAverage))}</span>
+      </div>
+      <div class="sidebar-summary-grid-row">
+        <span class="sidebar-summary-label">Cruz</span>
+        <span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.currentAverage))}</span>
+        <span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.previousAverage))}</span>
+      </div>
+    </div>`;
 }
 
 async function loadSidebarReviewSummary({ silent = false } = {}) {

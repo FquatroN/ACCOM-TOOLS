@@ -106,49 +106,52 @@ body {
   min-height: 4rem;
 }
 
-.sidebar-summary-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  font-size: 0.68rem;
+.sidebar-summary-grid {
+  display: grid;
+  gap: 0;
 }
 
-.sidebar-summary-table th,
-.sidebar-summary-table td {
-  padding: 0.3rem 0.08rem;
+.sidebar-summary-grid-head,
+.sidebar-summary-grid-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(2.4rem, 0.8fr) minmax(2.4rem, 0.8fr);
+  align-items: center;
+  column-gap: 0.12rem;
   border-bottom: 1px solid var(--line);
-  text-align: right;
-  vertical-align: middle;
-  overflow-wrap: anywhere;
 }
 
-.sidebar-summary-table th:first-child,
-.sidebar-summary-table td:first-child {
-  width: 34%;
+.sidebar-summary-grid-row:last-child {
+  border-bottom: 0;
 }
 
-.sidebar-summary-table th:first-child,
-.sidebar-summary-table td:first-child {
-  text-align: left;
+.sidebar-summary-grid-head {
+  padding-bottom: 0.26rem;
 }
 
-.sidebar-summary-table thead th {
-  font-size: 0.6rem;
+.sidebar-summary-grid-row {
+  padding: 0.4rem 0;
+}
+
+.sidebar-summary-head-label,
+.sidebar-summary-head-value {
+  font-size: 0.58rem;
   color: var(--muted);
   font-weight: 600;
 }
 
-.sidebar-summary-table tbody tr:last-child td {
-  border-bottom: 0;
+.sidebar-summary-head-label {
+  text-align: left;
+}
+
+.sidebar-summary-head-value {
+  text-align: center;
 }
 
 .sidebar-summary-label {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 0.08rem;
   min-width: 0;
   font-size: 0.64rem;
   line-height: 1.15;
+  text-align: left;
 }
 
 .sidebar-summary-label small {
@@ -157,10 +160,12 @@ body {
 }
 
 .sidebar-summary-value {
+  display: block;
   font-weight: 700;
   color: var(--brand-2);
   font-size: 0.72rem;
   white-space: nowrap;
+  text-align: center;
 }
 
 .sidebar-summary-empty {
