@@ -541,7 +541,9 @@ const state = {
   shoppingSettings: clone(DEFAULT_SHOPPING_SETTINGS),
   shoppingSettingsLoaded: false,
   shoppingTab: "current",
+  shoppingFilters: { category: "", stored: "" },
   shoppingSubmitName: "",
+  shoppingSubmitNotes: "",
   shoppingSubmitPromptOpen: false,
   shoppingSelectedHistoryId: "",
   serviceProviders: [],
@@ -860,10 +862,13 @@ const els = {
   shoppingCurrentStatus: document.getElementById("shopping-current-status"),
   shoppingOpenEmpty: document.getElementById("shopping-open-empty"),
   shoppingOpenContent: document.getElementById("shopping-open-content"),
+  shoppingFilterCategory: document.getElementById("shopping-filter-category"),
+  shoppingFilterStored: document.getElementById("shopping-filter-stored"),
   shoppingOpenRows: document.getElementById("shopping-open-rows"),
   shoppingMobileCards: document.getElementById("shopping-mobile-cards"),
   shoppingSubmitNameWrap: document.getElementById("shopping-submit-name-wrap"),
   shoppingSubmitName: document.getElementById("shopping-submit-name"),
+  shoppingSubmitNotes: document.getElementById("shopping-submit-notes"),
   shoppingSubmitStatus: document.getElementById("shopping-submit-status"),
   shoppingSubmitOrder: document.getElementById("shopping-submit-order"),
   shoppingHistoryRows: document.getElementById("shopping-history-rows"),
@@ -1008,6 +1013,8 @@ function bindEvents() {
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
   els.shoppingSaveOrder.addEventListener("click", () => saveShoppingOrderDraft(false));
   els.shoppingSubmitOrder.addEventListener("click", submitShoppingOrder);
+  els.shoppingFilterCategory?.addEventListener("change", onShoppingFilterChange);
+  els.shoppingFilterStored?.addEventListener("change", onShoppingFilterChange);
   els.shoppingOpenRows.addEventListener("input", onShoppingOrderInput);
   els.shoppingOpenRows.addEventListener("change", onShoppingOrderInput);
   els.shoppingMobileCards?.addEventListener("input", onShoppingOrderInput);
@@ -1026,6 +1033,9 @@ function bindEvents() {
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
   els.shoppingSubmitName.addEventListener("input", () => {
     state.shoppingSubmitName = clean(els.shoppingSubmitName.value);
+  });
+  els.shoppingSubmitNotes?.addEventListener("input", () => {
+    state.shoppingSubmitNotes = clean(els.shoppingSubmitNotes.value);
   });
   els.settingsReviewsImportTab.addEventListener("click", () => setReviewSettingsScreen("import"));
   els.settingsReviewsConfigTab.addEventListener("click", () => setReviewSettingsScreen("config"));
@@ -6196,6 +6206,43 @@ function normalizeShoppingOrderClient(order) {
   };
 }
 
+function uniqueSortedShoppingValues(items, field) {
+  return Array.from(
+    new Set(
+      (Array.isArray(items) ? items : [])
+        .map((item) => clean(item?.[field]))
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+}
+
+function renderShoppingCurrentFilters(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const categories = uniqueSortedShoppingValues(items, "category");
+  const storedValues = uniqueSortedShoppingValues(items, "stored");
+  if (state.shoppingFilters.category && !categories.includes(state.shoppingFilters.category)) state.shoppingFilters.category = "";
+  if (state.shoppingFilters.stored && !storedValues.includes(state.shoppingFilters.stored)) state.shoppingFilters.stored = "";
+  if (els.shoppingFilterCategory) {
+    els.shoppingFilterCategory.innerHTML = [`<option value="">All categories</option>`, ...categories.map((value) => `<option value="${escape(value)}">${escape(value)}</option>`)].join("");
+    els.shoppingFilterCategory.value = state.shoppingFilters.category;
+  }
+  if (els.shoppingFilterStored) {
+    els.shoppingFilterStored.innerHTML = [`<option value="">All stored</option>`, ...storedValues.map((value) => `<option value="${escape(value)}">${escape(value)}</option>`)].join("");
+    els.shoppingFilterStored.value = state.shoppingFilters.stored;
+  }
+}
+
+function getFilteredShoppingItems(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const category = clean(state.shoppingFilters.category);
+  const stored = clean(state.shoppingFilters.stored);
+  return items.filter((item) => {
+    if (category && clean(item.category) !== category) return false;
+    if (stored && clean(item.stored) !== stored) return false;
+    return true;
+  });
+}
+
 function setShoppingCurrentStatus(text) {
   if (els.shoppingCurrentStatus) els.shoppingCurrentStatus.textContent = text;
 }
@@ -6240,6 +6287,7 @@ async function loadShoppingData({ silent = false } = {}) {
     }
     if (!state.shoppingOpenOrder) {
       state.shoppingSubmitName = "";
+      state.shoppingSubmitNotes = "";
       state.shoppingSubmitPromptOpen = false;
     }
     renderShopping();
@@ -6311,9 +6359,14 @@ function groupedShoppingItems(items) {
 }
 
 function renderShoppingCurrentRows(order) {
-  const items = Array.isArray(order?.items) ? order.items : [];
+  const items = getFilteredShoppingItems(order);
   if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = "";
   if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = "";
+  if (!items.length) {
+    if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = '<tr><td colspan="6" class="empty">No shopping items match the current filters.</td></tr>';
+    if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = '<div class="services-mobile-empty">No shopping items match the current filters.</div>';
+    return;
+  }
   items.forEach((item) => {
     const rowColor = hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.15);
     const tr = document.createElement("tr");
@@ -6322,13 +6375,19 @@ function renderShoppingCurrentRows(order) {
       <td>${escape(item.item || "-")}</td>
       <td>${escape(item.supplier || "-")}</td>
       <td>${escape(item.stored || "-")}</td>
-      <td><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${item.quantityRequired ? "Required" : ""}" /></td>
+      <td>${item.quantityRequired ? `<input class="shopping-existing-qty-input" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="Required" />` : ""}</td>
       <td><label class="status-toggle"><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} /><span>Order</span></label></td>`;
     els.shoppingOpenRows.appendChild(tr);
     if (els.shoppingMobileCards) {
       const card = document.createElement("article");
       card.className = `shopping-mobile-card${item.order ? " selected-card" : ""}`;
       if (rowColor) card.style.background = rowColor;
+      const existingQuantityField = item.quantityRequired
+        ? `<label class="communication-mobile-field shopping-mobile-quantity-field">
+            <small>Existing Quantity</small>
+            <input class="shopping-existing-qty-input" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="Required" />
+          </label>`
+        : "";
       card.innerHTML = `<div class="service-mobile-header">
           <div>
             <div class="service-mobile-request">${escape(item.item || "-")}</div>
@@ -6336,12 +6395,8 @@ function renderShoppingCurrentRows(order) {
           </div>
           <div class="shopping-mobile-supplier">${escape(item.supplier || "-")}</div>
         </div>
-        <div class="shopping-mobile-stored">Stored: ${escape(item.stored || "-")}</div>
-        <div class="shopping-mobile-grid">
-          <label class="communication-mobile-field">
-            <small>Existing Quantity</small>
-            <input data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${item.quantityRequired ? "Required" : ""}" />
-          </label>
+        <div class="shopping-mobile-grid${item.quantityRequired ? "" : " shopping-mobile-grid-compact"}">
+          ${existingQuantityField}
           <label class="communication-mobile-field shopping-mobile-order-toggle">
             <small>Order</small>
             <span class="status-toggle"><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} /><span>Selected</span></span>
@@ -6447,10 +6502,16 @@ function renderShopping() {
   els.shoppingSaveOrder.hidden = !order;
   els.shoppingNewOrder.hidden = !!order;
   els.shoppingSubmitName.value = state.shoppingSubmitName;
+  if (els.shoppingSubmitNotes) els.shoppingSubmitNotes.value = state.shoppingSubmitNotes;
   els.shoppingSubmitNameWrap.hidden = !order || !state.shoppingSubmitPromptOpen;
   if (els.shoppingSubmitOrder) els.shoppingSubmitOrder.textContent = state.shoppingSubmitPromptOpen ? "Confirm Submit" : "Submit Order";
-  if (order) renderShoppingCurrentRows(order);
+  if (order) {
+    renderShoppingCurrentFilters(order);
+    renderShoppingCurrentRows(order);
+  }
   else {
+    if (els.shoppingFilterCategory) els.shoppingFilterCategory.innerHTML = '<option value="">All categories</option>';
+    if (els.shoppingFilterStored) els.shoppingFilterStored.innerHTML = '<option value="">All stored</option>';
     if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = "";
     if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = "";
   }
@@ -6586,12 +6647,19 @@ function onShoppingOrderInput(event) {
   }
 }
 
+function onShoppingFilterChange() {
+  state.shoppingFilters.category = clean(els.shoppingFilterCategory?.value);
+  state.shoppingFilters.stored = clean(els.shoppingFilterStored?.value);
+  renderShopping();
+}
+
 async function createShoppingOrder() {
   try {
     const result = await api("/api/shopping", { method: "POST", body: { action: "create" } });
     state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
     state.shoppingLoaded = true;
     state.shoppingSubmitName = "";
+    state.shoppingSubmitNotes = "";
     state.shoppingSubmitPromptOpen = false;
     setShoppingTab("current");
     renderShopping();
@@ -6642,12 +6710,14 @@ async function submitShoppingOrder() {
       body: {
         action: "submit",
         submittedByName: clean(state.shoppingSubmitName || els.shoppingSubmitName.value),
+        notes: clean(state.shoppingSubmitNotes || els.shoppingSubmitNotes?.value),
         items: state.shoppingOpenOrder.items,
       },
     });
     const emailError = clean(result.emailResult?.error);
     state.shoppingOpenOrder = null;
     state.shoppingSubmitName = "";
+    state.shoppingSubmitNotes = "";
     state.shoppingSubmitPromptOpen = false;
     await loadShoppingData({ silent: true });
     state.shoppingLoaded = true;
@@ -6687,6 +6757,7 @@ async function reopenLatestShoppingOrder(sourceId = "") {
     });
     state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order);
     state.shoppingSubmitName = "";
+    state.shoppingSubmitNotes = "";
     state.shoppingSubmitPromptOpen = false;
     state.shoppingLoaded = true;
     setShoppingTab("current");

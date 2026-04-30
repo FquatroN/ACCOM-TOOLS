@@ -174,20 +174,22 @@ async function sendWithResend({ to, subject, html, text }) {
   return payload;
 }
 
-async function sendShoppingEmail(order, settings) {
+async function sendShoppingEmail(order, settings, notes = "") {
   const recipients = Array.isArray(settings?.emailRecipients) ? settings.emailRecipients : [];
   if (!recipients.length) return { skipped: true };
   const shoppingDate = todayInLisbon();
   const selectedItems = Array.isArray(order?.items) ? order.items.filter((item) => !!item.order) : [];
   const tableHtml = buildSelectedItemsTable(selectedItems);
   const subject = `Lista de Compras - data ${shoppingDate}`;
+  const cleanNotes = cleanText(notes);
   const html = `<p>Foi submetida uma nova lista de compras.</p>
-    <p><strong>Data:</strong> ${escapeHtml(shoppingDate)}<br /><strong>Nome:</strong> ${escapeHtml(order.submittedByName || "-")}</p>
+    <p><strong>Data:</strong> ${escapeHtml(shoppingDate)}<br /><strong>Nome:</strong> ${escapeHtml(order.submittedByName || "-")}${cleanNotes ? `<br /><strong>Notes:</strong> ${escapeHtml(cleanNotes)}` : ""}</p>
     ${tableHtml}`;
   const text = [
     "Foi submetida uma nova lista de compras.",
     `Data: ${shoppingDate}`,
     `Nome: ${cleanText(order.submittedByName) || "-"}`,
+    ...(cleanNotes ? [`Notes: ${cleanNotes}`] : []),
     "",
     ...selectedItems.map((item) => `${item.category} | ${item.item} | ${item.supplier || "-"} | Qt existente: ${item.existingQuantity || "-"} | Order: Yes`),
   ].join("\n");
@@ -316,7 +318,7 @@ module.exports = async function handler(req, res) {
       const order = sanitizeShoppingOrderRow(Array.isArray(updatedRows) ? updatedRows[0] : {});
       if (action === "submit") {
         try {
-          emailResult = await sendShoppingEmail(order, settings);
+          emailResult = await sendShoppingEmail(order, settings, cleanText(body?.notes));
         } catch (error) {
           emailResult = { error: error.message || "Could not send shopping email." };
         }

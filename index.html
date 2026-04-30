@@ -907,6 +907,16 @@
               <p id="shopping-current-status" class="auth-status"></p>
               <div id="shopping-open-empty" class="review-detail empty">No open shopping order. Start a new order or reopen the latest submitted one from history.</div>
               <div id="shopping-open-content" hidden>
+                <div class="filters shopping-current-filters">
+                  <label>
+                    Category
+                    <select id="shopping-filter-category"></select>
+                  </label>
+                  <label>
+                    Stored
+                    <select id="shopping-filter-stored"></select>
+                  </label>
+                </div>
                 <div id="shopping-mobile-cards" class="shopping-mobile-cards"></div>
                 <div class="table-wrap shopping-table-wrap">
                   <table class="shopping-table">
@@ -928,6 +938,10 @@
                     <label>
                       Name
                       <input id="shopping-submit-name" type="text" placeholder="Who is submitting this order?" />
+                    </label>
+                    <label class="shopping-submit-notes-field">
+                      Notes
+                      <textarea id="shopping-submit-notes" rows="2" placeholder="Optional notes"></textarea>
                     </label>
                   </div>
                   <div class="actions">
