@@ -6369,7 +6369,7 @@ function renderShoppingCurrentRows(order) {
   }
   items.forEach((item) => {
     const rowColor = hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.15);
-    const quantityPlaceholder = item.quantityRequired ? "Required" : "";
+    const quantityPlaceholder = item.order && item.quantityRequired ? "Required" : "";
     const quantityDisabled = item.order ? "" : "disabled";
     const tr = document.createElement("tr");
     if (rowColor) tr.style.background = rowColor;
