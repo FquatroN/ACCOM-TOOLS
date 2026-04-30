@@ -10115,9 +10115,9 @@ function renderSidebarReviewSummary() {
     els.sidebarReviewSummaryBody.innerHTML = '<p class="sidebar-summary-empty">Average ratings for Hostel and Cruz will appear here.</p>';
     return;
   }
-  els.sidebarReviewSummaryStatus.textContent = `${summary.months?.currentLabel || "Current month"} vs ${summary.months?.previousLabel || "Past month"}`;
-  const currentLabel = summary.months?.currentShortLabel || "Current";
-  const previousLabel = summary.months?.previousShortLabel || "Past";
+  els.sidebarReviewSummaryStatus.textContent = "";
+  const currentLabel = summary.months?.currentLabel || "Current";
+  const previousLabel = summary.months?.previousLabel || "Past";
   const hostel = summary.properties?.hostel || {};
   const cruz = summary.properties?.cruz || {};
   els.sidebarReviewSummaryBody.innerHTML = `
@@ -10131,12 +10131,12 @@ function renderSidebarReviewSummary() {
       </thead>
       <tbody>
         <tr>
-          <td><span class="sidebar-summary-label">Hostel<small>Lisboa Central Hostel</small></span></td>
+          <td><span class="sidebar-summary-label">Hostel</span></td>
           <td><span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.currentAverage))}</span></td>
           <td><span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.previousAverage))}</span></td>
         </tr>
         <tr>
-          <td><span class="sidebar-summary-label">Cruz<small>Cruz Apartments</small></span></td>
+          <td><span class="sidebar-summary-label">Cruz</span></td>
           <td><span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.currentAverage))}</span></td>
           <td><span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.previousAverage))}</span></td>
         </tr>
