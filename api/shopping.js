@@ -133,31 +133,31 @@ function validateSubmittableOrder(order) {
   }
 }
 
-function buildSelectedItemsTable(items) {
+function buildSelectedItemsTable(items, settings) {
   const rows = items
     .filter((item) => !!item.order)
     .map(
-      (item) => `<tr>
-        <td>${escapeHtml(item.category)}</td>
-        <td>${escapeHtml(item.item)}</td>
-        <td>${escapeHtml(item.supplier || "-")}</td>
-        <td>${escapeHtml(item.existingQuantity || "-")}</td>
-        <td>Yes</td>
+      (item) => `<tr style="background:${escapeHtml(blendShoppingColorOnWhiteServer(getShoppingCategoryColorServer(settings, item.category), 0.10))}">
+          <td>${escapeHtml(item.category)}</td>
+          <td>${escapeHtml(item.item)}</td>
+          <td>${escapeHtml(item.supplier || "-")}</td>
+          <td>${escapeHtml(item.existingQuantity || "-")}</td>
+          <td>Yes</td>
       </tr>`
     )
     .join("");
-  return `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">
-    <thead>
-      <tr>
-        <th align="left">Category</th>
-        <th align="left">Item</th>
-        <th align="left">Supplier</th>
-        <th align="left">Existing quantity</th>
-        <th align="left">Order</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+    return `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">
+      <thead>
+        <tr>
+          <th align="left" style="background:#f1ece6">Category</th>
+          <th align="left" style="background:#f1ece6">Item</th>
+          <th align="left" style="background:#f1ece6">Supplier</th>
+          <th align="left" style="background:#f1ece6">Existing quantity</th>
+          <th align="left" style="background:#f1ece6">Order</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 function shoppingOrderFileStem(order) {
@@ -295,36 +295,36 @@ function buildShoppingOrderPdfBuffer(order, settings) {
     y = pageHeight - margin;
     commands.push("0 0 0 rg");
     commands.push("BT");
-    commands.push(`/F2 16 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscape(normalizePdfTextServer("Shopping Order Detail"))}) Tj`);
+    commands.push(`/F2 14 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscape(normalizePdfTextServer("Shopping Order Detail"))}) Tj`);
     commands.push("ET");
-    y -= 24;
+    y -= 20;
     metaRows.forEach(([label, value]) => {
       commands.push("0 0 0 rg");
       commands.push("BT");
-      commands.push(`/F2 9 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscape(normalizePdfTextServer(`${label}:`))}) Tj`);
-      commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 90} ${y} Tm (${pdfEscape(normalizePdfTextServer(value))}) Tj`);
+      commands.push(`/F2 8 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscape(normalizePdfTextServer(`${label}:`))}) Tj`);
+      commands.push(`/F1 8 Tf 1 0 0 1 ${margin + 90} ${y} Tm (${pdfEscape(normalizePdfTextServer(value))}) Tj`);
       commands.push("ET");
-      y -= 13;
+      y -= 11;
     });
-    y -= 6;
+    y -= 4;
   };
   const flushPage = () => {
     pages.push(commands.join("\n"));
   };
   const drawHeader = () => {
-    const rowHeight = 18;
+    const rowHeight = 15;
     let x = margin;
     headers.forEach((header, index) => {
-      drawPdfRectServer(commands, x, y - rowHeight, colWidths[index], rowHeight, "#e8ded4");
+      drawPdfRectServer(commands, x, y - rowHeight, colWidths[index], rowHeight, "#f1ece6");
       commands.push("0 0 0 rg");
       commands.push("BT");
-      commands.push(`/F2 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12} Tm (${pdfEscape(normalizePdfTextServer(header))}) Tj`);
+      commands.push(`/F2 7.5 Tf 1 0 0 1 ${x + 3} ${y - 10.5} Tm (${pdfEscape(normalizePdfTextServer(header))}) Tj`);
       commands.push("ET");
       x += colWidths[index];
     });
     y -= rowHeight;
   };
-  const wrapCell = (text, width) => wrapShoppingPdfText(text, Math.max(8, Math.floor((width - 8) / 4.6)));
+  const wrapCell = (text, width) => wrapShoppingPdfText(text, Math.max(8, Math.floor((width - 6) / 5.0)));
   startPage();
   drawHeader();
   rows.forEach((item) => {
@@ -338,20 +338,20 @@ function buildShoppingOrderPdfBuffer(order, settings) {
     ];
     const wrapped = cells.map((cell, index) => wrapCell(cell, colWidths[index]));
     const rowLines = Math.max(...wrapped.map((cell) => cell.length), 1);
-    const rowHeight = Math.max(18, rowLines * 11 + 6);
+    const rowHeight = Math.max(14, rowLines * 8.5 + 4);
     if (y - rowHeight < margin) {
       flushPage();
       startPage();
       drawHeader();
     }
     let x = margin;
-    const fill = blendShoppingColorOnWhiteServer(getShoppingCategoryColorServer(settings, item.category), 0.15);
+    const fill = blendShoppingColorOnWhiteServer(getShoppingCategoryColorServer(settings, item.category), 0.10);
     wrapped.forEach((cellLines, index) => {
       drawPdfRectServer(commands, x, y - rowHeight, colWidths[index], rowHeight, fill);
       cellLines.forEach((line, lineIndex) => {
         commands.push("0 0 0 rg");
         commands.push("BT");
-        commands.push(`/F1 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12 - lineIndex * 10} Tm (${pdfEscape(normalizePdfTextServer(line))}) Tj`);
+        commands.push(`/F1 7.5 Tf 1 0 0 1 ${x + 3} ${y - 10.5 - lineIndex * 8.5} Tm (${pdfEscape(normalizePdfTextServer(line))}) Tj`);
         commands.push("ET");
       });
       x += colWidths[index];
@@ -359,11 +359,11 @@ function buildShoppingOrderPdfBuffer(order, settings) {
     y -= rowHeight;
   });
   if (!rows.length) {
-    const rowHeight = 22;
+    const rowHeight = 18;
     drawPdfRectServer(commands, margin, y - rowHeight, colWidths.reduce((sum, value) => sum + value, 0), rowHeight, "#faf7f2");
     commands.push("0 0 0 rg");
     commands.push("BT");
-    commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 4} ${y - 14} Tm (${pdfEscape(normalizePdfTextServer("No selected items in this order."))}) Tj`);
+    commands.push(`/F1 8 Tf 1 0 0 1 ${margin + 3} ${y - 11.5} Tm (${pdfEscape(normalizePdfTextServer("No selected items in this order."))}) Tj`);
     commands.push("ET");
     y -= rowHeight;
   }
@@ -446,7 +446,7 @@ async function sendShoppingEmail(order, settings, notes = "") {
   if (!recipients.length) return { skipped: true };
   const shoppingDate = todayInLisbon();
   const selectedItems = Array.isArray(order?.items) ? order.items.filter((item) => !!item.order) : [];
-  const tableHtml = buildSelectedItemsTable(selectedItems);
+  const tableHtml = buildSelectedItemsTable(selectedItems, settings);
   const subject = `Lista de Compras - data ${shoppingDate}`;
   const cleanNotes = cleanText(notes);
   const html = `<p>Foi submetida uma nova lista de compras.</p>

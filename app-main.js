@@ -6603,36 +6603,36 @@ function buildShoppingOrderPdfBytesClient(order) {
     y = pageHeight - margin;
     commands.push("0 0 0 rg");
     commands.push("BT");
-    commands.push(`/F2 16 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient("Shopping Order Detail"))}) Tj`);
+    commands.push(`/F2 14 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient("Shopping Order Detail"))}) Tj`);
     commands.push("ET");
-    y -= 24;
+    y -= 20;
     metaRows.forEach(([label, value]) => {
       commands.push("0 0 0 rg");
       commands.push("BT");
-      commands.push(`/F2 9 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient(`${label}:`))}) Tj`);
-      commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 90} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient(value))}) Tj`);
+      commands.push(`/F2 8 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient(`${label}:`))}) Tj`);
+      commands.push(`/F1 8 Tf 1 0 0 1 ${margin + 90} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient(value))}) Tj`);
       commands.push("ET");
-      y -= 13;
+      y -= 11;
     });
-    y -= 6;
+    y -= 4;
   };
   const flushPage = () => {
     pages.push(commands.join("\n"));
   };
   const drawHeader = () => {
-    const rowHeight = 18;
+    const rowHeight = 15;
     let x = margin;
     headers.forEach((header, index) => {
-      drawPdfRectClient(commands, x, y - rowHeight, colWidths[index], rowHeight, "#e8ded4");
+      drawPdfRectClient(commands, x, y - rowHeight, colWidths[index], rowHeight, "#f1ece6");
       commands.push("0 0 0 rg");
       commands.push("BT");
-      commands.push(`/F2 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12} Tm (${pdfEscapeClient(normalizePdfTextClient(header))}) Tj`);
+      commands.push(`/F2 7.5 Tf 1 0 0 1 ${x + 3} ${y - 10.5} Tm (${pdfEscapeClient(normalizePdfTextClient(header))}) Tj`);
       commands.push("ET");
       x += colWidths[index];
     });
     y -= rowHeight;
   };
-  const wrapCell = (text, width) => wrapShoppingPdfTextClient(text, Math.max(8, Math.floor((width - 8) / 4.6)));
+  const wrapCell = (text, width) => wrapShoppingPdfTextClient(text, Math.max(8, Math.floor((width - 6) / 5.0)));
   startPage();
   drawHeader();
   rows.forEach((item) => {
@@ -6646,20 +6646,20 @@ function buildShoppingOrderPdfBytesClient(order) {
     ];
     const wrapped = cells.map((cell, index) => wrapCell(cell, colWidths[index]));
     const rowLines = Math.max(...wrapped.map((cell) => cell.length), 1);
-    const rowHeight = Math.max(18, rowLines * 11 + 6);
+    const rowHeight = Math.max(14, rowLines * 8.5 + 4);
     if (y - rowHeight < margin) {
       flushPage();
       startPage();
       drawHeader();
     }
     let x = margin;
-    const fill = blendShoppingColorOnWhiteClient(getShoppingCategoryColor(item.category), 0.15);
+    const fill = blendShoppingColorOnWhiteClient(getShoppingCategoryColor(item.category), 0.10);
     wrapped.forEach((cellLines, index) => {
       drawPdfRectClient(commands, x, y - rowHeight, colWidths[index], rowHeight, fill);
       cellLines.forEach((line, lineIndex) => {
         commands.push("0 0 0 rg");
         commands.push("BT");
-        commands.push(`/F1 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12 - lineIndex * 10} Tm (${pdfEscapeClient(normalizePdfTextClient(line))}) Tj`);
+        commands.push(`/F1 7.5 Tf 1 0 0 1 ${x + 3} ${y - 10.5 - lineIndex * 8.5} Tm (${pdfEscapeClient(normalizePdfTextClient(line))}) Tj`);
         commands.push("ET");
       });
       x += colWidths[index];
@@ -6667,11 +6667,11 @@ function buildShoppingOrderPdfBytesClient(order) {
     y -= rowHeight;
   });
   if (!rows.length) {
-    const rowHeight = 22;
+    const rowHeight = 18;
     drawPdfRectClient(commands, margin, y - rowHeight, colWidths.reduce((sum, value) => sum + value, 0), rowHeight, "#faf7f2");
     commands.push("0 0 0 rg");
     commands.push("BT");
-    commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 4} ${y - 14} Tm (${pdfEscapeClient(normalizePdfTextClient("No selected items in this order."))}) Tj`);
+    commands.push(`/F1 8 Tf 1 0 0 1 ${margin + 3} ${y - 11.5} Tm (${pdfEscapeClient(normalizePdfTextClient("No selected items in this order."))}) Tj`);
     commands.push("ET");
     y -= rowHeight;
   }
