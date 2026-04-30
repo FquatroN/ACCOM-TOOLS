@@ -6495,22 +6495,38 @@ function shoppingOrderSelectedItems(order) {
   return (Array.isArray(order?.items) ? order.items : []).filter((item) => item.order);
 }
 
+function blendShoppingColorOnWhiteClient(hex, alpha = 0.15) {
+  const normalized = normalizeShoppingColorClient(hex, "#F3E7DB");
+  const value = normalized.replace("#", "");
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  const blend = (channel) => Math.round((255 * (1 - alpha)) + (channel * alpha));
+  return `#${[blend(r), blend(g), blend(b)].map((item) => item.toString(16).padStart(2, "0")).join("")}`;
+}
+
 function buildShoppingOrderExcelHtmlClient(order) {
   const rows = shoppingOrderSelectedItems(order);
   const metaRows = shoppingOrderMetaRows(order);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { size: A4 portrait; margin: 12mm; }
-    body { font-family: Calibri, Arial, sans-serif; color: #222; font-size: 12px; }
-    h1 { font-size: 18px; margin: 0 0 10px; }
+    body { font-family: Calibri, Arial, sans-serif; color: #222; font-size: 11px; }
+    h1 { font-size: 18px; margin: 0 0 8px; color: #3b2f24; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; mso-page-orientation: portrait; }
-    th, td { border: 1px solid #cfc7bf; padding: 6px; vertical-align: top; text-align: left; }
-    th { background: #f1ece6; }
+    th, td { border: 1px solid #cfc7bf; padding: 6px 7px; vertical-align: top; text-align: left; }
+    th { background: #e8ded4; font-weight: 700; }
     .meta td:first-child { width: 150px; font-weight: 700; background: #faf7f2; }
+    .items th:nth-child(1) { width: 16%; }
+    .items th:nth-child(2) { width: 28%; }
+    .items th:nth-child(3) { width: 20%; }
+    .items th:nth-child(4) { width: 16%; }
+    .items th:nth-child(5) { width: 12%; }
+    .items th:nth-child(6) { width: 8%; }
   </style></head><body>
     <h1>Shopping Order Detail</h1>
     <table class="meta"><tbody>${metaRows.map(([label, value]) => `<tr><td>${escape(label)}</td><td>${escape(value)}</td></tr>`).join("")}</tbody></table>
-    <table><thead><tr><th>Category</th><th>Item</th><th>Supplier</th><th>Stored</th><th>Existing Quantity</th><th>Order</th></tr></thead>
-    <tbody>${rows.map((item) => `<tr><td>${escape(item.category || "-")}</td><td>${escape(item.item || "-")}</td><td>${escape(item.supplier || "-")}</td><td>${escape(item.stored || "-")}</td><td>${escape(item.existingQuantity || "-")}</td><td>Yes</td></tr>`).join("")}</tbody></table>
+    <table class="items"><thead><tr><th>Category</th><th>Item</th><th>Supplier</th><th>Stored</th><th>Existing Quantity</th><th>Order</th></tr></thead>
+    <tbody>${rows.map((item) => `<tr style="background:${escape(blendShoppingColorOnWhiteClient(getShoppingCategoryColor(item.category), 0.15))}"><td>${escape(item.category || "-")}</td><td>${escape(item.item || "-")}</td><td>${escape(item.supplier || "-")}</td><td>${escape(item.stored || "-")}</td><td>${escape(item.existingQuantity || "-")}</td><td>Yes</td></tr>`).join("")}</tbody></table>
   </body></html>`;
 }
 
@@ -6536,45 +6552,118 @@ function pdfEscapeClient(text) {
   return String(text ?? "").replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
 }
 
-function buildSimplePdfClient(title, lines) {
+function pdfRgbClient(hex) {
+  const normalized = normalizeShoppingColorClient(hex, "#F3E7DB").replace("#", "");
+  return [
+    Number.parseInt(normalized.slice(0, 2), 16) / 255,
+    Number.parseInt(normalized.slice(2, 4), 16) / 255,
+    Number.parseInt(normalized.slice(4, 6), 16) / 255,
+  ];
+}
+
+function drawPdfRectClient(commands, x, y, width, height, fillHex, strokeHex = "#cfc7bf") {
+  const [fr, fg, fb] = pdfRgbClient(fillHex);
+  const [sr, sg, sb] = pdfRgbClient(strokeHex);
+  commands.push(`${fr.toFixed(3)} ${fg.toFixed(3)} ${fb.toFixed(3)} rg`);
+  commands.push(`${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re f`);
+  commands.push(`${sr.toFixed(3)} ${sg.toFixed(3)} ${sb.toFixed(3)} RG`);
+  commands.push(`0.6 w ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S`);
+}
+
+function buildShoppingOrderPdfBytesClient(order) {
+  const rows = shoppingOrderSelectedItems(order);
   const pageWidth = 595;
   const pageHeight = 842;
-  const margin = 40;
-  const lineHeight = 14;
+  const margin = 32;
+  const colWidths = [78, 160, 105, 78, 78, 52];
+  const headers = ["Category", "Item", "Supplier", "Stored", "Existing Qty", "Order"];
+  const metaRows = shoppingOrderMetaRows(order);
   const pages = [];
-  let currentPage = [];
+  let commands = [];
   let y = pageHeight - margin;
-  lines.forEach((line, index) => {
-    const fontSize = index === 0 ? 15 : 10;
-    if (index === 0) {
-      if (currentPage.length) pages.push(currentPage);
-      currentPage = [];
-      y = pageHeight - margin;
+  const startPage = () => {
+    commands = [];
+    y = pageHeight - margin;
+    commands.push("BT");
+    commands.push(`/F2 16 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient("Shopping Order Detail")}) Tj`);
+    commands.push("ET");
+    y -= 24;
+    metaRows.forEach(([label, value]) => {
+      commands.push("BT");
+      commands.push(`/F2 9 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient(`${label}:`)}) Tj`);
+      commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 90} ${y} Tm (${pdfEscapeClient(value)}) Tj`);
+      commands.push("ET");
+      y -= 13;
+    });
+    y -= 6;
+  };
+  const flushPage = () => {
+    pages.push(commands.join("\n"));
+  };
+  const drawHeader = () => {
+    const rowHeight = 18;
+    let x = margin;
+    headers.forEach((header, index) => {
+      drawPdfRectClient(commands, x, y - rowHeight, colWidths[index], rowHeight, "#e8ded4");
+      commands.push("BT");
+      commands.push(`/F2 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12} Tm (${pdfEscapeClient(header)}) Tj`);
+      commands.push("ET");
+      x += colWidths[index];
+    });
+    y -= rowHeight;
+  };
+  const wrapCell = (text, width) => wrapShoppingPdfTextClient(text, Math.max(8, Math.floor((width - 8) / 4.6)));
+  startPage();
+  drawHeader();
+  rows.forEach((item) => {
+    const cells = [
+      item.category || "-",
+      item.item || "-",
+      item.supplier || "-",
+      item.stored || "-",
+      item.existingQuantity || "-",
+      "Yes",
+    ];
+    const wrapped = cells.map((cell, index) => wrapCell(cell, colWidths[index]));
+    const rowLines = Math.max(...wrapped.map((cell) => cell.length), 1);
+    const rowHeight = Math.max(18, rowLines * 11 + 6);
+    if (y - rowHeight < margin) {
+      flushPage();
+      startPage();
+      drawHeader();
     }
-    if (y < margin + lineHeight) {
-      pages.push(currentPage);
-      currentPage = [];
-      y = pageHeight - margin;
-    }
-    currentPage.push({ text: line, y, fontSize });
-    y -= lineHeight;
+    let x = margin;
+    const fill = blendShoppingColorOnWhiteClient(getShoppingCategoryColor(item.category), 0.15);
+    wrapped.forEach((cellLines, index) => {
+      drawPdfRectClient(commands, x, y - rowHeight, colWidths[index], rowHeight, fill);
+      cellLines.forEach((line, lineIndex) => {
+        commands.push("BT");
+        commands.push(`/F1 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12 - lineIndex * 10} Tm (${pdfEscapeClient(line)}) Tj`);
+        commands.push("ET");
+      });
+      x += colWidths[index];
+    });
+    y -= rowHeight;
   });
-  if (currentPage.length) pages.push(currentPage);
+  if (!rows.length) {
+    const rowHeight = 22;
+    drawPdfRectClient(commands, margin, y - rowHeight, colWidths.reduce((sum, value) => sum + value, 0), rowHeight, "#faf7f2");
+    commands.push("BT");
+    commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 4} ${y - 14} Tm (${pdfEscapeClient("No selected items in this order.")}) Tj`);
+    commands.push("ET");
+    y -= rowHeight;
+  }
+  flushPage();
   const objects = [];
   objects.push("<< /Type /Catalog /Pages 2 0 R >>");
   objects.push(`<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((_, i) => `${3 + i * 2} 0 R`).join(" ")}] >>`);
-  pages.forEach((page, index) => {
+  pages.forEach((stream, index) => {
     const pageObj = 3 + index * 2;
     const contentObj = pageObj + 1;
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${3 + pages.length * 2} 0 R /F2 ${4 + pages.length * 2} 0 R >> >> /Contents ${contentObj} 0 R >>`);
-    const stream = [
-      "BT",
-      ...page.map((entry) => `/${entry.fontSize > 10 ? "F2" : "F1"} ${entry.fontSize} Tf 1 0 0 1 ${margin} ${entry.y} Tm (${pdfEscapeClient(entry.text)}) Tj`),
-      "ET",
-    ].join("\n");
     objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   });
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
@@ -6589,22 +6678,6 @@ function buildSimplePdfClient(title, lines) {
   });
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return new Uint8Array(Array.from(pdf, (char) => char.charCodeAt(0) & 0xff));
-}
-
-function buildShoppingOrderPdfBytesClient(order) {
-  const rows = shoppingOrderSelectedItems(order);
-  const lines = [
-    "Shopping Order Detail",
-    ...shoppingOrderMetaRows(order).flatMap(([label, value]) => wrapShoppingPdfTextClient(`${label}: ${value}`)),
-    "",
-    "Category | Item | Supplier | Stored | Existing Qty | Order",
-    ...rows.flatMap((item) =>
-      wrapShoppingPdfTextClient(
-        `${item.category || "-"} | ${item.item || "-"} | ${item.supplier || "-"} | ${item.stored || "-"} | ${item.existingQuantity || "-"} | Yes`
-      )
-    ),
-  ];
-  return buildSimplePdfClient("Shopping Order Detail", lines);
 }
 
 function exportShoppingDetailToExcel() {
