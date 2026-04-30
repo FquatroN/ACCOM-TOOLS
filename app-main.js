@@ -6552,6 +6552,23 @@ function pdfEscapeClient(text) {
   return String(text ?? "").replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
 }
 
+function normalizePdfTextClient(value) {
+  return String(value ?? "")
+    .replaceAll("\u00a0", " ")
+    .replaceAll("\u2018", "'")
+    .replaceAll("\u2019", "'")
+    .replaceAll("\u201c", '"')
+    .replaceAll("\u201d", '"')
+    .replaceAll("\u2013", "-")
+    .replaceAll("\u2014", "-")
+    .replaceAll("\u2026", "...")
+    .replaceAll("\u2022", "-")
+    .replaceAll("\u200b", "")
+    .split("")
+    .map((char) => (char.charCodeAt(0) <= 255 ? char : "?"))
+    .join("");
+}
+
 function pdfRgbClient(hex) {
   const normalized = normalizeShoppingColorClient(hex, "#F3E7DB").replace("#", "");
   return [
@@ -6584,14 +6601,16 @@ function buildShoppingOrderPdfBytesClient(order) {
   const startPage = () => {
     commands = [];
     y = pageHeight - margin;
+    commands.push("0 0 0 rg");
     commands.push("BT");
-    commands.push(`/F2 16 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient("Shopping Order Detail")}) Tj`);
+    commands.push(`/F2 16 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient("Shopping Order Detail"))}) Tj`);
     commands.push("ET");
     y -= 24;
     metaRows.forEach(([label, value]) => {
+      commands.push("0 0 0 rg");
       commands.push("BT");
-      commands.push(`/F2 9 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient(`${label}:`)}) Tj`);
-      commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 90} ${y} Tm (${pdfEscapeClient(value)}) Tj`);
+      commands.push(`/F2 9 Tf 1 0 0 1 ${margin} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient(`${label}:`))}) Tj`);
+      commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 90} ${y} Tm (${pdfEscapeClient(normalizePdfTextClient(value))}) Tj`);
       commands.push("ET");
       y -= 13;
     });
@@ -6605,8 +6624,9 @@ function buildShoppingOrderPdfBytesClient(order) {
     let x = margin;
     headers.forEach((header, index) => {
       drawPdfRectClient(commands, x, y - rowHeight, colWidths[index], rowHeight, "#e8ded4");
+      commands.push("0 0 0 rg");
       commands.push("BT");
-      commands.push(`/F2 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12} Tm (${pdfEscapeClient(header)}) Tj`);
+      commands.push(`/F2 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12} Tm (${pdfEscapeClient(normalizePdfTextClient(header))}) Tj`);
       commands.push("ET");
       x += colWidths[index];
     });
@@ -6637,8 +6657,9 @@ function buildShoppingOrderPdfBytesClient(order) {
     wrapped.forEach((cellLines, index) => {
       drawPdfRectClient(commands, x, y - rowHeight, colWidths[index], rowHeight, fill);
       cellLines.forEach((line, lineIndex) => {
+        commands.push("0 0 0 rg");
         commands.push("BT");
-        commands.push(`/F1 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12 - lineIndex * 10} Tm (${pdfEscapeClient(line)}) Tj`);
+        commands.push(`/F1 8.5 Tf 1 0 0 1 ${x + 4} ${y - 12 - lineIndex * 10} Tm (${pdfEscapeClient(normalizePdfTextClient(line))}) Tj`);
         commands.push("ET");
       });
       x += colWidths[index];
@@ -6648,8 +6669,9 @@ function buildShoppingOrderPdfBytesClient(order) {
   if (!rows.length) {
     const rowHeight = 22;
     drawPdfRectClient(commands, margin, y - rowHeight, colWidths.reduce((sum, value) => sum + value, 0), rowHeight, "#faf7f2");
+    commands.push("0 0 0 rg");
     commands.push("BT");
-    commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 4} ${y - 14} Tm (${pdfEscapeClient("No selected items in this order.")}) Tj`);
+    commands.push(`/F1 9 Tf 1 0 0 1 ${margin + 4} ${y - 14} Tm (${pdfEscapeClient(normalizePdfTextClient("No selected items in this order."))}) Tj`);
     commands.push("ET");
     y -= rowHeight;
   }
