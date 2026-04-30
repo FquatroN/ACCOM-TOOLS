@@ -801,6 +801,45 @@ td {
   text-align: center;
 }
 
+#profiles-table .profile-matrix-action {
+  text-align: center;
+}
+
+#profiles-table .profile-matrix-action .row-actions,
+#profiles-table .profile-matrix-action {
+  justify-content: center;
+}
+
+#profiles-table .profile-matrix-action {
+  display: table-cell;
+}
+
+#profiles-table .profile-matrix-action button {
+  min-width: 4.8rem;
+}
+
+#admin-users-table {
+  font-size: 0.92rem;
+}
+
+#admin-users-table th,
+#admin-users-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+#admin-users-table .admin-users-action {
+  white-space: normal;
+}
+
+#admin-users-table .admin-users-action .row-actions,
+#admin-users-table .admin-users-action {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
 .settings-preview-chip {
   display: inline-flex;
   align-items: center;

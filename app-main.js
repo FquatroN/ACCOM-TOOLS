@@ -1843,7 +1843,7 @@ function renderAdminUsers() {
       <td>
         <select data-user-profile="${escape(user.id)}">${profileOptions}</select>
       </td>
-      <td class="row-actions">
+      <td class="row-actions admin-users-action">
         <button type="button" class="ghost" data-action="save-user-profile" data-id="${escape(user.id)}">Save</button>
         <button type="button" class="ghost" data-action="reset-user-password" data-id="${escape(user.id)}">Reset Password</button>
       </td>`;
@@ -1876,7 +1876,7 @@ function renderProfiles() {
           return `<td><input data-profile-name="${escape(profile.id)}" value="${escape(profile.name)}" /></td>`;
         }
         if (row.kind === "action") {
-          return `<td class="row-actions">
+          return `<td class="row-actions center-cell profile-matrix-action">
             <button type="button" class="ghost" data-action="save-profile" data-id="${escape(profile.id)}">Save</button>
             <button type="button" class="danger" data-action="delete-profile" data-id="${escape(profile.id)}">Delete</button>
           </td>`;
