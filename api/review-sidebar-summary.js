@@ -90,10 +90,20 @@ module.exports = async function handler(req, res) {
           hostel: {
             currentAverage: average(buckets.hostel.current),
             previousAverage: average(buckets.hostel.previous),
+            currentCount: buckets.hostel.current.length,
+            previousCount: buckets.hostel.previous.length,
           },
           cruz: {
             currentAverage: average(buckets.cruz.current),
             previousAverage: average(buckets.cruz.previous),
+            currentCount: buckets.cruz.current.length,
+            previousCount: buckets.cruz.previous.length,
+          },
+          overall: {
+            currentAverage: average([...buckets.hostel.current, ...buckets.cruz.current]),
+            previousAverage: average([...buckets.hostel.previous, ...buckets.cruz.previous]),
+            currentCount: buckets.hostel.current.length + buckets.cruz.current.length,
+            previousCount: buckets.hostel.previous.length + buckets.cruz.previous.length,
           },
         },
       },

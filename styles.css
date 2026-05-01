@@ -134,7 +134,7 @@ body {
 
 .sidebar-summary-head-label,
 .sidebar-summary-head-value {
-  font-size: 0.58rem;
+  font-size: 0.62rem;
   color: var(--muted);
   font-weight: 600;
 }
@@ -149,7 +149,7 @@ body {
 
 .sidebar-summary-label {
   min-width: 0;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   line-height: 1.15;
   text-align: left;
   font-weight: 700;
@@ -164,9 +164,15 @@ body {
   display: block;
   font-weight: 700;
   color: var(--brand-2);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   white-space: nowrap;
   text-align: center;
+}
+
+.sidebar-summary-grid-row-total {
+  border-top: 1px solid var(--line);
+  margin-top: 0.1rem;
+  padding-top: 0.46rem;
 }
 
 .sidebar-summary-empty {

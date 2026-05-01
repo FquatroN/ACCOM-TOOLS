@@ -10120,6 +10120,7 @@ function renderSidebarReviewSummary() {
   const previousLabel = summary.months?.previousLabel || "Past";
   const hostel = summary.properties?.hostel || {};
   const cruz = summary.properties?.cruz || {};
+  const overall = summary.properties?.overall || {};
   els.sidebarReviewSummaryBody.innerHTML = `
     <div class="sidebar-summary-grid">
       <div class="sidebar-summary-grid-head">
@@ -10136,6 +10137,11 @@ function renderSidebarReviewSummary() {
         <span class="sidebar-summary-label">Cruz</span>
         <span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.currentAverage))}</span>
         <span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.previousAverage))}</span>
+      </div>
+      <div class="sidebar-summary-grid-row sidebar-summary-grid-row-total">
+        <span class="sidebar-summary-label">Overall</span>
+        <span class="sidebar-summary-value">${escape(formatAverageOnly(overall.currentAverage))}</span>
+        <span class="sidebar-summary-value">${escape(formatAverageOnly(overall.previousAverage))}</span>
       </div>
     </div>`;
 }
