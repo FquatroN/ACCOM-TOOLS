@@ -2345,6 +2345,21 @@ function groupRoomSelectionSummary(items = []) {
     .join(", ");
 }
 
+function groupPdfRoomTypeLines(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => clean(item.roomType))
+    .map((item) => `${normalizeGroupRoomCount(item.roomCount)}x ${clean(item.roomType)}`);
+}
+
+function groupPdfRoomLines(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => clean(item.roomType))
+    .map((item) => {
+      const rooms = (Array.isArray(item.rooms) ? item.rooms : []).map(clean).filter(Boolean);
+      return rooms.length ? rooms.join(", ") : "-";
+    });
+}
+
 function groupDepositText(totalValue) {
   const percentage = Number(state.groupSettings.depositPercentage || 0);
   return `Deposit ${percentage}%: ${formatMoney(Number(totalValue || 0) * (percentage / 100))}`;
@@ -2363,6 +2378,7 @@ function groupExportRows() {
     language: proposalLanguageLabel(row.language),
     total: formatMoney(row.totalValue),
     deposit: groupDepositText(row.totalValue),
+    roomItems: Array.isArray(row.roomItems) ? row.roomItems : [],
     roomTypes: groupRoomTypeSummary(row.roomItems),
     rooms: groupRoomSelectionSummary(row.roomItems),
     optionDate: row.optionDate || "-",
@@ -2420,18 +2436,21 @@ function exportGroupsToPdf() {
   const rows = groupExportRows();
   const date = formatGroupDateDisplay(formatDate(new Date()));
   const filterSummary = groupFilterSummaryParts().join(" · ");
-  const tableRows = rows.map((row) => `<tr class="${row.status === "Accepted" ? "accepted" : row.status === "Refused" ? "refused" : ""}">
+  const tableRows = rows.map((row) => {
+    const roomTypeLines = groupPdfRoomTypeLines(row.roomItems);
+    const roomLines = groupPdfRoomLines(row.roomItems);
+    return `<tr class="${row.status === "Accepted" ? "accepted" : row.status === "Refused" ? "refused" : ""}">
     <td>${escape(row.created)}</td>
     <td>${escape(row.name)}</td>
-    <td>${escape(row.checkIn)} - ${escape(row.checkOut)}<br><small>${escape(String(row.nights))} nights</small></td>
+    <td>${escape(row.checkIn)}<br>${escape(row.checkOut)}<br><small>${escape(String(row.nights))} nights</small></td>
     <td>${escape(String(row.guests))}</td>
-    <td>${escape(row.language)}</td>
     <td><strong>${escape(row.total)}</strong><br><small>${escape(row.deposit)}</small></td>
-    <td>${escape(row.roomTypes).replaceAll(", ", "<br>")}</td>
-    <td>${escape(row.rooms || "-")}</td>
+    <td>${(roomTypeLines.length ? roomTypeLines : [row.roomTypes || "-"]).map((line) => escape(line)).join("<br>")}</td>
+    <td>${(roomLines.length ? roomLines : [row.rooms || "-"]).map((line) => escape(line)).join("<br>")}</td>
     <td>${escape(row.optionDate)}</td>
     <td>${escape(row.reservationNumber)}</td>
-  </tr>`).join("");
+  </tr>`;
+  }).join("");
   const html = `<!doctype html>
     <html>
       <head>
@@ -2468,20 +2487,19 @@ function exportGroupsToPdf() {
         <table>
           <colgroup>
             <col style="width: 8%">
-            <col style="width: 13%">
+            <col style="width: 14%">
             <col style="width: 11%">
             <col style="width: 5%">
-            <col style="width: 6%">
             <col style="width: 9%">
-            <col style="width: 24%">
-            <col style="width: 7%">
+            <col style="width: 28%">
+            <col style="width: 8%">
             <col style="width: 7%">
             <col style="width: 10%">
           </colgroup>
           <thead>
-            <tr><th>Created</th><th>Name</th><th>Dates</th><th>Guests</th><th>Language</th><th>Total</th><th>Room Types</th><th>Rooms</th><th>Option</th><th>Reservation</th></tr>
+            <tr><th>Created</th><th>Name</th><th>Dates</th><th>Guests</th><th>Total</th><th>Room Types</th><th>Rooms</th><th>Option</th><th>Reservation</th></tr>
           </thead>
-          <tbody>${tableRows || '<tr><td colspan="10">No group proposals found.</td></tr>'}</tbody>
+          <tbody>${tableRows || '<tr><td colspan="9">No group proposals found.</td></tr>'}</tbody>
         </table>
         <script>
           window.addEventListener("load", () => {
