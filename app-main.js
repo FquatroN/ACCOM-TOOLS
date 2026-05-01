@@ -2466,6 +2466,18 @@ function exportGroupsToPdf() {
         <p class="filters"><strong>Filters:</strong> ${escape(filterSummary || "None")}</p>
         <p>Exported ${escape(date)} · ${escape(String(rows.length))} proposal${rows.length === 1 ? "" : "s"} · ${state.groupsShowActive ? "Active only" : "All proposals"}</p>
         <table>
+          <colgroup>
+            <col style="width: 8%">
+            <col style="width: 13%">
+            <col style="width: 11%">
+            <col style="width: 5%">
+            <col style="width: 6%">
+            <col style="width: 9%">
+            <col style="width: 24%">
+            <col style="width: 7%">
+            <col style="width: 7%">
+            <col style="width: 10%">
+          </colgroup>
           <thead>
             <tr><th>Created</th><th>Name</th><th>Dates</th><th>Guests</th><th>Language</th><th>Total</th><th>Room Types</th><th>Rooms</th><th>Option</th><th>Reservation</th></tr>
           </thead>
