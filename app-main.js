@@ -543,7 +543,8 @@ const state = {
   shoppingSettings: clone(DEFAULT_SHOPPING_SETTINGS),
   shoppingSettingsLoaded: false,
   shoppingTab: "current",
-  shoppingFilters: { category: "", stored: "" },
+  shoppingFilters: { category: "", stored: "", groupBy: "category" },
+  shoppingHistoryFilters: { dateFrom: "", dateTo: "", name: "", category: "", supplier: "" },
   shoppingSubmitName: "",
   shoppingSubmitNotes: "",
   shoppingSubmitPromptOpen: false,
@@ -869,6 +870,7 @@ const els = {
   shoppingOpenContent: document.getElementById("shopping-open-content"),
   shoppingFilterCategory: document.getElementById("shopping-filter-category"),
   shoppingFilterStored: document.getElementById("shopping-filter-stored"),
+  shoppingGroupBy: document.getElementById("shopping-group-by"),
   shoppingOpenRows: document.getElementById("shopping-open-rows"),
   shoppingMobileCards: document.getElementById("shopping-mobile-cards"),
   shoppingSubmitNameWrap: document.getElementById("shopping-submit-name-wrap"),
@@ -880,9 +882,15 @@ const els = {
   shoppingHistoryMobileCards: document.getElementById("shopping-history-mobile-cards"),
   shoppingHistoryCount: document.getElementById("shopping-history-count"),
   shoppingHistoryStatus: document.getElementById("shopping-history-status"),
+  shoppingHistoryDateFrom: document.getElementById("shopping-history-date-from"),
+  shoppingHistoryDateTo: document.getElementById("shopping-history-date-to"),
+  shoppingHistoryName: document.getElementById("shopping-history-name"),
+  shoppingHistoryCategory: document.getElementById("shopping-history-category"),
+  shoppingHistorySupplier: document.getElementById("shopping-history-supplier"),
   shoppingDetailModal: document.getElementById("shopping-detail-modal"),
   shoppingExportExcel: document.getElementById("shopping-export-excel"),
   shoppingExportPdf: document.getElementById("shopping-export-pdf"),
+  shoppingCopyOrder: document.getElementById("shopping-copy-order"),
   shoppingDetailClose: document.getElementById("shopping-detail-close"),
   shoppingReopenOrder: document.getElementById("shopping-reopen-order"),
   shoppingDetailStatus: document.getElementById("shopping-detail-status"),
@@ -1023,14 +1031,21 @@ function bindEvents() {
   els.shoppingSubmitOrder.addEventListener("click", submitShoppingOrder);
   els.shoppingFilterCategory?.addEventListener("change", onShoppingFilterChange);
   els.shoppingFilterStored?.addEventListener("change", onShoppingFilterChange);
+  els.shoppingGroupBy?.addEventListener("change", onShoppingFilterChange);
   els.shoppingOpenRows.addEventListener("input", onShoppingOrderInput);
   els.shoppingOpenRows.addEventListener("change", onShoppingOrderInput);
   els.shoppingMobileCards?.addEventListener("input", onShoppingOrderInput);
   els.shoppingMobileCards?.addEventListener("change", onShoppingOrderInput);
+  els.shoppingHistoryDateFrom?.addEventListener("input", onShoppingHistoryFilterChange);
+  els.shoppingHistoryDateTo?.addEventListener("input", onShoppingHistoryFilterChange);
+  els.shoppingHistoryName?.addEventListener("input", onShoppingHistoryFilterChange);
+  els.shoppingHistoryCategory?.addEventListener("change", onShoppingHistoryFilterChange);
+  els.shoppingHistorySupplier?.addEventListener("change", onShoppingHistoryFilterChange);
   els.shoppingHistoryRows.addEventListener("click", onShoppingHistoryAction);
   els.shoppingHistoryMobileCards?.addEventListener("click", onShoppingHistoryAction);
   els.shoppingExportExcel?.addEventListener("click", exportShoppingDetailToExcel);
   els.shoppingExportPdf?.addEventListener("click", exportShoppingDetailToPdf);
+  els.shoppingCopyOrder?.addEventListener("click", copyShoppingOrderAsDraft);
   els.shoppingDetailClose.addEventListener("click", closeShoppingDetailModal);
   els.shoppingReopenOrder.addEventListener("click", reopenLatestShoppingOrder);
   els.shoppingSaveSettings.addEventListener("click", saveShoppingSettings);
@@ -6256,12 +6271,73 @@ function uniqueSortedShoppingValues(items, field) {
   ).sort((a, b) => a.localeCompare(b));
 }
 
+function shoppingHistoryItemKey(item = {}) {
+  const id = clean(item.id);
+  if (id) return `id:${id}`;
+  return `fallback:${clean(item.category).toLowerCase()}::${clean(item.item).toLowerCase()}::${clean(item.supplier).toLowerCase()}`;
+}
+
+function dateOnlyIso(value) {
+  return clean(value).slice(0, 10);
+}
+
+function isShoppingRecentlyOrdered(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return ((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)) <= 30;
+}
+
+function buildShoppingHistoryStats() {
+  const stats = new Map();
+  (Array.isArray(state.shoppingHistory) ? state.shoppingHistory : []).forEach((order, orderIndex) => {
+    const submittedAt = clean(order.submittedAt || order.updatedAt || order.createdAt);
+    shoppingOrderSelectedItems(order).forEach((item) => {
+      const key = shoppingHistoryItemKey(item);
+      const current = stats.get(key) || {
+        count: 0,
+        lastOrderedAt: "",
+        recent: false,
+        frequent: false,
+      };
+      current.count += 1;
+      if (!current.lastOrderedAt) current.lastOrderedAt = submittedAt;
+      if (orderIndex < 3 || isShoppingRecentlyOrdered(submittedAt)) current.recent = true;
+      stats.set(key, current);
+    });
+  });
+  stats.forEach((value) => {
+    value.frequent = value.count >= 3;
+  });
+  return stats;
+}
+
+function getShoppingItemMeta(item, stats = buildShoppingHistoryStats()) {
+  return stats.get(shoppingHistoryItemKey(item)) || null;
+}
+
+function groupShoppingItemsForDisplay(items, groupBy = state.shoppingFilters.groupBy) {
+  const groups = [];
+  const map = new Map();
+  sortShoppingItemsClient(items, groupBy).forEach((item) => {
+    const key = clean(item?.[groupBy]) || (groupBy === "stored" ? "No stored" : "Other");
+    if (!map.has(key)) {
+      const group = { key, items: [] };
+      map.set(key, group);
+      groups.push(group);
+    }
+    map.get(key).items.push(item);
+  });
+  return groups;
+}
+
 function renderShoppingCurrentFilters(order) {
   const items = Array.isArray(order?.items) ? order.items : [];
   const categories = uniqueSortedShoppingValues(items, "category");
   const storedValues = uniqueSortedShoppingValues(items, "stored");
   if (state.shoppingFilters.category && !categories.includes(state.shoppingFilters.category)) state.shoppingFilters.category = "";
   if (state.shoppingFilters.stored && !storedValues.includes(state.shoppingFilters.stored)) state.shoppingFilters.stored = "";
+  if (!["category", "stored"].includes(clean(state.shoppingFilters.groupBy))) state.shoppingFilters.groupBy = "category";
   if (els.shoppingFilterCategory) {
     els.shoppingFilterCategory.innerHTML = [`<option value="">All categories</option>`, ...categories.map((value) => `<option value="${escape(value)}">${escape(value)}</option>`)].join("");
     els.shoppingFilterCategory.value = state.shoppingFilters.category;
@@ -6270,6 +6346,7 @@ function renderShoppingCurrentFilters(order) {
     els.shoppingFilterStored.innerHTML = [`<option value="">All stored</option>`, ...storedValues.map((value) => `<option value="${escape(value)}">${escape(value)}</option>`)].join("");
     els.shoppingFilterStored.value = state.shoppingFilters.stored;
   }
+  if (els.shoppingGroupBy) els.shoppingGroupBy.value = state.shoppingFilters.groupBy;
 }
 
 function getFilteredShoppingItems(order) {
@@ -6280,7 +6357,7 @@ function getFilteredShoppingItems(order) {
     if (category && clean(item.category) !== category) return false;
     if (stored && clean(item.stored) !== stored) return false;
     return true;
-  }));
+  }), state.shoppingFilters.groupBy);
 }
 
 function setShoppingCurrentStatus(text) {
@@ -6385,22 +6462,7 @@ function getShoppingCategoryColor(category) {
   return normalizeShoppingColorClient(configured, DEFAULT_SHOPPING_CATEGORY_COLORS[normalized] || "#F3E7DB");
 }
 
-function groupedShoppingItems(items) {
-  const groups = [];
-  const map = new Map();
-  (Array.isArray(items) ? items : []).forEach((item) => {
-    const key = clean(item.category) || "Other";
-    if (!map.has(key)) {
-      const group = { category: key, items: [] };
-      map.set(key, group);
-      groups.push(group);
-    }
-    map.get(key).items.push(item);
-  });
-  return groups;
-}
-
-function renderShoppingCurrentRows(order) {
+function renderShoppingCurrentRowsLegacy(order) {
   const items = getFilteredShoppingItems(order);
   if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = "";
   if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = "";
@@ -6441,7 +6503,7 @@ function renderShoppingCurrentRows(order) {
   });
 }
 
-function renderShoppingHistoryRows() {
+function renderShoppingHistoryRowsLegacy() {
   const rows = Array.isArray(state.shoppingHistory) ? state.shoppingHistory : [];
   if (els.shoppingHistoryRows) els.shoppingHistoryRows.innerHTML = "";
   if (els.shoppingHistoryMobileCards) els.shoppingHistoryMobileCards.innerHTML = "";
@@ -6500,19 +6562,181 @@ function shoppingOrderMetaRows(order) {
 }
 
 function shoppingOrderSelectedItems(order) {
-  return sortShoppingItemsClient((Array.isArray(order?.items) ? order.items : []).filter((item) => item.order));
+  return sortShoppingItemsClient((Array.isArray(order?.items) ? order.items : []).filter((item) => item.order), "category");
 }
 
-function compareShoppingItemsClient(a, b) {
-  const categoryCompare = clean(a?.category).localeCompare(clean(b?.category), undefined, { sensitivity: "base" });
-  if (categoryCompare !== 0) return categoryCompare;
+function compareShoppingItemsClient(a, b, groupBy = "category") {
+  const primaryField = groupBy === "stored" ? "stored" : "category";
+  const secondaryField = primaryField === "stored" ? "category" : "stored";
+  const primaryCompare = clean(a?.[primaryField]).localeCompare(clean(b?.[primaryField]), undefined, { sensitivity: "base" });
+  if (primaryCompare !== 0) return primaryCompare;
+  const secondaryCompare = clean(a?.[secondaryField]).localeCompare(clean(b?.[secondaryField]), undefined, { sensitivity: "base" });
+  if (secondaryCompare !== 0) return secondaryCompare;
   const itemCompare = clean(a?.item).localeCompare(clean(b?.item), undefined, { sensitivity: "base" });
   if (itemCompare !== 0) return itemCompare;
   return clean(a?.supplier).localeCompare(clean(b?.supplier), undefined, { sensitivity: "base" });
 }
 
-function sortShoppingItemsClient(items) {
-  return [...(Array.isArray(items) ? items : [])].sort(compareShoppingItemsClient);
+function sortShoppingItemsClient(items, groupBy = state.shoppingFilters.groupBy) {
+  return [...(Array.isArray(items) ? items : [])].sort((a, b) => compareShoppingItemsClient(a, b, groupBy));
+}
+
+function renderShoppingCurrentRows(order) {
+  const items = getFilteredShoppingItems(order);
+  const stats = buildShoppingHistoryStats();
+  const groupBy = state.shoppingFilters.groupBy === "stored" ? "stored" : "category";
+  const groups = groupShoppingItemsForDisplay(items, groupBy);
+  const groupLabel = groupBy === "stored" ? "Stored" : "Category";
+  if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = "";
+  if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = "";
+  if (!items.length) {
+    if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = '<tr><td colspan="6" class="empty">No shopping items match the current filters.</td></tr>';
+    if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = '<div class="services-mobile-empty">No shopping items match the current filters.</div>';
+    return;
+  }
+  groups.forEach((group) => {
+    if (els.shoppingOpenRows) {
+      const headerRow = document.createElement("tr");
+      headerRow.className = "shopping-group-row";
+      headerRow.innerHTML = `<td colspan="6">${escape(groupLabel)}: ${escape(group.key || "-")}</td>`;
+      els.shoppingOpenRows.appendChild(headerRow);
+    }
+    if (els.shoppingMobileCards) {
+      const header = document.createElement("div");
+      header.className = "shopping-group-label";
+      header.textContent = `${groupLabel}: ${group.key || "-"}`;
+      els.shoppingMobileCards.appendChild(header);
+    }
+    group.items.forEach((item) => {
+      const rowColor = hexToShoppingRowColor(getShoppingCategoryColor(item.category), 0.15);
+      const meta = getShoppingItemMeta(item, stats);
+      const indicators = [
+        meta?.recent ? '<span class="shopping-item-indicator">Recent</span>' : "",
+        meta?.frequent ? '<span class="shopping-item-indicator">Frequent</span>' : "",
+      ].filter(Boolean).join("");
+      const lastOrdered = meta?.lastOrderedAt
+        ? `<div class="shopping-item-meta">Last ordered: ${escape(formatDateDisplay(dateOnlyIso(meta.lastOrderedAt)))} ${indicators}</div>`
+        : (indicators ? `<div class="shopping-item-meta">${indicators}</div>` : "");
+      const quantityPlaceholder = item.order && item.quantityRequired ? "Required" : "";
+      const quantityDisabled = item.order ? "" : "disabled";
+      const tr = document.createElement("tr");
+      if (rowColor) tr.style.background = rowColor;
+      tr.innerHTML = `<td>${escape(item.category || "-")}</td>
+        <td><div class="shopping-item-name">${escape(item.item || "-")}</div>${lastOrdered}</td>
+        <td>${escape(item.supplier || "-")}</td>
+        <td>${escape(item.stored || "-")}</td>
+        <td><input class="shopping-existing-qty-input${item.order ? "" : " is-disabled"}" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${escape(quantityPlaceholder)}" ${quantityDisabled} /></td>
+        <td><label class="status-toggle"><input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} /><span>Order</span></label></td>`;
+      els.shoppingOpenRows.appendChild(tr);
+      if (els.shoppingMobileCards) {
+        const card = document.createElement("article");
+        card.className = `shopping-mobile-card${item.order ? " selected-card" : ""}`;
+        if (rowColor) card.style.background = rowColor;
+        card.innerHTML = `<div class="shopping-mobile-row">
+            <div class="shopping-mobile-main">
+              <div class="service-mobile-request">${escape(item.item || "-")}</div>
+              <div class="service-mobile-type">${escape(item.category || "-")}${item.supplier ? ` Â· ${escape(item.supplier)}` : ""}</div>
+              ${lastOrdered}
+            </div>
+            <label class="shopping-mobile-inline-order" aria-label="Order item">
+              <input data-shopping-item-id="${escape(item.id)}" data-shopping-field="order" type="checkbox" ${item.order ? "checked" : ""} />
+            </label>
+            <input class="shopping-existing-qty-input shopping-mobile-inline-qty${item.order ? "" : " is-disabled"}" data-shopping-item-id="${escape(item.id)}" data-shopping-field="existingQuantity" type="text" value="${escape(item.existingQuantity || "")}" placeholder="${escape(quantityPlaceholder)}" ${quantityDisabled} />
+          </div>`;
+        els.shoppingMobileCards.appendChild(card);
+      }
+    });
+  });
+}
+
+function renderShoppingHistoryFilters() {
+  const rows = Array.isArray(state.shoppingHistory) ? state.shoppingHistory : [];
+  const categories = uniqueSortedShoppingValues(rows.flatMap((order) => shoppingOrderSelectedItems(order)), "category");
+  const suppliers = uniqueSortedShoppingValues(rows.flatMap((order) => shoppingOrderSelectedItems(order)), "supplier");
+  if (state.shoppingHistoryFilters.category && !categories.includes(state.shoppingHistoryFilters.category)) state.shoppingHistoryFilters.category = "";
+  if (state.shoppingHistoryFilters.supplier && !suppliers.includes(state.shoppingHistoryFilters.supplier)) state.shoppingHistoryFilters.supplier = "";
+  if (els.shoppingHistoryDateFrom) els.shoppingHistoryDateFrom.value = state.shoppingHistoryFilters.dateFrom;
+  if (els.shoppingHistoryDateTo) els.shoppingHistoryDateTo.value = state.shoppingHistoryFilters.dateTo;
+  if (els.shoppingHistoryName) els.shoppingHistoryName.value = state.shoppingHistoryFilters.name;
+  if (els.shoppingHistoryCategory) {
+    els.shoppingHistoryCategory.innerHTML = [`<option value="">All categories</option>`, ...categories.map((value) => `<option value="${escape(value)}">${escape(value)}</option>`)].join("");
+    els.shoppingHistoryCategory.value = state.shoppingHistoryFilters.category;
+  }
+  if (els.shoppingHistorySupplier) {
+    els.shoppingHistorySupplier.innerHTML = [`<option value="">All suppliers</option>`, ...suppliers.map((value) => `<option value="${escape(value)}">${escape(value)}</option>`)].join("");
+    els.shoppingHistorySupplier.value = state.shoppingHistoryFilters.supplier;
+  }
+}
+
+function getFilteredShoppingHistoryRows() {
+  const rows = Array.isArray(state.shoppingHistory) ? state.shoppingHistory : [];
+  const dateFrom = clean(state.shoppingHistoryFilters.dateFrom);
+  const dateTo = clean(state.shoppingHistoryFilters.dateTo);
+  const name = clean(state.shoppingHistoryFilters.name).toLowerCase();
+  const category = clean(state.shoppingHistoryFilters.category);
+  const supplier = clean(state.shoppingHistoryFilters.supplier);
+  return rows.filter((order) => {
+    const submittedDate = dateOnlyIso(order.submittedAt || order.updatedAt || order.createdAt);
+    if (dateFrom && submittedDate && submittedDate < dateFrom) return false;
+    if (dateTo && submittedDate && submittedDate > dateTo) return false;
+    if (name && !clean(order.submittedByName).toLowerCase().includes(name)) return false;
+    const selectedItems = shoppingOrderSelectedItems(order);
+    if (category && !selectedItems.some((item) => clean(item.category) === category)) return false;
+    if (supplier && !selectedItems.some((item) => clean(item.supplier) === supplier)) return false;
+    return true;
+  });
+}
+
+function renderShoppingHistoryRows() {
+  const totalRows = Array.isArray(state.shoppingHistory) ? state.shoppingHistory : [];
+  const rows = getFilteredShoppingHistoryRows();
+  if (els.shoppingHistoryRows) els.shoppingHistoryRows.innerHTML = "";
+  if (els.shoppingHistoryMobileCards) els.shoppingHistoryMobileCards.innerHTML = "";
+  renderShoppingHistoryFilters();
+  if (!totalRows.length) {
+    els.shoppingHistoryCount.textContent = "0 orders";
+    els.shoppingHistoryRows.innerHTML = '<tr><td colspan="4" class="empty">No submitted shopping orders yet.</td></tr>';
+    if (els.shoppingHistoryMobileCards) {
+      els.shoppingHistoryMobileCards.innerHTML = '<div class="services-mobile-empty">No submitted shopping orders yet.</div>';
+    }
+    return;
+  }
+  els.shoppingHistoryCount.textContent =
+    rows.length === totalRows.length ? `${rows.length} order${rows.length === 1 ? "" : "s"}` : `${rows.length} of ${totalRows.length} orders`;
+  if (!rows.length) {
+    els.shoppingHistoryRows.innerHTML = '<tr><td colspan="4" class="empty">No shopping orders match the current filters.</td></tr>';
+    if (els.shoppingHistoryMobileCards) {
+      els.shoppingHistoryMobileCards.innerHTML = '<div class="services-mobile-empty">No shopping orders match the current filters.</div>';
+    }
+    return;
+  }
+  const latestId = totalRows[0]?.id || "";
+  rows.forEach((order) => {
+    const canReopen = !state.shoppingOpenOrder && clean(order.id) === clean(latestId);
+    const canCopy = !state.shoppingOpenOrder;
+    const tr = document.createElement("tr");
+    tr.className = "clickable-row";
+    tr.dataset.shoppingHistoryId = order.id;
+    tr.innerHTML = `<td>${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}</td>
+      <td>${escape(order.submittedByName || "-")}</td>
+      <td>${escape(String(order.orderedCount || 0))}</td>
+      <td>${canCopy ? `<button type="button" class="ghost" data-action="copy-shopping-order" data-id="${escape(order.id)}">Copy as Draft</button>` : ""}${canReopen ? ` <button type="button" class="ghost" data-action="reopen-shopping-order" data-id="${escape(order.id)}">Reopen</button>` : ""}</td>`;
+    els.shoppingHistoryRows.appendChild(tr);
+    if (els.shoppingHistoryMobileCards) {
+      const card = document.createElement("article");
+      card.className = "shopping-history-card";
+      card.dataset.shoppingHistoryId = order.id;
+      card.innerHTML = `<div class="service-mobile-header">
+          <div>
+            <div class="service-mobile-request">${escape(order.submittedByName || "-")}</div>
+            <div class="service-mobile-type">${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}</div>
+          </div>
+          <div class="review-mobile-score">${escape(String(order.orderedCount || 0))}</div>
+        </div>
+        ${(canCopy || canReopen) ? `<div class="row-actions">${canCopy ? `<button type="button" class="ghost" data-action="copy-shopping-order" data-id="${escape(order.id)}">Copy as Draft</button>` : ""}${canReopen ? ` <button type="button" class="ghost" data-action="reopen-shopping-order" data-id="${escape(order.id)}">Reopen</button>` : ""}</div>` : ""}`;
+      els.shoppingHistoryMobileCards.appendChild(card);
+    }
+  });
 }
 
 function blendShoppingColorOnWhiteClient(hex, alpha = 0.15) {
@@ -6768,6 +6992,7 @@ function renderShoppingDetail(order) {
   els.shoppingDetailBody.className = "review-detail";
   els.shoppingDetailBody.innerHTML = detail.join("");
   const latestId = state.shoppingHistory[0]?.id || "";
+  if (els.shoppingCopyOrder) els.shoppingCopyOrder.hidden = !!state.shoppingOpenOrder;
   els.shoppingReopenOrder.hidden = !!state.shoppingOpenOrder || clean(order.id) !== clean(latestId);
 }
 
@@ -6811,6 +7036,7 @@ function renderShopping() {
   else {
     if (els.shoppingFilterCategory) els.shoppingFilterCategory.innerHTML = '<option value="">All categories</option>';
     if (els.shoppingFilterStored) els.shoppingFilterStored.innerHTML = '<option value="">All stored</option>';
+    if (els.shoppingGroupBy) els.shoppingGroupBy.value = state.shoppingFilters.groupBy;
     if (els.shoppingOpenRows) els.shoppingOpenRows.innerHTML = "";
     if (els.shoppingMobileCards) els.shoppingMobileCards.innerHTML = "";
   }
@@ -6949,6 +7175,16 @@ function onShoppingOrderInput(event) {
 function onShoppingFilterChange() {
   state.shoppingFilters.category = clean(els.shoppingFilterCategory?.value);
   state.shoppingFilters.stored = clean(els.shoppingFilterStored?.value);
+  state.shoppingFilters.groupBy = clean(els.shoppingGroupBy?.value) === "stored" ? "stored" : "category";
+  renderShopping();
+}
+
+function onShoppingHistoryFilterChange() {
+  state.shoppingHistoryFilters.dateFrom = clean(els.shoppingHistoryDateFrom?.value);
+  state.shoppingHistoryFilters.dateTo = clean(els.shoppingHistoryDateTo?.value);
+  state.shoppingHistoryFilters.name = clean(els.shoppingHistoryName?.value);
+  state.shoppingHistoryFilters.category = clean(els.shoppingHistoryCategory?.value);
+  state.shoppingHistoryFilters.supplier = clean(els.shoppingHistorySupplier?.value);
   renderShopping();
 }
 
@@ -7041,6 +7277,11 @@ function onShoppingHistoryAction(event) {
     reopenLatestShoppingOrder(button.dataset.id);
     return;
   }
+  if (button?.dataset.action === "copy-shopping-order") {
+    event.stopPropagation();
+    copyShoppingOrderAsDraft(button.dataset.id);
+    return;
+  }
   const row = event.target.closest("[data-shopping-history-id]");
   if (!row) return;
   openShoppingDetailModal(clean(row.dataset.shoppingHistoryId));
@@ -7071,6 +7312,34 @@ async function reopenLatestShoppingOrder(sourceId = "") {
   } catch (e) {
     setShoppingDetailStatus(`Reopen failed: ${e.message}`);
     showToast(`Reopen failed: ${e.message}`, "error");
+  }
+}
+
+async function copyShoppingOrderAsDraft(sourceId = "") {
+  const orderId = sourceId || clean(state.shoppingSelectedHistoryId);
+  if (!orderId) return;
+  try {
+    const result = await api("/api/shopping", {
+      method: "POST",
+      body: {
+        action: "copy",
+        sourceOrderId: orderId,
+      },
+    });
+    state.shoppingOpenOrder = normalizeShoppingOrderClient(result.order, state.shoppingSettings.items);
+    state.shoppingSubmitName = "";
+    state.shoppingSubmitNotes = "";
+    state.shoppingSubmitPromptOpen = false;
+    state.shoppingLoaded = true;
+    setShoppingTab("current");
+    closeShoppingDetailModal();
+    renderShopping();
+    renderLayout();
+    setShoppingCurrentStatus("Shopping order copied as a new draft.");
+    showToast("Shopping order copied as a new draft.", "success");
+  } catch (e) {
+    setShoppingDetailStatus(`Copy failed: ${e.message}`);
+    showToast(`Copy failed: ${e.message}`, "error");
   }
 }
 

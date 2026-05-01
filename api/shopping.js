@@ -525,6 +525,32 @@ module.exports = async function handler(req, res) {
         return;
       }
 
+      if (action === "copy") {
+        const sourceId = cleanText(body?.sourceOrderId);
+        const sourceOrder = sourceId ? await loadOrderById(sourceId) : null;
+        if (!sourceOrder || sourceOrder.status !== "submitted") {
+          const error = new Error("Submitted shopping order not found.");
+          error.statusCode = 404;
+          throw error;
+        }
+        const payload = {
+          status: "open",
+          reopened_from_id: sourceOrder.id,
+          items: sourceOrder.items,
+          submitted_by_name: "",
+          submitted_by_user_email: "",
+          submitted_at: null,
+          notes: "",
+        };
+        const created = await restQuery("shopping_orders?select=id,order_number,status,submitted_by_name,submitted_by_user_email,submitted_at,notes,reopened_from_id,items,created_at,updated_at", {
+          method: "POST",
+          body: [payload],
+          preferRepresentation: true,
+        });
+        res.status(201).json({ order: sanitizeShoppingOrderRow(Array.isArray(created) ? created[0] : {}) });
+        return;
+      }
+
       const settings = await loadShoppingSettings();
       const payload = {
         status: "open",

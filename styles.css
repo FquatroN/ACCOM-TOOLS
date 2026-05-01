@@ -1733,13 +1733,21 @@ select:disabled {
 .shopping-current-filters {
   margin: 0 0 0.75rem;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
   align-items: end;
 }
 
 .shopping-current-filters label {
   min-width: 0;
+}
+
+.shopping-history-filters {
+  margin: 0 0 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.7rem;
+  align-items: end;
 }
 
 .shopping-submit-notes-field {
@@ -1842,6 +1850,48 @@ select:disabled {
 
 .shopping-table td {
   vertical-align: middle;
+}
+
+.shopping-item-name {
+  font-weight: 600;
+}
+
+.shopping-item-meta {
+  margin-top: 0.16rem;
+  font-size: 0.72rem;
+  line-height: 1.15;
+  color: var(--muted);
+}
+
+.shopping-item-indicator {
+  display: inline-block;
+  margin-left: 0.32rem;
+  padding: 0.08rem 0.34rem;
+  border-radius: 999px;
+  border: 1px solid #d9cdc2;
+  background: #fff9f2;
+  color: #7a5d40;
+  font-size: 0.64rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.shopping-group-row td {
+  padding-top: 0.32rem;
+  padding-bottom: 0.32rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: #f8f3ee;
+}
+
+.shopping-group-label {
+  margin: 0.2rem 0 0.1rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .shopping-existing-qty-input {
@@ -2710,6 +2760,11 @@ select:disabled {
   .shopping-mobile-grid,
   .shopping-category-colors-grid {
     grid-template-columns: 1fr;
+  }
+
+  .shopping-current-filters,
+  .shopping-history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   table {
