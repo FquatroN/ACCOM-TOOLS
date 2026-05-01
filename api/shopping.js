@@ -134,8 +134,7 @@ function validateSubmittableOrder(order) {
 }
 
 function buildSelectedItemsTable(items, settings) {
-  const rows = items
-    .filter((item) => !!item.order)
+  const rows = sortShoppingItemsServer(items.filter((item) => !!item.order))
     .map(
       (item) => `<tr style="background:${escapeHtml(blendShoppingColorOnWhiteServer(getShoppingCategoryColorServer(settings, item.category), 0.10))}">
           <td>${escapeHtml(item.category)}</td>
@@ -175,7 +174,19 @@ function shoppingOrderMetaRows(order) {
 }
 
 function shoppingOrderSelectedItems(order) {
-  return Array.isArray(order?.items) ? order.items.filter((item) => !!item.order) : [];
+  return sortShoppingItemsServer(Array.isArray(order?.items) ? order.items.filter((item) => !!item.order) : []);
+}
+
+function compareShoppingItemsServer(a, b) {
+  const categoryCompare = cleanText(a?.category).localeCompare(cleanText(b?.category), undefined, { sensitivity: "base" });
+  if (categoryCompare !== 0) return categoryCompare;
+  const itemCompare = cleanText(a?.item).localeCompare(cleanText(b?.item), undefined, { sensitivity: "base" });
+  if (itemCompare !== 0) return itemCompare;
+  return cleanText(a?.supplier).localeCompare(cleanText(b?.supplier), undefined, { sensitivity: "base" });
+}
+
+function sortShoppingItemsServer(items) {
+  return [...(Array.isArray(items) ? items : [])].sort(compareShoppingItemsServer);
 }
 
 function normalizeHexColorServer(hex, fallback = "#F3E7DB") {
@@ -445,7 +456,7 @@ async function sendShoppingEmail(order, settings, notes = "") {
   const recipients = Array.isArray(settings?.emailRecipients) ? settings.emailRecipients : [];
   if (!recipients.length) return { skipped: true };
   const shoppingDate = todayInLisbon();
-  const selectedItems = Array.isArray(order?.items) ? order.items.filter((item) => !!item.order) : [];
+  const selectedItems = shoppingOrderSelectedItems(order);
   const tableHtml = buildSelectedItemsTable(selectedItems, settings);
   const subject = `Lista de Compras - data ${shoppingDate}`;
   const cleanNotes = cleanText(notes);

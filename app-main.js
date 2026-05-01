@@ -6276,11 +6276,11 @@ function getFilteredShoppingItems(order) {
   const items = Array.isArray(order?.items) ? order.items : [];
   const category = clean(state.shoppingFilters.category);
   const stored = clean(state.shoppingFilters.stored);
-  return items.filter((item) => {
+  return sortShoppingItemsClient(items.filter((item) => {
     if (category && clean(item.category) !== category) return false;
     if (stored && clean(item.stored) !== stored) return false;
     return true;
-  });
+  }));
 }
 
 function setShoppingCurrentStatus(text) {
@@ -6500,7 +6500,19 @@ function shoppingOrderMetaRows(order) {
 }
 
 function shoppingOrderSelectedItems(order) {
-  return (Array.isArray(order?.items) ? order.items : []).filter((item) => item.order);
+  return sortShoppingItemsClient((Array.isArray(order?.items) ? order.items : []).filter((item) => item.order));
+}
+
+function compareShoppingItemsClient(a, b) {
+  const categoryCompare = clean(a?.category).localeCompare(clean(b?.category), undefined, { sensitivity: "base" });
+  if (categoryCompare !== 0) return categoryCompare;
+  const itemCompare = clean(a?.item).localeCompare(clean(b?.item), undefined, { sensitivity: "base" });
+  if (itemCompare !== 0) return itemCompare;
+  return clean(a?.supplier).localeCompare(clean(b?.supplier), undefined, { sensitivity: "base" });
+}
+
+function sortShoppingItemsClient(items) {
+  return [...(Array.isArray(items) ? items : [])].sort(compareShoppingItemsClient);
 }
 
 function blendShoppingColorOnWhiteClient(hex, alpha = 0.15) {
@@ -6736,7 +6748,7 @@ function renderShoppingDetail(order) {
     els.shoppingDetailBody.textContent = "Select an order to see the detail.";
     return;
   }
-  const selectedItems = order.items.filter((item) => item.order);
+  const selectedItems = shoppingOrderSelectedItems(order);
   const meta = [
     ["Order Date", formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt)],
     ["Name", order.submittedByName || "-"],
