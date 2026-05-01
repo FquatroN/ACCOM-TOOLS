@@ -6255,10 +6255,10 @@ function normalizeShoppingOrderItemClient(item = {}) {
 
 function applyShoppingSettingsToOrderItemsClient(items, settingsItems = []) {
   const configMap = new Map((Array.isArray(settingsItems) ? settingsItems : []).map((item) => [clean(item.id), item]));
-  return (Array.isArray(items) ? items : []).map((item) => {
+  const seen = new Set();
+  const normalizedItems = (Array.isArray(items) ? items : []).map((item) => {
     const config = configMap.get(clean(item.id)) || null;
-    if (!config) return item;
-    return {
+    const merged = !config ? item : {
       ...item,
       category: clean(config.category) || item.category,
       item: clean(config.item) || item.item,
@@ -6266,7 +6266,24 @@ function applyShoppingSettingsToOrderItemsClient(items, settingsItems = []) {
       stored: clean(config.stored) || item.stored,
       quantityRequired: parseShoppingBoolClient(config.quantityRequired),
     };
+    if (clean(merged.id)) seen.add(clean(merged.id));
+    return merged;
   });
+  (Array.isArray(settingsItems) ? settingsItems : []).forEach((config) => {
+    const id = clean(config.id);
+    if (!id || seen.has(id)) return;
+    normalizedItems.push({
+      id,
+      category: clean(config.category),
+      item: clean(config.item),
+      supplier: clean(config.supplier),
+      stored: clean(config.stored),
+      quantityRequired: parseShoppingBoolClient(config.quantityRequired),
+      existingQuantity: "",
+      order: false,
+    });
+  });
+  return normalizedItems;
 }
 
 function normalizeShoppingOrderClient(order, settingsItems = []) {
