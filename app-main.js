@@ -6378,6 +6378,13 @@ function groupShoppingItemsForDisplay(items, groupBy = state.shoppingFilters.gro
   return groups;
 }
 
+function collectShoppingHistoryItems(rows = []) {
+  return (Array.isArray(rows) ? rows : []).reduce((acc, order) => {
+    shoppingOrderSelectedItems(order).forEach((item) => acc.push(item));
+    return acc;
+  }, []);
+}
+
 function renderShoppingCurrentFilters(order) {
   const items = Array.isArray(order?.items) ? order.items : [];
   const categories = uniqueSortedShoppingValues(items, "category");
@@ -6456,10 +6463,25 @@ async function loadShoppingData({ silent = false } = {}) {
       state.shoppingSubmitNotes = "";
       state.shoppingSubmitPromptOpen = false;
     }
-    renderShopping();
-    renderShoppingSettings();
-    if (!silent) setShoppingCurrentStatus(state.shoppingOpenOrder ? "Open shopping order loaded." : "No open shopping order.");
+    let renderError = "";
+    try {
+      renderShopping();
+    } catch (renderIssue) {
+      renderError = renderIssue?.message || "Could not render Shopping app.";
+    }
+    try {
+      renderShoppingSettings();
+    } catch (settingsIssue) {
+      renderError = renderError || settingsIssue?.message || "Could not render Shopping settings.";
+    }
+    if (!silent) {
+      if (renderError) setShoppingCurrentStatus(`Shopping loaded with display issue: ${renderError}`);
+      else setShoppingCurrentStatus(state.shoppingOpenOrder ? "Open shopping order loaded." : "No open shopping order.");
+    }
   } catch (e) {
+    try {
+      renderShoppingSettings();
+    } catch {}
     if (!silent) setShoppingCurrentStatus(`Could not load shopping data: ${e.message}`);
   }
 }
@@ -6698,8 +6720,9 @@ function renderShoppingCurrentRows(order) {
 
 function renderShoppingHistoryFilters() {
   const rows = Array.isArray(state.shoppingHistory) ? state.shoppingHistory : [];
-  const categories = uniqueSortedShoppingValues(rows.flatMap((order) => shoppingOrderSelectedItems(order)), "category");
-  const suppliers = uniqueSortedShoppingValues(rows.flatMap((order) => shoppingOrderSelectedItems(order)), "supplier");
+  const historyItems = collectShoppingHistoryItems(rows);
+  const categories = uniqueSortedShoppingValues(historyItems, "category");
+  const suppliers = uniqueSortedShoppingValues(historyItems, "supplier");
   if (state.shoppingHistoryFilters.category && !categories.includes(state.shoppingHistoryFilters.category)) state.shoppingHistoryFilters.category = "";
   if (state.shoppingHistoryFilters.supplier && !suppliers.includes(state.shoppingHistoryFilters.supplier)) state.shoppingHistoryFilters.supplier = "";
   if (els.shoppingHistoryDateFrom) els.shoppingHistoryDateFrom.value = state.shoppingHistoryFilters.dateFrom;
