@@ -6684,7 +6684,7 @@ function renderShoppingCurrentRows(order) {
         meta?.frequent ? '<span class="shopping-item-indicator">Frequent</span>' : "",
       ].filter(Boolean).join("");
       const lastOrdered = meta?.lastOrderedAt
-        ? `<div class="shopping-item-meta">Last ordered: ${escape(formatDateDisplay(dateOnlyIso(meta.lastOrderedAt)))} ${indicators}</div>`
+        ? `<div class="shopping-item-meta">Last ordered: ${escape(formatDateOnly(dateOnlyIso(meta.lastOrderedAt)))} ${indicators}</div>`
         : (indicators ? `<div class="shopping-item-meta">${indicators}</div>` : "");
       const quantityPlaceholder = item.order && item.quantityRequired ? "Required" : "";
       const quantityDisabled = item.order ? "" : "disabled";
