@@ -1010,6 +1010,11 @@ function bindEvents() {
   els.navGroups.addEventListener("click", () => setView("groups"));
   els.navServices.addEventListener("click", () => setView("services"));
   els.navShopping.addEventListener("click", () => setView("shopping"));
+  els.sidebarReviewSummaryCard?.addEventListener("click", async () => {
+    state.reviewScreen = "resume";
+    await setView("reviews");
+    setReviewScreen("resume");
+  });
   els.mobileMenuToggle?.addEventListener("click", toggleMobileNav);
   els.openSettings.addEventListener("click", () => setView("settings"));
   els.closeSettings.addEventListener("click", () => setView("communications"));

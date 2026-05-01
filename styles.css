@@ -84,6 +84,7 @@ body {
   width: 100%;
   min-width: 0;
   overflow: hidden;
+  cursor: pointer;
 }
 
 .sidebar-summary-head {
