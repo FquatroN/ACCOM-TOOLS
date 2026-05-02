@@ -113,11 +113,13 @@ async function sendBakeryEmail(order, settings) {
   const htmlRows = (Array.isArray(order.days) ? order.days : []).map((day) => `
     <tr>
       <td style="border:1px solid #d8d0c7;padding:6px;">${day.date}</td>
+      <td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${day.availableBeds === "" ? "-" : Number(day.availableBeds || 0)}</td>
+      <td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${day.cruzCheckins === "" ? "-" : Number(day.cruzCheckins || 0)}</td>
       ${breadTypes.map((breadType) => {
         const found = (Array.isArray(day.breadBreakdown) ? day.breadBreakdown : []).find((item) => cleanText(item?.name).toLowerCase() === breadType.toLowerCase());
-        return `<td style="border:1px solid #d8d0c7;padding:6px;">${found ? Number(found.quantity || 0) : 0}</td>`;
+        return `<td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${found && found.quantity !== "" ? Number(found.quantity || 0) : "-"}</td>`;
       }).join("")}
-      <td style="border:1px solid #d8d0c7;padding:6px;">${day.pasteisDeNata}</td>
+      <td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${day.pasteisDeNata === "" ? "-" : Number(day.pasteisDeNata || 0)}</td>
     </tr>`).join("");
   const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
     <p>Bom dia,</p>
@@ -126,7 +128,9 @@ async function sendBakeryEmail(order, settings) {
       <thead>
         <tr>
           <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Data</th>
-          ${breadTypes.map((breadType) => `<th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">${breadType}</th>`).join("")}
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">Available Beds (Hostel)</th>
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">Check-ins (Cruz)</th>
+          ${breadTypes.map((breadType) => `<th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${breadType}</th>`).join("")}
           <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">PastÃ©is de nata</th>
         </tr>
       </thead>

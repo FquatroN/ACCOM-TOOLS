@@ -6716,14 +6716,18 @@ function buildBakeryGeneratedHtmlClient(order, name = state.bakerySubmitName) {
       <thead>
         <tr>
           <th>Data</th>
+          <th style="text-align:center;">Available Beds (Hostel)</th>
+          <th style="text-align:center;">Check-ins (Cruz)</th>
           ${breadTypes.map((breadType) => `<th>${escape(breadType)}</th>`).join("")}
-          <th>Pastéis de nata</th>
+          <th style="text-align:center;">Pastéis de nata</th>
         </tr>
       </thead>
       <tbody>${days.map((day) => `<tr>
         <td>${escape(day.date || "-")}</td>
-        ${breadTypes.map((breadType) => `<td>${escape(String(bakeryBreadTypeQuantity(day, breadType) === "" ? "-" : bakeryBreadTypeQuantity(day, breadType)))}</td>`).join("")}
-        <td>${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
+        <td style="text-align:center;">${escape(String(day.availableBeds === "" ? "-" : day.availableBeds))}</td>
+        <td style="text-align:center;">${escape(String(day.cruzCheckins === "" ? "-" : day.cruzCheckins))}</td>
+        ${breadTypes.map((breadType) => `<td style="text-align:center;">${escape(String(bakeryBreadTypeQuantity(day, breadType) === "" ? "-" : bakeryBreadTypeQuantity(day, breadType)))}</td>`).join("")}
+        <td style="text-align:center;">${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
       </tr>`).join("")}</tbody>
     </table>
     <p>Cumprimentos,<br>${escape(clean(name || order?.submittedByName) || "[Name]")}</p>`;
@@ -7970,17 +7974,17 @@ function renderBakeryCurrentRows(order) {
   const breadTypes = bakeryBreadTypeColumnsClient(order);
   const headerRow = document.getElementById("bakery-open-head");
   if (headerRow) {
-    headerRow.innerHTML = `<th>Date</th><th>Available Beds (Hostel)</th><th>Check-ins (Cruz)</th>${breadTypes
-      .map((breadType) => `<th>${escape(breadType)}</th>`)
-      .join("")}<th>Pastéis de Nata</th>`;
+    headerRow.innerHTML = `<th>Date</th><th class="center-cell">Available Beds (Hostel)</th><th class="center-cell">Check-ins (Cruz)</th>${breadTypes
+      .map((breadType) => `<th class="center-cell">${escape(breadType)}</th>`)
+      .join("")}<th class="center-cell">Pastéis de Nata</th>`;
   }
   if (els.bakeryOpenRows) {
     els.bakeryOpenRows.innerHTML = rows.map((day, index) => `<tr>
-      <td>${escape(bakeryDateLabel(day.date))}<br><small>Hostel guests: ${escape(day.hostelGuests === "" ? "-" : String(day.hostelGuests))}</small></td>
-      <td><div class="bakery-available-cell"><input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(day.availableBeds === "" ? "" : String(day.availableBeds))}" required /></div></td>
-      <td><input data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(day.cruzCheckins === "" ? "" : String(day.cruzCheckins))}" required /></td>
-      ${breadTypes.map((breadType) => `<td>${escape(String(bakeryBreadTypeQuantity(day, breadType) === "" ? "-" : bakeryBreadTypeQuantity(day, breadType)))}</td>`).join("")}
-      <td>${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
+      <td>${escape(bakeryDateLabel(day.date))}<br><small class="bakery-date-meta">Hostel guests: ${escape(day.hostelGuests === "" ? "-" : String(day.hostelGuests))}</small></td>
+      <td class="center-cell"><div class="bakery-available-cell"><input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(day.availableBeds === "" ? "" : String(day.availableBeds))}" required /></div></td>
+      <td class="center-cell"><input data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(day.cruzCheckins === "" ? "" : String(day.cruzCheckins))}" required /></td>
+      ${breadTypes.map((breadType) => `<td class="center-cell">${escape(String(bakeryBreadTypeQuantity(day, breadType) === "" ? "-" : bakeryBreadTypeQuantity(day, breadType)))}</td>`).join("")}
+      <td class="center-cell">${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
     </tr>`).join("");
   }
   if (els.bakeryMobileCards) {
@@ -8281,6 +8285,10 @@ async function createBakeryOrder() {
   try {
     const result = await api("/api/bakery", { method: "POST", body: {} });
     state.bakeryOpenOrder = normalizeBakeryOrderClient(result.order, state.bakerySettings);
+    if (state.bakeryOpenOrder) {
+      state.bakeryOpenOrder.days = (Array.isArray(state.bakeryOpenOrder.days) ? state.bakeryOpenOrder.days : []).map((day) => normalizeBakeryDayClient({ ...day, availableBeds: "", cruzCheckins: "" }, state.bakerySettings));
+      refreshBakeryOpenOrderDerivedState();
+    }
     state.bakerySubmitName = "";
     state.bakeryLoaded = true;
     setBakeryTab("current");
