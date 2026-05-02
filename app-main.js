@@ -7886,22 +7886,90 @@ function renderBakeryCurrentRows(order) {
   }
 }
 
+function bakeryHistoryBreadTypeColumns(orders = []) {
+  const seen = new Set();
+  const columns = [];
+  ((state.bakerySettings?.breadTypes) || []).forEach((item) => {
+    const name = clean(item?.name);
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    columns.push(name);
+  });
+  (Array.isArray(orders) ? orders : []).forEach((order) => {
+    (Array.isArray(order?.days) ? order.days : []).forEach((day) => {
+      (Array.isArray(day?.breadBreakdown) ? day.breadBreakdown : []).forEach((item) => {
+        const name = clean(item?.name);
+        if (!name) return;
+        const key = name.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        columns.push(name);
+      });
+    });
+  });
+  return columns;
+}
+
+function bakeryOrderTotals(order) {
+  const totals = {
+    days: 0,
+    pasteisDeNata: 0,
+    breadByType: {},
+  };
+  const days = Array.isArray(order?.days) ? order.days : [];
+  totals.days = days.length;
+  days.forEach((day) => {
+    totals.pasteisDeNata += Number(day?.pasteisDeNata || 0);
+    (Array.isArray(day?.breadBreakdown) ? day.breadBreakdown : []).forEach((item) => {
+      const name = clean(item?.name);
+      if (!name) return;
+      totals.breadByType[name] = (totals.breadByType[name] || 0) + Number(item?.quantity || 0);
+    });
+  });
+  return totals;
+}
+
 function renderBakeryHistoryRows() {
   const rows = Array.isArray(state.bakeryHistory) ? state.bakeryHistory : [];
+  const breadTypeColumns = bakeryHistoryBreadTypeColumns(rows);
+  const headerRow = els.bakeryHistoryRows?.closest("table")?.querySelector("thead tr");
+  if (headerRow) {
+    headerRow.innerHTML = `<th>Order Date</th><th>Name</th><th>Days</th><th>Total Pastéis Nata</th>${breadTypeColumns
+      .map((name) => `<th>${escape(name)}</th>`)
+      .join("")}`;
+  }
   if (els.bakeryHistoryCount) els.bakeryHistoryCount.textContent = `${rows.length} order${rows.length === 1 ? "" : "s"}`;
   if (els.bakeryHistoryRows) {
-    els.bakeryHistoryRows.innerHTML = rows.map((order) => `<tr class="clickable-row" data-bakery-history-id="${escape(order.id)}">
+    if (!rows.length) {
+      els.bakeryHistoryRows.innerHTML = `<tr><td colspan="${4 + breadTypeColumns.length}" class="empty">No bakery orders found.</td></tr>`;
+    } else {
+      els.bakeryHistoryRows.innerHTML = rows.map((order) => {
+        const totals = bakeryOrderTotals(order);
+        return `<tr class="clickable-row" data-bakery-history-id="${escape(order.id)}">
       <td>${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}</td>
       <td>${escape(order.submittedByName || "-")}</td>
-      <td>${escape(String((order.days || []).length))}</td>
-    </tr>`).join("");
+      <td>${escape(String(totals.days))}</td>
+      <td>${escape(String(totals.pasteisDeNata))}</td>
+      ${breadTypeColumns.map((name) => `<td>${escape(String(totals.breadByType[name] || 0))}</td>`).join("")}
+    </tr>`;
+      }).join("");
+    }
   }
   if (els.bakeryHistoryMobileCards) {
-    els.bakeryHistoryMobileCards.innerHTML = rows.map((order) => `<article class="shopping-history-card clickable-row" data-bakery-history-id="${escape(order.id)}">
+    els.bakeryHistoryMobileCards.innerHTML = rows.map((order) => {
+      const totals = bakeryOrderTotals(order);
+      const breadSummary = breadTypeColumns
+        .map((name) => `${name}: ${totals.breadByType[name] || 0}`)
+        .join(" · ");
+      return `<article class="shopping-history-card clickable-row" data-bakery-history-id="${escape(order.id)}">
       <div class="service-mobile-request">${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}</div>
       <div class="service-mobile-type">${escape(order.submittedByName || "-")}</div>
-      <div class="shopping-mobile-supplier">${escape(String((order.days || []).length))} days</div>
-    </article>`).join("");
+      <div class="shopping-mobile-supplier">${escape(String(totals.days))} days · Pastéis: ${escape(String(totals.pasteisDeNata))}</div>
+      ${breadSummary ? `<div class="communication-mobile-meta">${escape(breadSummary)}</div>` : ""}
+    </article>`;
+    }).join("");
   }
 }
 
