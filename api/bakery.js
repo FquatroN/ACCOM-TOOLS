@@ -103,6 +103,41 @@ async function sendBakeryEmail(order, settings) {
   return sendWithResend({ to: recipients, subject, html, text });
 }
 
+async function sendBakeryEmail(order, settings) {
+  const recipients = Array.isArray(settings?.emailRecipients) ? settings.emailRecipients : [];
+  if (!recipients.length) return { skipped: true };
+  const subject = `Encomenda pÃ£es e bolos para dias ${orderDatesLabel(order.days)}`;
+  const breadTypes = (Array.isArray(settings?.breadTypes) ? settings.breadTypes : [])
+    .map((item) => cleanText(item?.name))
+    .filter(Boolean);
+  const htmlRows = (Array.isArray(order.days) ? order.days : []).map((day) => `
+    <tr>
+      <td style="border:1px solid #d8d0c7;padding:6px;">${day.date}</td>
+      ${breadTypes.map((breadType) => {
+        const found = (Array.isArray(day.breadBreakdown) ? day.breadBreakdown : []).find((item) => cleanText(item?.name).toLowerCase() === breadType.toLowerCase());
+        return `<td style="border:1px solid #d8d0c7;padding:6px;">${found ? Number(found.quantity || 0) : 0}</td>`;
+      }).join("")}
+      <td style="border:1px solid #d8d0c7;padding:6px;">${day.pasteisDeNata}</td>
+    </tr>`).join("");
+  const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
+    <p>Bom dia,</p>
+    <p>Segue a encomenda de pÃ£es e bolos:</p>
+    <table style="border-collapse:collapse;width:100%;max-width:760px;">
+      <thead>
+        <tr>
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Data</th>
+          ${breadTypes.map((breadType) => `<th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">${breadType}</th>`).join("")}
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">PastÃ©is de nata</th>
+        </tr>
+      </thead>
+      <tbody>${htmlRows}</tbody>
+    </table>
+    <p>Cumprimentos,<br />${order.submittedByName || "-"}</p>
+  </body></html>`;
+  const text = buildBakeryGeneratedText(order, settings, order.submittedByName);
+  return sendWithResend({ to: recipients, subject, html, text });
+}
+
 module.exports = async function handler(req, res) {
   try {
     const { user } = await requireFeature(req, "app", "bakery");

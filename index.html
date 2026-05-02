@@ -936,7 +936,7 @@
                 <div class="table-wrap shopping-table-wrap">
                   <table class="shopping-table">
                     <thead>
-                      <tr>
+                      <tr id="bakery-open-head">
                         <th>Category</th>
                         <th>Item</th>
                         <th>Supplier</th>
@@ -1065,9 +1065,6 @@
                       <tr>
                         <th>Date</th>
                         <th>Available Beds (Hostel)</th>
-                        <th>Hostel Guests</th>
-                        <th>Total Breads</th>
-                        <th>Bread Breakdown</th>
                         <th>Check-ins (Cruz)</th>
                         <th>Pastéis de nata</th>
                       </tr>
@@ -1078,7 +1075,7 @@
                 <section class="shopping-submit-block">
                   <label class="settings-email-recipients">
                     Email text
-                    <textarea id="bakery-generated-text" rows="14" readonly></textarea>
+                    <div id="bakery-generated-text" class="bakery-email-preview"></div>
                   </label>
                   <div class="grid settings-grid">
                     <label>

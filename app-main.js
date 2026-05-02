@@ -1151,7 +1151,7 @@ function bindEvents() {
     state.bakerySubmitName = clean(els.bakerySubmitName.value);
     if (state.bakeryOpenOrder && els.bakeryGeneratedText) {
       refreshBakeryOpenOrderDerivedState();
-      els.bakeryGeneratedText.value = state.bakeryOpenOrder.generatedText || buildBakeryGeneratedTextClient(state.bakeryOpenOrder, state.bakerySubmitName);
+      els.bakeryGeneratedText.innerHTML = buildBakeryGeneratedHtmlClient(state.bakeryOpenOrder, state.bakerySubmitName);
     }
   });
   els.bakerySettingsTableTab?.addEventListener("click", () => setBakerySettingsTab("table"));
@@ -6594,20 +6594,28 @@ function bakeryAllocateBreadTypesClient(total, types = []) {
   });
 }
 
+function parseBakeryOptionalCountClient(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const num = Number.parseInt(value, 10);
+  return Number.isFinite(num) ? Math.max(0, num) : "";
+}
+
 function normalizeBakeryDayClient(day = {}, settings = state.bakerySettings) {
   const date = clean(day.date);
-  const availableBeds = Math.max(0, Number.parseInt(day.availableBeds ?? day.available_beds ?? 0, 10) || 0);
-  const cruzCheckins = Math.max(0, Number.parseInt(day.cruzCheckins ?? day.cruz_checkins ?? 0, 10) || 0);
-  const hostelGuests = Math.max(0, Number(settings?.hostelCapacity || 0) - availableBeds);
-  const totalBreads = bakeryLookupBreadTotalClient(settings, hostelGuests);
+  const availableBeds = parseBakeryOptionalCountClient(day.availableBeds ?? day.available_beds);
+  const cruzCheckins = parseBakeryOptionalCountClient(day.cruzCheckins ?? day.cruz_checkins);
+  const hasAvailableBeds = availableBeds !== "";
+  const hasCruzCheckins = cruzCheckins !== "";
+  const hostelGuests = hasAvailableBeds ? Math.max(0, Number(settings?.hostelCapacity || 0) - Number(availableBeds)) : "";
+  const totalBreads = hostelGuests === "" ? "" : bakeryLookupBreadTotalClient(settings, hostelGuests);
   return {
     date,
     availableBeds,
     cruzCheckins,
     hostelGuests,
     totalBreads,
-    breadBreakdown: bakeryAllocateBreadTypesClient(totalBreads, settings?.breadTypes),
-    pasteisDeNata: cruzCheckins,
+    breadBreakdown: totalBreads === "" ? bakeryAllocateBreadTypesClient(0, settings?.breadTypes).map((item) => ({ ...item, quantity: "" })) : bakeryAllocateBreadTypesClient(totalBreads, settings?.breadTypes),
+    pasteisDeNata: hasCruzCheckins ? cruzCheckins : "",
   };
 }
 
@@ -6648,6 +6656,35 @@ function bakeryOrderDatesLabel(order) {
   return (Array.isArray(order?.days) ? order.days : []).map((day) => clean(day.date)).filter(Boolean).join(", ");
 }
 
+function bakeryBreadTypeColumnsClient(order = state.bakeryOpenOrder) {
+  const seen = new Set();
+  const names = [];
+  ((state.bakerySettings?.breadTypes) || []).forEach((item) => {
+    const name = clean(item?.name);
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    names.push(name);
+  });
+  (Array.isArray(order?.days) ? order.days : []).forEach((day) => {
+    (Array.isArray(day?.breadBreakdown) ? day.breadBreakdown : []).forEach((item) => {
+      const name = clean(item?.name);
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      names.push(name);
+    });
+  });
+  return names;
+}
+
+function bakeryBreadTypeQuantity(day, breadTypeName) {
+  const found = (Array.isArray(day?.breadBreakdown) ? day.breadBreakdown : []).find((item) => clean(item?.name).toLowerCase() === clean(breadTypeName).toLowerCase());
+  return found ? found.quantity : "";
+}
+
 function buildBakeryGeneratedTextClient(order, name = state.bakerySubmitName) {
   const days = Array.isArray(order?.days) ? order.days : [];
   const lines = [
@@ -6667,6 +6704,48 @@ function buildBakeryGeneratedTextClient(order, name = state.bakerySubmitName) {
   lines.push("Cumprimentos,");
   lines.push(clean(name || order?.submittedByName) || "[Name]");
   return lines.join("\n");
+}
+
+function buildBakeryGeneratedHtmlClient(order, name = state.bakerySubmitName) {
+  const days = Array.isArray(order?.days) ? order.days : [];
+  const breadTypes = bakeryBreadTypeColumnsClient(order);
+  return `<p><strong>Assunto:</strong> Encomenda pães e bolos para dias ${escape(bakeryOrderDatesLabel(order) || "-")}</p>
+    <p>Bom dia,</p>
+    <p>Segue a encomenda de pães e bolos:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          ${breadTypes.map((breadType) => `<th>${escape(breadType)}</th>`).join("")}
+          <th>Pastéis de nata</th>
+        </tr>
+      </thead>
+      <tbody>${days.map((day) => `<tr>
+        <td>${escape(day.date || "-")}</td>
+        ${breadTypes.map((breadType) => `<td>${escape(String(bakeryBreadTypeQuantity(day, breadType) === "" ? "-" : bakeryBreadTypeQuantity(day, breadType)))}</td>`).join("")}
+        <td>${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
+      </tr>`).join("")}</tbody>
+    </table>
+    <p>Cumprimentos,<br>${escape(clean(name || order?.submittedByName) || "[Name]")}</p>`;
+}
+
+function validateBakeryOrderDays(days = [], capacity = Number(state.bakerySettings?.hostelCapacity || 83)) {
+  const max = Math.max(0, Number(capacity || 0));
+  for (const day of Array.isArray(days) ? days : []) {
+    if (day.availableBeds === "" || day.availableBeds === null || day.availableBeds === undefined) {
+      return `Available Beds (Hostel) is required for ${bakeryDateLabel(day.date)}.`;
+    }
+    if (day.cruzCheckins === "" || day.cruzCheckins === null || day.cruzCheckins === undefined) {
+      return `Check-ins (Cruz) is required for ${bakeryDateLabel(day.date)}.`;
+    }
+    if (Number(day.availableBeds) < 0 || Number(day.availableBeds) > max) {
+      return `Available Beds (Hostel) must be between 0 and ${max} for ${bakeryDateLabel(day.date)}.`;
+    }
+    if (Number(day.cruzCheckins) < 0 || Number(day.cruzCheckins) > max) {
+      return `Check-ins (Cruz) must be between 0 and ${max} for ${bakeryDateLabel(day.date)}.`;
+    }
+  }
+  return "";
 }
 
 function uniqueSortedShoppingValues(items, field) {
@@ -7886,6 +7965,46 @@ function renderBakeryCurrentRows(order) {
   }
 }
 
+function renderBakeryCurrentRows(order) {
+  const rows = Array.isArray(order?.days) ? order.days : [];
+  const breadTypes = bakeryBreadTypeColumnsClient(order);
+  const headerRow = document.getElementById("bakery-open-head");
+  if (headerRow) {
+    headerRow.innerHTML = `<th>Date</th><th>Available Beds (Hostel)</th><th>Check-ins (Cruz)</th>${breadTypes
+      .map((breadType) => `<th>${escape(breadType)}</th>`)
+      .join("")}<th>Pastéis de Nata</th>`;
+  }
+  if (els.bakeryOpenRows) {
+    els.bakeryOpenRows.innerHTML = rows.map((day, index) => `<tr>
+      <td>${escape(bakeryDateLabel(day.date))}</td>
+      <td><div class="bakery-available-cell"><input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(String(day.availableBeds ?? ""))}" required /><small>Hostel guests: ${escape(day.hostelGuests === "" ? "-" : String(day.hostelGuests))}</small></div></td>
+      <td><input data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(String(day.cruzCheckins ?? ""))}" required /></td>
+      ${breadTypes.map((breadType) => `<td>${escape(String(bakeryBreadTypeQuantity(day, breadType) === "" ? "-" : bakeryBreadTypeQuantity(day, breadType)))}</td>`).join("")}
+      <td>${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
+    </tr>`).join("");
+  }
+  if (els.bakeryMobileCards) {
+    els.bakeryMobileCards.innerHTML = "";
+    rows.forEach((day, index) => {
+      const card = document.createElement("article");
+      card.className = "shopping-mobile-card";
+      card.innerHTML = `<div class="shopping-mobile-row">
+        <div class="shopping-mobile-main">
+          <div class="service-mobile-request">${escape(bakeryDateLabel(day.date))}</div>
+          <div class="service-mobile-type">Hostel guests: ${escape(day.hostelGuests === "" ? "-" : String(day.hostelGuests))}</div>
+          <div class="shopping-mobile-supplier">${escape((day.breadBreakdown || []).map((item) => `${item.name}: ${item.quantity === "" ? "-" : item.quantity}`).join(" | "))}</div>
+          <div class="shopping-mobile-supplier">Pastéis de nata: ${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</div>
+        </div>
+        <div class="shopping-mobile-inline-order">
+          <input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(String(day.availableBeds ?? ""))}" placeholder="Beds" required />
+          <input class="shopping-mobile-inline-qty" data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(String(day.cruzCheckins ?? ""))}" placeholder="Cruz" required />
+        </div>
+      </div>`;
+      els.bakeryMobileCards.appendChild(card);
+    });
+  }
+}
+
 function bakeryHistoryBreadTypeColumns(orders = []) {
   const seen = new Set();
   const columns = [];
@@ -8026,11 +8145,11 @@ function renderBakery() {
   if (order) {
     refreshBakeryOpenOrderDerivedState();
     renderBakeryCurrentRows(order);
-    if (els.bakeryGeneratedText) els.bakeryGeneratedText.value = order.generatedText || buildBakeryGeneratedTextClient(order, state.bakerySubmitName);
+    if (els.bakeryGeneratedText) els.bakeryGeneratedText.innerHTML = buildBakeryGeneratedHtmlClient(order, state.bakerySubmitName);
   } else {
     if (els.bakeryOpenRows) els.bakeryOpenRows.innerHTML = "";
     if (els.bakeryMobileCards) els.bakeryMobileCards.innerHTML = "";
-    if (els.bakeryGeneratedText) els.bakeryGeneratedText.value = "";
+    if (els.bakeryGeneratedText) els.bakeryGeneratedText.innerHTML = "";
   }
   renderBakeryHistoryRows();
 }
@@ -8221,6 +8340,71 @@ function onBakeryOrderInput(event) {
   if (!day) return;
   if (field === "availableBeds") day.availableBeds = Math.max(0, Number.parseInt(event.target.value, 10) || 0);
   if (field === "cruzCheckins") day.cruzCheckins = Math.max(0, Number.parseInt(event.target.value, 10) || 0);
+  refreshBakeryOpenOrderDerivedState();
+  renderBakery();
+}
+
+async function saveBakeryOrderDraft() {
+  if (!state.bakeryOpenOrder?.id) return;
+  const validationError = validateBakeryOrderDays(state.bakeryOpenOrder.days);
+  if (validationError) {
+    setBakeryCurrentStatus(validationError);
+    showToast(validationError, "error");
+    return;
+  }
+  try {
+    const result = await api(`/api/bakery?id=${encodeURIComponent(state.bakeryOpenOrder.id)}`, {
+      method: "PUT",
+      body: { action: "save", days: state.bakeryOpenOrder.days },
+    });
+    state.bakeryOpenOrder = normalizeBakeryOrderClient(result.order, state.bakerySettings);
+    renderBakery();
+    setBakeryCurrentStatus("Bakery draft saved.");
+    showToast("Bakery draft saved.", "success");
+  } catch (e) {
+    setBakeryCurrentStatus(`Save failed: ${e.message}`);
+    showToast(`Save failed: ${e.message}`, "error");
+  }
+}
+
+async function submitBakeryOrder() {
+  if (!state.bakeryOpenOrder?.id) return;
+  const validationError = validateBakeryOrderDays(state.bakeryOpenOrder.days);
+  if (validationError) {
+    setBakerySubmitStatus(validationError);
+    showToast(validationError, "error");
+    return;
+  }
+  try {
+    const result = await api(`/api/bakery?id=${encodeURIComponent(state.bakeryOpenOrder.id)}`, {
+      method: "PUT",
+      body: { action: "submit", submittedByName: clean(state.bakerySubmitName || els.bakerySubmitName?.value), days: state.bakeryOpenOrder.days },
+    });
+    const emailError = clean(result.emailResult?.error);
+    state.bakeryOpenOrder = null;
+    state.bakerySubmitName = "";
+    await loadBakeryData({ silent: true });
+    state.bakeryLoaded = true;
+    setBakeryTab("history");
+    renderBakery();
+    setBakerySubmitStatus(emailError ? `Order submitted, but email failed: ${emailError}` : "Bakery order submitted.");
+    showToast(emailError ? `Order submitted, but email failed: ${emailError}` : "Bakery order submitted.", emailError ? "error" : "success");
+  } catch (e) {
+    setBakerySubmitStatus(`Submit failed: ${e.message}`);
+    showToast(`Submit failed: ${e.message}`, "error");
+  }
+}
+
+function onBakeryOrderInput(event) {
+  const index = Number(event.target.dataset.bakeryIndex);
+  const field = clean(event.target.dataset.bakeryField);
+  if (!state.bakeryOpenOrder || !Number.isFinite(index) || index < 0 || !field) return;
+  const day = state.bakeryOpenOrder.days[index];
+  if (!day) return;
+  const raw = clean(event.target.value);
+  const max = Math.max(0, Number(state.bakerySettings?.hostelCapacity || 83));
+  if (field === "availableBeds") day.availableBeds = raw ? Math.min(max, Math.max(0, Number.parseInt(raw, 10) || 0)) : "";
+  if (field === "cruzCheckins") day.cruzCheckins = raw ? Math.min(max, Math.max(0, Number.parseInt(raw, 10) || 0)) : "";
   refreshBakeryOpenOrderDerivedState();
   renderBakery();
 }

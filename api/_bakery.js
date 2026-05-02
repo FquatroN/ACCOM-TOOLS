@@ -202,13 +202,21 @@ function allocateBreadTypes(total, types = []) {
   });
 }
 
+function parseOptionalCount(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : "";
+}
+
 function normalizeBakeryDay(day = {}, settings = DEFAULT_BAKERY_SETTINGS, fallbackDate = "") {
   const date = cleanText(day.date || fallbackDate);
-  const availableBeds = Math.max(0, Number.parseInt(day.availableBeds ?? day.available_beds ?? 0, 10) || 0);
-  const cruzCheckins = Math.max(0, Number.parseInt(day.cruzCheckins ?? day.cruz_checkins ?? 0, 10) || 0);
-  const hostelGuests = Math.max(0, Number(settings.hostelCapacity || 0) - availableBeds);
-  const totalBreads = lookupBreadTotal(settings, hostelGuests);
-  const breadBreakdown = allocateBreadTypes(totalBreads, settings.breadTypes);
+  const availableBeds = parseOptionalCount(day.availableBeds ?? day.available_beds);
+  const cruzCheckins = parseOptionalCount(day.cruzCheckins ?? day.cruz_checkins);
+  const hasAvailableBeds = availableBeds !== "";
+  const hasCruzCheckins = cruzCheckins !== "";
+  const hostelGuests = hasAvailableBeds ? Math.max(0, Number(settings.hostelCapacity || 0) - Number(availableBeds)) : "";
+  const totalBreads = hostelGuests === "" ? "" : lookupBreadTotal(settings, hostelGuests);
+  const breadBreakdown = totalBreads === "" ? allocateBreadTypes(0, settings.breadTypes).map((item) => ({ ...item, quantity: "" })) : allocateBreadTypes(totalBreads, settings.breadTypes);
   return {
     date,
     availableBeds,
@@ -216,7 +224,7 @@ function normalizeBakeryDay(day = {}, settings = DEFAULT_BAKERY_SETTINGS, fallba
     hostelGuests,
     totalBreads,
     breadBreakdown,
-    pasteisDeNata: cruzCheckins,
+    pasteisDeNata: hasCruzCheckins ? cruzCheckins : "",
   };
 }
 
