@@ -6619,13 +6619,39 @@ function normalizeBakeryDayClient(day = {}, settings = state.bakerySettings) {
   };
 }
 
+function shouldBlankBakeryFreshDraft(order = {}) {
+  const status = clean(order.status).toLowerCase();
+  if (status && status !== "open") return false;
+  const submittedAt = clean(order.submittedAt || order.submitted_at);
+  if (submittedAt) return false;
+  const createdAt = clean(order.createdAt || order.created_at);
+  const updatedAt = clean(order.updatedAt || order.updated_at);
+  return !!createdAt && (!updatedAt || createdAt === updatedAt);
+}
+
 function normalizeBakeryOrderClient(order, settings = state.bakerySettings) {
   if (!order) return null;
   const targetDates = Array.isArray(order.targetDates || order.target_dates)
     ? (order.targetDates || order.target_dates).map((item) => clean(item)).filter(Boolean)
     : (Array.isArray(order.days) ? order.days : []).map((item) => clean(item?.date)).filter(Boolean);
   const byDate = new Map((Array.isArray(order.days) ? order.days : []).map((item) => [clean(item.date), item]));
-  const days = targetDates.map((date) => normalizeBakeryDayClient(byDate.get(date) || { date }, settings));
+  const blankFreshDefaults = shouldBlankBakeryFreshDraft(order);
+  const days = targetDates.map((date) => {
+    const rawDay = byDate.get(date) || { date };
+    const normalized = normalizeBakeryDayClient(rawDay, settings);
+    if (!blankFreshDefaults) return normalized;
+    return {
+      ...normalized,
+      availableBeds: Number(normalized.availableBeds) === 0 ? "" : normalized.availableBeds,
+      cruzCheckins: Number(normalized.cruzCheckins) === 0 ? "" : normalized.cruzCheckins,
+      hostelGuests: Number(normalized.availableBeds) === 0 ? "" : normalized.hostelGuests,
+      totalBreads: Number(normalized.availableBeds) === 0 ? "" : normalized.totalBreads,
+      breadBreakdown: Number(normalized.availableBeds) === 0
+        ? (Array.isArray(normalized.breadBreakdown) ? normalized.breadBreakdown.map((item) => ({ ...item, quantity: "" })) : [])
+        : normalized.breadBreakdown,
+      pasteisDeNata: Number(normalized.cruzCheckins) === 0 ? "" : normalized.pasteisDeNata,
+    };
+  });
   return {
     id: clean(order.id),
     orderNumber: Number(order.orderNumber || order.order_number || 0) || 0,

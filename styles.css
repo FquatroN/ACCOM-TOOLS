@@ -2966,6 +2966,13 @@ select:disabled {
   line-height: 1.1;
 }
 
+.bakery-table input[data-bakery-field="availableBeds"],
+.bakery-table input[data-bakery-field="cruzCheckins"],
+#bakery-mobile-cards input[data-bakery-field="availableBeds"],
+#bakery-mobile-cards input[data-bakery-field="cruzCheckins"] {
+  text-align: center;
+}
+
 .bakery-email-preview {
   min-height: 18rem;
   padding: 0.9rem 1rem;
