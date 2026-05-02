@@ -1842,6 +1842,7 @@ function renderLayout() {
   els.navShopping.hidden = !canShopping;
   els.navBakery.hidden = !canBakery;
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
+  els.navBakery.classList.toggle("has-alert", shouldShowBakeryAlert());
   els.openSettings.hidden = !state.access.settingsFeatures.length;
   els.leftNav.hidden = settingsMode;
   els.topbar.hidden = false;
@@ -6984,6 +6985,77 @@ function shouldShowShoppingAlert() {
     day: "2-digit",
   }).format(today);
   return !state.shoppingHistory.some((order) => clean(order.submittedAt).slice(0, 10) === todayIso);
+}
+
+function lisbonTodayIsoClient() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Lisbon",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function easterSundayClient(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function shiftUtcDaysClient(date, days) {
+  const clone = new Date(date.getTime());
+  clone.setUTCDate(clone.getUTCDate() + days);
+  return clone;
+}
+
+function lisbonHolidaySetClient(year) {
+  const easter = easterSundayClient(year);
+  const goodFriday = shiftUtcDaysClient(easter, -2);
+  const corpusChristi = shiftUtcDaysClient(easter, 60);
+  return new Set([
+    `${year}-01-01`,
+    `${year}-04-25`,
+    `${year}-05-01`,
+    `${year}-06-10`,
+    `${year}-06-13`,
+    `${year}-08-15`,
+    `${year}-10-05`,
+    `${year}-11-01`,
+    `${year}-12-01`,
+    `${year}-12-08`,
+    `${year}-12-25`,
+    goodFriday.toISOString().slice(0, 10),
+    corpusChristi.toISOString().slice(0, 10),
+  ]);
+}
+
+function isWorkingDayLisbonClient(iso) {
+  const raw = clean(iso);
+  if (!raw) return false;
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+  const weekday = date.getDay();
+  if (weekday === 0 || weekday === 6) return false;
+  return !lisbonHolidaySetClient(date.getFullYear()).has(raw);
+}
+
+function shouldShowBakeryAlert() {
+  if (!canApp("bakery")) return false;
+  const todayIso = lisbonTodayIsoClient();
+  if (!isWorkingDayLisbonClient(todayIso)) return false;
+  return !state.bakeryHistory.some((order) => clean(order.submittedAt).slice(0, 10) === todayIso);
 }
 
 function hexToShoppingRowColor(hex, alpha = 0.5) {
