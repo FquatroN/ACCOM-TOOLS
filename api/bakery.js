@@ -147,7 +147,12 @@ async function sendBakeryEmail(order, settings) {
       </thead>
       <tbody>${htmlRows}</tbody>
     </table>
-    <p>Cumprimentos,<br />${order.submittedByName || "-"}</p>
+    <p>Cumprimentos,<br />${order.submittedByName || "-"}<br /><br />
+    Lisboa Central Hostel<br /><br />
+    +351 309 881 038<br />
+    +351 925 222 809<br />
+    global@lisboacentralhostel.com<br /><br />
+    Rua Rodrigues Sampaio 160, 1150-282 Lisboa</p>
   </body></html>`;
   const text = buildBakeryGeneratedText(order, settings, order.submittedByName);
   return sendBakeryMessage(settings, { to: recipients, subject, html, text });
