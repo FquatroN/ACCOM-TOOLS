@@ -92,7 +92,7 @@ async function sendBakeryEmail(order, settings) {
           <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Data</th>
           <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Hóspedes Hostel</th>
           <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Pães</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Pastéis de nata</th>
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Past\u00e9is de nata</th>
         </tr>
       </thead>
       <tbody>${htmlRows}</tbody>
@@ -113,8 +113,6 @@ async function sendBakeryEmail(order, settings) {
   const htmlRows = (Array.isArray(order.days) ? order.days : []).map((day) => `
     <tr>
       <td style="border:1px solid #d8d0c7;padding:6px;">${day.date}</td>
-      <td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${day.availableBeds === "" ? "-" : Number(day.availableBeds || 0)}</td>
-      <td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${day.cruzCheckins === "" ? "-" : Number(day.cruzCheckins || 0)}</td>
       ${breadTypes.map((breadType) => {
         const found = (Array.isArray(day.breadBreakdown) ? day.breadBreakdown : []).find((item) => cleanText(item?.name).toLowerCase() === breadType.toLowerCase());
         return `<td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${found && found.quantity !== "" ? Number(found.quantity || 0) : "-"}</td>`;
@@ -128,10 +126,8 @@ async function sendBakeryEmail(order, settings) {
       <thead>
         <tr>
           <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Data</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">Available Beds (Hostel)</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">Check-ins (Cruz)</th>
           ${breadTypes.map((breadType) => `<th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${breadType}</th>`).join("")}
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">PastÃ©is de nata</th>
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Past\u00e9is de nata</th>
         </tr>
       </thead>
       <tbody>${htmlRows}</tbody>
@@ -195,13 +191,28 @@ module.exports = async function handler(req, res) {
         error.statusCode = 404;
         throw error;
       }
+      const body = await parseBody(req);
+      const action = cleanText(body?.action).toLowerCase();
+      if (action === "resend") {
+        if (existing.status !== "submitted") {
+          const error = new Error("Only submitted bakery orders can resend email.");
+          error.statusCode = 400;
+          throw error;
+        }
+        let emailResult = null;
+        try {
+          emailResult = await sendBakeryEmail(existing, settings);
+        } catch (error) {
+          emailResult = { error: error.message || "Could not send bakery email." };
+        }
+        res.status(200).json({ order: existing, emailResult });
+        return;
+      }
       if (existing.status !== "open") {
         const error = new Error("Only open bakery orders can be updated.");
         error.statusCode = 400;
         throw error;
       }
-      const body = await parseBody(req);
-      const action = cleanText(body?.action).toLowerCase();
       const days = sanitizeBakeryDays(body?.days, settings, existing.targetDates);
       const submittedByName = cleanText(body?.submittedByName || body?.name);
       if (action === "submit" && !submittedByName) {
@@ -247,3 +258,4 @@ module.exports = async function handler(req, res) {
     sendError(res, error);
   }
 };
+

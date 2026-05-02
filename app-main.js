@@ -951,6 +951,7 @@ const els = {
   bakeryHistoryStatus: document.getElementById("bakery-history-status"),
   bakeryDetailModal: document.getElementById("bakery-detail-modal"),
   bakeryDetailClose: document.getElementById("bakery-detail-close"),
+  bakeryDetailResend: document.getElementById("bakery-detail-resend"),
   bakeryDetailStatus: document.getElementById("bakery-detail-status"),
   bakeryDetailBody: document.getElementById("bakery-detail-body"),
   bakerySaveSettings: document.getElementById("bakery-save-settings"),
@@ -1147,6 +1148,7 @@ function bindEvents() {
   els.bakeryHistoryRows?.addEventListener("click", onBakeryHistoryAction);
   els.bakeryHistoryMobileCards?.addEventListener("click", onBakeryHistoryAction);
   els.bakeryDetailClose?.addEventListener("click", closeBakeryDetailModal);
+  els.bakeryDetailResend?.addEventListener("click", resendBakeryOrderEmail);
   els.bakerySubmitName?.addEventListener("input", () => {
     state.bakerySubmitName = clean(els.bakerySubmitName.value);
     if (state.bakeryOpenOrder && els.bakeryGeneratedText) {
@@ -6743,16 +6745,12 @@ function buildBakeryGeneratedHtmlClient(order, name = state.bakerySubmitName) {
       <thead>
         <tr>
           <th>Data</th>
-          <th style="text-align:center;">Available Beds (Hostel)</th>
-          <th style="text-align:center;">Check-ins (Cruz)</th>
           ${breadTypes.map((breadType) => `<th>${escape(breadType)}</th>`).join("")}
           <th style="text-align:center;">Past\u00e9is de nata</th>
         </tr>
       </thead>
       <tbody>${days.map((day) => `<tr>
         <td>${escape(day.date || "-")}</td>
-        <td style="text-align:center;">${escape(String(day.availableBeds === "" ? "-" : day.availableBeds))}</td>
-        <td style="text-align:center;">${escape(String(day.cruzCheckins === "" ? "-" : day.cruzCheckins))}</td>
         ${breadTypes.map((breadType) => `<td style="text-align:center;">${escape(String(bakeryBreadTypeQuantity(day, breadType) === "" ? "-" : bakeryBreadTypeQuantity(day, breadType)))}</td>`).join("")}
         <td style="text-align:center;">${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
       </tr>`).join("")}</tbody>
@@ -8196,6 +8194,7 @@ function renderBakeryHistoryRows() {
 
 function renderBakeryDetail(order) {
   if (!els.bakeryDetailBody) return;
+  if (els.bakeryDetailResend) els.bakeryDetailResend.hidden = !order;
   if (!order) {
     els.bakeryDetailBody.className = "review-detail empty";
     els.bakeryDetailBody.textContent = "Select an order to see the detail.";
@@ -8213,12 +8212,13 @@ function renderBakeryDetail(order) {
   </tr>`).join("");
   els.bakeryDetailBody.innerHTML = `<p><strong>Order #${escape(String(order.orderNumber || ""))}</strong><br>${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}<br>${escape(order.submittedByName || "-")}</p>
     <div class="table-wrap shopping-history-detail-wrap"><table class="shopping-history-table"><thead><tr><th>Date</th><th>Available Beds</th><th>Hostel Guests</th><th>Total Breads</th><th>Bread Breakdown</th><th>Cruz</th><th>Pastéis</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <label class="settings-email-recipients"><span>Generated text</span><textarea rows="14" readonly>${escape(order.generatedText || buildBakeryGeneratedTextClient(order, order.submittedByName))}</textarea></label>`;
+    <label class="settings-email-recipients"><span>Email preview</span><div class="bakery-email-preview">${buildBakeryGeneratedHtmlClient(order, order.submittedByName)}</div></label>`;
 }
 
 function openBakeryDetailModal(orderId) {
   state.bakerySelectedHistoryId = clean(orderId);
   const order = (state.bakeryHistory || []).find((item) => item.id === state.bakerySelectedHistoryId) || null;
+  setBakeryDetailStatus("");
   renderBakeryDetail(order);
   if (els.bakeryDetailModal) {
     els.bakeryDetailModal.hidden = false;
@@ -8228,7 +8228,34 @@ function openBakeryDetailModal(orderId) {
 
 function closeBakeryDetailModal() {
   if (els.bakeryDetailModal) els.bakeryDetailModal.hidden = true;
+  setBakeryDetailStatus("");
   document.body.classList.remove("modal-open");
+}
+
+async function resendBakeryOrderEmail() {
+  const orderId = clean(state.bakerySelectedHistoryId);
+  if (!orderId) return;
+  if (els.bakeryDetailResend) els.bakeryDetailResend.disabled = true;
+  setBakeryDetailStatus("Resending bakery email...");
+  try {
+    const result = await api(`/api/bakery?id=${encodeURIComponent(orderId)}`, {
+      method: "PUT",
+      body: { action: "resend" },
+    });
+    const emailError = clean(result?.emailResult?.error);
+    if (emailError) {
+      setBakeryDetailStatus(`Email resend failed: ${emailError}`);
+      showToast(`Email resend failed: ${emailError}`, "error");
+      return;
+    }
+    setBakeryDetailStatus("Bakery email resent.");
+    showToast("Bakery email resent.", "success");
+  } catch (e) {
+    setBakeryDetailStatus(`Resend failed: ${e.message}`);
+    showToast(`Resend failed: ${e.message}`, "error");
+  } finally {
+    if (els.bakeryDetailResend) els.bakeryDetailResend.disabled = false;
+  }
 }
 
 function renderBakery() {
