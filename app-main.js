@@ -7976,9 +7976,9 @@ function renderBakeryCurrentRows(order) {
   }
   if (els.bakeryOpenRows) {
     els.bakeryOpenRows.innerHTML = rows.map((day, index) => `<tr>
-      <td>${escape(bakeryDateLabel(day.date))}</td>
-      <td><div class="bakery-available-cell"><input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(String(day.availableBeds ?? ""))}" required /><small>Hostel guests: ${escape(day.hostelGuests === "" ? "-" : String(day.hostelGuests))}</small></div></td>
-      <td><input data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(String(day.cruzCheckins ?? ""))}" required /></td>
+      <td>${escape(bakeryDateLabel(day.date))}<br><small>Hostel guests: ${escape(day.hostelGuests === "" ? "-" : String(day.hostelGuests))}</small></td>
+      <td><div class="bakery-available-cell"><input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(day.availableBeds === "" ? "" : String(day.availableBeds))}" required /></div></td>
+      <td><input data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(day.cruzCheckins === "" ? "" : String(day.cruzCheckins))}" required /></td>
       ${breadTypes.map((breadType) => `<td>${escape(String(bakeryBreadTypeQuantity(day, breadType) === "" ? "-" : bakeryBreadTypeQuantity(day, breadType)))}</td>`).join("")}
       <td>${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
     </tr>`).join("");
@@ -7996,8 +7996,8 @@ function renderBakeryCurrentRows(order) {
           <div class="shopping-mobile-supplier">Pastéis de nata: ${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</div>
         </div>
         <div class="shopping-mobile-inline-order">
-          <input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(String(day.availableBeds ?? ""))}" placeholder="Beds" required />
-          <input class="shopping-mobile-inline-qty" data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(String(day.cruzCheckins ?? ""))}" placeholder="Cruz" required />
+          <input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(day.availableBeds === "" ? "" : String(day.availableBeds))}" placeholder="Beds" required />
+          <input class="shopping-mobile-inline-qty" data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" max="${escape(String(state.bakerySettings?.hostelCapacity || 83))}" step="1" value="${escape(day.cruzCheckins === "" ? "" : String(day.cruzCheckins))}" placeholder="Cruz" required />
         </div>
       </div>`;
       els.bakeryMobileCards.appendChild(card);
