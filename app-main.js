@@ -1,8 +1,8 @@
 const SHEET_NAME = "Comunicações";
 const REVIEW_LIST_PAGE_SIZE = 100;
 const REVIEW_FETCH_PAGE_SIZE = 1500;
-const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-const AUTO_REFRESH_ON_FOCUS_AFTER_MS = 60 * 1000;
+const AUTO_REFRESH_INTERVAL_MS = 6 * 60 * 1000;
+const AUTO_REFRESH_ON_FOCUS_AFTER_MS = 120 * 1000;
 const REVIEW_ANALYSIS_COLORS = ["#0d6e6e", "#d97706", "#2563eb", "#b4235a", "#6d5dfc", "#16803a", "#7c3aed", "#c2410c"];
 const REVIEW_SUBSCORE_KEYS = ["staff", "cleanliness", "location", "facilities", "comfort", "value_for_money"];
 const DEFAULT_REVIEW_SOURCES = [
@@ -3224,9 +3224,15 @@ function onGroupRoomItemAction(event) {
 async function onGroupRowClick(event) {
   const row = event.target.closest("[data-group-id]");
   if (!row) return;
-  const group = state.groups.find((item) => item.id === clean(row.dataset.groupId));
-  if (!group) return;
   await refreshGroupSettingsForEditor();
+  await loadGroups({ silent: true });
+  state.groupsLoaded = true;
+  const group = state.groups.find((item) => item.id === clean(row.dataset.groupId));
+  if (!group) {
+    renderGroups();
+    showToast("This group proposal is no longer available.", "error");
+    return;
+  }
   state.groupSelectedId = group.id;
   state.groupDraft = clone(group);
   openGroupModal();
@@ -3962,13 +3968,21 @@ async function onRowAction(event) {
   }
   if (action === "save-edit") return saveEdit(button.dataset.id);
   const id = button.dataset.id;
-  const entry = state.entries.find((x) => x.id === id);
-  if (!entry) return;
   if (action === "edit") {
+    await loadEntries({ silent: true });
+    state.communicationsLoaded = true;
+    const latestEntry = state.entries.find((x) => x.id === id);
+    if (!latestEntry) {
+      render();
+      showToast("This communication is no longer available.", "error");
+      return;
+    }
     state.editingId = id;
-    state.editDraft = { person: entry.person, status: entry.status, category: entry.category, message: entry.message };
+    state.editDraft = { person: latestEntry.person, status: latestEntry.status, category: latestEntry.category, message: latestEntry.message };
     return render();
   }
+  const entry = state.entries.find((x) => x.id === id);
+  if (!entry) return;
   if (action === "delete") {
     button.disabled = true;
     const deletedIndex = state.entries.findIndex((x) => x.id === id);
@@ -4125,22 +4139,30 @@ async function onLostFoundAction(event) {
     return;
   }
   const id = clean(button.dataset.id);
-  const record = state.lostFound.find((item) => item.id === id);
-  if (!record) return;
   if (action === "edit") {
+    await loadLostFound({ silent: true });
+    state.lostFoundLoaded = true;
+    const latestRecord = state.lostFound.find((item) => item.id === id);
+    if (!latestRecord) {
+      renderLostFound();
+      showToast("This Lost&Found record is no longer available.", "error");
+      return;
+    }
     state.lostFoundEditingId = id;
     state.lostFoundEditDraft = {
-      whoFound: record.whoFound,
-      whoRecorded: record.whoRecorded,
-      location: record.location,
-      objectDescription: record.objectDescription,
-      notes: record.notes,
-      stored: record.stored,
-      status: record.status,
+      whoFound: latestRecord.whoFound,
+      whoRecorded: latestRecord.whoRecorded,
+      location: latestRecord.location,
+      objectDescription: latestRecord.objectDescription,
+      notes: latestRecord.notes,
+      stored: latestRecord.stored,
+      status: latestRecord.status,
     };
     renderLostFound();
     return;
   }
+  const record = state.lostFound.find((item) => item.id === id);
+  if (!record) return;
   if (action === "save-edit") {
     await saveLostFoundEdit(id);
   }
