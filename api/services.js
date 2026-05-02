@@ -376,6 +376,7 @@ function serviceUpdatedEmailContent(before, after, actor) {
 async function sendWithResend({ to, subject, html, text }) {
   const apiKey = process.env.RESEND_API_KEY;
   const rawFrom = process.env.EMAIL_FROM;
+  const replyTo = "global@lisboacentralhostel.com";
   if (!apiKey) {
     const error = new Error("Missing server environment variable: RESEND_API_KEY");
     error.statusCode = 500;
@@ -386,14 +387,14 @@ async function sendWithResend({ to, subject, html, text }) {
     error.statusCode = 500;
     throw error;
   }
-  const from = /<[^>]+>/.test(rawFrom) ? rawFrom : `ACOOM Tools <${rawFrom}>`;
+  const from = /<[^>]+>/.test(rawFrom) ? rawFrom : `ACCOM Tools - LCH <${rawFrom}>`;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ from, to, subject, html, text }),
+    body: JSON.stringify({ from, reply_to: replyTo, to, subject, html, text }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
