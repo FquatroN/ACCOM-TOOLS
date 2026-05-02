@@ -1138,6 +1138,8 @@ function bindEvents() {
   [els.groupReservationNumber, els.groupName, els.groupEmail, els.groupCheckIn, els.groupCheckOut, els.groupGuests, els.groupOptionDate, els.groupStatusField, els.groupObservation].forEach((el) =>
     el.addEventListener("input", onGroupDraftInput)
   );
+  els.groupCheckOut.addEventListener("focus", prepareGroupCheckOutPicker);
+  els.groupCheckOut.addEventListener("pointerdown", prepareGroupCheckOutPicker);
   els.groupAddRoomItem.addEventListener("click", addGroupRoomItem);
   els.groupRoomItemsBody.addEventListener("input", onGroupRoomItemInput);
   els.groupRoomItemsBody.addEventListener("change", onGroupRoomItemInput);
@@ -2570,6 +2572,7 @@ function renderGroupDraft() {
   renderGroupEmailProposalHint();
   els.groupCheckIn.value = draft.checkIn || "";
   els.groupCheckOut.value = draft.checkOut || "";
+  syncGroupDateConstraints();
   els.groupGuests.value = draft.guests;
   els.groupOptionDate.value = draft.optionDate;
   els.groupStatusField.value = draft.status;
@@ -2579,6 +2582,32 @@ function renderGroupDraft() {
   renderGroupTotals();
   renderGroupAuditHistory();
   els.groupDelete.hidden = !draft.id || !isAdministratorProfile();
+}
+
+function nextGroupCheckOutDate(checkIn) {
+  const raw = clean(checkIn);
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + 1);
+  return formatDate(date);
+}
+
+function syncGroupDateConstraints() {
+  const minCheckOut = nextGroupCheckOutDate(state.groupDraft.checkIn);
+  if (els.groupCheckOut) els.groupCheckOut.min = minCheckOut || "";
+}
+
+function prepareGroupCheckOutPicker() {
+  syncGroupDateConstraints();
+  const minCheckOut = clean(els.groupCheckOut?.min || nextGroupCheckOutDate(state.groupDraft.checkIn));
+  if (!minCheckOut) return;
+  const current = parseGroupDateInput(els.groupCheckOut?.value || state.groupDraft.checkOut);
+  if (!current || current < minCheckOut) {
+    els.groupCheckOut.value = minCheckOut;
+    state.groupDraft.checkOut = minCheckOut;
+    renderGroupTotals();
+  }
 }
 
 function renderGroupTotals() {
@@ -3174,6 +3203,7 @@ function onGroupDraftInput(event) {
   state.groupDraft.email = clean(els.groupEmail.value);
   state.groupDraft.checkIn = parseGroupDateInput(els.groupCheckIn.value);
   state.groupDraft.checkOut = parseGroupDateInput(els.groupCheckOut.value);
+  syncGroupDateConstraints();
   state.groupDraft.guests = normalizeGroupGuests(els.groupGuests.value);
   state.groupDraft.optionDate = clean(els.groupOptionDate.value);
   state.groupDraft.status = normalizeGroupStatus(els.groupStatusField.value);
