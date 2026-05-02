@@ -369,6 +369,10 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.align-end {
+  align-self: end;
+}
+
 .sr-only-file {
   position: absolute;
   width: 1px;

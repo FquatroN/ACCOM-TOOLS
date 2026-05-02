@@ -10,6 +10,7 @@ const {
   sanitizeBakeryOrderRow,
   sanitizeBakerySettings,
 } = require("./_bakery");
+const { sendWithSmtp } = require("./_smtp");
 
 async function loadBakerySettings() {
   const rows = await restQuery("app_settings?select=payload&setting_key=eq.bakery&limit=1", { method: "GET" });
@@ -70,6 +71,14 @@ async function sendWithResend({ to, subject, html, text }) {
     throw error;
   }
   return payload;
+}
+
+async function sendBakeryMessage(settings, mail) {
+  const emailConfig = settings?.emailConfig || {};
+  if (cleanText(emailConfig.provider).toLowerCase() === "smtp") {
+    return sendWithSmtp(emailConfig, mail);
+  }
+  return sendWithResend(mail);
 }
 
 async function sendBakeryEmail(order, settings) {
@@ -135,7 +144,7 @@ async function sendBakeryEmail(order, settings) {
     <p>Cumprimentos,<br />${order.submittedByName || "-"}</p>
   </body></html>`;
   const text = buildBakeryGeneratedText(order, settings, order.submittedByName);
-  return sendWithResend({ to: recipients, subject, html, text });
+  return sendBakeryMessage(settings, { to: recipients, subject, html, text });
 }
 
 module.exports = async function handler(req, res) {

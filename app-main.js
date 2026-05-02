@@ -310,6 +310,16 @@ const DEFAULT_BAKERY_SETTINGS = {
   selectedBase: "base-media",
   hostelCapacity: 83,
   emailRecipients: [],
+  emailConfig: {
+    provider: "resend",
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 465,
+    smtpSecure: true,
+    smtpUser: "",
+    smtpPassword: "",
+    fromEmail: "",
+    fromName: "Lisboa Central Hostel",
+  },
   breadTable: [],
   breadTypes: [
     { id: "bread-type-1", name: "Carcaças", percentage: 42 },
@@ -957,11 +967,23 @@ const els = {
   bakerySaveSettings: document.getElementById("bakery-save-settings"),
   bakerySettingsTableTab: document.getElementById("bakery-settings-table-tab"),
   bakerySettingsTypesTab: document.getElementById("bakery-settings-types-tab"),
+  bakerySettingsEmailTab: document.getElementById("bakery-settings-email-tab"),
   bakerySettingsTablePanel: document.getElementById("bakery-settings-table-panel"),
   bakerySettingsTypesPanel: document.getElementById("bakery-settings-types-panel"),
+  bakerySettingsEmailPanel: document.getElementById("bakery-settings-email-panel"),
+  bakerySaveSettingsEmail: document.getElementById("bakery-save-settings-email"),
   bakerySelectedBase: document.getElementById("bakery-selected-base"),
   bakeryHostelCapacity: document.getElementById("bakery-hostel-capacity"),
   bakerySettingsEmailRecipients: document.getElementById("bakery-settings-email-recipients"),
+  bakeryEmailProvider: document.getElementById("bakery-email-provider"),
+  bakeryEmailSmtpHost: document.getElementById("bakery-email-smtp-host"),
+  bakeryEmailSmtpPort: document.getElementById("bakery-email-smtp-port"),
+  bakeryEmailSmtpSecure: document.getElementById("bakery-email-smtp-secure"),
+  bakeryEmailSmtpUser: document.getElementById("bakery-email-smtp-user"),
+  bakeryEmailSmtpPassword: document.getElementById("bakery-email-smtp-password"),
+  bakeryEmailFromEmail: document.getElementById("bakery-email-from-email"),
+  bakeryEmailFromName: document.getElementById("bakery-email-from-name"),
+  bakeryEmailSmtpFields: document.getElementById("bakery-email-smtp-fields"),
   bakeryBreadTableBody: document.getElementById("bakery-bread-table-body"),
   bakeryBreadTypesBody: document.getElementById("bakery-bread-types-body"),
   bakeryAddBreadType: document.getElementById("bakery-add-bread-type"),
@@ -1158,10 +1180,15 @@ function bindEvents() {
   });
   els.bakerySettingsTableTab?.addEventListener("click", () => setBakerySettingsTab("table"));
   els.bakerySettingsTypesTab?.addEventListener("click", () => setBakerySettingsTab("types"));
+  els.bakerySettingsEmailTab?.addEventListener("click", () => setBakerySettingsTab("email"));
   els.bakerySaveSettings?.addEventListener("click", saveBakerySettings);
+  els.bakerySaveSettingsEmail?.addEventListener("click", saveBakerySettings);
   els.bakerySelectedBase?.addEventListener("change", onBakerySettingsInput);
   els.bakeryHostelCapacity?.addEventListener("input", onBakerySettingsInput);
   els.bakerySettingsEmailRecipients?.addEventListener("input", onBakerySettingsInput);
+  [els.bakeryEmailProvider, els.bakeryEmailSmtpHost, els.bakeryEmailSmtpPort, els.bakeryEmailSmtpSecure, els.bakeryEmailSmtpUser, els.bakeryEmailSmtpPassword, els.bakeryEmailFromEmail, els.bakeryEmailFromName]
+    .filter(Boolean)
+    .forEach((el) => el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", onBakerySettingsInput));
   els.bakeryBreadTableBody?.addEventListener("input", onBakerySettingsInput);
   els.bakeryBreadTypesBody?.addEventListener("input", onBakerySettingsInput);
   els.bakeryBreadTypesBody?.addEventListener("click", onBakerySettingsAction);
@@ -6559,11 +6586,37 @@ function sanitizeBakeryBreadTypeClient(item = {}, index = 0) {
   };
 }
 
+function normalizeBakeryEmailProviderClient(value) {
+  return clean(value).toLowerCase() === "smtp" ? "smtp" : "resend";
+}
+
+function normalizeBakerySecureClient(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  return ["true", "1", "yes", "sim", "on"].includes(clean(value).toLowerCase());
+}
+
+function normalizeBakeryEmailConfigClient(config = {}) {
+  return {
+    provider: normalizeBakeryEmailProviderClient(config.provider),
+    smtpHost: clean(config.smtpHost || config.smtp_host) || DEFAULT_BAKERY_SETTINGS.emailConfig.smtpHost,
+    smtpPort: Math.max(1, Number.parseInt(config.smtpPort ?? config.smtp_port ?? DEFAULT_BAKERY_SETTINGS.emailConfig.smtpPort, 10) || DEFAULT_BAKERY_SETTINGS.emailConfig.smtpPort),
+    smtpSecure: config.smtpSecure === undefined && config.smtp_secure === undefined
+      ? !!DEFAULT_BAKERY_SETTINGS.emailConfig.smtpSecure
+      : normalizeBakerySecureClient(config.smtpSecure ?? config.smtp_secure),
+    smtpUser: clean(config.smtpUser || config.smtp_user).toLowerCase(),
+    smtpPassword: String(config.smtpPassword ?? config.smtp_password ?? ""),
+    fromEmail: clean(config.fromEmail || config.from_email).toLowerCase(),
+    fromName: clean(config.fromName || config.from_name) || DEFAULT_BAKERY_SETTINGS.emailConfig.fromName,
+  };
+}
+
 function normalizeBakerySettingsClient(settings = {}) {
   return {
     selectedBase: normalizeBakeryBaseClient(settings.selectedBase || settings.selected_base),
     hostelCapacity: Math.max(1, Number.parseInt(settings.hostelCapacity ?? settings.hostel_capacity ?? 83, 10) || 83),
     emailRecipients: parseEmailList(settings.emailRecipients || settings.email_recipients),
+    emailConfig: normalizeBakeryEmailConfigClient(settings.emailConfig || settings.email_config),
     breadTable: (Array.isArray(settings.breadTable) ? settings.breadTable : []).map(sanitizeBakeryBreadTableRowClient).sort((a, b) => a.guests - b.guests),
     breadTypes: (Array.isArray(settings.breadTypes) ? settings.breadTypes : []).map(sanitizeBakeryBreadTypeClient).filter((item) => item.name),
   };
@@ -8284,7 +8337,7 @@ function renderBakery() {
 }
 
 function setBakerySettingsTab(tab) {
-  state.bakerySettingsTab = tab === "types" ? "types" : "table";
+  state.bakerySettingsTab = tab === "types" || tab === "email" ? tab : "table";
   if (els.bakerySettingsTableTab) {
     els.bakerySettingsTableTab.classList.toggle("active-tab", state.bakerySettingsTab === "table");
     els.bakerySettingsTableTab.classList.toggle("ghost", state.bakerySettingsTab !== "table");
@@ -8293,8 +8346,26 @@ function setBakerySettingsTab(tab) {
     els.bakerySettingsTypesTab.classList.toggle("active-tab", state.bakerySettingsTab === "types");
     els.bakerySettingsTypesTab.classList.toggle("ghost", state.bakerySettingsTab !== "types");
   }
+  if (els.bakerySettingsEmailTab) {
+    els.bakerySettingsEmailTab.classList.toggle("active-tab", state.bakerySettingsTab === "email");
+    els.bakerySettingsEmailTab.classList.toggle("ghost", state.bakerySettingsTab !== "email");
+  }
   if (els.bakerySettingsTablePanel) els.bakerySettingsTablePanel.hidden = state.bakerySettingsTab !== "table";
   if (els.bakerySettingsTypesPanel) els.bakerySettingsTypesPanel.hidden = state.bakerySettingsTab !== "types";
+  if (els.bakerySettingsEmailPanel) els.bakerySettingsEmailPanel.hidden = state.bakerySettingsTab !== "email";
+}
+
+function renderBakeryEmailConfigPanel() {
+  const emailConfig = state.bakerySettings?.emailConfig || normalizeBakeryEmailConfigClient();
+  if (els.bakeryEmailProvider) els.bakeryEmailProvider.value = emailConfig.provider;
+  if (els.bakeryEmailSmtpHost) els.bakeryEmailSmtpHost.value = emailConfig.smtpHost;
+  if (els.bakeryEmailSmtpPort) els.bakeryEmailSmtpPort.value = emailConfig.smtpPort;
+  if (els.bakeryEmailSmtpSecure) els.bakeryEmailSmtpSecure.checked = !!emailConfig.smtpSecure;
+  if (els.bakeryEmailSmtpUser) els.bakeryEmailSmtpUser.value = emailConfig.smtpUser;
+  if (els.bakeryEmailSmtpPassword) els.bakeryEmailSmtpPassword.value = emailConfig.smtpPassword;
+  if (els.bakeryEmailFromEmail) els.bakeryEmailFromEmail.value = emailConfig.fromEmail;
+  if (els.bakeryEmailFromName) els.bakeryEmailFromName.value = emailConfig.fromName;
+  if (els.bakeryEmailSmtpFields) els.bakeryEmailSmtpFields.hidden = emailConfig.provider !== "smtp";
 }
 
 function renderBakerySettings() {
@@ -8323,6 +8394,7 @@ function renderBakerySettings() {
       els.bakeryBreadTypesBody.appendChild(tr);
     });
   }
+  renderBakeryEmailConfigPanel();
   updateBakeryBreadTypesTotal();
   setBakerySettingsTab(state.bakerySettingsTab);
 }
@@ -8351,6 +8423,17 @@ function onBakerySettingsInput(event) {
   if (event.target === els.bakerySelectedBase) state.bakerySettings.selectedBase = normalizeBakeryBaseClient(event.target.value);
   if (event.target === els.bakeryHostelCapacity) state.bakerySettings.hostelCapacity = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
   if (event.target === els.bakerySettingsEmailRecipients) state.bakerySettings.emailRecipients = parseEmailList(event.target.value);
+  if (event.target === els.bakeryEmailProvider) state.bakerySettings.emailConfig.provider = normalizeBakeryEmailProviderClient(event.target.value);
+  if (event.target === els.bakeryEmailSmtpHost) state.bakerySettings.emailConfig.smtpHost = clean(event.target.value);
+  if (event.target === els.bakeryEmailSmtpPort) state.bakerySettings.emailConfig.smtpPort = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+  if (event.target === els.bakeryEmailSmtpSecure) state.bakerySettings.emailConfig.smtpSecure = !!event.target.checked;
+  if (event.target === els.bakeryEmailSmtpUser) state.bakerySettings.emailConfig.smtpUser = clean(event.target.value).toLowerCase();
+  if (event.target === els.bakeryEmailSmtpPassword) state.bakerySettings.emailConfig.smtpPassword = String(event.target.value || "");
+  if (event.target === els.bakeryEmailFromEmail) state.bakerySettings.emailConfig.fromEmail = clean(event.target.value).toLowerCase();
+  if (event.target === els.bakeryEmailFromName) state.bakerySettings.emailConfig.fromName = clean(event.target.value);
+  if ([els.bakeryEmailProvider, els.bakeryEmailSmtpHost, els.bakeryEmailSmtpPort, els.bakeryEmailSmtpSecure, els.bakeryEmailSmtpUser, els.bakeryEmailSmtpPassword, els.bakeryEmailFromEmail, els.bakeryEmailFromName].includes(event.target)) {
+    renderBakeryEmailConfigPanel();
+  }
   updateBakeryBreadTypesTotal();
   if (state.bakeryOpenOrder) {
     refreshBakeryOpenOrderDerivedState();
@@ -8379,6 +8462,16 @@ async function saveBakerySettings() {
     selectedBase: state.bakerySettings.selectedBase,
     hostelCapacity: state.bakerySettings.hostelCapacity,
     emailRecipients: parseEmailList(els.bakerySettingsEmailRecipients?.value),
+    emailConfig: {
+      provider: normalizeBakeryEmailProviderClient(els.bakeryEmailProvider?.value || state.bakerySettings.emailConfig?.provider),
+      smtpHost: clean(els.bakeryEmailSmtpHost?.value || state.bakerySettings.emailConfig?.smtpHost),
+      smtpPort: Math.max(1, Number.parseInt(els.bakeryEmailSmtpPort?.value || state.bakerySettings.emailConfig?.smtpPort || 465, 10) || 465),
+      smtpSecure: !!(els.bakeryEmailSmtpSecure?.checked ?? state.bakerySettings.emailConfig?.smtpSecure),
+      smtpUser: clean(els.bakeryEmailSmtpUser?.value || state.bakerySettings.emailConfig?.smtpUser).toLowerCase(),
+      smtpPassword: String(els.bakeryEmailSmtpPassword?.value || state.bakerySettings.emailConfig?.smtpPassword || ""),
+      fromEmail: clean(els.bakeryEmailFromEmail?.value || state.bakerySettings.emailConfig?.fromEmail).toLowerCase(),
+      fromName: clean(els.bakeryEmailFromName?.value || state.bakerySettings.emailConfig?.fromName) || "Lisboa Central Hostel",
+    },
     breadTable: (state.bakerySettings.breadTable || []).map((row) => ({
       guests: row.guests,
       baseBaixa: row.baseBaixa,

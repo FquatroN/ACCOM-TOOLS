@@ -56,9 +56,65 @@ const DEFAULT_BAKERY_SETTINGS = {
   selectedBase: normalizeBase(bakeryDefaults.selectedBase),
   hostelCapacity: Math.max(1, Number(bakeryDefaults.hostelCapacity) || 83),
   emailRecipients: [],
+  emailConfig: {
+    provider: "resend",
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 465,
+    smtpSecure: true,
+    smtpUser: "",
+    smtpPassword: "",
+    fromEmail: "",
+    fromName: "Lisboa Central Hostel",
+  },
   breadTable: (Array.isArray(bakeryDefaults.breadTable) ? bakeryDefaults.breadTable : []).map(sanitizeBreadTableRow),
   breadTypes: (Array.isArray(bakeryDefaults.breadTypes) ? bakeryDefaults.breadTypes : []).map(sanitizeBreadType).filter((item) => item.name),
 };
+
+function sanitizeBakeryEmailConfig(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const provider = cleanText(source.provider).toLowerCase() === "smtp" ? "smtp" : "resend";
+  const smtpHost = cleanText(source.smtpHost || source.smtp_host) || DEFAULT_BAKERY_SETTINGS.emailConfig.smtpHost;
+  const smtpPort = Math.max(1, Number.parseInt(source.smtpPort ?? source.smtp_port ?? DEFAULT_BAKERY_SETTINGS.emailConfig.smtpPort, 10) || DEFAULT_BAKERY_SETTINGS.emailConfig.smtpPort);
+  const smtpSecure = source.smtpSecure === undefined && source.smtp_secure === undefined
+    ? !!DEFAULT_BAKERY_SETTINGS.emailConfig.smtpSecure
+    : parseBool(source.smtpSecure ?? source.smtp_secure);
+  const smtpUser = cleanText(source.smtpUser || source.smtp_user).toLowerCase();
+  const smtpPassword = String(source.smtpPassword ?? source.smtp_password ?? "");
+  const fromEmail = cleanText(source.fromEmail || source.from_email).toLowerCase();
+  const fromName = cleanText(source.fromName || source.from_name) || DEFAULT_BAKERY_SETTINGS.emailConfig.fromName;
+  if (provider === "smtp") {
+    if (!smtpHost) {
+      const error = new Error("SMTP host is required when Bakery email provider is SMTP.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!smtpUser || !isValidEmail(smtpUser)) {
+      const error = new Error("SMTP user must be a valid email when Bakery email provider is SMTP.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!smtpPassword) {
+      const error = new Error("SMTP password is required when Bakery email provider is SMTP.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!fromEmail || !isValidEmail(fromEmail)) {
+      const error = new Error("From email must be a valid email when Bakery email provider is SMTP.");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  return {
+    provider,
+    smtpHost,
+    smtpPort,
+    smtpSecure,
+    smtpUser,
+    smtpPassword,
+    fromEmail,
+    fromName,
+  };
+}
 
 function sanitizeBakerySettings(input = {}) {
   const source = input && typeof input === "object" ? input : {};
@@ -78,6 +134,7 @@ function sanitizeBakerySettings(input = {}) {
     selectedBase: normalizeBase(source.selectedBase || source.selected_base),
     hostelCapacity: Math.max(1, Number.parseInt(source.hostelCapacity ?? source.hostel_capacity ?? DEFAULT_BAKERY_SETTINGS.hostelCapacity, 10) || DEFAULT_BAKERY_SETTINGS.hostelCapacity),
     emailRecipients: normalizeRecipients(source.emailRecipients || source.email_recipients),
+    emailConfig: sanitizeBakeryEmailConfig(source.emailConfig || source.email_config),
     breadTable,
     breadTypes,
   };
