@@ -17,8 +17,8 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services", "shopping"];
-const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "shopping", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services", "shopping", "bakery"];
+const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "shopping", "bakery", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -306,6 +306,17 @@ const DEFAULT_SHOPPING_SETTINGS = {
   items: [],
 };
 
+const DEFAULT_BAKERY_SETTINGS = {
+  selectedBase: "base-media",
+  hostelCapacity: 83,
+  emailRecipients: [],
+  breadTable: [],
+  breadTypes: [
+    { id: "bread-type-1", name: "Carcaças", percentage: 42 },
+    { id: "bread-type-2", name: "Pão de Centeio 35gr", percentage: 58 },
+  ],
+};
+
 const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
   { label: "App: Communications", kind: "app", key: "communications" },
@@ -314,11 +325,13 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Groups", kind: "app", key: "groups" },
   { label: "App: Services", kind: "app", key: "services" },
   { label: "App: Shopping", kind: "app", key: "shopping" },
+  { label: "App: Bakery", kind: "app", key: "bakery" },
   { label: "Settings: Communications", kind: "settings", key: "communications" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
   { label: "Settings: Groups", kind: "settings", key: "groups" },
   { label: "Settings: Services", kind: "settings", key: "services" },
   { label: "Settings: Shopping", kind: "settings", key: "shopping" },
+  { label: "Settings: Bakery", kind: "settings", key: "bakery" },
   { label: "Settings: Admin Users", kind: "settings", key: "admin-users" },
   { label: "Action", kind: "action", key: "action" },
 ];
@@ -549,6 +562,15 @@ const state = {
   shoppingSubmitNotes: "",
   shoppingSubmitPromptOpen: false,
   shoppingSelectedHistoryId: "",
+  bakeryOpenOrder: null,
+  bakeryHistory: [],
+  bakeryLoaded: false,
+  bakerySettings: clone(DEFAULT_BAKERY_SETTINGS),
+  bakerySettingsLoaded: false,
+  bakeryTab: "current",
+  bakerySubmitName: "",
+  bakerySelectedHistoryId: "",
+  bakerySettingsTab: "table",
   serviceProviders: [],
   serviceFilters: { showActive: true, createdFrom: "", createdTo: "", dateFrom: "", dateTo: "", name: "" },
   serviceDraft: emptyServiceDraft(),
@@ -625,6 +647,7 @@ const els = {
   navGroups: document.getElementById("nav-groups"),
   navServices: document.getElementById("nav-services"),
   navShopping: document.getElementById("nav-shopping"),
+  navBakery: document.getElementById("nav-bakery"),
   openSettings: document.getElementById("open-settings"),
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
@@ -632,18 +655,21 @@ const els = {
   viewReviews: document.getElementById("view-reviews"),
   viewServices: document.getElementById("view-services"),
   viewShopping: document.getElementById("view-shopping"),
+  viewBakery: document.getElementById("view-bakery"),
   viewSettings: document.getElementById("view-settings"),
   settingsMenuCommunications: document.getElementById("settings-menu-communications"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
   settingsMenuGroups: document.getElementById("settings-menu-groups"),
   settingsMenuServices: document.getElementById("settings-menu-services"),
   settingsMenuShopping: document.getElementById("settings-menu-shopping"),
+  settingsMenuBakery: document.getElementById("settings-menu-bakery"),
   settingsMenuAdminUsers: document.getElementById("settings-menu-admin-users"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
   settingsViewGroups: document.getElementById("settings-view-groups"),
   settingsViewServices: document.getElementById("settings-view-services"),
   settingsViewShopping: document.getElementById("settings-view-shopping"),
+  settingsViewBakery: document.getElementById("settings-view-bakery"),
   settingsViewAdminUsers: document.getElementById("settings-view-admin-users"),
   settingsReviewsImportTab: document.getElementById("settings-reviews-import-tab"),
   settingsReviewsConfigTab: document.getElementById("settings-reviews-config-tab"),
@@ -654,6 +680,7 @@ const els = {
   closeSettingsGroups: document.getElementById("close-settings-groups"),
   closeSettingsServices: document.getElementById("close-settings-services"),
   closeSettingsShopping: document.getElementById("close-settings-shopping"),
+  closeSettingsBakery: document.getElementById("close-settings-bakery"),
   adminUserEmail: document.getElementById("admin-user-email"),
   adminUserPassword: document.getElementById("admin-user-password"),
   adminUserProfile: document.getElementById("admin-user-profile"),
@@ -902,6 +929,43 @@ const els = {
   shoppingAddItem: document.getElementById("shopping-add-item"),
   shoppingSettingsItemsBody: document.getElementById("shopping-settings-items-body"),
   shoppingSettingsStatus: document.getElementById("shopping-settings-status"),
+  bakeryTabCurrent: document.getElementById("bakery-tab-current"),
+  bakeryTabHistory: document.getElementById("bakery-tab-history"),
+  bakeryPanelCurrent: document.getElementById("bakery-panel-current"),
+  bakeryPanelHistory: document.getElementById("bakery-panel-history"),
+  bakeryNewOrder: document.getElementById("bakery-new-order"),
+  bakerySaveOrder: document.getElementById("bakery-save-order"),
+  bakeryOpenSummary: document.getElementById("bakery-open-summary"),
+  bakeryCurrentStatus: document.getElementById("bakery-current-status"),
+  bakeryOpenEmpty: document.getElementById("bakery-open-empty"),
+  bakeryOpenContent: document.getElementById("bakery-open-content"),
+  bakeryOpenRows: document.getElementById("bakery-open-rows"),
+  bakeryMobileCards: document.getElementById("bakery-mobile-cards"),
+  bakeryGeneratedText: document.getElementById("bakery-generated-text"),
+  bakerySubmitName: document.getElementById("bakery-submit-name"),
+  bakerySubmitStatus: document.getElementById("bakery-submit-status"),
+  bakerySubmitOrder: document.getElementById("bakery-submit-order"),
+  bakeryHistoryRows: document.getElementById("bakery-history-rows"),
+  bakeryHistoryMobileCards: document.getElementById("bakery-history-mobile-cards"),
+  bakeryHistoryCount: document.getElementById("bakery-history-count"),
+  bakeryHistoryStatus: document.getElementById("bakery-history-status"),
+  bakeryDetailModal: document.getElementById("bakery-detail-modal"),
+  bakeryDetailClose: document.getElementById("bakery-detail-close"),
+  bakeryDetailStatus: document.getElementById("bakery-detail-status"),
+  bakeryDetailBody: document.getElementById("bakery-detail-body"),
+  bakerySaveSettings: document.getElementById("bakery-save-settings"),
+  bakerySettingsTableTab: document.getElementById("bakery-settings-table-tab"),
+  bakerySettingsTypesTab: document.getElementById("bakery-settings-types-tab"),
+  bakerySettingsTablePanel: document.getElementById("bakery-settings-table-panel"),
+  bakerySettingsTypesPanel: document.getElementById("bakery-settings-types-panel"),
+  bakerySelectedBase: document.getElementById("bakery-selected-base"),
+  bakeryHostelCapacity: document.getElementById("bakery-hostel-capacity"),
+  bakerySettingsEmailRecipients: document.getElementById("bakery-settings-email-recipients"),
+  bakeryBreadTableBody: document.getElementById("bakery-bread-table-body"),
+  bakeryBreadTypesBody: document.getElementById("bakery-bread-types-body"),
+  bakeryAddBreadType: document.getElementById("bakery-add-bread-type"),
+  bakeryBreadTypesTotal: document.getElementById("bakery-bread-types-total"),
+  bakerySettingsStatus: document.getElementById("bakery-settings-status"),
   reviewsScreenList: document.getElementById("reviews-screen-list"),
   reviewsScreenResume: document.getElementById("reviews-screen-resume"),
   reviewsScreenRating: document.getElementById("reviews-screen-rating"),
@@ -984,13 +1048,15 @@ async function init() {
   else if (!canApp("communications") && !canApp("lost-found") && canApp("groups")) state.currentView = "groups";
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("shopping")) state.currentView = "shopping";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("reviews")) state.currentView = "reviews";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("bakery")) state.currentView = "bakery";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("bakery") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   if (!canSettings("communications") && canSettings("reviews")) state.settingsSection = "reviews";
   else if (!canSettings("communications") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
+  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("bakery")) state.settingsSection = "bakery";
   else if (!canSettings("communications") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
@@ -1000,6 +1066,7 @@ async function init() {
   if (canApp("communications")) loadSidebarReviewSummary({ silent: true }).catch(() => {});
   await ensureCurrentViewData();
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canApp("bakery")) loadBakeryData({ silent: true }).then(() => renderLayout()).catch(() => {});
   startAutoRefresh();
 }
 
@@ -1010,6 +1077,7 @@ function bindEvents() {
   els.navGroups.addEventListener("click", () => setView("groups"));
   els.navServices.addEventListener("click", () => setView("services"));
   els.navShopping.addEventListener("click", () => setView("shopping"));
+  els.navBakery.addEventListener("click", () => setView("bakery"));
   els.sidebarReviewSummaryCard?.addEventListener("click", async () => {
     state.reviewScreen = "resume";
     await setView("reviews");
@@ -1023,11 +1091,13 @@ function bindEvents() {
   els.closeSettingsGroups.addEventListener("click", () => setView("groups"));
   els.closeSettingsServices.addEventListener("click", () => setView("services"));
   els.closeSettingsShopping.addEventListener("click", () => setView("shopping"));
+  els.closeSettingsBakery.addEventListener("click", () => setView("bakery"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuGroups.addEventListener("click", () => setSettingsSection("groups"));
   els.settingsMenuServices.addEventListener("click", () => setSettingsSection("services"));
   els.settingsMenuShopping.addEventListener("click", () => setSettingsSection("shopping"));
+  els.settingsMenuBakery.addEventListener("click", () => setSettingsSection("bakery"));
   els.settingsMenuAdminUsers.addEventListener("click", () => setSettingsSection("admin-users"));
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
@@ -1067,6 +1137,33 @@ function bindEvents() {
   els.shoppingSubmitNotes?.addEventListener("input", () => {
     state.shoppingSubmitNotes = clean(els.shoppingSubmitNotes.value);
   });
+  els.bakeryTabCurrent?.addEventListener("click", () => setBakeryTab("current"));
+  els.bakeryTabHistory?.addEventListener("click", () => setBakeryTab("history"));
+  els.bakeryNewOrder?.addEventListener("click", createBakeryOrder);
+  els.bakerySaveOrder?.addEventListener("click", saveBakeryOrderDraft);
+  els.bakerySubmitOrder?.addEventListener("click", submitBakeryOrder);
+  els.bakeryOpenRows?.addEventListener("change", onBakeryOrderInput);
+  els.bakeryMobileCards?.addEventListener("change", onBakeryOrderInput);
+  els.bakeryHistoryRows?.addEventListener("click", onBakeryHistoryAction);
+  els.bakeryHistoryMobileCards?.addEventListener("click", onBakeryHistoryAction);
+  els.bakeryDetailClose?.addEventListener("click", closeBakeryDetailModal);
+  els.bakerySubmitName?.addEventListener("input", () => {
+    state.bakerySubmitName = clean(els.bakerySubmitName.value);
+    if (state.bakeryOpenOrder && els.bakeryGeneratedText) {
+      refreshBakeryOpenOrderDerivedState();
+      els.bakeryGeneratedText.value = state.bakeryOpenOrder.generatedText || buildBakeryGeneratedTextClient(state.bakeryOpenOrder, state.bakerySubmitName);
+    }
+  });
+  els.bakerySettingsTableTab?.addEventListener("click", () => setBakerySettingsTab("table"));
+  els.bakerySettingsTypesTab?.addEventListener("click", () => setBakerySettingsTab("types"));
+  els.bakerySaveSettings?.addEventListener("click", saveBakerySettings);
+  els.bakerySelectedBase?.addEventListener("change", onBakerySettingsInput);
+  els.bakeryHostelCapacity?.addEventListener("input", onBakerySettingsInput);
+  els.bakerySettingsEmailRecipients?.addEventListener("input", onBakerySettingsInput);
+  els.bakeryBreadTableBody?.addEventListener("input", onBakerySettingsInput);
+  els.bakeryBreadTypesBody?.addEventListener("input", onBakerySettingsInput);
+  els.bakeryBreadTypesBody?.addEventListener("click", onBakerySettingsAction);
+  els.bakeryAddBreadType?.addEventListener("click", addBakeryBreadType);
   els.settingsReviewsImportTab.addEventListener("click", () => setReviewSettingsScreen("import"));
   els.settingsReviewsConfigTab.addEventListener("click", () => setReviewSettingsScreen("config"));
   els.rows.addEventListener("click", onRowAction);
@@ -1363,6 +1460,9 @@ function applyInitialRouteFromUrl() {
     if (view === "shopping" && canApp("shopping")) {
       state.currentView = "shopping";
     }
+    if (view === "bakery" && canApp("bakery")) {
+      state.currentView = "bakery";
+    }
     if (serviceId && canApp("services")) {
       state.pendingServiceDeepLinkId = serviceId;
       state.currentView = "services";
@@ -1393,6 +1493,7 @@ async function setView(view) {
   if (view === "groups" && !canApp("groups")) return showToast("No groups access.", "error");
   if (view === "services" && !canApp("services")) return showToast("No services access.", "error");
   if (view === "shopping" && !canApp("shopping")) return showToast("No shopping access.", "error");
+  if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   setMobileNavOpen(false);
   state.currentView = view;
   if (view === "settings") {
@@ -1401,6 +1502,7 @@ async function setView(view) {
     else if (canSettings("groups")) state.settingsSection = "groups";
     else if (canSettings("services")) state.settingsSection = "services";
     else if (canSettings("shopping")) state.settingsSection = "shopping";
+    else if (canSettings("bakery")) state.settingsSection = "bakery";
     else if (canSettings("admin-users")) state.settingsSection = "admin-users";
   }
   if (view !== "services") {
@@ -1409,6 +1511,9 @@ async function setView(view) {
   }
   if (view !== "shopping" && els.shoppingDetailModal && !els.shoppingDetailModal.hidden) {
     closeShoppingDetailModal();
+  }
+  if (view !== "bakery" && els.bakeryDetailModal && !els.bakeryDetailModal.hidden) {
+    closeBakeryDetailModal();
   }
   syncAppRoute();
   renderLayout();
@@ -1450,6 +1555,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "shopping") {
     await ensureShoppingData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "bakery") {
+    await ensureBakeryData();
     renderSettingsSection();
     render();
     return;
@@ -1521,6 +1632,14 @@ async function refreshCurrentViewData(reason = "timer") {
       renderShopping();
       renderLayout();
       state.lastAutoRefreshAt = now;
+      return;
+    }
+    if (state.currentView === "bakery" && canApp("bakery")) {
+      await loadBakeryData({ silent: true });
+      state.bakeryLoaded = true;
+      renderBakery();
+      renderLayout();
+      state.lastAutoRefreshAt = now;
     }
   } finally {
     state.autoRefreshRunning = false;
@@ -1534,6 +1653,7 @@ function shouldSkipAutoRefresh() {
   if (state.currentView === "groups" && els.groupEditorModal && !els.groupEditorModal.hidden) return true;
   if (state.currentView === "services" && els.serviceEditorModal && !els.serviceEditorModal.hidden) return true;
   if (state.currentView === "shopping" && state.shoppingOpenOrder) return true;
+  if (state.currentView === "bakery" && state.bakeryOpenOrder) return true;
   if (state.reviewQa.loading) return true;
   return false;
 }
@@ -1646,6 +1766,20 @@ async function ensureShoppingData() {
   renderShoppingSettings();
 }
 
+async function ensureBakeryData() {
+  if (!canApp("bakery") && !canSettings("bakery")) return;
+  if (canSettings("bakery") && !state.bakerySettingsLoaded) {
+    await loadBakerySettings();
+    state.bakerySettingsLoaded = true;
+  }
+  if (canApp("bakery") && !state.bakeryLoaded) {
+    await loadBakeryData();
+    state.bakeryLoaded = true;
+  }
+  renderBakery();
+  renderBakerySettings();
+}
+
 async function ensureSettingsSectionData() {
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
@@ -1667,6 +1801,10 @@ async function ensureSettingsSectionData() {
     await ensureShoppingData();
     return;
   }
+  if (state.settingsSection === "bakery") {
+    await ensureBakeryData();
+    return;
+  }
   if (state.settingsSection === "admin-users") await ensureAdminUsersData();
 }
 
@@ -1677,6 +1815,7 @@ function renderLayout() {
   const groups = state.currentView === "groups";
   const services = state.currentView === "services";
   const shopping = state.currentView === "shopping";
+  const bakery = state.currentView === "bakery";
   const settingsMode = state.currentView === "settings";
   const canComm = canApp("communications");
   const canLostFound = canApp("lost-found");
@@ -1684,6 +1823,7 @@ function renderLayout() {
   const canGroups = canApp("groups");
   const canServices = canApp("services");
   const canShopping = canApp("shopping");
+  const canBakery = canApp("bakery");
   if (els.sidebarReviewSummaryCard) els.sidebarReviewSummaryCard.hidden = !canComm;
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
@@ -1693,12 +1833,14 @@ function renderLayout() {
   els.navGroups.classList.toggle("active", groups);
   els.navServices.classList.toggle("active", services);
   els.navShopping.classList.toggle("active", shopping);
+  els.navBakery.classList.toggle("active", bakery);
   els.navCommunications.hidden = !canComm;
   els.navLostFound.hidden = !canLostFound;
   els.navReviews.hidden = !canReviews;
   els.navGroups.hidden = !canGroups;
   els.navServices.hidden = !canServices;
   els.navShopping.hidden = !canShopping;
+  els.navBakery.hidden = !canBakery;
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
   els.openSettings.hidden = !state.access.settingsFeatures.length;
   els.leftNav.hidden = settingsMode;
@@ -1710,18 +1852,21 @@ function renderLayout() {
   els.viewGroups.hidden = !groups;
   els.viewServices.hidden = !services;
   els.viewShopping.hidden = !shopping;
+  els.viewBakery.hidden = !bakery;
   els.viewSettings.hidden = !settingsMode;
   els.settingsMenuCommunications.hidden = !canSettings("communications");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
   els.settingsMenuGroups.hidden = !canSettings("groups");
   els.settingsMenuServices.hidden = !canSettings("services");
   els.settingsMenuShopping.hidden = !canSettings("shopping");
+  els.settingsMenuBakery.hidden = !canSettings("bakery");
   els.settingsMenuAdminUsers.hidden = !canSettings("admin-users");
   els.settingsMenuCommunications.classList.toggle("active", state.settingsSection === "communications");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
   els.settingsMenuGroups.classList.toggle("active", state.settingsSection === "groups");
   els.settingsMenuServices.classList.toggle("active", state.settingsSection === "services");
   els.settingsMenuShopping.classList.toggle("active", state.settingsSection === "shopping");
+  els.settingsMenuBakery.classList.toggle("active", state.settingsSection === "bakery");
   els.settingsMenuAdminUsers.classList.toggle("active", state.settingsSection === "admin-users");
   renderSidebarReviewSummary();
   syncMobileNavLayout();
@@ -1733,12 +1878,15 @@ async function setSettingsSection(section) {
   if (section === "groups" && !canSettings("groups")) return;
   if (section === "services" && !canSettings("services")) return;
   if (section === "shopping" && !canSettings("shopping")) return;
+  if (section === "bakery" && !canSettings("bakery")) return;
   if (section === "admin-users" && !canSettings("admin-users")) return;
   setMobileNavOpen(false);
   state.settingsSection = section === "admin-users"
     ? "admin-users"
     : section === "shopping"
       ? "shopping"
+    : section === "bakery"
+      ? "bakery"
     : section === "services"
       ? "services"
       : section === "groups"
@@ -1775,12 +1923,14 @@ function renderSettingsSection() {
   const isGroups = state.settingsSection === "groups" && canSettings("groups");
   const isServices = state.settingsSection === "services" && canSettings("services");
   const isShopping = state.settingsSection === "shopping" && canSettings("shopping");
+  const isBakery = state.settingsSection === "bakery" && canSettings("bakery");
   const isAdmin = state.settingsSection === "admin-users" && canSettings("admin-users");
   els.settingsViewCommunications.hidden = !isComm;
   els.settingsViewReviews.hidden = !isReviews;
   els.settingsViewGroups.hidden = !isGroups;
   els.settingsViewServices.hidden = !isServices;
   els.settingsViewShopping.hidden = !isShopping;
+  els.settingsViewBakery.hidden = !isBakery;
   els.settingsViewAdminUsers.hidden = !isAdmin;
   if (isReviews) setReviewSettingsScreen(state.reviewSettingsScreen, false);
 }
@@ -6380,6 +6530,143 @@ function normalizeShoppingOrderClient(order, settingsItems = []) {
   };
 }
 
+function normalizeBakeryBaseClient(value) {
+  const raw = clean(value).toLowerCase().replace(/\s+/g, "-");
+  if (["base-baixa", "baixa", "low"].includes(raw)) return "base-baixa";
+  if (["base-alta", "alta", "high"].includes(raw)) return "base-alta";
+  return "base-media";
+}
+
+function sanitizeBakeryBreadTableRowClient(row = {}, index = 0) {
+  return {
+    guests: Math.max(1, Number.parseInt(row.guests ?? index + 1, 10) || index + 1),
+    baseBaixa: Math.max(0, Number.parseInt(row.baseBaixa ?? row.base_baixa ?? 0, 10) || 0),
+    baseMedia: Math.max(0, Number.parseInt(row.baseMedia ?? row.base_media ?? 0, 10) || 0),
+    baseAlta: Math.max(0, Number.parseInt(row.baseAlta ?? row.base_alta ?? 0, 10) || 0),
+  };
+}
+
+function sanitizeBakeryBreadTypeClient(item = {}, index = 0) {
+  return {
+    id: clean(item.id) || `bread-type-${index + 1}`,
+    name: clean(item.name || item.type),
+    percentage: Math.max(0, Number(item.percentage || 0) || 0),
+  };
+}
+
+function normalizeBakerySettingsClient(settings = {}) {
+  return {
+    selectedBase: normalizeBakeryBaseClient(settings.selectedBase || settings.selected_base),
+    hostelCapacity: Math.max(1, Number.parseInt(settings.hostelCapacity ?? settings.hostel_capacity ?? 83, 10) || 83),
+    emailRecipients: parseEmailList(settings.emailRecipients || settings.email_recipients),
+    breadTable: (Array.isArray(settings.breadTable) ? settings.breadTable : []).map(sanitizeBakeryBreadTableRowClient).sort((a, b) => a.guests - b.guests),
+    breadTypes: (Array.isArray(settings.breadTypes) ? settings.breadTypes : []).map(sanitizeBakeryBreadTypeClient).filter((item) => item.name),
+  };
+}
+
+function bakeryLookupBreadTotalClient(settings, guests) {
+  const table = Array.isArray(settings?.breadTable) ? settings.breadTable : [];
+  const normalizedGuests = Math.max(0, Number.parseInt(guests, 10) || 0);
+  if (!table.length || normalizedGuests <= 0) return 0;
+  const found = table.find((item) => item.guests >= normalizedGuests) || table[table.length - 1];
+  if (!found) return 0;
+  if (normalizeBakeryBaseClient(settings?.selectedBase) === "base-baixa") return Number(found.baseBaixa || 0);
+  if (normalizeBakeryBaseClient(settings?.selectedBase) === "base-alta") return Number(found.baseAlta || 0);
+  return Number(found.baseMedia || 0);
+}
+
+function bakeryAllocateBreadTypesClient(total, types = []) {
+  const normalized = (Array.isArray(types) ? types : []).map((item) => ({ ...item, percentage: Number(item.percentage || 0) })).filter((item) => item.name);
+  if (!normalized.length) return [];
+  const totalBreads = Math.max(0, Number(total || 0));
+  const base = normalized.map((item) => {
+    const exact = totalBreads * (item.percentage / 100);
+    return { ...item, quantity: Math.floor(exact), remainder: exact - Math.floor(exact) };
+  });
+  let remaining = totalBreads - base.reduce((sum, item) => sum + item.quantity, 0);
+  base.sort((a, b) => b.remainder - a.remainder || b.percentage - a.percentage);
+  for (let i = 0; i < base.length && remaining > 0; i += 1, remaining -= 1) base[i].quantity += 1;
+  return normalized.map((item) => {
+    const found = base.find((entry) => entry.name === item.name);
+    return { name: item.name, percentage: item.percentage, quantity: found ? found.quantity : 0 };
+  });
+}
+
+function normalizeBakeryDayClient(day = {}, settings = state.bakerySettings) {
+  const date = clean(day.date);
+  const availableBeds = Math.max(0, Number.parseInt(day.availableBeds ?? day.available_beds ?? 0, 10) || 0);
+  const cruzCheckins = Math.max(0, Number.parseInt(day.cruzCheckins ?? day.cruz_checkins ?? 0, 10) || 0);
+  const hostelGuests = Math.max(0, Number(settings?.hostelCapacity || 0) - availableBeds);
+  const totalBreads = bakeryLookupBreadTotalClient(settings, hostelGuests);
+  return {
+    date,
+    availableBeds,
+    cruzCheckins,
+    hostelGuests,
+    totalBreads,
+    breadBreakdown: bakeryAllocateBreadTypesClient(totalBreads, settings?.breadTypes),
+    pasteisDeNata: cruzCheckins,
+  };
+}
+
+function normalizeBakeryOrderClient(order, settings = state.bakerySettings) {
+  if (!order) return null;
+  const targetDates = Array.isArray(order.targetDates || order.target_dates)
+    ? (order.targetDates || order.target_dates).map((item) => clean(item)).filter(Boolean)
+    : (Array.isArray(order.days) ? order.days : []).map((item) => clean(item?.date)).filter(Boolean);
+  const byDate = new Map((Array.isArray(order.days) ? order.days : []).map((item) => [clean(item.date), item]));
+  const days = targetDates.map((date) => normalizeBakeryDayClient(byDate.get(date) || { date }, settings));
+  return {
+    id: clean(order.id),
+    orderNumber: Number(order.orderNumber || order.order_number || 0) || 0,
+    status: clean(order.status).toLowerCase() === "submitted" ? "submitted" : "open",
+    orderDate: clean(order.orderDate || order.order_date),
+    createdAt: clean(order.createdAt || order.created_at),
+    updatedAt: clean(order.updatedAt || order.updated_at),
+    submittedAt: clean(order.submittedAt || order.submitted_at),
+    submittedByName: clean(order.submittedByName || order.submitted_by_name),
+    submittedByUserEmail: clean(order.submittedByUserEmail || order.submitted_by_user_email).toLowerCase(),
+    targetDates,
+    days,
+    generatedText: clean(order.generatedText || order.generated_text),
+  };
+}
+
+function bakeryDateLabel(value) {
+  const raw = clean(value);
+  if (!raw) return "-";
+  try {
+    return new Intl.DateTimeFormat("pt-PT", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Lisbon" }).format(new Date(`${raw}T00:00:00`));
+  } catch {
+    return raw;
+  }
+}
+
+function bakeryOrderDatesLabel(order) {
+  return (Array.isArray(order?.days) ? order.days : []).map((day) => clean(day.date)).filter(Boolean).join(", ");
+}
+
+function buildBakeryGeneratedTextClient(order, name = state.bakerySubmitName) {
+  const days = Array.isArray(order?.days) ? order.days : [];
+  const lines = [
+    `SUBJECT: Encomenda pães e bolos para dias ${bakeryOrderDatesLabel(order) || "-"}`,
+    "",
+    "Bom dia,",
+    "",
+    "Segue a encomenda de pães e bolos:",
+    "",
+  ];
+  days.forEach((day) => {
+    lines.push(bakeryDateLabel(day.date));
+    (Array.isArray(day.breadBreakdown) ? day.breadBreakdown : []).forEach((item) => lines.push(`${item.name}: ${Number(item.quantity || 0)}`));
+    lines.push(`Pastéis de nata: ${Number(day.pasteisDeNata || 0)}`);
+    lines.push("");
+  });
+  lines.push("Cumprimentos,");
+  lines.push(clean(name || order?.submittedByName) || "[Name]");
+  return lines.join("\n");
+}
+
 function uniqueSortedShoppingValues(items, field) {
   return Array.from(
     new Set(
@@ -7485,6 +7772,395 @@ async function copyShoppingOrderAsDraft(sourceId = "") {
   }
 }
 
+function setBakeryCurrentStatus(text) {
+  if (els.bakeryCurrentStatus) els.bakeryCurrentStatus.textContent = text;
+}
+
+function setBakerySubmitStatus(text) {
+  if (els.bakerySubmitStatus) els.bakerySubmitStatus.textContent = text;
+}
+
+function setBakeryHistoryStatus(text) {
+  if (els.bakeryHistoryStatus) els.bakeryHistoryStatus.textContent = text;
+}
+
+function setBakeryDetailStatus(text) {
+  if (els.bakeryDetailStatus) els.bakeryDetailStatus.textContent = text;
+}
+
+function setBakerySettingsStatus(text) {
+  if (els.bakerySettingsStatus) els.bakerySettingsStatus.textContent = text;
+}
+
+async function loadBakerySettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/bakery-settings");
+    state.bakerySettings = normalizeBakerySettingsClient(result.settings);
+    renderBakerySettings();
+    if (!silent) setBakerySettingsStatus("Bakery configuration loaded.");
+  } catch (e) {
+    state.bakerySettings = clone(DEFAULT_BAKERY_SETTINGS);
+    renderBakerySettings();
+    if (!silent) setBakerySettingsStatus(`Using default bakery settings (${e.message}).`);
+  }
+}
+
+async function loadBakeryData({ silent = false } = {}) {
+  try {
+    const result = await api("/api/bakery");
+    if (result?.settings) {
+      state.bakerySettings = normalizeBakerySettingsClient(result.settings);
+      state.bakerySettingsLoaded = true;
+    }
+    state.bakeryOpenOrder = normalizeBakeryOrderClient(result.openOrder, state.bakerySettings);
+    state.bakeryHistory = (Array.isArray(result.history) ? result.history : []).map((order) => normalizeBakeryOrderClient(order, state.bakerySettings));
+    state.bakeryLoaded = true;
+    renderBakery();
+    renderBakerySettings();
+    if (!silent) setBakeryCurrentStatus("Bakery orders loaded.");
+  } catch (e) {
+    state.bakeryOpenOrder = null;
+    state.bakeryHistory = [];
+    renderBakery();
+    if (!silent) {
+      setBakeryCurrentStatus(`Failed to load bakery orders: ${e.message}`);
+      showToast(`Failed to load bakery orders: ${e.message}`, "error");
+    }
+  }
+}
+
+function setBakeryTab(tab) {
+  state.bakeryTab = tab === "history" ? "history" : "current";
+  if (els.bakeryTabCurrent) {
+    els.bakeryTabCurrent.classList.toggle("active-tab", state.bakeryTab === "current");
+    els.bakeryTabCurrent.classList.toggle("ghost", state.bakeryTab !== "current");
+  }
+  if (els.bakeryTabHistory) {
+    els.bakeryTabHistory.classList.toggle("active-tab", state.bakeryTab === "history");
+    els.bakeryTabHistory.classList.toggle("ghost", state.bakeryTab !== "history");
+  }
+  if (els.bakeryPanelCurrent) els.bakeryPanelCurrent.hidden = state.bakeryTab !== "current";
+  if (els.bakeryPanelHistory) els.bakeryPanelHistory.hidden = state.bakeryTab !== "history";
+}
+
+function refreshBakeryOpenOrderDerivedState() {
+  if (!state.bakeryOpenOrder) return;
+  state.bakeryOpenOrder.days = (Array.isArray(state.bakeryOpenOrder.days) ? state.bakeryOpenOrder.days : []).map((day) => normalizeBakeryDayClient(day, state.bakerySettings));
+  state.bakeryOpenOrder.generatedText = buildBakeryGeneratedTextClient(state.bakeryOpenOrder, state.bakerySubmitName);
+}
+
+function renderBakeryCurrentRows(order) {
+  const rows = Array.isArray(order?.days) ? order.days : [];
+  if (els.bakeryOpenRows) {
+    els.bakeryOpenRows.innerHTML = rows.map((day, index) => `<tr>
+      <td>${escape(bakeryDateLabel(day.date))}</td>
+      <td><input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" step="1" value="${escape(String(day.availableBeds ?? ""))}" /></td>
+      <td>${escape(String(day.hostelGuests || 0))}</td>
+      <td>${escape(String(day.totalBreads || 0))}</td>
+      <td>${escape((day.breadBreakdown || []).map((item) => `${item.name}: ${item.quantity}`).join(" | "))}</td>
+      <td><input data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" step="1" value="${escape(String(day.cruzCheckins ?? ""))}" /></td>
+      <td>${escape(String(day.pasteisDeNata || 0))}</td>
+    </tr>`).join("");
+  }
+  if (els.bakeryMobileCards) {
+    els.bakeryMobileCards.innerHTML = "";
+    rows.forEach((day, index) => {
+      const card = document.createElement("article");
+      card.className = "shopping-mobile-card";
+      card.innerHTML = `<div class="shopping-mobile-row">
+        <div class="shopping-mobile-main">
+          <div class="service-mobile-request">${escape(bakeryDateLabel(day.date))}</div>
+          <div class="service-mobile-type">Hostel guests: ${escape(String(day.hostelGuests || 0))} · Breads: ${escape(String(day.totalBreads || 0))}</div>
+          <div class="shopping-mobile-supplier">${escape((day.breadBreakdown || []).map((item) => `${item.name}: ${item.quantity}`).join(" | "))}</div>
+          <div class="shopping-mobile-supplier">Pastéis de nata: ${escape(String(day.pasteisDeNata || 0))}</div>
+        </div>
+        <div class="shopping-mobile-inline-order">
+          <input data-bakery-index="${index}" data-bakery-field="availableBeds" type="number" min="0" step="1" value="${escape(String(day.availableBeds ?? ""))}" placeholder="Beds" />
+          <input class="shopping-mobile-inline-qty" data-bakery-index="${index}" data-bakery-field="cruzCheckins" type="number" min="0" step="1" value="${escape(String(day.cruzCheckins ?? ""))}" placeholder="Cruz" />
+        </div>
+      </div>`;
+      els.bakeryMobileCards.appendChild(card);
+    });
+  }
+}
+
+function renderBakeryHistoryRows() {
+  const rows = Array.isArray(state.bakeryHistory) ? state.bakeryHistory : [];
+  if (els.bakeryHistoryCount) els.bakeryHistoryCount.textContent = `${rows.length} order${rows.length === 1 ? "" : "s"}`;
+  if (els.bakeryHistoryRows) {
+    els.bakeryHistoryRows.innerHTML = rows.map((order) => `<tr class="clickable-row" data-bakery-history-id="${escape(order.id)}">
+      <td>${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}</td>
+      <td>${escape(order.submittedByName || "-")}</td>
+      <td>${escape(String((order.days || []).length))}</td>
+    </tr>`).join("");
+  }
+  if (els.bakeryHistoryMobileCards) {
+    els.bakeryHistoryMobileCards.innerHTML = rows.map((order) => `<article class="shopping-history-card clickable-row" data-bakery-history-id="${escape(order.id)}">
+      <div class="service-mobile-request">${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}</div>
+      <div class="service-mobile-type">${escape(order.submittedByName || "-")}</div>
+      <div class="shopping-mobile-supplier">${escape(String((order.days || []).length))} days</div>
+    </article>`).join("");
+  }
+}
+
+function renderBakeryDetail(order) {
+  if (!els.bakeryDetailBody) return;
+  if (!order) {
+    els.bakeryDetailBody.className = "review-detail empty";
+    els.bakeryDetailBody.textContent = "Select an order to see the detail.";
+    return;
+  }
+  els.bakeryDetailBody.className = "review-detail";
+  const rows = (Array.isArray(order.days) ? order.days : []).map((day) => `<tr>
+    <td>${escape(bakeryDateLabel(day.date))}</td>
+    <td>${escape(String(day.availableBeds || 0))}</td>
+    <td>${escape(String(day.hostelGuests || 0))}</td>
+    <td>${escape(String(day.totalBreads || 0))}</td>
+    <td>${escape((day.breadBreakdown || []).map((item) => `${item.name}: ${item.quantity}`).join(" | "))}</td>
+    <td>${escape(String(day.cruzCheckins || 0))}</td>
+    <td>${escape(String(day.pasteisDeNata || 0))}</td>
+  </tr>`).join("");
+  els.bakeryDetailBody.innerHTML = `<p><strong>Order #${escape(String(order.orderNumber || ""))}</strong><br>${escape(formatDateTimeShort(order.submittedAt || order.updatedAt || order.createdAt))}<br>${escape(order.submittedByName || "-")}</p>
+    <div class="table-wrap shopping-history-detail-wrap"><table class="shopping-history-table"><thead><tr><th>Date</th><th>Available Beds</th><th>Hostel Guests</th><th>Total Breads</th><th>Bread Breakdown</th><th>Cruz</th><th>Pastéis</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <label class="settings-email-recipients"><span>Generated text</span><textarea rows="14" readonly>${escape(order.generatedText || buildBakeryGeneratedTextClient(order, order.submittedByName))}</textarea></label>`;
+}
+
+function openBakeryDetailModal(orderId) {
+  state.bakerySelectedHistoryId = clean(orderId);
+  const order = (state.bakeryHistory || []).find((item) => item.id === state.bakerySelectedHistoryId) || null;
+  renderBakeryDetail(order);
+  if (els.bakeryDetailModal) {
+    els.bakeryDetailModal.hidden = false;
+    document.body.classList.add("modal-open");
+  }
+}
+
+function closeBakeryDetailModal() {
+  if (els.bakeryDetailModal) els.bakeryDetailModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function renderBakery() {
+  if (!canApp("bakery")) {
+    setBakeryCurrentStatus("Your profile has no access to Bakery.");
+    return;
+  }
+  setBakeryTab(state.bakeryTab);
+  const order = state.bakeryOpenOrder;
+  if (els.bakeryOpenSummary) els.bakeryOpenSummary.textContent = order ? `Open order #${order.orderNumber} · ${bakeryOrderDatesLabel(order)}` : "No open order";
+  if (els.bakeryOpenEmpty) els.bakeryOpenEmpty.hidden = !!order;
+  if (els.bakeryOpenContent) els.bakeryOpenContent.hidden = !order;
+  if (els.bakerySaveOrder) els.bakerySaveOrder.hidden = !order;
+  if (els.bakeryNewOrder) els.bakeryNewOrder.hidden = !!order;
+  if (els.bakerySubmitName) els.bakerySubmitName.value = state.bakerySubmitName;
+  if (order) {
+    refreshBakeryOpenOrderDerivedState();
+    renderBakeryCurrentRows(order);
+    if (els.bakeryGeneratedText) els.bakeryGeneratedText.value = order.generatedText || buildBakeryGeneratedTextClient(order, state.bakerySubmitName);
+  } else {
+    if (els.bakeryOpenRows) els.bakeryOpenRows.innerHTML = "";
+    if (els.bakeryMobileCards) els.bakeryMobileCards.innerHTML = "";
+    if (els.bakeryGeneratedText) els.bakeryGeneratedText.value = "";
+  }
+  renderBakeryHistoryRows();
+}
+
+function setBakerySettingsTab(tab) {
+  state.bakerySettingsTab = tab === "types" ? "types" : "table";
+  if (els.bakerySettingsTableTab) {
+    els.bakerySettingsTableTab.classList.toggle("active-tab", state.bakerySettingsTab === "table");
+    els.bakerySettingsTableTab.classList.toggle("ghost", state.bakerySettingsTab !== "table");
+  }
+  if (els.bakerySettingsTypesTab) {
+    els.bakerySettingsTypesTab.classList.toggle("active-tab", state.bakerySettingsTab === "types");
+    els.bakerySettingsTypesTab.classList.toggle("ghost", state.bakerySettingsTab !== "types");
+  }
+  if (els.bakerySettingsTablePanel) els.bakerySettingsTablePanel.hidden = state.bakerySettingsTab !== "table";
+  if (els.bakerySettingsTypesPanel) els.bakerySettingsTypesPanel.hidden = state.bakerySettingsTab !== "types";
+}
+
+function renderBakerySettings() {
+  const settings = state.bakerySettings || clone(DEFAULT_BAKERY_SETTINGS);
+  if (els.bakerySelectedBase) els.bakerySelectedBase.value = settings.selectedBase;
+  if (els.bakeryHostelCapacity) els.bakeryHostelCapacity.value = settings.hostelCapacity;
+  if (els.bakerySettingsEmailRecipients) els.bakerySettingsEmailRecipients.value = (settings.emailRecipients || []).join("\n");
+  if (els.bakeryBreadTableBody) {
+    els.bakeryBreadTableBody.innerHTML = "";
+    settings.breadTable.forEach((row, index) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${escape(String(row.guests))}</td>
+        <td><input data-bakery-table-field="baseBaixa" data-index="${index}" type="number" min="0" step="1" value="${escape(String(row.baseBaixa || 0))}" /></td>
+        <td><input data-bakery-table-field="baseMedia" data-index="${index}" type="number" min="0" step="1" value="${escape(String(row.baseMedia || 0))}" /></td>
+        <td><input data-bakery-table-field="baseAlta" data-index="${index}" type="number" min="0" step="1" value="${escape(String(row.baseAlta || 0))}" /></td>`;
+      els.bakeryBreadTableBody.appendChild(tr);
+    });
+  }
+  if (els.bakeryBreadTypesBody) {
+    els.bakeryBreadTypesBody.innerHTML = "";
+    settings.breadTypes.forEach((item, index) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td><input data-bakery-type-field="name" data-index="${index}" value="${escape(item.name)}" /></td>
+        <td><input data-bakery-type-field="percentage" data-index="${index}" type="number" min="0" max="100" step="0.01" value="${escape(String(item.percentage || 0))}" /></td>
+        <td class="row-actions"><button type="button" class="ghost" data-action="remove-bakery-type" data-index="${index}">Remove</button></td>`;
+      els.bakeryBreadTypesBody.appendChild(tr);
+    });
+  }
+  updateBakeryBreadTypesTotal();
+  setBakerySettingsTab(state.bakerySettingsTab);
+}
+
+function updateBakeryBreadTypesTotal() {
+  if (els.bakeryBreadTypesTotal) {
+    const total = ((state.bakerySettings?.breadTypes) || []).reduce((sum, item) => sum + Number(item.percentage || 0), 0);
+    els.bakeryBreadTypesTotal.textContent = `Total: ${total}%`;
+    els.bakeryBreadTypesTotal.style.color = Math.round(total * 100) === 10000 ? "" : "#b91c1c";
+  }
+}
+
+function onBakerySettingsInput(event) {
+  if (event.target.dataset.bakeryTableField) {
+    const idx = Number(event.target.dataset.index);
+    const field = clean(event.target.dataset.bakeryTableField);
+    const row = state.bakerySettings.breadTable[idx];
+    if (row && field) row[field] = Math.max(0, Number.parseInt(event.target.value, 10) || 0);
+  }
+  if (event.target.dataset.bakeryTypeField) {
+    const idx = Number(event.target.dataset.index);
+    const field = clean(event.target.dataset.bakeryTypeField);
+    const item = state.bakerySettings.breadTypes[idx];
+    if (item && field) item[field] = field === "percentage" ? Math.max(0, Number(event.target.value) || 0) : clean(event.target.value);
+  }
+  if (event.target === els.bakerySelectedBase) state.bakerySettings.selectedBase = normalizeBakeryBaseClient(event.target.value);
+  if (event.target === els.bakeryHostelCapacity) state.bakerySettings.hostelCapacity = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+  if (event.target === els.bakerySettingsEmailRecipients) state.bakerySettings.emailRecipients = parseEmailList(event.target.value);
+  updateBakeryBreadTypesTotal();
+  if (state.bakeryOpenOrder) {
+    refreshBakeryOpenOrderDerivedState();
+    renderBakery();
+  }
+}
+
+function onBakerySettingsAction(event) {
+  const button = event.target.closest("button[data-action]");
+  if (button?.dataset.action === "remove-bakery-type") {
+    const index = Number(button.dataset.index);
+    if (Number.isFinite(index) && index >= 0) {
+      state.bakerySettings.breadTypes.splice(index, 1);
+      renderBakerySettings();
+    }
+  }
+}
+
+function addBakeryBreadType() {
+  state.bakerySettings.breadTypes.push({ id: `bread-type-${Date.now()}`, name: "", percentage: 0 });
+  renderBakerySettings();
+}
+
+async function saveBakerySettings() {
+  const payload = {
+    selectedBase: state.bakerySettings.selectedBase,
+    hostelCapacity: state.bakerySettings.hostelCapacity,
+    emailRecipients: parseEmailList(els.bakerySettingsEmailRecipients?.value),
+    breadTable: (state.bakerySettings.breadTable || []).map((row) => ({
+      guests: row.guests,
+      baseBaixa: row.baseBaixa,
+      baseMedia: row.baseMedia,
+      baseAlta: row.baseAlta,
+    })),
+    breadTypes: (state.bakerySettings.breadTypes || []).map((item) => ({
+      id: clean(item.id),
+      name: clean(item.name),
+      percentage: Number(item.percentage || 0),
+    })).filter((item) => item.name),
+  };
+  try {
+    const result = await api("/api/bakery-settings", { method: "PUT", body: { settings: payload } });
+    state.bakerySettings = normalizeBakerySettingsClient(result.settings);
+    state.bakerySettingsLoaded = true;
+    if (state.bakeryOpenOrder) refreshBakeryOpenOrderDerivedState();
+    renderBakerySettings();
+    renderBakery();
+    setBakerySettingsStatus("Bakery configuration saved.");
+    showToast("Bakery configuration saved.", "success");
+  } catch (e) {
+    setBakerySettingsStatus(`Save failed: ${e.message}`);
+    showToast(`Save failed: ${e.message}`, "error");
+  }
+}
+
+async function createBakeryOrder() {
+  try {
+    const result = await api("/api/bakery", { method: "POST", body: {} });
+    state.bakeryOpenOrder = normalizeBakeryOrderClient(result.order, state.bakerySettings);
+    state.bakerySubmitName = "";
+    state.bakeryLoaded = true;
+    setBakeryTab("current");
+    renderBakery();
+    setBakeryCurrentStatus("Bakery order created.");
+    showToast("Bakery order created.", "success");
+  } catch (e) {
+    setBakeryCurrentStatus(`Create failed: ${e.message}`);
+    showToast(`Create failed: ${e.message}`, "error");
+  }
+}
+
+async function saveBakeryOrderDraft() {
+  if (!state.bakeryOpenOrder?.id) return;
+  try {
+    const result = await api(`/api/bakery?id=${encodeURIComponent(state.bakeryOpenOrder.id)}`, {
+      method: "PUT",
+      body: { action: "save", days: state.bakeryOpenOrder.days },
+    });
+    state.bakeryOpenOrder = normalizeBakeryOrderClient(result.order, state.bakerySettings);
+    renderBakery();
+    setBakeryCurrentStatus("Bakery draft saved.");
+    showToast("Bakery draft saved.", "success");
+  } catch (e) {
+    setBakeryCurrentStatus(`Save failed: ${e.message}`);
+    showToast(`Save failed: ${e.message}`, "error");
+  }
+}
+
+async function submitBakeryOrder() {
+  if (!state.bakeryOpenOrder?.id) return;
+  try {
+    const result = await api(`/api/bakery?id=${encodeURIComponent(state.bakeryOpenOrder.id)}`, {
+      method: "PUT",
+      body: { action: "submit", submittedByName: clean(state.bakerySubmitName || els.bakerySubmitName?.value), days: state.bakeryOpenOrder.days },
+    });
+    const emailError = clean(result.emailResult?.error);
+    state.bakeryOpenOrder = null;
+    state.bakerySubmitName = "";
+    await loadBakeryData({ silent: true });
+    state.bakeryLoaded = true;
+    setBakeryTab("history");
+    renderBakery();
+    setBakerySubmitStatus(emailError ? `Order submitted, but email failed: ${emailError}` : "Bakery order submitted.");
+    showToast(emailError ? `Order submitted, but email failed: ${emailError}` : "Bakery order submitted.", emailError ? "error" : "success");
+  } catch (e) {
+    setBakerySubmitStatus(`Submit failed: ${e.message}`);
+    showToast(`Submit failed: ${e.message}`, "error");
+  }
+}
+
+function onBakeryOrderInput(event) {
+  const index = Number(event.target.dataset.bakeryIndex);
+  const field = clean(event.target.dataset.bakeryField);
+  if (!state.bakeryOpenOrder || !Number.isFinite(index) || index < 0 || !field) return;
+  const day = state.bakeryOpenOrder.days[index];
+  if (!day) return;
+  if (field === "availableBeds") day.availableBeds = Math.max(0, Number.parseInt(event.target.value, 10) || 0);
+  if (field === "cruzCheckins") day.cruzCheckins = Math.max(0, Number.parseInt(event.target.value, 10) || 0);
+  refreshBakeryOpenOrderDerivedState();
+  renderBakery();
+}
+
+function onBakeryHistoryAction(event) {
+  const row = event.target.closest("[data-bakery-history-id]");
+  if (!row) return;
+  openBakeryDetailModal(clean(row.dataset.bakeryHistoryId));
+}
+
 function render() {
   if (state.currentView === "lost-found") {
     renderLostFound();
@@ -7504,6 +8180,10 @@ function render() {
   }
   if (state.currentView === "shopping") {
     renderShopping();
+    return;
+  }
+  if (state.currentView === "bakery") {
+    renderBakery();
     return;
   }
   if (!canApp("communications")) {

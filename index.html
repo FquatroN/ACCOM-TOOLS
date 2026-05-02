@@ -32,6 +32,7 @@
           <button id="nav-groups" type="button" class="nav-link">Groups</button>
           <button id="nav-services" type="button" class="nav-link">Services</button>
           <button id="nav-shopping" type="button" class="nav-link">Shopping</button>
+          <button id="nav-bakery" type="button" class="nav-link">Bakery order</button>
           <button id="nav-reviews" type="button" class="nav-link">Reviews</button>
         </aside>
         <section id="sidebar-review-summary-card" class="sidebar-summary-card" hidden>
@@ -1031,6 +1032,106 @@
           </section>
         </section>
 
+        <section id="view-bakery" class="view" hidden>
+          <section class="feature-title">
+            <h2>Bakery Order</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Bakery Orders</h2>
+              <div class="actions bakery-tabs">
+                <button id="bakery-tab-current" type="button" class="active-tab">Current Order</button>
+                <button id="bakery-tab-history" type="button" class="ghost">Order History</button>
+              </div>
+            </div>
+
+            <section id="bakery-panel-current">
+              <div class="bar">
+                <h3>Current Order</h3>
+                <div class="actions">
+                  <button id="bakery-new-order" type="button" class="ghost">New Order</button>
+                  <button id="bakery-save-order" type="button" class="ghost">Save Draft</button>
+                  <p id="bakery-open-summary">No open order</p>
+                </div>
+              </div>
+              <p id="bakery-current-status" class="auth-status"></p>
+              <div id="bakery-open-empty" class="review-detail empty">No open bakery order. Start a new order to prepare the next bakery email.</div>
+              <div id="bakery-open-content" hidden>
+                <div id="bakery-mobile-cards" class="shopping-mobile-cards"></div>
+                <div class="table-wrap shopping-table-wrap">
+                  <table class="shopping-table bakery-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Available Beds (Hostel)</th>
+                        <th>Hostel Guests</th>
+                        <th>Total Breads</th>
+                        <th>Bread Breakdown</th>
+                        <th>Check-ins (Cruz)</th>
+                        <th>Pastéis de nata</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bakery-open-rows"></tbody>
+                  </table>
+                </div>
+                <section class="shopping-submit-block">
+                  <label class="settings-email-recipients">
+                    Email text
+                    <textarea id="bakery-generated-text" rows="14" readonly></textarea>
+                  </label>
+                  <div class="grid settings-grid">
+                    <label>
+                      Name *
+                      <input id="bakery-submit-name" type="text" placeholder="Who is submitting this order?" />
+                    </label>
+                  </div>
+                  <div class="actions">
+                    <p id="bakery-submit-status" class="auth-status"></p>
+                    <button id="bakery-submit-order" type="button">Submit Order</button>
+                  </div>
+                </section>
+              </div>
+            </section>
+
+            <section id="bakery-panel-history" hidden>
+              <div class="bar">
+                <h3>Order History</h3>
+                <div class="actions">
+                  <p id="bakery-history-count">0 orders</p>
+                </div>
+              </div>
+              <div id="bakery-history-mobile-cards" class="shopping-history-mobile-cards"></div>
+              <div class="table-wrap shopping-history-table-wrap">
+                <table class="shopping-history-table">
+                  <thead>
+                    <tr>
+                      <th>Order Date</th>
+                      <th>Name</th>
+                      <th>Days</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bakery-history-rows"></tbody>
+                </table>
+              </div>
+              <p id="bakery-history-status" class="auth-status"></p>
+            </section>
+          </section>
+
+          <section id="bakery-detail-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card shopping-modal-card">
+              <div class="bar">
+                <h2>Bakery Order Detail</h2>
+                <div class="actions">
+                  <button id="bakery-detail-close" type="button" class="ghost">Close</button>
+                </div>
+              </div>
+              <div id="bakery-detail-status" class="auth-status"></div>
+              <div id="bakery-detail-body" class="review-detail empty">Select an order to see the detail.</div>
+            </section>
+          </section>
+        </section>
+
         <section id="view-settings" class="view" hidden>
           <section class="card settings-shell">
             <aside class="settings-nav">
@@ -1046,6 +1147,9 @@
               </button>
               <button id="settings-menu-shopping" type="button" class="nav-link">
                 Shopping
+              </button>
+              <button id="settings-menu-bakery" type="button" class="nav-link">
+                Bakery order
               </button>
               <button id="settings-menu-reviews" type="button" class="nav-link">
                 Reviews
@@ -1352,6 +1456,71 @@
                     </table>
                   </div>
                   <p id="shopping-settings-status" class="auth-status"></p>
+                </section>
+              </div>
+
+              <div id="settings-view-bakery" hidden>
+                <div class="actions">
+                  <button id="close-settings-bakery" type="button" class="ghost">Back To App</button>
+                  <button id="bakery-settings-table-tab" type="button" class="active-tab">Bread table</button>
+                  <button id="bakery-settings-types-tab" type="button" class="ghost">Bread types</button>
+                </div>
+                <section id="bakery-settings-table-panel" class="settings-block">
+                  <div class="bar">
+                    <h3>Bakery Configuration</h3>
+                    <button id="bakery-save-settings" type="button" class="ghost">Save Configuration</button>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Selected base
+                      <select id="bakery-selected-base">
+                        <option value="base-baixa">Base baixa</option>
+                        <option value="base-media">Base media</option>
+                        <option value="base-alta">Base alta</option>
+                      </select>
+                    </label>
+                    <label>
+                      Hostel capacity
+                      <input id="bakery-hostel-capacity" type="number" min="1" step="1" />
+                    </label>
+                    <label class="settings-email-recipients">
+                      Bakery order emails
+                      <textarea id="bakery-settings-email-recipients" rows="3" placeholder="email1@example.com, email2@example.com"></textarea>
+                    </label>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="settings-table compact-table">
+                      <thead>
+                        <tr>
+                          <th>Guests</th>
+                          <th>Base baixa</th>
+                          <th>Base media</th>
+                          <th>Base alta</th>
+                        </tr>
+                      </thead>
+                      <tbody id="bakery-bread-table-body"></tbody>
+                    </table>
+                  </div>
+                  <p id="bakery-settings-status" class="auth-status"></p>
+                </section>
+                <section id="bakery-settings-types-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Bread Types</h3>
+                    <button id="bakery-add-bread-type" type="button" class="ghost">Add Type</button>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="settings-table compact-table">
+                      <thead>
+                        <tr>
+                          <th>Bread type</th>
+                          <th>Allocation %</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="bakery-bread-types-body"></tbody>
+                    </table>
+                  </div>
+                  <p id="bakery-bread-types-total" class="auth-status">Total: 0%</p>
                 </section>
               </div>
 
