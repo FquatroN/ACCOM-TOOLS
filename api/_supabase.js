@@ -413,6 +413,25 @@ function mapProfileRow(row) {
   };
 }
 
+function isAdministratorProfileName(value) {
+  return cleanText(value).toLowerCase() === "administrator";
+}
+
+function expandAdministratorProfile(profile) {
+  const mapped = {
+    id: cleanText(profile?.id),
+    name: cleanText(profile?.name),
+    appFeatures: normalizeFeatureList(profile?.appFeatures, APP_FEATURES),
+    settingsFeatures: normalizeFeatureList(profile?.settingsFeatures, SETTINGS_FEATURES),
+  };
+  if (!isAdministratorProfileName(mapped.name)) return mapped;
+  return {
+    ...mapped,
+    appFeatures: [...APP_FEATURES],
+    settingsFeatures: [...SETTINGS_FEATURES],
+  };
+}
+
 async function loadProfiles() {
   const rows = await restQuery("app_profiles?select=id,name,app_features,settings_features&order=name.asc", {
     method: "GET",
@@ -428,7 +447,7 @@ async function loadAccessForUser(userId) {
       { method: "GET" }
     );
     const assigned = Array.isArray(assignments) && assignments[0] ? cleanText(assignments[0].profile_id) : "";
-    const profile = profiles.find((item) => item.id === assigned) || FALLBACK_PROFILE;
+    const profile = expandAdministratorProfile(profiles.find((item) => item.id === assigned) || FALLBACK_PROFILE);
     return {
       profile,
       appFeatures: profile.appFeatures,
