@@ -1625,7 +1625,7 @@ async function ensureServicesData() {
     await loadServices();
     state.servicesLoaded = true;
   }
-  tryOpenDeepLinkedService();
+  await tryOpenDeepLinkedService();
   renderServices();
   renderServiceSettings();
 }
@@ -5833,31 +5833,45 @@ function closeServiceModal() {
   syncAppRoute();
 }
 
-function openServiceById(serviceId, { updateUrl = true } = {}) {
+async function openServiceById(serviceId, { updateUrl = true } = {}) {
   const needle = clean(serviceId);
   const service = state.services.find((item) => item.id === needle || item.requestNumber === needle);
   if (!service) return false;
-  state.serviceSelectedId = service.id;
-  state.serviceDraft = { ...clone(service), language: normalizeServiceConfirmationLanguage(service.language), priceManual: false };
-  state.pendingServiceDeepLinkId = "";
-  if (updateUrl) syncAppRoute();
-  openServiceModal();
-  return true;
+  try {
+    setServicesStatus("Loading latest service...");
+    const result = await api(`/api/services?id=${encodeURIComponent(service.id)}`);
+    const latest = result?.row ? mapServiceRow(result.row) : null;
+    if (!latest) throw new Error("Service not found.");
+    const index = state.services.findIndex((item) => item.id === latest.id);
+    if (index === -1) state.services.push(latest);
+    else state.services.splice(index, 1, latest);
+    state.serviceSelectedId = latest.id;
+    state.serviceDraft = { ...clone(latest), language: normalizeServiceConfirmationLanguage(latest.language), priceManual: false };
+    state.pendingServiceDeepLinkId = "";
+    if (updateUrl) syncAppRoute();
+    openServiceModal();
+    setServicesStatus("Latest service loaded.");
+    return true;
+  } catch (e) {
+    setServicesStatus(`Could not load latest service: ${e.message}`);
+    showToast(`Could not load latest service: ${e.message}`, "error");
+    return false;
+  }
 }
 
-function tryOpenDeepLinkedService() {
+async function tryOpenDeepLinkedService() {
   const serviceId = clean(state.pendingServiceDeepLinkId);
   if (!serviceId || !state.services.length || !canApp("services")) return;
-  if (!openServiceById(serviceId, { updateUrl: true })) {
+  if (!(await openServiceById(serviceId, { updateUrl: true }))) {
     state.pendingServiceDeepLinkId = "";
   }
 }
 
-function onServiceRowClick(event) {
+async function onServiceRowClick(event) {
   if (event.target.closest("[data-inline-service-status]")) return;
   const row = event.target.closest("[data-service-id]");
   if (!row) return;
-  openServiceById(clean(row.dataset.serviceId), { updateUrl: true });
+  await openServiceById(clean(row.dataset.serviceId), { updateUrl: true });
 }
 
 function buildServicePayload(draft, previous) {

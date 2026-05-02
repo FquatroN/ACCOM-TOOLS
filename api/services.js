@@ -439,6 +439,20 @@ module.exports = async function handler(req, res) {
     const scope = await loadServiceScope(user, access);
 
     if (req.method === "GET") {
+      const id = cleanText(req.query?.id);
+      if (id) {
+        const existing = await loadExisting(id);
+        if (!existing) {
+          res.status(404).json({ error: "Service not found." });
+          return;
+        }
+        if (!canAccessServiceRow(existing, scope)) {
+          res.status(403).json({ error: "You do not have permission for this service." });
+          return;
+        }
+        res.status(200).json({ row: existing });
+        return;
+      }
       const rows = await restQuery(withSelect("services"), { method: "GET" });
       const visibleRows = (Array.isArray(rows) ? rows : []).filter((row) => canAccessServiceRow(row, scope));
       res.status(200).json({ rows: visibleRows });
