@@ -6092,6 +6092,7 @@ async function saveService() {
   const draft = state.serviceDraft;
   if (!clean(draft.serviceType)) return setServicesStatus("Service Type is required.");
   if (!clean(draft.customerName)) return setServicesStatus("Customer Name is required.");
+  if (!clean(draft.customerPhone)) return setServicesStatus("Customer Phone is required.");
   if (!clean(draft.date)) return setServicesStatus("Date is required.");
   if (!clean(draft.time)) return setServicesStatus("Time is required.");
   if (clean(draft.customerPhone) && !isValidInternationalPhone(draft.customerPhone)) {

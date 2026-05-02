@@ -160,6 +160,7 @@ function sanitizeService(input = {}, existing = null) {
 
   if (!serviceType) throw Object.assign(new Error("Service Type is required."), { statusCode: 400 });
   if (!customerName) throw Object.assign(new Error("Customer Name is required."), { statusCode: 400 });
+  if (!customerPhone) throw Object.assign(new Error("Customer Phone is required."), { statusCode: 400 });
   if (!serviceDate) throw Object.assign(new Error("Date is required."), { statusCode: 400 });
   if (!serviceTime) throw Object.assign(new Error("Time is required."), { statusCode: 400 });
   if (!pax) throw Object.assign(new Error("Nr persons is required."), { statusCode: 400 });
