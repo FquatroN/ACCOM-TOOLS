@@ -6785,6 +6785,14 @@ function buildBakeryGeneratedTextClient(order, name = state.bakerySubmitName) {
   });
   lines.push("Cumprimentos,");
   lines.push(clean(name || order?.submittedByName) || "[Name]");
+  lines.push("");
+  lines.push("Lisboa Central Hostel");
+  lines.push("");
+  lines.push("+351 309 881 038");
+  lines.push("+351 925 222 809");
+  lines.push("global@lisboacentralhostel.com");
+  lines.push("");
+  lines.push("Rua Rodrigues Sampaio 160, 1150-282 Lisboa");
   return lines.join("\n");
 }
 
@@ -6808,7 +6816,12 @@ function buildBakeryGeneratedHtmlClient(order, name = state.bakerySubmitName) {
         <td style="text-align:center;">${escape(String(day.pasteisDeNata === "" ? "-" : day.pasteisDeNata))}</td>
       </tr>`).join("")}</tbody>
     </table>
-    <p>Cumprimentos,<br>${escape(clean(name || order?.submittedByName) || "[Name]")}</p>`;
+    <p>Cumprimentos,<br>${escape(clean(name || order?.submittedByName) || "[Name]")}<br><br>
+    Lisboa Central Hostel<br><br>
+    +351 309 881 038<br>
+    +351 925 222 809<br>
+    global@lisboacentralhostel.com<br><br>
+    Rua Rodrigues Sampaio 160, 1150-282 Lisboa</p>`;
 }
 
 function validateBakeryOrderDays(days = [], capacity = Number(state.bakerySettings?.hostelCapacity || 83)) {

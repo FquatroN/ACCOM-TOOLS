@@ -332,6 +332,14 @@ function buildBakeryGeneratedText(order = {}, settings = DEFAULT_BAKERY_SETTINGS
   });
   lines.push("Cumprimentos,");
   lines.push(cleanText(submittedByName || order.submittedByName) || "[Name]");
+  lines.push("");
+  lines.push("Lisboa Central Hostel");
+  lines.push("");
+  lines.push("+351 309 881 038");
+  lines.push("+351 925 222 809");
+  lines.push("global@lisboacentralhostel.com");
+  lines.push("");
+  lines.push("Rua Rodrigues Sampaio 160, 1150-282 Lisboa");
   return lines.join("\n");
 }
 
