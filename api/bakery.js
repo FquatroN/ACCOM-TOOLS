@@ -106,7 +106,7 @@ async function sendBakeryEmail(order, settings) {
 async function sendBakeryEmail(order, settings) {
   const recipients = Array.isArray(settings?.emailRecipients) ? settings.emailRecipients : [];
   if (!recipients.length) return { skipped: true };
-  const subject = `Encomenda pÃ£es e bolos para dias ${orderDatesLabel(order.days)}`;
+  const subject = `Lisboa Central Hostel - Encomenda p\u00e3es e bolos para dias ${orderDatesLabel(order.days)}`;
   const breadTypes = (Array.isArray(settings?.breadTypes) ? settings.breadTypes : [])
     .map((item) => cleanText(item?.name))
     .filter(Boolean);
@@ -123,7 +123,7 @@ async function sendBakeryEmail(order, settings) {
     </tr>`).join("");
   const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
     <p>Bom dia,</p>
-    <p>Segue a encomenda de pÃ£es e bolos:</p>
+    <p>Segue a encomenda de p\u00e3es e bolos:</p>
     <table style="border-collapse:collapse;width:100%;max-width:760px;">
       <thead>
         <tr>

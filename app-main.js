@@ -6715,17 +6715,17 @@ function bakeryBreadTypeQuantity(day, breadTypeName) {
 function buildBakeryGeneratedTextClient(order, name = state.bakerySubmitName) {
   const days = Array.isArray(order?.days) ? order.days : [];
   const lines = [
-    `SUBJECT: Encomenda pães e bolos para dias ${bakeryOrderDatesLabel(order) || "-"}`,
+    `SUBJECT: Lisboa Central Hostel - Encomenda p\u00e3es e bolos para dias ${bakeryOrderDatesLabel(order) || "-"}`,
     "",
     "Bom dia,",
     "",
-    "Segue a encomenda de pães e bolos:",
+    "Segue a encomenda de p\u00e3es e bolos:",
     "",
   ];
   days.forEach((day) => {
     lines.push(bakeryDateLabel(day.date));
     (Array.isArray(day.breadBreakdown) ? day.breadBreakdown : []).forEach((item) => lines.push(`${item.name}: ${Number(item.quantity || 0)}`));
-    lines.push(`Pastéis de nata: ${Number(day.pasteisDeNata || 0)}`);
+    lines.push(`Past\u00e9is de nata: ${Number(day.pasteisDeNata || 0)}`);
     lines.push("");
   });
   lines.push("Cumprimentos,");
@@ -6736,9 +6736,9 @@ function buildBakeryGeneratedTextClient(order, name = state.bakerySubmitName) {
 function buildBakeryGeneratedHtmlClient(order, name = state.bakerySubmitName) {
   const days = Array.isArray(order?.days) ? order.days : [];
   const breadTypes = bakeryBreadTypeColumnsClient(order);
-  return `<p><strong>Assunto:</strong> Encomenda pães e bolos para dias ${escape(bakeryOrderDatesLabel(order) || "-")}</p>
+  return `<p><strong>Assunto:</strong> Lisboa Central Hostel - Encomenda p\u00e3es e bolos para dias ${escape(bakeryOrderDatesLabel(order) || "-")}</p>
     <p>Bom dia,</p>
-    <p>Segue a encomenda de pães e bolos:</p>
+    <p>Segue a encomenda de p\u00e3es e bolos:</p>
     <table>
       <thead>
         <tr>
@@ -6746,7 +6746,7 @@ function buildBakeryGeneratedHtmlClient(order, name = state.bakerySubmitName) {
           <th style="text-align:center;">Available Beds (Hostel)</th>
           <th style="text-align:center;">Check-ins (Cruz)</th>
           ${breadTypes.map((breadType) => `<th>${escape(breadType)}</th>`).join("")}
-          <th style="text-align:center;">Pastéis de nata</th>
+          <th style="text-align:center;">Past\u00e9is de nata</th>
         </tr>
       </thead>
       <tbody>${days.map((day) => `<tr>

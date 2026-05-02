@@ -258,11 +258,11 @@ function orderDatesLabel(days = []) {
 function buildBakeryGeneratedText(order = {}, settings = DEFAULT_BAKERY_SETTINGS, submittedByName = "") {
   const days = Array.isArray(order.days) ? order.days : [];
   const lines = [
-    `SUBJECT: Encomenda pães e bolos para dias ${orderDatesLabel(days) || "-"}`,
+    `SUBJECT: Lisboa Central Hostel - Encomenda p\u00e3es e bolos para dias ${orderDatesLabel(days) || "-"}`,
     "",
     "Bom dia,",
     "",
-    "Segue a encomenda de pães e bolos:",
+    "Segue a encomenda de p\u00e3es e bolos:",
     "",
   ];
   days.forEach((day) => {
@@ -270,7 +270,7 @@ function buildBakeryGeneratedText(order = {}, settings = DEFAULT_BAKERY_SETTINGS
     (Array.isArray(day.breadBreakdown) ? day.breadBreakdown : []).forEach((item) => {
       lines.push(`${item.name}: ${Number(item.quantity || 0)}`);
     });
-    lines.push(`Pastéis de nata: ${Number(day.pasteisDeNata || 0)}`);
+    lines.push(`Past\u00e9is de nata: ${Number(day.pasteisDeNata || 0)}`);
     lines.push("");
   });
   lines.push("Cumprimentos,");
