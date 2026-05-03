@@ -1188,12 +1188,12 @@
                   </select>
                 </label>
                 <label>
-                  Date *
+                  Sent Date *
                   <input id="laundry-date" type="date" />
                 </label>
                 <label>
-                  Received Kg
-                  <input id="laundry-received-weight" type="number" min="0" step="0.01" />
+                  Received Date
+                  <input id="laundry-receive-date" type="date" readonly />
                 </label>
               </div>
               <label class="services-notes-field">
@@ -1213,6 +1213,10 @@
                   <p id="laundry-received-computed-weight" class="auth-status">0,00 kg</p>
                 </div>
                 <div id="laundry-received-items-grid" class="grid laundry-items-grid"></div>
+                <label class="laundry-received-kg-field">
+                  Received Kg
+                  <input id="laundry-received-weight" type="number" min="0" step="0.01" />
+                </label>
               </section>
               <section class="settings-block">
                 <div class="bar">
@@ -1261,12 +1265,11 @@
               <table class="shopping-history-table laundry-table">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>Sent Date</th>
                     <th>Property</th>
                     <th>Sent</th>
-                    <th>Sent Kg</th>
+                    <th>Received Date</th>
                     <th>Received</th>
-                    <th>Received Kg</th>
                     <th>Difference</th>
                     <th>Notes</th>
                   </tr>

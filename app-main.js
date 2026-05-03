@@ -1012,6 +1012,7 @@ const els = {
   laundryStatus: document.getElementById("laundry-status"),
   laundryProperty: document.getElementById("laundry-property"),
   laundryDate: document.getElementById("laundry-date"),
+  laundryReceiveDate: document.getElementById("laundry-receive-date"),
   laundryReceivedWeight: document.getElementById("laundry-received-weight"),
   laundryNotes: document.getElementById("laundry-notes"),
   laundrySentItemsGrid: document.getElementById("laundry-sent-items-grid"),
@@ -8967,10 +8968,12 @@ function normalizeLaundryRecordClient(input = {}, settings = state.laundrySettin
 }
 
 function emptyLaundryDraft() {
+  const defaultProperty = "Hostel";
+  const nextDate = getRequiredNextLaundryDate(defaultProperty) || formatDate(new Date());
   return normalizeLaundryRecordClient({
     id: "",
-    property: "Hostel",
-    date: formatDate(new Date()),
+    property: defaultProperty,
+    date: nextDate,
     sentItems: {},
     receivedItems: {},
     receivedWeightKg: "",
@@ -9007,6 +9010,43 @@ function shiftLaundryDate(value, days) {
   if (Number.isNaN(date.getTime())) return raw;
   date.setDate(date.getDate() + days);
   return formatDate(date);
+}
+
+function laundryReceiveDate(value) {
+  return shiftLaundryDate(value, 2);
+}
+
+function getLatestLaundryDateForProperty(property, { excludeId = "" } = {}) {
+  const normalizedProperty = normalizeLaundryPropertyClient(property);
+  return state.laundryRecords
+    .filter((row) => normalizeLaundryPropertyClient(row.property) === normalizedProperty && clean(row.id) !== clean(excludeId))
+    .map((row) => clean(row.date))
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
+}
+
+function getRequiredNextLaundryDate(property, { excludeId = "" } = {}) {
+  const latest = getLatestLaundryDateForProperty(property, { excludeId });
+  return latest ? shiftLaundryDate(latest, 1) : "";
+}
+
+function validateLaundryDraftClient(draft, { isCreate = false } = {}) {
+  if (!clean(draft?.date)) return "Sent date is required.";
+  if (!clean(draft?.property)) return "Property is required.";
+  const duplicate = state.laundryRecords.find((row) =>
+    normalizeLaundryPropertyClient(row.property) === normalizeLaundryPropertyClient(draft.property) &&
+    clean(row.date) === clean(draft.date) &&
+    clean(row.id) !== clean(draft.id)
+  );
+  if (duplicate) return `A laundry record for ${normalizeLaundryPropertyClient(draft.property)} on ${clean(draft.date)} already exists.`;
+  if (isCreate) {
+    const expected = getRequiredNextLaundryDate(draft.property);
+    if (expected && clean(draft.date) !== expected) {
+      return `The next record for ${normalizeLaundryPropertyClient(draft.property)} must be created for ${expected}.`;
+    }
+  }
+  return "";
 }
 
 function setLaundryStatus(text) {
@@ -9076,6 +9116,11 @@ function formatLaundryItemsSummary(counts) {
   return parts.length ? parts.join("\n") : "-";
 }
 
+function formatLaundryColumnSummary(counts, weightKg) {
+  const itemsText = formatLaundryItemsSummary(counts);
+  return `${itemsText}\nKg: ${formatLaundryKg(weightKg)}`;
+}
+
 function buildLaundryDifferenceLines(record) {
   const matched = findLaundryMatchedRecord(record);
   if (!matched) {
@@ -9120,6 +9165,7 @@ function renderLaundryDraft() {
   const draft = state.laundryDraft || emptyLaundryDraft();
   if (els.laundryProperty) els.laundryProperty.value = draft.property || "Hostel";
   if (els.laundryDate) els.laundryDate.value = draft.date || "";
+  if (els.laundryReceiveDate) els.laundryReceiveDate.value = laundryReceiveDate(draft.date) || "";
   if (els.laundryReceivedWeight) els.laundryReceivedWeight.value = draft.receivedWeightKg === "" ? "" : String(draft.receivedWeightKg || "");
   if (els.laundryNotes) els.laundryNotes.value = draft.notes || "";
   renderLaundryItemInputs(els.laundrySentItemsGrid, draft.sentItems, "sent");
@@ -9168,7 +9214,12 @@ function onLaundryFilterInput() {
 function onLaundryDraftInput(event) {
   if (!state.laundryDraft) return;
   const target = event.target;
-  if (target === els.laundryProperty) state.laundryDraft.property = normalizeLaundryPropertyClient(target.value);
+  if (target === els.laundryProperty) {
+    state.laundryDraft.property = normalizeLaundryPropertyClient(target.value);
+    if (!state.laundrySelectedId) {
+      state.laundryDraft.date = getRequiredNextLaundryDate(state.laundryDraft.property) || formatDate(new Date());
+    }
+  }
   if (target === els.laundryDate) state.laundryDraft.date = clean(target.value);
   if (target === els.laundryReceivedWeight) state.laundryDraft.receivedWeightKg = Math.max(0, Number(normalizeNumber(target.value) || 0));
   if (target === els.laundryNotes) state.laundryDraft.notes = clean(target.value);
@@ -9214,7 +9265,7 @@ function getFilteredLaundryRecords() {
 function renderLaundry() {
   if (!canApp("laundry")) {
     if (els.laundryCount) els.laundryCount.textContent = "0 records";
-    if (els.laundryRows) els.laundryRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Laundry Control.</td></tr>';
+    if (els.laundryRows) els.laundryRows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Laundry Control.</td></tr>';
     return;
   }
   const rows = getFilteredLaundryRecords();
@@ -9225,21 +9276,22 @@ function renderLaundry() {
   if (els.laundryFilterSearch) els.laundryFilterSearch.value = state.laundryFilters.search;
   if (els.laundryRows) els.laundryRows.innerHTML = "";
   if (!rows.length) {
-    els.laundryRows.innerHTML = '<tr><td colspan="8" class="empty">No laundry records found.</td></tr>';
+    els.laundryRows.innerHTML = '<tr><td colspan="7" class="empty">No laundry records found.</td></tr>';
     return;
   }
   rows.forEach((row) => {
     const diff = buildLaundryDifferenceLines(row);
     const matched = findLaundryMatchedRecord(row);
+    const sentWeight = countLaundryWeightKgClient(row.sentItems);
+    const receivedWeight = Number(row.receivedWeightKg) || countLaundryWeightKgClient(row.receivedItems);
     const tr = document.createElement("tr");
     tr.className = "clickable-row";
     tr.dataset.laundryId = row.id;
     tr.innerHTML = `<td>${escape(row.date)}</td>
       <td>${escape(row.property)}</td>
-      <td>${escape(formatLaundryItemsSummary(row.sentItems)).replace(/\n/g, "<br>")}</td>
-      <td>${escape(formatLaundryKg(countLaundryWeightKgClient(row.sentItems)))}</td>
-      <td>${escape(formatLaundryItemsSummary(row.receivedItems)).replace(/\n/g, "<br>")}</td>
-      <td>${escape(formatLaundryKg((Number(row.receivedWeightKg) || countLaundryWeightKgClient(row.receivedItems))))}</td>
+      <td>${escape(formatLaundryColumnSummary(row.sentItems, sentWeight)).replace(/\n/g, "<br>")}</td>
+      <td>${escape(laundryReceiveDate(row.date) || "-")}</td>
+      <td>${escape(formatLaundryColumnSummary(row.receivedItems, receivedWeight)).replace(/\n/g, "<br>")}</td>
       <td>${matched ? `<small>Match ${escape(diff.matchDate)}</small><br>${escape(diff.lines.join(" | ")).replace(/\n/g, "<br>")}` : escape(diff.lines[0])}</td>
       <td>${escape(row.notes || "-")}</td>`;
     els.laundryRows.appendChild(tr);
@@ -9335,12 +9387,9 @@ function buildLaundryPayload(draft) {
 async function saveLaundryRecord() {
   const draft = state.laundryDraft;
   if (!draft) return;
-  if (!clean(draft.date)) {
-    setLaundryStatus("Date is required.");
-    return;
-  }
-  if (!clean(draft.property)) {
-    setLaundryStatus("Property is required.");
+  const validationError = validateLaundryDraftClient(draft, { isCreate: !state.laundrySelectedId });
+  if (validationError) {
+    setLaundryStatus(validationError);
     return;
   }
   try {

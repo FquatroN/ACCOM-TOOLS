@@ -13,6 +13,40 @@ function recordKey(record) {
   return `${record.property}::${record.date}`;
 }
 
+function shiftDate(value, days) {
+  const date = new Date(`${String(value || "").trim()}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function latestDateForProperty(rows, property, excludeId = "") {
+  return rows
+    .filter((row) => row.property === property && row.id !== excludeId)
+    .map((row) => row.date)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
+}
+
+function validateLaundrySave(existingRows, record, { isCreate = false, excludeId = "" } = {}) {
+  const duplicate = existingRows.find((row) => row.property === record.property && row.date === record.date && row.id !== excludeId);
+  if (duplicate) {
+    const error = new Error(`A laundry record for ${record.property} on ${record.date} already exists.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!isCreate) return;
+  const latest = latestDateForProperty(existingRows, record.property);
+  if (!latest) return;
+  const expected = shiftDate(latest, 1);
+  if (record.date !== expected) {
+    const error = new Error(`The next record for ${record.property} must be created for ${expected}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
 function isMissingLaundryTableError(error) {
   const message = String(error?.message || "").toLowerCase();
   return message.includes("laundry_records") && (
@@ -159,6 +193,7 @@ async function saveSingleRecordToTable(input, settings, { allowMerge = false } =
     error.statusCode = 400;
     throw error;
   }
+  validateLaundrySave(existingRows, safe, { isCreate: !existing && !allowMerge, excludeId: existing?.id || "" });
   if (existing) {
     const merged = sanitizeLaundryRecord({
       ...existing,
@@ -200,6 +235,10 @@ module.exports = async function handler(req, res) {
       const current = await loadRecordsAndSettings();
       if (current.mode === "legacy") {
         const { rowId, payload } = await loadLaundryPayloadRow();
+        if (!(items.length > 1 || !!body?.allowMerge)) {
+          const safeSingle = sanitizeLaundryRecord(items[0], payload.settings);
+          validateLaundrySave(payload.records, safeSingle, { isCreate: true });
+        }
         const nextRecords = mergeRecords(payload.records, items, payload.settings, { allowMerge: items.length > 1 || !!body?.allowMerge });
         const saved = await saveLaundryPayload(rowId, { settings: payload.settings, records: nextRecords });
         res.status(200).json({ rows: saved.records, settings: saved.settings });
@@ -239,6 +278,7 @@ module.exports = async function handler(req, res) {
           payload.settings,
           existing
         );
+        validateLaundrySave(payload.records, updated, { isCreate: false, excludeId: id });
         const nextRecords = mergeRecords(payload.records.filter((record) => record.id !== id), [updated], payload.settings, { allowMerge: true });
         const saved = await saveLaundryPayload(rowId, { settings: payload.settings, records: nextRecords });
         res.status(200).json({ rows: saved.records, settings: saved.settings });
@@ -260,6 +300,7 @@ module.exports = async function handler(req, res) {
         current.settings,
         existing
       );
+      validateLaundrySave(current.rows, merged, { isCreate: false, excludeId: id });
       await updateLaundryTableRow(id, merged, existing);
       const rows = await loadLaundryTableRows(current.settings);
       res.status(200).json({ rows, settings: current.settings });

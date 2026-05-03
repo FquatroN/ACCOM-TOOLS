@@ -1513,8 +1513,11 @@ select:disabled {
   align-items: start;
 }
 
-.laundry-form-grid > label:last-child {
-  grid-column: 1 / -1;
+.laundry-received-kg-field {
+  margin-top: 0.85rem;
+  display: grid;
+  gap: 0.32rem;
+  max-width: 220px;
 }
 
 .laundry-items-grid {
@@ -1532,18 +1535,36 @@ select:disabled {
   font-size: 0.72rem;
 }
 
-.laundry-table td:nth-child(3),
-.laundry-table td:nth-child(5),
-.laundry-table td:nth-child(7),
-.laundry-table td:nth-child(8) {
-  white-space: pre-wrap;
-  vertical-align: top;
+.laundry-table th:nth-child(1),
+.laundry-table td:nth-child(1),
+.laundry-table th:nth-child(2),
+.laundry-table td:nth-child(2),
+.laundry-table th:nth-child(4),
+.laundry-table td:nth-child(4) {
+  white-space: nowrap;
 }
 
-.laundry-table td:nth-child(4),
-.laundry-table td:nth-child(6) {
-  white-space: nowrap;
-  text-align: center;
+.laundry-table th:nth-child(1),
+.laundry-table td:nth-child(1) {
+  width: 118px;
+}
+
+.laundry-table th:nth-child(2),
+.laundry-table td:nth-child(2) {
+  width: 76px;
+}
+
+.laundry-table th:nth-child(4),
+.laundry-table td:nth-child(4) {
+  width: 118px;
+}
+
+.laundry-table td:nth-child(3),
+.laundry-table td:nth-child(5),
+.laundry-table td:nth-child(6),
+.laundry-table td:nth-child(7) {
+  white-space: pre-wrap;
+  vertical-align: top;
 }
 
 .laundry-table td small {
