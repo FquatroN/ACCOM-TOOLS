@@ -594,6 +594,7 @@ const state = {
     initialized: false,
   },
   serviceInlineStatusSaving: {},
+  servicesScreen: "list",
   serviceDraftFlightPredictions: {
     cache: {},
     timer: null,
@@ -823,9 +824,15 @@ const els = {
   groupsSaveSettingsFinalConfirmation: document.getElementById("groups-save-settings-final-confirmation"),
   groupsSettingsStatus: document.getElementById("groups-settings-status"),
   servicesNew: document.getElementById("services-new"),
+  servicesTabList: document.getElementById("services-tab-list"),
+  servicesTabResume: document.getElementById("services-tab-resume"),
+  servicesPanelList: document.getElementById("services-panel-list"),
+  servicesPanelResume: document.getElementById("services-panel-resume"),
   servicesRows: document.getElementById("services-rows"),
   servicesMobileCards: document.getElementById("services-mobile-cards"),
   servicesCount: document.getElementById("services-count"),
+  servicesResumeCount: document.getElementById("services-resume-count"),
+  servicesResumeBody: document.getElementById("services-resume-body"),
   servicesShowActive: document.getElementById("services-show-active"),
   servicesFilterCreatedFrom: document.getElementById("services-filter-created-from"),
   servicesFilterCreatedTo: document.getElementById("services-filter-created-to"),
@@ -1309,6 +1316,8 @@ function bindEvents() {
     resetServiceDraft();
     openServiceModal();
   });
+  els.servicesTabList?.addEventListener("click", () => setServicesScreen("list"));
+  els.servicesTabResume?.addEventListener("click", () => setServicesScreen("resume"));
   els.serviceTabDetails.addEventListener("click", () => setServiceEditorTab("details"));
   els.serviceTabConfirmation.addEventListener("click", () => setServiceEditorTab("confirmation"));
   els.serviceConfirmationLanguage.addEventListener("input", () => {
@@ -5791,8 +5800,70 @@ function onServiceFilterInput() {
   renderServices();
 }
 
+function setServicesScreen(screen) {
+  state.servicesScreen = screen === "resume" ? "resume" : "list";
+  renderServices();
+}
+
+function renderServicesScreenTabs() {
+  const isResume = state.servicesScreen === "resume";
+  els.servicesTabList?.classList.toggle("active-tab", !isResume);
+  els.servicesTabList?.classList.toggle("ghost", isResume);
+  els.servicesTabResume?.classList.toggle("active-tab", isResume);
+  els.servicesTabResume?.classList.toggle("ghost", !isResume);
+  if (els.servicesPanelList) els.servicesPanelList.hidden = isResume;
+  if (els.servicesPanelResume) els.servicesPanelResume.hidden = !isResume;
+}
+
+function formatServiceMonthLabel(monthKey) {
+  const raw = clean(monthKey);
+  if (!/^\d{4}-\d{2}$/.test(raw)) return raw || "-";
+  const dt = new Date(`${raw}-01T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return raw;
+  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "Europe/Lisbon" }).format(dt);
+}
+
+function getServicesMonthlyResume() {
+  const buckets = new Map();
+  state.services.forEach((service) => {
+    const date = clean(service.date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const monthKey = date.slice(0, 7);
+    const current = buckets.get(monthKey) || { monthKey, totalServices: 0, sumPax: 0, sumPrice: 0 };
+    current.totalServices += 1;
+    current.sumPax += Math.max(0, Number(service.pax || 0));
+    current.sumPrice += Math.max(0, Number(service.price || 0));
+    buckets.set(monthKey, current);
+  });
+  return [...buckets.values()].sort((a, b) => clean(b.monthKey).localeCompare(clean(a.monthKey)));
+}
+
+function renderServicesResume() {
+  if (!els.servicesResumeBody || !els.servicesResumeCount) return;
+  const rows = getServicesMonthlyResume();
+  els.servicesResumeCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
+  els.servicesResumeBody.innerHTML = "";
+  if (!rows.length) {
+    els.servicesResumeBody.innerHTML = '<tr><td colspan="4" class="empty">No services found.</td></tr>';
+    return;
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escape(formatServiceMonthLabel(row.monthKey))}</td>
+      <td>${escape(String(row.totalServices))}</td>
+      <td>${escape(String(row.sumPax))}</td>
+      <td>${escape(formatMoney(row.sumPrice))}</td>`;
+    els.servicesResumeBody.appendChild(tr);
+  });
+}
+
 function renderServices() {
   if (!els.servicesRows || !canApp("services")) return;
+  renderServicesScreenTabs();
+  if (state.servicesScreen === "resume") {
+    renderServicesResume();
+    return;
+  }
   els.servicesShowActive.checked = !!state.serviceFilters.showActive;
   els.servicesFilterCreatedFrom.value = clean(state.serviceFilters.createdFrom);
   els.servicesFilterCreatedTo.value = clean(state.serviceFilters.createdTo);

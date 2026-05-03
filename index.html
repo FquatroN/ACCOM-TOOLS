@@ -835,60 +835,90 @@
 
           <section class="card">
             <div class="bar">
-              <h2>Active Services</h2>
+              <h2>Services</h2>
               <div class="actions">
                 <button id="services-new" type="button" class="ghost">New service</button>
-                <button id="services-export-excel" type="button" class="ghost">Export Excel</button>
-                <label class="filter-checkbox services-show-active-toggle">
-                  Show Active
-                  <input id="services-show-active" type="checkbox" checked />
-                </label>
-                <p id="services-count">0 services</p>
+                <button id="services-tab-list" type="button" class="active-tab">List</button>
+                <button id="services-tab-resume" type="button" class="ghost">Resume</button>
               </div>
             </div>
-            <div class="grid filters services-filters">
-              <label>
-                Create From
-                <input id="services-filter-created-from" type="date" />
-              </label>
-              <label>
-                Create To
-                <input id="services-filter-created-to" type="date" />
-              </label>
-              <label>
-                Date From
-                <input id="services-filter-date-from" type="date" />
-              </label>
-              <label>
-                Date To
-                <input id="services-filter-date-to" type="date" />
-              </label>
-              <label>
-                Name
-                <input id="services-filter-name" type="text" placeholder="Search customer name" />
-              </label>
-            </div>
-            <div id="services-mobile-cards" class="services-mobile-cards"></div>
-            <div class="table-wrap services-desktop-table-wrap">
-              <table class="services-table">
-                <thead>
-                  <tr>
-                    <th>Request #</th>
-                    <th>Service Type</th>
-                    <th>Customer</th>
-                    <th>Status</th>
-                    <th>Date</th>
-                    <th>Time</th>
-                    <th>Pax</th>
-                    <th>Pick Up</th>
-                    <th>Flight Nr</th>
-                    <th>Drop Off</th>
-                    <th>Price</th>
-                  </tr>
-                </thead>
-                <tbody id="services-rows"></tbody>
-              </table>
-            </div>
+            <section id="services-panel-list">
+              <div class="bar services-subbar">
+                <h3>Active Services</h3>
+                <div class="actions">
+                  <button id="services-export-excel" type="button" class="ghost">Export Excel</button>
+                  <label class="filter-checkbox services-show-active-toggle">
+                    Show Active
+                    <input id="services-show-active" type="checkbox" checked />
+                  </label>
+                  <p id="services-count">0 services</p>
+                </div>
+              </div>
+              <div class="grid filters services-filters">
+                <label>
+                  Create From
+                  <input id="services-filter-created-from" type="date" />
+                </label>
+                <label>
+                  Create To
+                  <input id="services-filter-created-to" type="date" />
+                </label>
+                <label>
+                  Date From
+                  <input id="services-filter-date-from" type="date" />
+                </label>
+                <label>
+                  Date To
+                  <input id="services-filter-date-to" type="date" />
+                </label>
+                <label>
+                  Name
+                  <input id="services-filter-name" type="text" placeholder="Search customer name" />
+                </label>
+              </div>
+              <div id="services-mobile-cards" class="services-mobile-cards"></div>
+              <div class="table-wrap services-desktop-table-wrap">
+                <table class="services-table">
+                  <thead>
+                    <tr>
+                      <th>Request #</th>
+                      <th>Service Type</th>
+                      <th>Customer</th>
+                      <th>Status</th>
+                      <th>Date</th>
+                      <th>Time</th>
+                      <th>Pax</th>
+                      <th>Pick Up</th>
+                      <th>Flight Nr</th>
+                      <th>Drop Off</th>
+                      <th>Price</th>
+                    </tr>
+                  </thead>
+                  <tbody id="services-rows"></tbody>
+                </table>
+              </div>
+            </section>
+            <section id="services-panel-resume" hidden>
+              <div class="bar services-subbar">
+                <h3>Resume</h3>
+                <div class="actions">
+                  <p id="services-resume-count">0 months</p>
+                </div>
+              </div>
+              <div class="table-wrap services-resume-table-wrap">
+                <table class="settings-table services-resume-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th>Total Services</th>
+                      <th>Sum Pax</th>
+                      <th>Sum Price</th>
+                    </tr>
+                  </thead>
+                  <tbody id="services-resume-body"></tbody>
+                </table>
+              </div>
+            </section>
           </section>
           <p id="services-db-status" class="auth-status"></p>
         </section>

@@ -1494,6 +1494,19 @@ select:disabled {
     minmax(220px, 1.4fr);
 }
 
+.services-subbar {
+  margin-top: 0.2rem;
+}
+
+.services-resume-table th:nth-child(2),
+.services-resume-table th:nth-child(3),
+.services-resume-table th:nth-child(4),
+.services-resume-table td:nth-child(2),
+.services-resume-table td:nth-child(3),
+.services-resume-table td:nth-child(4) {
+  text-align: center;
+}
+
 .groups-filters {
   margin: 0.7rem 0 0.9rem;
   grid-template-columns:
