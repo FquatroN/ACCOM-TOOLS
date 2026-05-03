@@ -4816,6 +4816,7 @@ function sanitizeServiceSettingsClient(settings) {
 }
 
 function serviceLiveFlightStatusEnabled() {
+  if (clean(state.access?.profile?.name).toLowerCase() === "service provider") return false;
   return state.serviceSettings?.liveFlightStatusEnabled !== false;
 }
 
