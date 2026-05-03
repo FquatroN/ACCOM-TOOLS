@@ -9,6 +9,20 @@ const {
   sanitizeLaundrySettings,
 } = require("./_laundry");
 
+function recordKey(record) {
+  return `${record.property}::${record.date}`;
+}
+
+function isMissingLaundryTableError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("laundry_records") && (
+    message.includes("could not find") ||
+    message.includes("schema cache") ||
+    message.includes("relation") ||
+    message.includes("does not exist")
+  );
+}
+
 async function loadLaundryPayloadRow() {
   const rows = await restQuery(`app_settings?select=id,payload&setting_key=eq.${encodeURIComponent(LAUNDRY_SETTING_KEY)}&limit=1`, {
     method: "GET",
@@ -36,8 +50,60 @@ async function saveLaundryPayload(rowId, payload) {
   return sanitizeLaundryPayload(Array.isArray(created) && created[0]?.payload ? created[0].payload : safe);
 }
 
-function recordKey(record) {
-  return `${record.property}::${record.date}`;
+function mapLaundryTableRow(row, settings) {
+  return sanitizeLaundryRecord({
+    id: row?.id,
+    property: row?.property,
+    date: row?.record_date,
+    sentItems: row?.sent_items,
+    receivedItems: row?.received_items,
+    receivedWeightKg: row?.received_weight_kg,
+    notes: row?.notes,
+    createdAt: row?.created_at,
+    updatedAt: row?.updated_at,
+  }, settings);
+}
+
+async function loadLaundryTableRows(settings) {
+  const rows = await restQuery(
+    "laundry_records?select=id,property,record_date,sent_items,received_items,received_weight_kg,notes,created_at,updated_at&order=record_date.desc,property.asc",
+    { method: "GET" }
+  );
+  return sanitizeLaundryRecords((Array.isArray(rows) ? rows : []).map((row) => mapLaundryTableRow(row, settings)), settings);
+}
+
+function buildLaundryTableBody(record, existing = {}) {
+  return {
+    id: record.id || existing.id || randomUUID(),
+    property: record.property,
+    record_date: record.date,
+    sent_items: record.sentItems,
+    received_items: record.receivedItems,
+    received_weight_kg: Number(record.receivedWeightKg || 0),
+    notes: record.notes || "",
+    created_at: existing.createdAt || record.createdAt || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function createLaundryTableRow(record, existing = {}) {
+  const created = await restQuery("laundry_records", {
+    method: "POST",
+    body: [buildLaundryTableBody(record, existing)],
+    preferRepresentation: true,
+  });
+  const row = Array.isArray(created) ? created[0] : created;
+  return mapLaundryTableRow(row, sanitizeLaundrySettings(DEFAULT_LAUNDRY_SETTINGS));
+}
+
+async function updateLaundryTableRow(id, record, existing = {}) {
+  const updated = await restQuery(`laundry_records?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: buildLaundryTableBody(record, existing),
+    preferRepresentation: true,
+  });
+  const row = Array.isArray(updated) ? updated[0] : updated;
+  return mapLaundryTableRow(row, sanitizeLaundrySettings(DEFAULT_LAUNDRY_SETTINGS));
 }
 
 function mergeRecords(existingRecords, incomingRecords, settings, { allowMerge = false } = {}) {
@@ -71,13 +137,56 @@ function mergeRecords(existingRecords, incomingRecords, settings, { allowMerge =
   return sanitizeLaundryRecords(next, safeSettings);
 }
 
+async function loadRecordsAndSettings() {
+  const { payload } = await loadLaundryPayloadRow();
+  const settings = payload.settings;
+  try {
+    const rows = await loadLaundryTableRows(settings);
+    return { mode: "table", settings, rows };
+  } catch (error) {
+    if (!isMissingLaundryTableError(error)) throw error;
+    return { mode: "legacy", settings, rows: payload.records };
+  }
+}
+
+async function saveSingleRecordToTable(input, settings, { allowMerge = false } = {}) {
+  const safeSettings = sanitizeLaundrySettings(settings);
+  const safe = sanitizeLaundryRecord(input, safeSettings);
+  const existingRows = await loadLaundryTableRows(safeSettings);
+  const existing = existingRows.find((record) => record.id === safe.id || recordKey(record) === recordKey(safe));
+  if (existing && !allowMerge && !safe.id && recordKey(existing) === recordKey(safe)) {
+    const error = new Error(`A laundry record for ${safe.property} on ${safe.date} already exists.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  if (existing) {
+    const merged = sanitizeLaundryRecord({
+      ...existing,
+      ...safe,
+      id: existing.id,
+      createdAt: existing.createdAt,
+      updatedAt: new Date().toISOString(),
+    }, safeSettings, existing);
+    await updateLaundryTableRow(existing.id, merged, existing);
+  } else {
+    const created = sanitizeLaundryRecord({
+      ...safe,
+      id: safe.id || randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, safeSettings);
+    await createLaundryTableRow(created, created);
+  }
+  return loadLaundryTableRows(safeSettings);
+}
+
 module.exports = async function handler(req, res) {
   try {
     await requireFeature(req, "app", "laundry");
 
     if (req.method === "GET") {
-      const { payload } = await loadLaundryPayloadRow();
-      res.status(200).json({ rows: payload.records, settings: payload.settings });
+      const current = await loadRecordsAndSettings();
+      res.status(200).json({ rows: current.rows, settings: current.settings });
       return;
     }
 
@@ -88,10 +197,19 @@ module.exports = async function handler(req, res) {
         res.status(400).json({ error: "Request body is empty." });
         return;
       }
-      const { rowId, payload } = await loadLaundryPayloadRow();
-      const nextRecords = mergeRecords(payload.records, items, payload.settings, { allowMerge: items.length > 1 || !!body?.allowMerge });
-      const saved = await saveLaundryPayload(rowId, { settings: payload.settings, records: nextRecords });
-      res.status(200).json({ rows: saved.records, settings: saved.settings });
+      const current = await loadRecordsAndSettings();
+      if (current.mode === "legacy") {
+        const { rowId, payload } = await loadLaundryPayloadRow();
+        const nextRecords = mergeRecords(payload.records, items, payload.settings, { allowMerge: items.length > 1 || !!body?.allowMerge });
+        const saved = await saveLaundryPayload(rowId, { settings: payload.settings, records: nextRecords });
+        res.status(200).json({ rows: saved.records, settings: saved.settings });
+        return;
+      }
+      let rows = current.rows;
+      for (const item of items) {
+        rows = await saveSingleRecordToTable(item, current.settings, { allowMerge: items.length > 1 || !!body?.allowMerge });
+      }
+      res.status(200).json({ rows, settings: current.settings });
       return;
     }
 
@@ -102,13 +220,36 @@ module.exports = async function handler(req, res) {
         return;
       }
       const body = await parseBody(req);
-      const { rowId, payload } = await loadLaundryPayloadRow();
-      const existing = payload.records.find((record) => record.id === id);
+      const current = await loadRecordsAndSettings();
+      if (current.mode === "legacy") {
+        const { rowId, payload } = await loadLaundryPayloadRow();
+        const existing = payload.records.find((record) => record.id === id);
+        if (!existing) {
+          res.status(404).json({ error: "Laundry record not found." });
+          return;
+        }
+        const updated = sanitizeLaundryRecord(
+          {
+            ...existing,
+            ...body,
+            id,
+            createdAt: existing.createdAt,
+            updatedAt: new Date().toISOString(),
+          },
+          payload.settings,
+          existing
+        );
+        const nextRecords = mergeRecords(payload.records.filter((record) => record.id !== id), [updated], payload.settings, { allowMerge: true });
+        const saved = await saveLaundryPayload(rowId, { settings: payload.settings, records: nextRecords });
+        res.status(200).json({ rows: saved.records, settings: saved.settings });
+        return;
+      }
+      const existing = current.rows.find((record) => record.id === id);
       if (!existing) {
         res.status(404).json({ error: "Laundry record not found." });
         return;
       }
-      const updated = sanitizeLaundryRecord(
+      const merged = sanitizeLaundryRecord(
         {
           ...existing,
           ...body,
@@ -116,12 +257,12 @@ module.exports = async function handler(req, res) {
           createdAt: existing.createdAt,
           updatedAt: new Date().toISOString(),
         },
-        payload.settings,
+        current.settings,
         existing
       );
-      const nextRecords = mergeRecords(payload.records.filter((record) => record.id !== id), [updated], payload.settings, { allowMerge: true });
-      const saved = await saveLaundryPayload(rowId, { settings: payload.settings, records: nextRecords });
-      res.status(200).json({ rows: saved.records, settings: saved.settings });
+      await updateLaundryTableRow(id, merged, existing);
+      const rows = await loadLaundryTableRows(current.settings);
+      res.status(200).json({ rows, settings: current.settings });
       return;
     }
 

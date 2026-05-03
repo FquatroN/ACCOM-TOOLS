@@ -153,6 +153,19 @@ create table if not exists public.bakery_orders (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.laundry_records (
+  id uuid primary key default gen_random_uuid(),
+  property text not null,
+  record_date date not null,
+  sent_items jsonb not null default '{}'::jsonb,
+  received_items jsonb not null default '{}'::jsonb,
+  received_weight_kg numeric(12, 2) not null default 0,
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint laundry_records_property_date_unique unique (property, record_date)
+);
+
 alter table public.shopping_orders
 add column if not exists notes text not null default '';
 
@@ -182,6 +195,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists bakery_orders_set_updated_at on public.bakery_orders;
 create trigger bakery_orders_set_updated_at
 before update on public.bakery_orders
+for each row execute function public.set_updated_at();
+
+drop trigger if exists laundry_records_set_updated_at on public.laundry_records;
+create trigger laundry_records_set_updated_at
+before update on public.laundry_records
 for each row execute function public.set_updated_at();
 
 create table if not exists public.properties (
@@ -318,6 +336,7 @@ alter table public.group_proposals enable row level security;
 alter table public.services enable row level security;
 alter table public.shopping_orders enable row level security;
 alter table public.bakery_orders enable row level security;
+alter table public.laundry_records enable row level security;
 alter table public.properties enable row level security;
 alter table public.review_import_runs enable row level security;
 alter table public.review_import_staging enable row level security;
@@ -500,6 +519,7 @@ grant select, insert, update, delete on table public.group_proposals to authenti
 grant select, insert, update, delete on table public.services to authenticated;
 grant select, insert, update, delete on table public.shopping_orders to authenticated;
 grant select, insert, update, delete on table public.bakery_orders to authenticated;
+grant select, insert, update, delete on table public.laundry_records to authenticated;
 grant select, insert, update, delete on table public.properties to authenticated;
 grant select, insert, update, delete on table public.review_import_runs to authenticated;
 grant select, insert, update, delete on table public.review_import_staging to authenticated;
@@ -514,6 +534,7 @@ grant select, insert, update, delete on table public.group_proposals to anon;
 grant select, insert, update, delete on table public.services to anon;
 grant select, insert, update, delete on table public.shopping_orders to anon;
 grant select, insert, update, delete on table public.bakery_orders to anon;
+grant select, insert, update, delete on table public.laundry_records to anon;
 grant select, insert, update, delete on table public.properties to anon;
 grant select, insert, update, delete on table public.review_import_runs to anon;
 grant select, insert, update, delete on table public.review_import_staging to anon;
@@ -651,6 +672,36 @@ with check (auth.uid() is not null);
 
 create policy "bakery_orders_delete_authenticated"
 on public.bakery_orders
+for delete
+to public
+using (auth.uid() is not null);
+
+drop policy if exists "laundry_records_select_authenticated" on public.laundry_records;
+drop policy if exists "laundry_records_insert_authenticated" on public.laundry_records;
+drop policy if exists "laundry_records_update_authenticated" on public.laundry_records;
+drop policy if exists "laundry_records_delete_authenticated" on public.laundry_records;
+
+create policy "laundry_records_select_authenticated"
+on public.laundry_records
+for select
+to public
+using (auth.uid() is not null);
+
+create policy "laundry_records_insert_authenticated"
+on public.laundry_records
+for insert
+to public
+with check (auth.uid() is not null);
+
+create policy "laundry_records_update_authenticated"
+on public.laundry_records
+for update
+to public
+using (auth.uid() is not null)
+with check (auth.uid() is not null);
+
+create policy "laundry_records_delete_authenticated"
+on public.laundry_records
 for delete
 to public
 using (auth.uid() is not null);
@@ -856,7 +907,7 @@ to public
 using (auth.uid() is not null);
 
 insert into public.app_profiles (name, app_features, settings_features)
-values ('Administrator', '["communications","lost-found","reviews","groups","services","shopping","bakery"]'::jsonb, '["communications","reviews","groups","services","shopping","bakery","admin-users"]'::jsonb)
+values ('Administrator', '["communications","lost-found","reviews","groups","services","shopping","bakery","laundry"]'::jsonb, '["communications","reviews","groups","services","shopping","bakery","laundry","admin-users"]'::jsonb)
 on conflict (name) do nothing;
 
 update public.app_profiles
@@ -866,11 +917,64 @@ set
   ) || case when app_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end
     || case when app_features ? 'lost-found' then '[]'::jsonb else '["lost-found"]'::jsonb end
     || case when app_features ? 'shopping' then '[]'::jsonb else '["shopping"]'::jsonb end
-    || case when app_features ? 'bakery' then '[]'::jsonb else '["bakery"]'::jsonb end,
+    || case when app_features ? 'bakery' then '[]'::jsonb else '["bakery"]'::jsonb end
+    || case when app_features ? 'laundry' then '[]'::jsonb else '["laundry"]'::jsonb end,
   settings_features = (case when settings_features ? 'groups' then settings_features else settings_features || '["groups"]'::jsonb end) || case when settings_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end
     || case when settings_features ? 'shopping' then '[]'::jsonb else '["shopping"]'::jsonb end
     || case when settings_features ? 'bakery' then '[]'::jsonb else '["bakery"]'::jsonb end
+    || case when settings_features ? 'laundry' then '[]'::jsonb else '["laundry"]'::jsonb end
 where name = 'Administrator';
+
+insert into public.laundry_records (
+  id,
+  property,
+  record_date,
+  sent_items,
+  received_items,
+  received_weight_kg,
+  notes,
+  created_at,
+  updated_at
+)
+select
+  coalesce(nullif(item ->> 'id', '')::uuid, gen_random_uuid()),
+  coalesce(nullif(item ->> 'property', ''), 'Hostel'),
+  (item ->> 'date')::date,
+  coalesce(item -> 'sentItems', '{}'::jsonb),
+  coalesce(item -> 'receivedItems', '{}'::jsonb),
+  coalesce(nullif(item ->> 'receivedWeightKg', '')::numeric, 0),
+  coalesce(item ->> 'notes', ''),
+  coalesce(nullif(item ->> 'createdAt', '')::timestamptz, now()),
+  coalesce(nullif(item ->> 'updatedAt', '')::timestamptz, now())
+from public.app_settings settings
+cross join lateral jsonb_array_elements(coalesce(settings.payload -> 'records', '[]'::jsonb)) item
+where settings.setting_key = 'laundry_control'
+  and nullif(item ->> 'date', '') is not null
+  and (item ->> 'date')::date <= current_date
+on conflict (property, record_date) do update
+set
+  sent_items = excluded.sent_items,
+  received_items = excluded.received_items,
+  received_weight_kg = excluded.received_weight_kg,
+  notes = excluded.notes,
+  updated_at = excluded.updated_at;
+
+update public.app_settings
+set payload = jsonb_set(
+  payload,
+  '{records}',
+  coalesce(
+    (
+      select jsonb_agg(item)
+      from jsonb_array_elements(coalesce(payload -> 'records', '[]'::jsonb)) item
+      where nullif(item ->> 'date', '') is not null
+        and (item ->> 'date')::date <= current_date
+    ),
+    '[]'::jsonb
+  ),
+  true
+)
+where setting_key = 'laundry_control';
 
 insert into public.app_profiles (name, app_features, settings_features)
 values ('Service Provider', '["services"]'::jsonb, '[]'::jsonb)
