@@ -723,6 +723,7 @@ const els = {
   count: document.getElementById("count"),
   search: document.getElementById("search"),
   showActive: document.getElementById("show-active"),
+  groupCommunications: document.getElementById("communications-group"),
   statusFilter: document.getElementById("status-filter"),
   categoryFilter: document.getElementById("category-filter"),
   fromDate: document.getElementById("from-date"),
@@ -1217,10 +1218,11 @@ function bindEvents() {
     render();
     showToast("Default sort applied: Date/Time newest first.", "info");
   });
-  [els.search, els.showActive, els.statusFilter, els.categoryFilter, els.fromDate, els.toDate].forEach((el) =>
+  [els.search, els.showActive, els.groupCommunications, els.statusFilter, els.categoryFilter, els.fromDate, els.toDate].forEach((el) =>
     el.addEventListener("input", render)
   );
   els.showActive.addEventListener("change", render);
+  els.groupCommunications.addEventListener("change", render);
   [
     els.lostFoundOnlyOpen,
     els.lostFoundFilterNumber,
@@ -4552,6 +4554,23 @@ function getFilteredEntries() {
       (!to || e.date <= to);
   });
   return sortEntries(filtered);
+}
+
+function isCommunicationsGroupingEnabled() {
+  return !!els.groupCommunications?.checked;
+}
+
+function splitCommunicationGroups(rows) {
+  const open = [];
+  const closed = [];
+  rows.forEach((entry) => {
+    if (isClosedStatus(entry.status)) closed.push(entry);
+    else open.push(entry);
+  });
+  return [
+    { key: "open", label: "Open", rows: open },
+    { key: "closed", label: "Closed", rows: closed },
+  ].filter((group) => group.rows.length);
 }
 
 function isEntryActive(entry) {
@@ -8698,7 +8717,16 @@ function render() {
     tr.innerHTML = `<td colspan="7" class="empty">No communications found.</td>`;
     els.rows.appendChild(tr);
   }
-  rows.forEach((entry) => els.rows.appendChild(state.editingId === entry.id ? buildEditableRow(entry) : buildReadOnlyRow(entry)));
+  if (rows.length && isCommunicationsGroupingEnabled()) {
+    splitCommunicationGroups(rows).forEach((group) => {
+      els.rows.appendChild(buildCommunicationGroupRow(group.label));
+      group.rows.forEach((entry) => {
+        els.rows.appendChild(state.editingId === entry.id ? buildEditableRow(entry) : buildReadOnlyRow(entry));
+      });
+    });
+  } else {
+    rows.forEach((entry) => els.rows.appendChild(state.editingId === entry.id ? buildEditableRow(entry) : buildReadOnlyRow(entry)));
+  }
   updateSortIndicators();
   syncStickyRows();
 }
@@ -8981,6 +9009,13 @@ function buildEditableRow(entry) {
   return tr;
 }
 
+function buildCommunicationGroupRow(label) {
+  const tr = document.createElement("tr");
+  tr.className = "communications-group-row";
+  tr.innerHTML = `<td colspan="7"><span class="communications-group-pill">${escape(label)}</span></td>`;
+  return tr;
+}
+
 function renderCommunicationsMobileCards(rows) {
   if (!els.communicationsMobileCards) return;
   const list = els.communicationsMobileCards;
@@ -8990,9 +9025,25 @@ function renderCommunicationsMobileCards(rows) {
     list.innerHTML += '<div class="services-mobile-empty">No communications found.</div>';
     return;
   }
+  if (isCommunicationsGroupingEnabled()) {
+    splitCommunicationGroups(rows).forEach((group) => {
+      list.appendChild(buildCommunicationGroupCard(group.label));
+      group.rows.forEach((entry) => {
+        list.appendChild(state.editingId === entry.id ? buildCommunicationEditableCard(entry) : buildCommunicationReadOnlyCard(entry));
+      });
+    });
+    return;
+  }
   rows.forEach((entry) => {
     list.appendChild(state.editingId === entry.id ? buildCommunicationEditableCard(entry) : buildCommunicationReadOnlyCard(entry));
   });
+}
+
+function buildCommunicationGroupCard(label) {
+  const card = document.createElement("div");
+  card.className = "communications-mobile-group";
+  card.textContent = label;
+  return card;
 }
 
 function buildCommunicationInlineCard() {

@@ -350,6 +350,34 @@ h3 {
   margin-top: 0.1rem;
 }
 
+.communications-group-row td {
+  padding: 0.55rem 0.7rem 0.25rem;
+  background: #fffdfa;
+  border-bottom: 0;
+}
+
+.communications-group-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.62rem;
+  border-radius: 999px;
+  background: rgba(201, 145, 70, 0.12);
+  color: #7b5632;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.communications-mobile-group {
+  margin: 0.15rem 0 0.25rem;
+  color: #7b5632;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .filters input,
 .filters select {
   font-size: 0.78rem;
