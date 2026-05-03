@@ -324,6 +324,18 @@ h3 {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
+.communications-filters {
+  gap: 0.6rem;
+  grid-template-columns:
+    minmax(92px, 0.72fr)
+    minmax(72px, 0.52fr)
+    minmax(210px, 1.75fr)
+    minmax(92px, 0.72fr)
+    minmax(120px, 0.95fr)
+    minmax(112px, 0.8fr)
+    minmax(112px, 0.8fr);
+}
+
 .review-filters {
   gap: 0.55rem;
   grid-template-columns:
@@ -348,6 +360,26 @@ h3 {
   width: auto;
   justify-self: start;
   margin-top: 0.1rem;
+}
+
+.communications-filters .filter-checkbox-inline {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.36rem;
+  align-self: end;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  min-height: 2.2rem;
+}
+
+.communications-filters .filter-checkbox-inline span {
+  line-height: 1;
+}
+
+.communications-filters .filter-checkbox-inline input[type="checkbox"] {
+  margin-top: 0;
+  flex: 0 0 auto;
 }
 
 .communications-group-row td {
