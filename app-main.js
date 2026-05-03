@@ -4995,6 +4995,19 @@ function serviceDraftPredictionKey({ flightNumber = "", date = "", leg = "arriva
   return `${when}|${flight}|${leg === "departure" ? "departure" : "arrival"}`;
 }
 
+function serviceAirportPattern() {
+  return /(airport|aeroporto|humberto delgado|portela|lisbon airport|aeroporto de lisboa|terminal 1|terminal 2)/i;
+}
+
+function serviceFlightLegForLocations(pickupLocation, dropoffLocation) {
+  const airportPattern = serviceAirportPattern();
+  const pickup = clean(pickupLocation);
+  const dropoff = clean(dropoffLocation);
+  if (airportPattern.test(pickup)) return "arrival";
+  if (airportPattern.test(dropoff)) return "departure";
+  return "";
+}
+
 function setServiceDraftPrediction(slot, key, text) {
   if (!state.serviceDraftFlightPredictions?.[slot]) return;
   state.serviceDraftFlightPredictions[slot] = { key, text };
@@ -5082,14 +5095,14 @@ function queueServiceDraftPredictionRefresh() {
   const mainOptions = {
     flightNumber: draft.flightNumber,
     date: draft.date,
-    leg: "arrival",
+    leg: serviceFlightLegForLocations(draft.pickupLocation, draft.dropoffLocation) || "arrival",
     pickupLocation: draft.pickupLocation,
     dropoffLocation: draft.dropoffLocation,
   };
   const returnOptions = {
     flightNumber: draft.returnFlight,
     date: draft.returnDate,
-    leg: "departure",
+    leg: serviceFlightLegForLocations(draft.returnPickup, draft.returnDropoff) || "departure",
     pickupLocation: draft.returnPickup,
     dropoffLocation: draft.returnDropoff,
   };
@@ -5160,12 +5173,9 @@ function renderServicePhoneFlag() {
 }
 
 function serviceAirportArrivalCandidate(row) {
-  const pickup = clean(row.pickupLocation).toLowerCase();
-  const dropoff = clean(row.dropoffLocation).toLowerCase();
   const today = formatDate(new Date());
-  const airportPattern = /(airport|aeroporto|humberto delgado|portela|lisbon airport|aeroporto de lisboa|terminal 1|terminal 2|lis)/i;
   if (!clean(row.flightNumber) || clean(row.date) !== today) return false;
-  return row.legType === "return" ? airportPattern.test(dropoff) : airportPattern.test(pickup);
+  return !!serviceFlightLegForLocations(row.pickupLocation, row.dropoffLocation);
 }
 
 function serviceFlightStatusKey(row) {
@@ -5196,10 +5206,10 @@ async function fetchServiceFlightStatus(row) {
   state.serviceFlightStatuses.cache[key] = { text: "checking...", loaded: false, pending: true };
   renderServices();
   try {
-    const leg = row.legType === "return" ? "departure" : "arrival";
+    const leg = serviceFlightLegForLocations(row.pickupLocation, row.dropoffLocation) || "arrival";
     const result = await api(`/api/aviationstack-flight?flight=${encodeURIComponent(normalizeFlightCode(row.flightNumber))}&date=${encodeURIComponent(clean(row.date))}&leg=${encodeURIComponent(leg)}&pickup=${encodeURIComponent(clean(row.pickupLocation))}&dropoff=${encodeURIComponent(clean(row.dropoffLocation))}`);
     const timeText = formatPredictionTime(result?.predictedTime, result?.timeZone);
-    const label = row.legType === "return" ? "ETD" : "ETA";
+    const label = leg === "departure" ? "ETD" : "ETA";
     const statusLabel = formatFlightStatusLabel(result?.status);
     const displayText = `${statusLabel ? `${statusLabel} ` : ""}${timeText ? `${label} ${timeText}` : `${label} -`}`.trim();
     state.serviceFlightStatuses.cache[key] = { text: displayText, loaded: true, pending: false };
