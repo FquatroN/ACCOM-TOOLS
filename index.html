@@ -33,6 +33,7 @@
           <button id="nav-services" type="button" class="nav-link">Services</button>
           <button id="nav-shopping" type="button" class="nav-link">Shopping</button>
           <button id="nav-bakery" type="button" class="nav-link">Bakery order</button>
+          <button id="nav-laundry" type="button" class="nav-link">Laundry Control</button>
           <button id="nav-reviews" type="button" class="nav-link">Reviews</button>
         </aside>
         <section id="sidebar-review-summary-card" class="sidebar-summary-card" hidden>
@@ -1164,6 +1165,119 @@
           </section>
         </section>
 
+        <section id="view-laundry" class="view" hidden>
+          <section class="feature-title">
+            <h2>Laundry Control</h2>
+          </section>
+
+          <section id="laundry-editor-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card service-modal-card laundry-modal-card">
+              <div class="bar">
+                <h2>Laundry Record</h2>
+                <div class="actions">
+                  <p id="laundry-status" class="auth-status"></p>
+                  <button id="laundry-close-modal" type="button" class="ghost">Close</button>
+                </div>
+              </div>
+              <div class="grid settings-grid laundry-form-grid">
+                <label>
+                  Property *
+                  <select id="laundry-property">
+                    <option value="Hostel">Hostel</option>
+                    <option value="Cruz">Cruz</option>
+                  </select>
+                </label>
+                <label>
+                  Date *
+                  <input id="laundry-date" type="date" />
+                </label>
+                <label>
+                  Received Kg
+                  <input id="laundry-received-weight" type="number" min="0" step="0.01" />
+                </label>
+              </div>
+              <label class="services-notes-field">
+                Notes
+                <textarea id="laundry-notes" rows="3"></textarea>
+              </label>
+              <section class="settings-block">
+                <div class="bar">
+                  <h3>Sent</h3>
+                  <p id="laundry-sent-weight" class="auth-status">0,00 kg</p>
+                </div>
+                <div id="laundry-sent-items-grid" class="grid laundry-items-grid"></div>
+              </section>
+              <section class="settings-block">
+                <div class="bar">
+                  <h3>Received</h3>
+                  <p id="laundry-received-computed-weight" class="auth-status">0,00 kg</p>
+                </div>
+                <div id="laundry-received-items-grid" class="grid laundry-items-grid"></div>
+              </section>
+              <section class="settings-block">
+                <div class="bar">
+                  <h3>Match / Difference</h3>
+                  <p id="laundry-match-date" class="auth-status"></p>
+                </div>
+                <div id="laundry-difference-summary" class="audit-list empty">No matching sent batch found yet.</div>
+              </section>
+              <div class="actions">
+                <button id="laundry-save" type="button">Save Record</button>
+              </div>
+            </section>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Records</h2>
+              <div class="actions">
+                <button id="laundry-new" type="button" class="ghost">New record</button>
+                <p id="laundry-count">0 records</p>
+              </div>
+            </div>
+            <div class="grid filters laundry-filters">
+              <label>
+                Property
+                <select id="laundry-filter-property">
+                  <option value="">All</option>
+                  <option value="Hostel">Hostel</option>
+                  <option value="Cruz">Cruz</option>
+                </select>
+              </label>
+              <label>
+                Date From
+                <input id="laundry-filter-date-from" type="date" />
+              </label>
+              <label>
+                Date To
+                <input id="laundry-filter-date-to" type="date" />
+              </label>
+              <label>
+                Search notes
+                <input id="laundry-filter-search" type="text" placeholder="Search notes" />
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table class="shopping-history-table laundry-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Property</th>
+                    <th>Sent</th>
+                    <th>Sent Kg</th>
+                    <th>Received</th>
+                    <th>Received Kg</th>
+                    <th>Difference</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="laundry-rows"></tbody>
+              </table>
+            </div>
+            <p id="laundry-db-status" class="auth-status"></p>
+          </section>
+        </section>
+
         <section id="view-settings" class="view" hidden>
           <section class="card settings-shell">
             <aside class="settings-nav">
@@ -1182,6 +1296,9 @@
               </button>
               <button id="settings-menu-bakery" type="button" class="nav-link">
                 Bakery order
+              </button>
+              <button id="settings-menu-laundry" type="button" class="nav-link">
+                Laundry Control
               </button>
               <button id="settings-menu-reviews" type="button" class="nav-link">
                 Reviews
@@ -1492,6 +1609,42 @@
                     </table>
                   </div>
                   <p id="shopping-settings-status" class="auth-status"></p>
+                </section>
+              </div>
+
+              <div id="settings-view-laundry" hidden>
+                <div class="actions">
+                  <button id="close-settings-laundry" type="button" class="ghost">Back To App</button>
+                  <button id="laundry-save-settings" type="button" class="ghost">Save Configuration</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Laundry Configuration</h3>
+                    <button id="laundry-add-item-type" type="button" class="ghost">Add Item Type</button>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Price per KG (€)
+                      <input id="laundry-price-per-kg" type="number" min="0" step="0.01" />
+                    </label>
+                    <label class="settings-email-recipients">
+                      Laundry email
+                      <textarea id="laundry-email-recipients" rows="3" placeholder="email1@example.com, email2@example.com"></textarea>
+                    </label>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="settings-table">
+                      <thead>
+                        <tr>
+                          <th>Item type</th>
+                          <th>Weight (Kg)</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="laundry-item-types-body"></tbody>
+                    </table>
+                  </div>
+                  <p id="laundry-settings-status" class="auth-status"></p>
                 </section>
               </div>
 

@@ -17,8 +17,8 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services", "shopping", "bakery"];
-const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "shopping", "bakery", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services", "shopping", "bakery", "laundry"];
+const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "shopping", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -328,6 +328,17 @@ const DEFAULT_BAKERY_SETTINGS = {
   ],
 };
 
+const DEFAULT_LAUNDRY_SETTINGS = {
+  pricePerKg: 0,
+  emailRecipients: [],
+  itemTypes: [
+    { id: "single-baixo", name: "single baixo", weightKg: 0.48 },
+    { id: "single-cima", name: "single cima", weightKg: 0.5 },
+    { id: "casal-baixo", name: "casal baixo", weightKg: 0.72 },
+    { id: "casal-cima", name: "casal cima", weightKg: 0.75 },
+  ],
+};
+
 const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
   { label: "App: Communications", kind: "app", key: "communications" },
@@ -337,12 +348,14 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Services", kind: "app", key: "services" },
   { label: "App: Shopping", kind: "app", key: "shopping" },
   { label: "App: Bakery", kind: "app", key: "bakery" },
+  { label: "App: Laundry Control", kind: "app", key: "laundry" },
   { label: "Settings: Communications", kind: "settings", key: "communications" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
   { label: "Settings: Groups", kind: "settings", key: "groups" },
   { label: "Settings: Services", kind: "settings", key: "services" },
   { label: "Settings: Shopping", kind: "settings", key: "shopping" },
   { label: "Settings: Bakery", kind: "settings", key: "bakery" },
+  { label: "Settings: Laundry Control", kind: "settings", key: "laundry" },
   { label: "Settings: Admin Users", kind: "settings", key: "admin-users" },
   { label: "Action", kind: "action", key: "action" },
 ];
@@ -582,6 +595,13 @@ const state = {
   bakerySubmitName: "",
   bakerySelectedHistoryId: "",
   bakerySettingsTab: "table",
+  laundryRecords: [],
+  laundryLoaded: false,
+  laundrySettings: clone(DEFAULT_LAUNDRY_SETTINGS),
+  laundrySettingsLoaded: false,
+  laundryFilters: { property: "", dateFrom: "", dateTo: "", search: "" },
+  laundryDraft: null,
+  laundrySelectedId: "",
   serviceProviders: [],
   serviceFilters: { showActive: true, createdFrom: "", createdTo: "", dateFrom: "", dateTo: "", name: "" },
   serviceDraft: emptyServiceDraft(),
@@ -660,6 +680,7 @@ const els = {
   navServices: document.getElementById("nav-services"),
   navShopping: document.getElementById("nav-shopping"),
   navBakery: document.getElementById("nav-bakery"),
+  navLaundry: document.getElementById("nav-laundry"),
   openSettings: document.getElementById("open-settings"),
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
@@ -668,6 +689,7 @@ const els = {
   viewServices: document.getElementById("view-services"),
   viewShopping: document.getElementById("view-shopping"),
   viewBakery: document.getElementById("view-bakery"),
+  viewLaundry: document.getElementById("view-laundry"),
   viewSettings: document.getElementById("view-settings"),
   settingsMenuCommunications: document.getElementById("settings-menu-communications"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
@@ -675,6 +697,7 @@ const els = {
   settingsMenuServices: document.getElementById("settings-menu-services"),
   settingsMenuShopping: document.getElementById("settings-menu-shopping"),
   settingsMenuBakery: document.getElementById("settings-menu-bakery"),
+  settingsMenuLaundry: document.getElementById("settings-menu-laundry"),
   settingsMenuAdminUsers: document.getElementById("settings-menu-admin-users"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
@@ -682,6 +705,7 @@ const els = {
   settingsViewServices: document.getElementById("settings-view-services"),
   settingsViewShopping: document.getElementById("settings-view-shopping"),
   settingsViewBakery: document.getElementById("settings-view-bakery"),
+  settingsViewLaundry: document.getElementById("settings-view-laundry"),
   settingsViewAdminUsers: document.getElementById("settings-view-admin-users"),
   settingsReviewsImportTab: document.getElementById("settings-reviews-import-tab"),
   settingsReviewsConfigTab: document.getElementById("settings-reviews-config-tab"),
@@ -693,6 +717,7 @@ const els = {
   closeSettingsServices: document.getElementById("close-settings-services"),
   closeSettingsShopping: document.getElementById("close-settings-shopping"),
   closeSettingsBakery: document.getElementById("close-settings-bakery"),
+  closeSettingsLaundry: document.getElementById("close-settings-laundry"),
   adminUserEmail: document.getElementById("admin-user-email"),
   adminUserPassword: document.getElementById("admin-user-password"),
   adminUserProfile: document.getElementById("admin-user-profile"),
@@ -974,6 +999,34 @@ const els = {
   bakeryDetailResend: document.getElementById("bakery-detail-resend"),
   bakeryDetailStatus: document.getElementById("bakery-detail-status"),
   bakeryDetailBody: document.getElementById("bakery-detail-body"),
+  laundryNew: document.getElementById("laundry-new"),
+  laundryRows: document.getElementById("laundry-rows"),
+  laundryCount: document.getElementById("laundry-count"),
+  laundryDbStatus: document.getElementById("laundry-db-status"),
+  laundryFilterProperty: document.getElementById("laundry-filter-property"),
+  laundryFilterDateFrom: document.getElementById("laundry-filter-date-from"),
+  laundryFilterDateTo: document.getElementById("laundry-filter-date-to"),
+  laundryFilterSearch: document.getElementById("laundry-filter-search"),
+  laundryEditorModal: document.getElementById("laundry-editor-modal"),
+  laundryCloseModal: document.getElementById("laundry-close-modal"),
+  laundryStatus: document.getElementById("laundry-status"),
+  laundryProperty: document.getElementById("laundry-property"),
+  laundryDate: document.getElementById("laundry-date"),
+  laundryReceivedWeight: document.getElementById("laundry-received-weight"),
+  laundryNotes: document.getElementById("laundry-notes"),
+  laundrySentItemsGrid: document.getElementById("laundry-sent-items-grid"),
+  laundryReceivedItemsGrid: document.getElementById("laundry-received-items-grid"),
+  laundrySentWeight: document.getElementById("laundry-sent-weight"),
+  laundryReceivedComputedWeight: document.getElementById("laundry-received-computed-weight"),
+  laundryMatchDate: document.getElementById("laundry-match-date"),
+  laundryDifferenceSummary: document.getElementById("laundry-difference-summary"),
+  laundrySave: document.getElementById("laundry-save"),
+  laundrySaveSettings: document.getElementById("laundry-save-settings"),
+  laundryAddItemType: document.getElementById("laundry-add-item-type"),
+  laundryPricePerKg: document.getElementById("laundry-price-per-kg"),
+  laundryEmailRecipients: document.getElementById("laundry-email-recipients"),
+  laundryItemTypesBody: document.getElementById("laundry-item-types-body"),
+  laundrySettingsStatus: document.getElementById("laundry-settings-status"),
   bakerySaveSettings: document.getElementById("bakery-save-settings"),
   bakerySettingsTableTab: document.getElementById("bakery-settings-table-tab"),
   bakerySettingsTypesTab: document.getElementById("bakery-settings-types-tab"),
@@ -1082,7 +1135,8 @@ async function init() {
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("shopping")) state.currentView = "shopping";
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("bakery")) state.currentView = "bakery";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("bakery") && canApp("reviews")) state.currentView = "reviews";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   if (!canSettings("communications") && canSettings("reviews")) state.settingsSection = "reviews";
@@ -1090,6 +1144,7 @@ async function init() {
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("bakery")) state.settingsSection = "bakery";
+  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
   else if (!canSettings("communications") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
@@ -1100,6 +1155,7 @@ async function init() {
   await ensureCurrentViewData();
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("bakery")) loadBakeryData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canApp("laundry")) loadLaundryRecords({ silent: true }).then(() => renderLayout()).catch(() => {});
   startAutoRefresh();
 }
 
@@ -1111,6 +1167,7 @@ function bindEvents() {
   els.navServices.addEventListener("click", () => setView("services"));
   els.navShopping.addEventListener("click", () => setView("shopping"));
   els.navBakery.addEventListener("click", () => setView("bakery"));
+  els.navLaundry.addEventListener("click", () => setView("laundry"));
   els.sidebarReviewSummaryCard?.addEventListener("click", async () => {
     state.reviewScreen = "resume";
     await setView("reviews");
@@ -1125,12 +1182,14 @@ function bindEvents() {
   els.closeSettingsServices.addEventListener("click", () => setView("services"));
   els.closeSettingsShopping.addEventListener("click", () => setView("shopping"));
   els.closeSettingsBakery.addEventListener("click", () => setView("bakery"));
+  els.closeSettingsLaundry?.addEventListener("click", () => setView("laundry"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuGroups.addEventListener("click", () => setSettingsSection("groups"));
   els.settingsMenuServices.addEventListener("click", () => setSettingsSection("services"));
   els.settingsMenuShopping.addEventListener("click", () => setSettingsSection("shopping"));
   els.settingsMenuBakery.addEventListener("click", () => setSettingsSection("bakery"));
+  els.settingsMenuLaundry.addEventListener("click", () => setSettingsSection("laundry"));
   els.settingsMenuAdminUsers.addEventListener("click", () => setSettingsSection("admin-users"));
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
@@ -1203,6 +1262,27 @@ function bindEvents() {
   els.bakeryBreadTypesBody?.addEventListener("input", onBakerySettingsInput);
   els.bakeryBreadTypesBody?.addEventListener("click", onBakerySettingsAction);
   els.bakeryAddBreadType?.addEventListener("click", addBakeryBreadType);
+  els.laundryNew?.addEventListener("click", async () => {
+    await ensureLaundryData();
+    resetLaundryDraft();
+    openLaundryModal();
+  });
+  els.laundryCloseModal?.addEventListener("click", closeLaundryModal);
+  els.laundryFilterProperty?.addEventListener("change", onLaundryFilterInput);
+  [els.laundryFilterDateFrom, els.laundryFilterDateTo, els.laundryFilterSearch].forEach((el) => el?.addEventListener("input", onLaundryFilterInput));
+  [els.laundryProperty, els.laundryDate, els.laundryReceivedWeight, els.laundryNotes].forEach((el) =>
+    el?.addEventListener(el.tagName === "SELECT" ? "change" : "input", onLaundryDraftInput)
+  );
+  els.laundrySentItemsGrid?.addEventListener("input", onLaundryDraftGridInput);
+  els.laundryReceivedItemsGrid?.addEventListener("input", onLaundryDraftGridInput);
+  els.laundrySave?.addEventListener("click", saveLaundryRecord);
+  els.laundryRows?.addEventListener("click", onLaundryRowClick);
+  els.laundrySaveSettings?.addEventListener("click", saveLaundrySettings);
+  els.laundryAddItemType?.addEventListener("click", addLaundrySettingItemType);
+  els.laundryPricePerKg?.addEventListener("input", onLaundrySettingsInput);
+  els.laundryEmailRecipients?.addEventListener("input", onLaundrySettingsInput);
+  els.laundryItemTypesBody?.addEventListener("input", onLaundrySettingsInput);
+  els.laundryItemTypesBody?.addEventListener("click", onLaundrySettingsAction);
   els.settingsReviewsImportTab.addEventListener("click", () => setReviewSettingsScreen("import"));
   els.settingsReviewsConfigTab.addEventListener("click", () => setReviewSettingsScreen("config"));
   els.rows.addEventListener("click", onRowAction);
@@ -1537,6 +1617,7 @@ async function setView(view) {
   if (view === "services" && !canApp("services")) return showToast("No services access.", "error");
   if (view === "shopping" && !canApp("shopping")) return showToast("No shopping access.", "error");
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
+  if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
   state.currentView = view;
   if (view === "settings") {
@@ -1546,6 +1627,7 @@ async function setView(view) {
     else if (canSettings("services")) state.settingsSection = "services";
     else if (canSettings("shopping")) state.settingsSection = "shopping";
     else if (canSettings("bakery")) state.settingsSection = "bakery";
+    else if (canSettings("laundry")) state.settingsSection = "laundry";
     else if (canSettings("admin-users")) state.settingsSection = "admin-users";
   }
   if (view !== "services") {
@@ -1604,6 +1686,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "bakery") {
     await ensureBakeryData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "laundry") {
+    await ensureLaundryData();
     renderSettingsSection();
     render();
     return;
@@ -1683,6 +1771,13 @@ async function refreshCurrentViewData(reason = "timer") {
       renderBakery();
       renderLayout();
       state.lastAutoRefreshAt = now;
+      return;
+    }
+    if (state.currentView === "laundry" && canApp("laundry")) {
+      await loadLaundryRecords({ silent: true });
+      state.laundryLoaded = true;
+      renderLaundry();
+      state.lastAutoRefreshAt = now;
     }
   } finally {
     state.autoRefreshRunning = false;
@@ -1697,6 +1792,7 @@ function shouldSkipAutoRefresh() {
   if (state.currentView === "services" && els.serviceEditorModal && !els.serviceEditorModal.hidden) return true;
   if (state.currentView === "shopping" && state.shoppingOpenOrder) return true;
   if (state.currentView === "bakery" && state.bakeryOpenOrder) return true;
+  if (state.currentView === "laundry" && els.laundryEditorModal && !els.laundryEditorModal.hidden) return true;
   if (state.reviewQa.loading) return true;
   return false;
 }
@@ -1823,6 +1919,20 @@ async function ensureBakeryData() {
   renderBakerySettings();
 }
 
+async function ensureLaundryData() {
+  if (!canApp("laundry") && !canSettings("laundry")) return;
+  if ((canApp("laundry") || canSettings("laundry")) && !state.laundrySettingsLoaded) {
+    await loadLaundrySettings();
+    state.laundrySettingsLoaded = true;
+  }
+  if (canApp("laundry") && !state.laundryLoaded) {
+    await loadLaundryRecords();
+    state.laundryLoaded = true;
+  }
+  renderLaundry();
+  renderLaundrySettings();
+}
+
 async function ensureSettingsSectionData() {
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
@@ -1848,6 +1958,10 @@ async function ensureSettingsSectionData() {
     await ensureBakeryData();
     return;
   }
+  if (state.settingsSection === "laundry") {
+    await ensureLaundryData();
+    return;
+  }
   if (state.settingsSection === "admin-users") await ensureAdminUsersData();
 }
 
@@ -1859,6 +1973,7 @@ function renderLayout() {
   const services = state.currentView === "services";
   const shopping = state.currentView === "shopping";
   const bakery = state.currentView === "bakery";
+  const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
   const canComm = canApp("communications");
   const canLostFound = canApp("lost-found");
@@ -1867,6 +1982,7 @@ function renderLayout() {
   const canServices = canApp("services");
   const canShopping = canApp("shopping");
   const canBakery = canApp("bakery");
+  const canLaundry = canApp("laundry");
   if (els.sidebarReviewSummaryCard) els.sidebarReviewSummaryCard.hidden = !canComm;
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
@@ -1877,6 +1993,7 @@ function renderLayout() {
   els.navServices.classList.toggle("active", services);
   els.navShopping.classList.toggle("active", shopping);
   els.navBakery.classList.toggle("active", bakery);
+  els.navLaundry.classList.toggle("active", laundry);
   els.navCommunications.hidden = !canComm;
   els.navLostFound.hidden = !canLostFound;
   els.navReviews.hidden = !canReviews;
@@ -1884,6 +2001,7 @@ function renderLayout() {
   els.navServices.hidden = !canServices;
   els.navShopping.hidden = !canShopping;
   els.navBakery.hidden = !canBakery;
+  els.navLaundry.hidden = !canLaundry;
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
   els.navBakery.classList.toggle("has-alert", shouldShowBakeryAlert());
   els.openSettings.hidden = !state.access.settingsFeatures.length;
@@ -1897,6 +2015,7 @@ function renderLayout() {
   els.viewServices.hidden = !services;
   els.viewShopping.hidden = !shopping;
   els.viewBakery.hidden = !bakery;
+  els.viewLaundry.hidden = !laundry;
   els.viewSettings.hidden = !settingsMode;
   els.settingsMenuCommunications.hidden = !canSettings("communications");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
@@ -1904,6 +2023,7 @@ function renderLayout() {
   els.settingsMenuServices.hidden = !canSettings("services");
   els.settingsMenuShopping.hidden = !canSettings("shopping");
   els.settingsMenuBakery.hidden = !canSettings("bakery");
+  els.settingsMenuLaundry.hidden = !canSettings("laundry");
   els.settingsMenuAdminUsers.hidden = !canSettings("admin-users");
   els.settingsMenuCommunications.classList.toggle("active", state.settingsSection === "communications");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
@@ -1911,6 +2031,7 @@ function renderLayout() {
   els.settingsMenuServices.classList.toggle("active", state.settingsSection === "services");
   els.settingsMenuShopping.classList.toggle("active", state.settingsSection === "shopping");
   els.settingsMenuBakery.classList.toggle("active", state.settingsSection === "bakery");
+  els.settingsMenuLaundry.classList.toggle("active", state.settingsSection === "laundry");
   els.settingsMenuAdminUsers.classList.toggle("active", state.settingsSection === "admin-users");
   renderSidebarReviewSummary();
   syncMobileNavLayout();
@@ -1923,6 +2044,7 @@ async function setSettingsSection(section) {
   if (section === "services" && !canSettings("services")) return;
   if (section === "shopping" && !canSettings("shopping")) return;
   if (section === "bakery" && !canSettings("bakery")) return;
+  if (section === "laundry" && !canSettings("laundry")) return;
   if (section === "admin-users" && !canSettings("admin-users")) return;
   setMobileNavOpen(false);
   state.settingsSection = section === "admin-users"
@@ -1931,6 +2053,8 @@ async function setSettingsSection(section) {
       ? "shopping"
     : section === "bakery"
       ? "bakery"
+    : section === "laundry"
+      ? "laundry"
     : section === "services"
       ? "services"
       : section === "groups"
@@ -1968,6 +2092,7 @@ function renderSettingsSection() {
   const isServices = state.settingsSection === "services" && canSettings("services");
   const isShopping = state.settingsSection === "shopping" && canSettings("shopping");
   const isBakery = state.settingsSection === "bakery" && canSettings("bakery");
+  const isLaundry = state.settingsSection === "laundry" && canSettings("laundry");
   const isAdmin = state.settingsSection === "admin-users" && canSettings("admin-users");
   els.settingsViewCommunications.hidden = !isComm;
   els.settingsViewReviews.hidden = !isReviews;
@@ -1975,6 +2100,7 @@ function renderSettingsSection() {
   els.settingsViewServices.hidden = !isServices;
   els.settingsViewShopping.hidden = !isShopping;
   els.settingsViewBakery.hidden = !isBakery;
+  els.settingsViewLaundry.hidden = !isLaundry;
   els.settingsViewAdminUsers.hidden = !isAdmin;
   if (isReviews) setReviewSettingsScreen(state.reviewSettingsScreen, false);
 }
@@ -8789,6 +8915,470 @@ function onBakeryHistoryAction(event) {
   openBakeryDetailModal(clean(row.dataset.bakeryHistoryId));
 }
 
+function normalizeLaundrySettingsClient(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const itemTypes = (Array.isArray(source.itemTypes) ? source.itemTypes : [])
+    .map((item, index) => ({
+      id: clean(item?.id) || `laundry-item-${index + 1}`,
+      name: clean(item?.name) || `item ${index + 1}`,
+      weightKg: Math.max(0, Number(normalizeNumber(item?.weightKg) || 0)),
+    }))
+    .filter((item, index, items) => item.name && items.findIndex((candidate) => candidate.id === item.id) === index);
+  return {
+    pricePerKg: Math.max(0, Number(normalizeNumber(source.pricePerKg) || 0)),
+    emailRecipients: String(Array.isArray(source.emailRecipients) ? source.emailRecipients.join("\n") : source.emailRecipients || "")
+      .split(/[\n,;]/)
+      .map((item) => clean(item).toLowerCase())
+      .filter(Boolean)
+      .filter((item, index, items) => items.indexOf(item) === index),
+    itemTypes: itemTypes.length ? itemTypes : clone(DEFAULT_LAUNDRY_SETTINGS.itemTypes),
+  };
+}
+
+function normalizeLaundryPropertyClient(value) {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return "Hostel";
+  if (raw.includes("cruz") || raw.includes("apart")) return "Cruz";
+  return "Hostel";
+}
+
+function sanitizeLaundryCountsClient(value, itemTypes = state.laundrySettings?.itemTypes || DEFAULT_LAUNDRY_SETTINGS.itemTypes) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return itemTypes.reduce((acc, item) => {
+    const amount = Math.max(0, Math.round(Number(normalizeNumber(source[item.id]) || 0)));
+    acc[item.id] = amount;
+    return acc;
+  }, {});
+}
+
+function normalizeLaundryRecordClient(input = {}, settings = state.laundrySettings) {
+  const safeSettings = normalizeLaundrySettingsClient(settings);
+  return {
+    id: clean(input.id),
+    property: normalizeLaundryPropertyClient(input.property),
+    date: clean(input.date),
+    sentItems: sanitizeLaundryCountsClient(input.sentItems, safeSettings.itemTypes),
+    receivedItems: sanitizeLaundryCountsClient(input.receivedItems, safeSettings.itemTypes),
+    receivedWeightKg: Math.max(0, Number(normalizeNumber(input.receivedWeightKg) || 0)),
+    notes: clean(input.notes),
+    createdAt: clean(input.createdAt),
+    updatedAt: clean(input.updatedAt),
+  };
+}
+
+function emptyLaundryDraft() {
+  return normalizeLaundryRecordClient({
+    id: "",
+    property: "Hostel",
+    date: formatDate(new Date()),
+    sentItems: {},
+    receivedItems: {},
+    receivedWeightKg: "",
+    notes: "",
+    createdAt: "",
+    updatedAt: "",
+  });
+}
+
+function laundryItemTypes() {
+  return Array.isArray(state.laundrySettings?.itemTypes) && state.laundrySettings.itemTypes.length
+    ? state.laundrySettings.itemTypes
+    : clone(DEFAULT_LAUNDRY_SETTINGS.itemTypes);
+}
+
+function countLaundryWeightKgClient(counts, itemTypes = laundryItemTypes()) {
+  return Number(itemTypes.reduce((sum, item) => sum + (Number(counts?.[item.id] || 0) * Number(item.weightKg || 0)), 0).toFixed(2));
+}
+
+function formatLaundryKg(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "0,00 kg";
+  const formatted = new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num);
+  return `${formatted} kg`;
+}
+
+function shiftLaundryDate(value, days) {
+  const raw = clean(value);
+  if (!raw) return "";
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return raw;
+  date.setDate(date.getDate() + days);
+  return formatDate(date);
+}
+
+function setLaundryStatus(text) {
+  if (els.laundryStatus) els.laundryStatus.textContent = text;
+}
+
+function setLaundryDbStatus(text) {
+  if (els.laundryDbStatus) els.laundryDbStatus.textContent = text;
+}
+
+function setLaundrySettingsStatus(text) {
+  if (els.laundrySettingsStatus) els.laundrySettingsStatus.textContent = text;
+}
+
+async function loadLaundrySettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/laundry-settings");
+    state.laundrySettings = normalizeLaundrySettingsClient(result?.settings);
+    state.laundrySettingsLoaded = true;
+    renderLaundrySettings();
+    if (!silent) setLaundrySettingsStatus("Laundry configuration loaded.");
+  } catch (e) {
+    state.laundrySettings = clone(DEFAULT_LAUNDRY_SETTINGS);
+    renderLaundrySettings();
+    if (!silent) setLaundrySettingsStatus(`Using default laundry configuration (${e.message}).`);
+  }
+}
+
+async function loadLaundryRecords({ silent = false } = {}) {
+  try {
+    const result = await api("/api/laundry");
+    if (result?.settings) {
+      state.laundrySettings = normalizeLaundrySettingsClient(result.settings);
+      state.laundrySettingsLoaded = true;
+    }
+    state.laundryRecords = (Array.isArray(result?.rows) ? result.rows : []).map((row) => normalizeLaundryRecordClient(row, state.laundrySettings));
+    state.laundryLoaded = true;
+    renderLaundry();
+    renderLaundrySettings();
+    if (!silent) setLaundryDbStatus(`Loaded ${state.laundryRecords.length} laundry record${state.laundryRecords.length === 1 ? "" : "s"}.`);
+  } catch (e) {
+    state.laundryRecords = [];
+    renderLaundry();
+    if (!silent) {
+      setLaundryDbStatus(`Failed to load laundry records: ${e.message}`);
+      showToast(`Failed to load laundry records: ${e.message}`, "error");
+    }
+  }
+}
+
+function resetLaundryDraft() {
+  state.laundrySelectedId = "";
+  state.laundryDraft = emptyLaundryDraft();
+}
+
+function findLaundryMatchedRecord(record) {
+  const targetDate = shiftLaundryDate(record?.date, -2);
+  const property = normalizeLaundryPropertyClient(record?.property);
+  return state.laundryRecords.find((item) => clean(item.date) === targetDate && normalizeLaundryPropertyClient(item.property) === property) || null;
+}
+
+function formatLaundryItemsSummary(counts) {
+  const parts = laundryItemTypes()
+    .map((item) => ({ name: item.name, qty: Number(counts?.[item.id] || 0) }))
+    .filter((item) => item.qty > 0)
+    .map((item) => `${item.name}: ${item.qty}`);
+  return parts.length ? parts.join("\n") : "-";
+}
+
+function buildLaundryDifferenceLines(record) {
+  const matched = findLaundryMatchedRecord(record);
+  if (!matched) {
+    return {
+      matchDate: "",
+      lines: ["No matching sent batch found yet."],
+    };
+  }
+  const itemTypes = laundryItemTypes();
+  const lines = [];
+  let totalDiff = 0;
+  itemTypes.forEach((item) => {
+    const sent = Number(matched.sentItems?.[item.id] || 0);
+    const received = Number(record.receivedItems?.[item.id] || 0);
+    const diff = received - sent;
+    totalDiff += diff;
+    if (diff !== 0) lines.push(`${item.name}: ${sent} -> ${received} (${diff > 0 ? "+" : ""}${diff})`);
+  });
+  if (!lines.length) lines.push("All received quantities match the sent batch.");
+  const sentWeight = countLaundryWeightKgClient(matched.sentItems, itemTypes);
+  const receivedWeight = countLaundryWeightKgClient(record.receivedItems, itemTypes);
+  const weightDiff = Number((receivedWeight - sentWeight).toFixed(2));
+  lines.push(`Total counts difference: ${totalDiff > 0 ? "+" : ""}${totalDiff}`);
+  lines.push(`Weight difference: ${weightDiff > 0 ? "+" : ""}${weightDiff.toFixed(2)} kg`);
+  return {
+    matchDate: matched.date,
+    lines,
+  };
+}
+
+function renderLaundryItemInputs(container, counts, kind = "sent") {
+  if (!container) return;
+  container.innerHTML = laundryItemTypes().map((item) => `
+    <label>
+      <span>${escape(item.name)} <small>(${escape(String(Number(item.weightKg || 0).toFixed(2)))} kg)</small></span>
+      <input data-laundry-count-kind="${escape(kind)}" data-laundry-item-id="${escape(item.id)}" type="number" min="0" step="1" value="${escape(String(Number(counts?.[item.id] || 0) || ""))}" />
+    </label>
+  `).join("");
+}
+
+function renderLaundryDraft() {
+  const draft = state.laundryDraft || emptyLaundryDraft();
+  if (els.laundryProperty) els.laundryProperty.value = draft.property || "Hostel";
+  if (els.laundryDate) els.laundryDate.value = draft.date || "";
+  if (els.laundryReceivedWeight) els.laundryReceivedWeight.value = draft.receivedWeightKg === "" ? "" : String(draft.receivedWeightKg || "");
+  if (els.laundryNotes) els.laundryNotes.value = draft.notes || "";
+  renderLaundryItemInputs(els.laundrySentItemsGrid, draft.sentItems, "sent");
+  renderLaundryItemInputs(els.laundryReceivedItemsGrid, draft.receivedItems, "received");
+  if (els.laundrySentWeight) els.laundrySentWeight.textContent = formatLaundryKg(countLaundryWeightKgClient(draft.sentItems));
+  if (els.laundryReceivedComputedWeight) els.laundryReceivedComputedWeight.textContent = formatLaundryKg(countLaundryWeightKgClient(draft.receivedItems));
+  const diff = buildLaundryDifferenceLines(draft);
+  if (els.laundryMatchDate) els.laundryMatchDate.textContent = diff.matchDate ? `Matching sent batch: ${diff.matchDate}` : "No sent batch from 2 days earlier.";
+  if (els.laundryDifferenceSummary) {
+    els.laundryDifferenceSummary.classList.toggle("empty", !diff.matchDate);
+    els.laundryDifferenceSummary.innerHTML = diff.lines.map((line) => `<article>${escape(line)}</article>`).join("");
+  }
+}
+
+function openLaundryModal(recordId = "") {
+  const needle = clean(recordId);
+  if (needle) {
+    const found = state.laundryRecords.find((item) => item.id === needle);
+    if (found) {
+      state.laundrySelectedId = found.id;
+      state.laundryDraft = clone(found);
+    }
+  }
+  if (!state.laundryDraft) resetLaundryDraft();
+  els.laundryEditorModal.hidden = false;
+  document.body.classList.add("modal-open");
+  renderLaundryDraft();
+  setLaundryStatus("");
+}
+
+function closeLaundryModal() {
+  els.laundryEditorModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  state.laundrySelectedId = "";
+  state.laundryDraft = null;
+}
+
+function onLaundryFilterInput() {
+  state.laundryFilters.property = clean(els.laundryFilterProperty?.value);
+  state.laundryFilters.dateFrom = clean(els.laundryFilterDateFrom?.value);
+  state.laundryFilters.dateTo = clean(els.laundryFilterDateTo?.value);
+  state.laundryFilters.search = clean(els.laundryFilterSearch?.value);
+  renderLaundry();
+}
+
+function onLaundryDraftInput(event) {
+  if (!state.laundryDraft) return;
+  const target = event.target;
+  if (target === els.laundryProperty) state.laundryDraft.property = normalizeLaundryPropertyClient(target.value);
+  if (target === els.laundryDate) state.laundryDraft.date = clean(target.value);
+  if (target === els.laundryReceivedWeight) state.laundryDraft.receivedWeightKg = Math.max(0, Number(normalizeNumber(target.value) || 0));
+  if (target === els.laundryNotes) state.laundryDraft.notes = clean(target.value);
+  renderLaundryDraft();
+}
+
+function onLaundryDraftGridInput(event) {
+  if (!state.laundryDraft) return;
+  const kind = clean(event.target.dataset.laundryCountKind);
+  const itemId = clean(event.target.dataset.laundryItemId);
+  if (!kind || !itemId) return;
+  const amount = Math.max(0, Math.round(Number(normalizeNumber(event.target.value) || 0)));
+  if (kind === "sent") state.laundryDraft.sentItems[itemId] = amount;
+  if (kind === "received") state.laundryDraft.receivedItems[itemId] = amount;
+  renderLaundryDraft();
+}
+
+function getFilteredLaundryRecords() {
+  const filters = state.laundryFilters || {};
+  const property = clean(filters.property);
+  const dateFrom = clean(filters.dateFrom);
+  const dateTo = clean(filters.dateTo);
+  const search = clean(filters.search).toLowerCase();
+  return [...state.laundryRecords]
+    .filter((row) => !property || clean(row.property) === property)
+    .filter((row) => !dateFrom || clean(row.date) >= dateFrom)
+    .filter((row) => !dateTo || clean(row.date) <= dateTo)
+    .filter((row) => {
+      if (!search) return true;
+      const haystack = [row.notes, formatLaundryItemsSummary(row.sentItems), formatLaundryItemsSummary(row.receivedItems)]
+        .join("\n")
+        .toLowerCase();
+      return haystack.includes(search);
+    })
+    .sort((a, b) => {
+      const dateCompare = clean(b.date).localeCompare(clean(a.date));
+      if (dateCompare !== 0) return dateCompare;
+      if (a.property === b.property) return 0;
+      return a.property === "Hostel" ? -1 : 1;
+    });
+}
+
+function renderLaundry() {
+  if (!canApp("laundry")) {
+    if (els.laundryCount) els.laundryCount.textContent = "0 records";
+    if (els.laundryRows) els.laundryRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Laundry Control.</td></tr>';
+    return;
+  }
+  const rows = getFilteredLaundryRecords();
+  if (els.laundryCount) els.laundryCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.laundryFilterProperty) els.laundryFilterProperty.value = state.laundryFilters.property;
+  if (els.laundryFilterDateFrom) els.laundryFilterDateFrom.value = state.laundryFilters.dateFrom;
+  if (els.laundryFilterDateTo) els.laundryFilterDateTo.value = state.laundryFilters.dateTo;
+  if (els.laundryFilterSearch) els.laundryFilterSearch.value = state.laundryFilters.search;
+  if (els.laundryRows) els.laundryRows.innerHTML = "";
+  if (!rows.length) {
+    els.laundryRows.innerHTML = '<tr><td colspan="8" class="empty">No laundry records found.</td></tr>';
+    return;
+  }
+  rows.forEach((row) => {
+    const diff = buildLaundryDifferenceLines(row);
+    const matched = findLaundryMatchedRecord(row);
+    const tr = document.createElement("tr");
+    tr.className = "clickable-row";
+    tr.dataset.laundryId = row.id;
+    tr.innerHTML = `<td>${escape(row.date)}</td>
+      <td>${escape(row.property)}</td>
+      <td>${escape(formatLaundryItemsSummary(row.sentItems)).replace(/\n/g, "<br>")}</td>
+      <td>${escape(formatLaundryKg(countLaundryWeightKgClient(row.sentItems)))}</td>
+      <td>${escape(formatLaundryItemsSummary(row.receivedItems)).replace(/\n/g, "<br>")}</td>
+      <td>${escape(formatLaundryKg((Number(row.receivedWeightKg) || countLaundryWeightKgClient(row.receivedItems))))}</td>
+      <td>${matched ? `<small>Match ${escape(diff.matchDate)}</small><br>${escape(diff.lines.join(" | ")).replace(/\n/g, "<br>")}` : escape(diff.lines[0])}</td>
+      <td>${escape(row.notes || "-")}</td>`;
+    els.laundryRows.appendChild(tr);
+  });
+}
+
+function renderLaundrySettings() {
+  if (!canSettings("laundry")) return;
+  const settings = state.laundrySettings || clone(DEFAULT_LAUNDRY_SETTINGS);
+  if (els.laundryPricePerKg) els.laundryPricePerKg.value = settings.pricePerKg || "";
+  if (els.laundryEmailRecipients) els.laundryEmailRecipients.value = (settings.emailRecipients || []).join("\n");
+  if (els.laundryItemTypesBody) {
+    els.laundryItemTypesBody.innerHTML = "";
+    settings.itemTypes.forEach((item, index) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td><input data-laundry-setting-field="name" data-index="${index}" value="${escape(item.name)}" /></td>
+        <td><input data-laundry-setting-field="weightKg" data-index="${index}" type="number" min="0" step="0.01" value="${escape(String(item.weightKg || 0))}" /></td>
+        <td class="row-actions"><button type="button" class="ghost" data-action="remove-laundry-type" data-index="${index}">Remove</button></td>`;
+      els.laundryItemTypesBody.appendChild(tr);
+    });
+  }
+}
+
+function onLaundrySettingsInput() {
+  state.laundrySettings.pricePerKg = Math.max(0, Number(normalizeNumber(els.laundryPricePerKg?.value) || 0));
+  state.laundrySettings.emailRecipients = String(els.laundryEmailRecipients?.value || "")
+    .split(/[\n,;]/)
+    .map((item) => clean(item).toLowerCase())
+    .filter(Boolean)
+    .filter((item, index, items) => items.indexOf(item) === index);
+  state.laundrySettings.itemTypes = (Array.from(els.laundryItemTypesBody?.querySelectorAll("tr") || [])).map((row, index) => ({
+    id: clean(state.laundrySettings.itemTypes[index]?.id) || `laundry-item-${index + 1}`,
+    name: clean(row.querySelector('[data-laundry-setting-field="name"]')?.value) || `item ${index + 1}`,
+    weightKg: Math.max(0, Number(normalizeNumber(row.querySelector('[data-laundry-setting-field="weightKg"]')?.value) || 0)),
+  }));
+  state.laundrySettings = normalizeLaundrySettingsClient(state.laundrySettings);
+}
+
+function addLaundrySettingItemType() {
+  onLaundrySettingsInput();
+  state.laundrySettings.itemTypes.push({
+    id: `laundry-item-${Date.now()}`,
+    name: `item ${state.laundrySettings.itemTypes.length + 1}`,
+    weightKg: 0,
+  });
+  renderLaundrySettings();
+}
+
+function onLaundrySettingsAction(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  if (clean(button.dataset.action) === "remove-laundry-type") {
+    onLaundrySettingsInput();
+    const index = Number(button.dataset.index);
+    if (Number.isFinite(index) && index >= 0) state.laundrySettings.itemTypes.splice(index, 1);
+    if (!state.laundrySettings.itemTypes.length) state.laundrySettings.itemTypes = clone(DEFAULT_LAUNDRY_SETTINGS.itemTypes);
+    renderLaundrySettings();
+  }
+}
+
+async function saveLaundrySettings() {
+  onLaundrySettingsInput();
+  if (!state.laundrySettings.itemTypes.length) {
+    setLaundrySettingsStatus("At least one laundry item type is required.");
+    return;
+  }
+  try {
+    const result = await api("/api/laundry-settings", { method: "PUT", body: { settings: state.laundrySettings } });
+    state.laundrySettings = normalizeLaundrySettingsClient(result?.settings);
+    state.laundrySettingsLoaded = true;
+    state.laundryRecords = state.laundryRecords.map((row) => normalizeLaundryRecordClient(row, state.laundrySettings));
+    renderLaundrySettings();
+    renderLaundry();
+    setLaundrySettingsStatus("Laundry configuration saved.");
+    showToast("Laundry configuration saved.", "success");
+  } catch (e) {
+    setLaundrySettingsStatus(`Save failed: ${e.message}`);
+    showToast(`Laundry configuration save failed: ${e.message}`, "error");
+  }
+}
+
+function buildLaundryPayload(draft) {
+  return {
+    property: draft.property,
+    date: draft.date,
+    sentItems: sanitizeLaundryCountsClient(draft.sentItems),
+    receivedItems: sanitizeLaundryCountsClient(draft.receivedItems),
+    receivedWeightKg: Number(normalizeNumber(draft.receivedWeightKg) || 0),
+    notes: clean(draft.notes),
+  };
+}
+
+async function saveLaundryRecord() {
+  const draft = state.laundryDraft;
+  if (!draft) return;
+  if (!clean(draft.date)) {
+    setLaundryStatus("Date is required.");
+    return;
+  }
+  if (!clean(draft.property)) {
+    setLaundryStatus("Property is required.");
+    return;
+  }
+  try {
+    setLaundryStatus("Saving...");
+    if (state.laundrySelectedId) {
+      await api(`/api/laundry?id=${encodeURIComponent(state.laundrySelectedId)}`, {
+        method: "PUT",
+        body: buildLaundryPayload(draft),
+      });
+    } else {
+      await api("/api/laundry", {
+        method: "POST",
+        body: buildLaundryPayload(draft),
+      });
+    }
+    await loadLaundryRecords({ silent: true });
+    state.laundryLoaded = true;
+    renderLaundry();
+    setLaundryDbStatus("Laundry records saved.");
+    closeLaundryModal();
+    showToast("Laundry record saved.", "success");
+  } catch (e) {
+    setLaundryStatus(`Save failed: ${e.message}`);
+    showToast(`Laundry record save failed: ${e.message}`, "error");
+  }
+}
+
+async function onLaundryRowClick(event) {
+  const row = event.target.closest("[data-laundry-id]");
+  if (!row) return;
+  await loadLaundryRecords({ silent: true });
+  const record = state.laundryRecords.find((item) => item.id === clean(row.dataset.laundryId));
+  if (!record) return;
+  state.laundrySelectedId = record.id;
+  state.laundryDraft = clone(record);
+  openLaundryModal(record.id);
+}
+
 function render() {
   if (state.currentView === "lost-found") {
     renderLostFound();
@@ -8812,6 +9402,10 @@ function render() {
   }
   if (state.currentView === "bakery") {
     renderBakery();
+    return;
+  }
+  if (state.currentView === "laundry") {
+    renderLaundry();
     return;
   }
   if (!canApp("communications")) {

@@ -1147,6 +1147,11 @@ td {
   max-width: 980px;
 }
 
+.laundry-modal-card {
+  margin: 0 auto;
+  max-width: 980px;
+}
+
 .review-modal-card {
   margin: 0 auto;
   max-width: 980px;
@@ -1492,6 +1497,57 @@ select:disabled {
     minmax(135px, 0.8fr)
     minmax(135px, 0.8fr)
     minmax(220px, 1.4fr);
+}
+
+.laundry-filters {
+  margin: 0.7rem 0 0.9rem;
+  grid-template-columns:
+    minmax(135px, 0.8fr)
+    minmax(135px, 0.8fr)
+    minmax(135px, 0.8fr)
+    minmax(220px, 1.4fr);
+}
+
+.laundry-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.laundry-form-grid > label:last-child {
+  grid-column: 1 / -1;
+}
+
+.laundry-items-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 0.9rem;
+}
+
+.laundry-items-grid label {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.laundry-items-grid small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.laundry-table td:nth-child(3),
+.laundry-table td:nth-child(5),
+.laundry-table td:nth-child(7),
+.laundry-table td:nth-child(8) {
+  white-space: pre-wrap;
+  vertical-align: top;
+}
+
+.laundry-table td:nth-child(4),
+.laundry-table td:nth-child(6) {
+  white-space: nowrap;
+  text-align: center;
+}
+
+.laundry-table td small {
+  color: var(--muted);
 }
 
 .services-subbar {
@@ -2642,6 +2698,10 @@ select:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .laundry-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .groups-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2927,6 +2987,7 @@ select:disabled {
 
   .group-modal-card,
   .service-modal-card,
+  .laundry-modal-card,
   .review-modal-card,
   .shopping-modal-card {
     margin: 0;
@@ -2964,6 +3025,11 @@ select:disabled {
 
   .service-return-grid-top,
   .service-return-grid-bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .laundry-form-grid,
+  .laundry-items-grid {
     grid-template-columns: 1fr;
   }
 
