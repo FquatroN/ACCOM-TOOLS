@@ -247,6 +247,7 @@ Lisboa Central Hostel`,
 
 const DEFAULT_SERVICE_SETTINGS = {
   automaticEmailRecipients: [],
+  liveFlightStatusEnabled: true,
   serviceConfigs: [
     {
       id: "airport-transfer",
@@ -883,6 +884,7 @@ const els = {
   servicesSettingsConfirmationPanel: document.getElementById("services-settings-confirmation-panel"),
   servicesConfigsBody: document.getElementById("services-configs-body"),
   servicesAutomaticEmailRecipients: document.getElementById("services-automatic-email-recipients"),
+  servicesLiveFlightStatusEnabled: document.getElementById("services-live-flight-status-enabled"),
   servicesTemplateServiceType: document.getElementById("services-template-service-type"),
   servicesTemplateLanguage: document.getElementById("services-template-language"),
   servicesConfirmationTemplate: document.getElementById("services-confirmation-template"),
@@ -1336,6 +1338,7 @@ function bindEvents() {
   els.servicesSettingsConfirmationTab.addEventListener("click", () => setServiceSettingsTab("confirmation"));
   els.servicesConfigsBody.addEventListener("input", onServiceSettingsInput);
   els.servicesAutomaticEmailRecipients.addEventListener("input", onServiceSettingsInput);
+  els.servicesLiveFlightStatusEnabled?.addEventListener("input", onServiceSettingsInput);
   [els.servicesPriceOneWay13, els.servicesPriceOneWay47, els.servicesPriceOneWay811, els.servicesPriceOneWay1216, els.servicesPriceReturn13, els.servicesPriceReturn47, els.servicesPriceReturn811, els.servicesPriceReturn1216].forEach((el) =>
     el.addEventListener("input", onServiceSettingsInput)
   );
@@ -4800,12 +4803,20 @@ function sanitizeServiceConfigClient(item = {}) {
 function sanitizeServiceSettingsClient(settings) {
   const output = clone(DEFAULT_SERVICE_SETTINGS);
   output.automaticEmailRecipients = parseEmailList(settings?.automaticEmailRecipients || settings?.automatic_email_recipients);
+  const liveFlightStatusEnabled = settings?.liveFlightStatusEnabled ?? settings?.live_flight_status_enabled;
+  output.liveFlightStatusEnabled = typeof liveFlightStatusEnabled === "boolean"
+    ? liveFlightStatusEnabled
+    : !["false", "0", "no"].includes(clean(liveFlightStatusEnabled).toLowerCase());
   const configs = Array.isArray(settings?.serviceConfigs || settings?.service_configs)
     ? settings.serviceConfigs || settings.service_configs
     : [];
   output.serviceConfigs = configs.map(sanitizeServiceConfigClient).filter((item) => item.serviceType);
   if (!output.serviceConfigs.length) output.serviceConfigs = clone(DEFAULT_SERVICE_SETTINGS.serviceConfigs);
   return output;
+}
+
+function serviceLiveFlightStatusEnabled() {
+  return state.serviceSettings?.liveFlightStatusEnabled !== false;
 }
 
 function normalizeServiceConfirmationLanguage(value) {
@@ -5168,12 +5179,14 @@ function serviceFlightStatusText(row) {
 
 function renderServiceFlightCell(row) {
   const flight = clean(row.flightNumber) || "-";
+  if (!serviceLiveFlightStatusEnabled()) return escape(flight);
   const statusText = serviceFlightStatusText(row);
   if (!statusText) return escape(flight);
   return `${escape(flight)}<small class="service-flight-status-note">(${escape(statusText)})</small>`;
 }
 
 async function fetchServiceFlightStatus(row) {
+  if (!serviceLiveFlightStatusEnabled()) return;
   const key = serviceFlightStatusKey(row);
   if (!serviceAirportArrivalCandidate(row)) {
     delete state.serviceFlightStatuses.cache[key];
@@ -5204,6 +5217,15 @@ async function fetchServiceFlightStatus(row) {
 }
 
 function refreshVisibleServiceStatuses() {
+  if (!serviceLiveFlightStatusEnabled()) {
+    state.serviceFlightStatuses.cache = {};
+    if (state.serviceFlightStatuses.timer) {
+      clearTimeout(state.serviceFlightStatuses.timer);
+      state.serviceFlightStatuses.timer = null;
+    }
+    state.serviceFlightStatuses.initialized = false;
+    return;
+  }
   if (state.serviceFlightStatuses.initialized) return;
   state.serviceFlightStatuses.initialized = true;
   if (state.serviceFlightStatuses.timer) {
@@ -5844,6 +5866,9 @@ function renderServiceSettings() {
   if (els.servicesAutomaticEmailRecipients) {
     els.servicesAutomaticEmailRecipients.value = (state.serviceSettings?.automaticEmailRecipients || []).join("\n");
   }
+  if (els.servicesLiveFlightStatusEnabled) {
+    els.servicesLiveFlightStatusEnabled.checked = serviceLiveFlightStatusEnabled();
+  }
   els.servicesConfigsBody.innerHTML = "";
   configs.forEach((config, index) => {
     const tr = document.createElement("tr");
@@ -5873,6 +5898,7 @@ function renderServiceSettings() {
 
 function onServiceSettingsInput() {
   state.serviceSettings.automaticEmailRecipients = parseEmailList(els.servicesAutomaticEmailRecipients?.value);
+  state.serviceSettings.liveFlightStatusEnabled = !!els.servicesLiveFlightStatusEnabled?.checked;
   state.serviceSettings.serviceConfigs = serviceConfigs().map((config, index) => {
     const providerId = clean(els.servicesConfigsBody.querySelector(`[data-service-setting-provider="${index}"]`)?.value);
     const provider = state.serviceProviders.find((item) => clean(item.id) === providerId);
@@ -5903,6 +5929,9 @@ function onServiceSettingsInput() {
   if (selectedTemplateConfig && els.servicesConfirmationTemplate) {
     selectedTemplateConfig.confirmationTemplate = els.servicesConfirmationTemplate.value;
   }
+  state.serviceFlightStatuses.cache = {};
+  state.serviceFlightStatuses.initialized = false;
+  if (state.currentView === "services") renderServices();
   renderServiceSettingsTemplatePreview();
 }
 

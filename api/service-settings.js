@@ -237,6 +237,7 @@ function sanitizeSettings(input = {}) {
     });
   return {
     automaticEmailRecipients: normalizeRecipients(source.automaticEmailRecipients || source.automatic_email_recipients),
+    liveFlightStatusEnabled: normalizeBool(source.liveFlightStatusEnabled ?? source.live_flight_status_enabled, true),
     serviceConfigs: normalized.length ? normalized : DEFAULT_SERVICE_TYPES,
   };
 }
@@ -246,6 +247,7 @@ function filterSettingsForProvider(settings, user) {
   const userEmail = cleanText(user?.email).toLowerCase();
   return {
     automaticEmailRecipients: normalizeRecipients(settings?.automaticEmailRecipients),
+    liveFlightStatusEnabled: normalizeBool(settings?.liveFlightStatusEnabled, true),
     serviceConfigs: (Array.isArray(settings?.serviceConfigs) ? settings.serviceConfigs : []).filter(
       (item) => cleanText(item.providerUserId) === userId || cleanText(item.providerEmail).toLowerCase() === userEmail
     ),
