@@ -4576,6 +4576,11 @@ function splitCommunicationGroups(rows) {
   ].filter((group) => group.rows.length);
 }
 
+function communicationGroupLabel(group) {
+  const count = Array.isArray(group?.rows) ? group.rows.length : 0;
+  return `${clean(group?.label) || "Group"}: ${count} record${count === 1 ? "" : "s"}`;
+}
+
 function isEntryActive(entry) {
   if (!isClosedStatus(entry.status)) return true;
   const updated = entryUpdatedTime(entry);
@@ -8759,7 +8764,7 @@ function render() {
   }
   if (rows.length && isCommunicationsGroupingEnabled()) {
     splitCommunicationGroups(rows).forEach((group) => {
-      els.rows.appendChild(buildCommunicationGroupRow(group.label));
+      els.rows.appendChild(buildCommunicationGroupRow(communicationGroupLabel(group)));
       group.rows.forEach((entry) => {
         els.rows.appendChild(state.editingId === entry.id ? buildEditableRow(entry) : buildReadOnlyRow(entry));
       });
@@ -9067,7 +9072,7 @@ function renderCommunicationsMobileCards(rows) {
   }
   if (isCommunicationsGroupingEnabled()) {
     splitCommunicationGroups(rows).forEach((group) => {
-      list.appendChild(buildCommunicationGroupCard(group.label));
+      list.appendChild(buildCommunicationGroupCard(communicationGroupLabel(group)));
       group.rows.forEach((entry) => {
         list.appendChild(state.editingId === entry.id ? buildCommunicationEditableCard(entry) : buildCommunicationReadOnlyCard(entry));
       });
