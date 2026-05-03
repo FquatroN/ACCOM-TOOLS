@@ -937,7 +937,11 @@ insert into public.laundry_records (
   updated_at
 )
 select
-  coalesce(nullif(item ->> 'id', '')::uuid, gen_random_uuid()),
+  case
+    when coalesce(item ->> 'id', '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      then (item ->> 'id')::uuid
+    else gen_random_uuid()
+  end,
   coalesce(nullif(item ->> 'property', ''), 'Hostel'),
   (item ->> 'date')::date,
   coalesce(item -> 'sentItems', '{}'::jsonb),
