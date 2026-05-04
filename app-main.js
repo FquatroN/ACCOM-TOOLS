@@ -9174,7 +9174,7 @@ function describeLaundryMissingSentRecords() {
       .sort()
       .at(-1) || "";
     if (latest && latest >= today) return;
-    const firstMissing = latest ? shiftDate(latest, 1) : today;
+    const firstMissing = latest ? shiftLaundryDate(latest, 1) : today;
     const dateLabel = firstMissing && firstMissing < today ? `${firstMissing} to ${today}` : (firstMissing || today);
     messages.push(`Missing records for ${dateLabel} for ${property}`);
   });
