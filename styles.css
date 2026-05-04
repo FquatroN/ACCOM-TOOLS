@@ -1610,6 +1610,20 @@ select:disabled {
   line-height: 1.25;
 }
 
+.laundry-resume-filters {
+  margin: 0.7rem 0 0.9rem;
+  grid-template-columns:
+    minmax(150px, 0.9fr)
+    minmax(130px, 0.8fr)
+    minmax(135px, 0.8fr)
+    minmax(135px, 0.8fr);
+}
+
+.laundry-resume-table th:nth-child(n+2),
+.laundry-resume-table td:nth-child(n+2) {
+  text-align: center;
+}
+
 .laundry-table td small {
   color: var(--muted);
 }
@@ -2806,6 +2820,10 @@ select:disabled {
   }
 
   .laundry-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .laundry-resume-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

@@ -599,7 +599,9 @@ const state = {
   laundryLoaded: false,
   laundrySettings: clone(DEFAULT_LAUNDRY_SETTINGS),
   laundrySettingsLoaded: false,
+  laundryScreen: "list",
   laundryFilters: { property: "", dateFrom: "", dateTo: "", search: "" },
+  laundryResumeFilters: { dateField: "sent", property: "", dateFrom: "", dateTo: "" },
   laundryDraft: null,
   laundrySelectedId: "",
   serviceProviders: [],
@@ -1000,6 +1002,10 @@ const els = {
   bakeryDetailStatus: document.getElementById("bakery-detail-status"),
   bakeryDetailBody: document.getElementById("bakery-detail-body"),
   laundryNew: document.getElementById("laundry-new"),
+  laundryTabList: document.getElementById("laundry-tab-list"),
+  laundryTabResume: document.getElementById("laundry-tab-resume"),
+  laundryPanelList: document.getElementById("laundry-panel-list"),
+  laundryPanelResume: document.getElementById("laundry-panel-resume"),
   laundryRows: document.getElementById("laundry-rows"),
   laundryCount: document.getElementById("laundry-count"),
   laundryDbStatus: document.getElementById("laundry-db-status"),
@@ -1008,6 +1014,12 @@ const els = {
   laundryFilterDateFrom: document.getElementById("laundry-filter-date-from"),
   laundryFilterDateTo: document.getElementById("laundry-filter-date-to"),
   laundryFilterSearch: document.getElementById("laundry-filter-search"),
+  laundryResumeDateField: document.getElementById("laundry-resume-date-field"),
+  laundryResumeFilterProperty: document.getElementById("laundry-resume-filter-property"),
+  laundryResumeFilterDateFrom: document.getElementById("laundry-resume-filter-date-from"),
+  laundryResumeFilterDateTo: document.getElementById("laundry-resume-filter-date-to"),
+  laundryResumeCount: document.getElementById("laundry-resume-count"),
+  laundryResumeBody: document.getElementById("laundry-resume-body"),
   laundryEditorModal: document.getElementById("laundry-editor-modal"),
   laundryCloseModal: document.getElementById("laundry-close-modal"),
   laundryStatus: document.getElementById("laundry-status"),
@@ -1269,9 +1281,13 @@ function bindEvents() {
     resetLaundryDraft();
     openLaundryModal();
   });
+  els.laundryTabList?.addEventListener("click", () => setLaundryScreen("list"));
+  els.laundryTabResume?.addEventListener("click", () => setLaundryScreen("resume"));
   els.laundryCloseModal?.addEventListener("click", closeLaundryModal);
   els.laundryFilterProperty?.addEventListener("change", onLaundryFilterInput);
   [els.laundryFilterDateFrom, els.laundryFilterDateTo, els.laundryFilterSearch].forEach((el) => el?.addEventListener("input", onLaundryFilterInput));
+  [els.laundryResumeDateField, els.laundryResumeFilterProperty].forEach((el) => el?.addEventListener("change", onLaundryResumeFilterInput));
+  [els.laundryResumeFilterDateFrom, els.laundryResumeFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryResumeFilterInput));
   [els.laundryProperty, els.laundryDate, els.laundryReceivedWeight, els.laundryNotes].forEach((el) =>
     el?.addEventListener(el.tagName === "SELECT" ? "change" : "input", onLaundryDraftInput)
   );
@@ -9335,6 +9351,29 @@ function onLaundryFilterInput() {
   renderLaundry();
 }
 
+function onLaundryResumeFilterInput() {
+  state.laundryResumeFilters.dateField = clean(els.laundryResumeDateField?.value) === "received" ? "received" : "sent";
+  state.laundryResumeFilters.property = clean(els.laundryResumeFilterProperty?.value);
+  state.laundryResumeFilters.dateFrom = clean(els.laundryResumeFilterDateFrom?.value);
+  state.laundryResumeFilters.dateTo = clean(els.laundryResumeFilterDateTo?.value);
+  renderLaundry();
+}
+
+function setLaundryScreen(screen) {
+  state.laundryScreen = screen === "resume" ? "resume" : "list";
+  renderLaundry();
+}
+
+function renderLaundryScreenTabs() {
+  const isResume = state.laundryScreen === "resume";
+  els.laundryTabList?.classList.toggle("active-tab", !isResume);
+  els.laundryTabList?.classList.toggle("ghost", isResume);
+  els.laundryTabResume?.classList.toggle("active-tab", isResume);
+  els.laundryTabResume?.classList.toggle("ghost", !isResume);
+  if (els.laundryPanelList) els.laundryPanelList.hidden = isResume;
+  if (els.laundryPanelResume) els.laundryPanelResume.hidden = !isResume;
+}
+
 function onLaundryDraftInput(event) {
   if (!state.laundryDraft) return;
   const target = event.target;
@@ -9394,11 +9433,109 @@ function getFilteredLaundryRecords() {
     });
 }
 
+function getLaundryResumeColumnIds() {
+  const itemTypes = laundryItemTypes();
+  const findId = (needle) => itemTypes.find((item) => clean(item?.id) === needle || clean(item?.name).toLowerCase() === needle.replace("-", " "))?.id || needle;
+  return {
+    singleBaixo: findId("single-baixo"),
+    singleCima: findId("single-cima"),
+    casalBaixo: findId("casal-baixo"),
+    casalCima: findId("casal-cima"),
+  };
+}
+
+function formatLaundryMonthLabel(monthKey) {
+  const raw = clean(monthKey);
+  if (!/^\d{4}-\d{2}$/.test(raw)) return raw || "-";
+  const dt = new Date(`${raw}-01T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return raw;
+  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "Europe/Lisbon" }).format(dt);
+}
+
+function getLaundryResumeRows() {
+  const filters = state.laundryResumeFilters || {};
+  const dateField = clean(filters.dateField) === "received" ? "received" : "sent";
+  const property = clean(filters.property);
+  const dateFrom = clean(filters.dateFrom);
+  const dateTo = clean(filters.dateTo);
+  const ids = getLaundryResumeColumnIds();
+  const buckets = new Map();
+  state.laundryRecords.forEach((row) => {
+    const basisDate = clean(dateField === "received" ? row.receivedDate : row.date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(basisDate)) return;
+    if (property && clean(row.property) !== property) return;
+    if (dateFrom && basisDate < dateFrom) return;
+    if (dateTo && basisDate > dateTo) return;
+    const monthKey = basisDate.slice(0, 7);
+    const current = buckets.get(monthKey) || {
+      monthKey,
+      difSingleBaixo: 0,
+      difSingleCima: 0,
+      difCasalBaixo: 0,
+      difCasalCima: 0,
+      totalDiff: 0,
+      receivedWeightKg: 0,
+    };
+    if (laundryHasReceivedValues(row)) {
+      const sentItems = row.sentItems || {};
+      const receivedItems = row.receivedItems || {};
+      const difSingleBaixo = Number(receivedItems?.[ids.singleBaixo] || 0) - Number(sentItems?.[ids.singleBaixo] || 0);
+      const difSingleCima = Number(receivedItems?.[ids.singleCima] || 0) - Number(sentItems?.[ids.singleCima] || 0);
+      const difCasalBaixo = Number(receivedItems?.[ids.casalBaixo] || 0) - Number(sentItems?.[ids.casalBaixo] || 0);
+      const difCasalCima = Number(receivedItems?.[ids.casalCima] || 0) - Number(sentItems?.[ids.casalCima] || 0);
+      current.difSingleBaixo += difSingleBaixo;
+      current.difSingleCima += difSingleCima;
+      current.difCasalBaixo += difCasalBaixo;
+      current.difCasalCima += difCasalCima;
+      current.totalDiff += difSingleBaixo + difSingleCima + difCasalBaixo + difCasalCima;
+      current.receivedWeightKg += countLaundryWeightKgClient(receivedItems);
+    }
+    buckets.set(monthKey, current);
+  });
+  return [...buckets.values()]
+    .map((row) => ({ ...row, receivedWeightKg: Number(row.receivedWeightKg.toFixed(2)) }))
+    .sort((a, b) => clean(b.monthKey).localeCompare(clean(a.monthKey)));
+}
+
+function renderLaundryResume() {
+  if (!els.laundryResumeBody || !els.laundryResumeCount) return;
+  els.laundryResumeDateField.value = clean(state.laundryResumeFilters.dateField) === "received" ? "received" : "sent";
+  els.laundryResumeFilterProperty.value = clean(state.laundryResumeFilters.property);
+  els.laundryResumeFilterDateFrom.value = clean(state.laundryResumeFilters.dateFrom);
+  els.laundryResumeFilterDateTo.value = clean(state.laundryResumeFilters.dateTo);
+  const rows = getLaundryResumeRows();
+  els.laundryResumeCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
+  els.laundryResumeBody.innerHTML = "";
+  if (!rows.length) {
+    els.laundryResumeBody.innerHTML = '<tr><td colspan="7" class="empty">No laundry resume data found.</td></tr>';
+    return;
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    if (row.totalDiff > 0) tr.classList.add("laundry-row-positive");
+    else if (row.totalDiff < 0) tr.classList.add("laundry-row-negative");
+    else tr.classList.add("laundry-row-zero");
+    tr.innerHTML = `<td>${escape(formatLaundryMonthLabel(row.monthKey))}</td>
+      <td>${escape(String(row.difSingleBaixo))}</td>
+      <td>${escape(String(row.difSingleCima))}</td>
+      <td>${escape(String(row.difCasalBaixo))}</td>
+      <td>${escape(String(row.difCasalCima))}</td>
+      <td>${escape(String(row.totalDiff))}</td>
+      <td>${escape(formatLaundryKg(row.receivedWeightKg))}</td>`;
+    els.laundryResumeBody.appendChild(tr);
+  });
+}
+
 function renderLaundry() {
   if (!canApp("laundry")) {
     if (els.laundryCount) els.laundryCount.textContent = "0 records";
     if (els.laundryMissingWarning) els.laundryMissingWarning.hidden = true;
     if (els.laundryRows) els.laundryRows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Laundry Control.</td></tr>';
+    return;
+  }
+  renderLaundryScreenTabs();
+  if (state.laundryScreen === "resume") {
+    renderLaundryResume();
     return;
   }
   const rows = getFilteredLaundryRecords();

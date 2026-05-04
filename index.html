@@ -1236,49 +1236,107 @@
               <h2>Records</h2>
               <div class="actions">
                 <button id="laundry-new" type="button" class="ghost">New record</button>
-                <p id="laundry-count">0 records</p>
+                <button id="laundry-tab-list" type="button" class="active-tab">List</button>
+                <button id="laundry-tab-resume" type="button" class="ghost">Resume</button>
               </div>
             </div>
-            <p id="laundry-missing-warning" class="auth-status warning-text" hidden>Missing records</p>
-            <div class="grid filters laundry-filters">
-              <label>
-                Property
-                <select id="laundry-filter-property">
-                  <option value="">All</option>
-                  <option value="Hostel">Hostel</option>
-                  <option value="Cruz">Cruz</option>
-                </select>
-              </label>
-              <label>
-                Date From
-                <input id="laundry-filter-date-from" type="date" />
-              </label>
-              <label>
-                Date To
-                <input id="laundry-filter-date-to" type="date" />
-              </label>
-              <label>
-                Search notes
-                <input id="laundry-filter-search" type="text" placeholder="Search notes" />
-              </label>
-            </div>
-            <div class="table-wrap">
-              <table class="shopping-history-table laundry-table">
-                <thead>
-                  <tr>
-                    <th>Sent Date</th>
-                    <th>Property</th>
-                    <th>Sent</th>
-                    <th>Received Date</th>
-                    <th>Received</th>
-                    <th>Difference</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody id="laundry-rows"></tbody>
-              </table>
-            </div>
-            <p id="laundry-db-status" class="auth-status"></p>
+            <section id="laundry-panel-list">
+              <div class="bar services-subbar">
+                <h3>Records</h3>
+                <div class="actions">
+                  <p id="laundry-count">0 records</p>
+                </div>
+              </div>
+              <p id="laundry-missing-warning" class="auth-status warning-text" hidden>Missing records</p>
+              <div class="grid filters laundry-filters">
+                <label>
+                  Property
+                  <select id="laundry-filter-property">
+                    <option value="">All</option>
+                    <option value="Hostel">Hostel</option>
+                    <option value="Cruz">Cruz</option>
+                  </select>
+                </label>
+                <label>
+                  Date From
+                  <input id="laundry-filter-date-from" type="date" />
+                </label>
+                <label>
+                  Date To
+                  <input id="laundry-filter-date-to" type="date" />
+                </label>
+                <label>
+                  Search notes
+                  <input id="laundry-filter-search" type="text" placeholder="Search notes" />
+                </label>
+              </div>
+              <div class="table-wrap">
+                <table class="shopping-history-table laundry-table">
+                  <thead>
+                    <tr>
+                      <th>Sent Date</th>
+                      <th>Property</th>
+                      <th>Sent</th>
+                      <th>Received Date</th>
+                      <th>Received</th>
+                      <th>Difference</th>
+                      <th>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="laundry-rows"></tbody>
+                </table>
+              </div>
+              <p id="laundry-db-status" class="auth-status"></p>
+            </section>
+            <section id="laundry-panel-resume" hidden>
+              <div class="bar services-subbar">
+                <h3>Resume</h3>
+                <div class="actions">
+                  <p id="laundry-resume-count">0 months</p>
+                </div>
+              </div>
+              <div class="grid filters laundry-resume-filters">
+                <label>
+                  Use Date
+                  <select id="laundry-resume-date-field">
+                    <option value="sent">Sent Date</option>
+                    <option value="received">Received Date</option>
+                  </select>
+                </label>
+                <label>
+                  Property
+                  <select id="laundry-resume-filter-property">
+                    <option value="">All</option>
+                    <option value="Hostel">Hostel</option>
+                    <option value="Cruz">Cruz</option>
+                  </select>
+                </label>
+                <label>
+                  Date From
+                  <input id="laundry-resume-filter-date-from" type="date" />
+                </label>
+                <label>
+                  Date To
+                  <input id="laundry-resume-filter-date-to" type="date" />
+                </label>
+              </div>
+              <div class="table-wrap services-resume-table-wrap">
+                <table class="settings-table laundry-resume-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Dif Single baixo</th>
+                      <th>Dif Single cima</th>
+                      <th>Dif Casal baixo</th>
+                      <th>Dif Casal Cima</th>
+                      <th>Total Dif</th>
+                      <th>Weight</th>
+                    </tr>
+                  </thead>
+                  <tbody id="laundry-resume-body"></tbody>
+                </table>
+              </div>
+            </section>
           </section>
         </section>
 
