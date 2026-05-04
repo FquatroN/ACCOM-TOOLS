@@ -1071,6 +1071,7 @@ const els = {
   laundryEmailRecipients: document.getElementById("laundry-email-recipients"),
   laundryEmailEnabled: document.getElementById("laundry-email-enabled"),
   laundryEmailTime: document.getElementById("laundry-email-time"),
+  laundryTestEmail: document.getElementById("laundry-test-email"),
   laundryItemTypesBody: document.getElementById("laundry-item-types-body"),
   laundrySettingsStatus: document.getElementById("laundry-settings-status"),
   bakerySaveSettings: document.getElementById("bakery-save-settings"),
@@ -1323,6 +1324,7 @@ function bindEvents() {
   els.laundryEmailRecipients?.addEventListener("input", onLaundrySettingsInput);
   els.laundryEmailEnabled?.addEventListener("change", onLaundrySettingsInput);
   els.laundryEmailTime?.addEventListener("input", onLaundrySettingsInput);
+  els.laundryTestEmail?.addEventListener("click", triggerLaundryEmailNow);
   els.laundryItemTypesBody?.addEventListener("input", onLaundrySettingsInput);
   els.laundryItemTypesBody?.addEventListener("click", onLaundrySettingsAction);
   els.settingsReviewsImportTab.addEventListener("click", () => setReviewSettingsScreen("import"));
@@ -4388,6 +4390,21 @@ function onRowDraftInput(event) {
     state.editDraft[field] = value;
     const row = t.closest("tr, .communication-mobile-card");
     if (row?.style) row.style.backgroundColor = rowBackgroundColor(state.editDraft.status, state.editDraft.category);
+  }
+}
+
+async function triggerLaundryEmailNow() {
+  els.laundryTestEmail.disabled = true;
+  setLaundrySettingsStatus("Sending test email...");
+  try {
+    await api("/api/laundry-email-automation?force=1", {
+      method: "POST",
+    });
+    setLaundrySettingsStatus("Laundry test email sent successfully.");
+  } catch (e) {
+    setLaundrySettingsStatus(`Laundry test email failed: ${e.message}`);
+  } finally {
+    els.laundryTestEmail.disabled = false;
   }
 }
 

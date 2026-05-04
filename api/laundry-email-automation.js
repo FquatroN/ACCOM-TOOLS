@@ -286,7 +286,7 @@ module.exports = async function handler(req, res) {
     const testRecipient = cleanText(body?.testRecipient || "").toLowerCase();
     const { payload } = await loadLaundryPayloadRow();
     const settings = sanitizeLaundrySettings(payload.settings);
-    if (!settings.emailEnabled) {
+    if (!settings.emailEnabled && !force) {
       res.status(200).json({ ok: true, status: "skipped", reason: "disabled" });
       return;
     }
