@@ -1027,6 +1027,7 @@ const els = {
   shoppingAddItem: document.getElementById("shopping-add-item"),
   shoppingSettingsItemsBody: document.getElementById("shopping-settings-items-body"),
   shoppingSettingsStatus: document.getElementById("shopping-settings-status"),
+  hoursExportExcel: document.getElementById("hours-export-excel"),
   hoursTabList: document.getElementById("hours-tab-list"),
   hoursTabResume: document.getElementById("hours-tab-resume"),
   hoursPanelList: document.getElementById("hours-panel-list"),
@@ -1313,6 +1314,7 @@ function bindEvents() {
   els.shoppingSettingsCategoryColors?.addEventListener("input", onShoppingSettingsInput);
   els.shoppingSettingsCategoryColors?.addEventListener("change", onShoppingSettingsInput);
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
+  els.hoursExportExcel?.addEventListener("click", exportHoursToExcel);
   els.hoursTabList?.addEventListener("click", () => setHoursScreen("list"));
   els.hoursTabResume?.addEventListener("click", () => setHoursScreen("resume"));
   [els.hoursFilterPerson, els.hoursResumeFilterPerson].forEach((el) => el?.addEventListener("change", onHoursFilterInput));
@@ -9196,7 +9198,7 @@ function emptyHoursDraft() {
   return {
     id: "",
     person: people.length === 1 ? people[0] : "",
-    date: "",
+    date: formatDate(new Date()),
     start: "",
     finish: "",
   };
@@ -9587,6 +9589,29 @@ function getHoursResumeRows() {
       if (monthCompare !== 0) return monthCompare;
       return clean(a.person).localeCompare(clean(b.person));
     });
+}
+
+function buildHoursExportRows() {
+  return getFilteredHoursRecords().map((row) => ({
+    person: clean(row.person),
+    date: clean(row.date),
+    start: clean(row.start),
+    finish: clean(row.finish),
+    hours: formatHoursDuration(row.start, row.finish),
+  }));
+}
+
+function exportHoursToExcel() {
+  const rows = buildHoursExportRows();
+  if (!rows.length) {
+    showToast("No hours records to export.", "error");
+    return;
+  }
+  const headers = ["Person", "Date", "Start", "Finish", "Hours"];
+  const bodyRows = rows.map((row) => [row.person, row.date, row.start, row.finish, row.hours]);
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers.map((cell) => `<th>${escape(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${escape(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+  downloadBlob(`hours_register_${formatDate(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8;");
+  showToast(`Exported ${rows.length} hours record${rows.length === 1 ? "" : "s"} to Excel.`, "success");
 }
 
 function formatHoursMonthLabel(monthKey) {
