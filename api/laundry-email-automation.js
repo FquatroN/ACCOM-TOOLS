@@ -121,9 +121,9 @@ function buildLaundryDifference(record, settings) {
 }
 
 function laundryRowColor(totalDiff) {
-  if (totalDiff > 0) return "rgba(55, 140, 92, 0.15)";
-  if (totalDiff < 0) return "rgba(177, 32, 48, 0.15)";
-  return "rgba(67, 127, 211, 0.15)";
+  if (totalDiff > 0) return "#e5f1ea";
+  if (totalDiff < 0) return "#f1dadd";
+  return "#e3ecfb";
 }
 
 async function loadGeneralEmailConfig() {
@@ -316,13 +316,13 @@ function buildLaundryManagementEmailContent(records, settings, currentDate) {
       const rowColor = laundryRowColor(diff.totalDiff);
       const tdStyle = `border:1px solid #d8d0c7;padding:6px;vertical-align:top;background:${rowColor};background-color:${rowColor};`;
       return `<tr>
-        <td style="${tdStyle}">${escapeHtml(record.date)}</td>
-        <td style="${tdStyle}">${escapeHtml(record.property)}</td>
-        <td style="${tdStyle}">${escapeHtml(formatLaundryItemsSummary(record.sentItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
-        <td style="${tdStyle}">${escapeHtml(record.receivedDate || "")}</td>
-        <td style="${tdStyle}">${escapeHtml(formatLaundryItemsSummary(record.receivedItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
-        <td style="${tdStyle}">${escapeHtml(diff.lines.join("\n")).replace(/\n/g, "<br />")}</td>
-        <td style="${tdStyle}">${escapeHtml(record.notes || "-")}</td>
+        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(record.date)}</td>
+        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(record.property)}</td>
+        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(formatLaundryItemsSummary(record.sentItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(record.receivedDate || "")}</td>
+        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(formatLaundryItemsSummary(record.receivedItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(diff.lines.join("\n")).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(record.notes || "-")}</td>
       </tr>`;
     }).join("")
     : '<tr><td colspan="7" style="border:1px solid #d8d0c7;padding:6px;">No laundry records received in the last 3 days.</td></tr>';
