@@ -4408,10 +4408,18 @@ async function triggerLaundryEmailNow() {
   els.laundryTestEmail.disabled = true;
   setLaundrySettingsStatus("Sending test email...");
   try {
-    await api("/api/laundry-email-automation?force=1", {
+    onLaundrySettingsInput();
+    const saved = await api("/api/laundry-settings", { method: "PUT", body: { settings: state.laundrySettings } });
+    state.laundrySettings = normalizeLaundrySettingsClient(saved?.settings);
+    renderLaundrySettings();
+    const result = await api("/api/laundry-email-automation?force=1", {
       method: "POST",
     });
-    setLaundrySettingsStatus("Laundry test email sent successfully.");
+    if (result?.status === "sent") {
+      setLaundrySettingsStatus("Laundry test email sent successfully.");
+    } else {
+      setLaundrySettingsStatus(`Laundry test email was not sent: ${describeLaundryAutomationResult(result)}.`);
+    }
   } catch (e) {
     setLaundrySettingsStatus(`Laundry test email failed: ${e.message}`);
   } finally {
@@ -4423,16 +4431,41 @@ async function triggerLaundryManagementEmailNow() {
   els.laundryManagementTestEmail.disabled = true;
   setLaundrySettingsStatus("Sending management test email...");
   try {
-    await api("/api/laundry-email-automation?force=1", {
+    onLaundrySettingsInput();
+    const saved = await api("/api/laundry-settings", { method: "PUT", body: { settings: state.laundrySettings } });
+    state.laundrySettings = normalizeLaundrySettingsClient(saved?.settings);
+    renderLaundrySettings();
+    const result = await api("/api/laundry-email-automation?force=1", {
       method: "POST",
       body: { mode: "management" },
     });
-    setLaundrySettingsStatus("Laundry management test email sent successfully.");
+    if (result?.status === "sent") {
+      setLaundrySettingsStatus("Laundry management test email sent successfully.");
+    } else {
+      setLaundrySettingsStatus(`Laundry management test email was not sent: ${describeLaundryAutomationResult(result)}.`);
+    }
   } catch (e) {
     setLaundrySettingsStatus(`Laundry management test email failed: ${e.message}`);
   } finally {
     els.laundryManagementTestEmail.disabled = false;
   }
+}
+
+function describeLaundryAutomationResult(result = {}) {
+  const reason = clean(result?.reason).toLowerCase();
+  if (reason === "no_recipients") return "no recipient emails are configured";
+  if (reason === "missing_records") {
+    const missing = Array.isArray(result?.missingProperties) ? result.missingProperties.join(", ") : "required properties";
+    return `records are missing for ${missing}`;
+  }
+  if (reason === "incomplete_counts") {
+    const incomplete = Array.isArray(result?.incompleteProperties) ? result.incompleteProperties.join(", ") : "required properties";
+    return `sent quantities are incomplete for ${incomplete}`;
+  }
+  if (reason === "disabled") return "the automation is disabled";
+  if (reason === "time_mismatch") return "the configured time was not reached";
+  if (reason === "already_sent_for_slot") return "it was already sent for this time slot";
+  return reason || "the server skipped the send";
 }
 
 async function onRowAction(event) {
