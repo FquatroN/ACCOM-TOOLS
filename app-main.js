@@ -8947,8 +8947,9 @@ function normalizeLaundryPropertyClient(value) {
 function sanitizeLaundryCountsClient(value, itemTypes = state.laundrySettings?.itemTypes || DEFAULT_LAUNDRY_SETTINGS.itemTypes) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   return itemTypes.reduce((acc, item) => {
-    const amount = Math.max(0, Math.round(Number(normalizeNumber(source[item.id]) || 0)));
-    acc[item.id] = amount;
+    const raw = source[item.id];
+    const normalized = normalizeNumber(raw);
+    acc[item.id] = normalized == null ? null : Math.max(0, Math.round(Number(normalized || 0)));
     return acc;
   }, {});
 }
@@ -8956,6 +8957,7 @@ function sanitizeLaundryCountsClient(value, itemTypes = state.laundrySettings?.i
 function normalizeLaundryRecordClient(input = {}, settings = state.laundrySettings) {
   const safeSettings = normalizeLaundrySettingsClient(settings);
   const sentDate = clean(input.date);
+  const rawReceivedWeight = normalizeNumber(input.receivedWeightKg);
   return {
     id: clean(input.id),
     property: normalizeLaundryPropertyClient(input.property),
@@ -8963,7 +8965,7 @@ function normalizeLaundryRecordClient(input = {}, settings = state.laundrySettin
     receivedDate: clean(input.receivedDate) || laundryReceiveDate(sentDate),
     sentItems: sanitizeLaundryCountsClient(input.sentItems, safeSettings.itemTypes),
     receivedItems: sanitizeLaundryCountsClient(input.receivedItems, safeSettings.itemTypes),
-    receivedWeightKg: Math.max(0, Number(normalizeNumber(input.receivedWeightKg) || 0)),
+    receivedWeightKg: rawReceivedWeight == null ? "" : Math.max(0, Number(rawReceivedWeight || 0)),
     notes: clean(input.notes),
     createdAt: clean(input.createdAt),
     updatedAt: clean(input.updatedAt),
@@ -9107,10 +9109,14 @@ function resetLaundryDraft() {
 
 function formatLaundryItemsSummary(counts) {
   const parts = laundryItemTypes()
-    .map((item) => ({ name: item.name, qty: Number(counts?.[item.id] || 0) }))
-    .filter((item) => item.qty > 0)
+    .map((item) => {
+      const raw = counts?.[item.id];
+      const filled = raw !== null && raw !== undefined && String(raw).trim() !== "";
+      return { name: item.name, qty: filled ? Number(raw || 0) : null, filled };
+    })
+    .filter((item) => item.filled)
     .map((item) => `${item.name}: ${item.qty}`);
-  return parts.length ? parts.join("\n") : "-";
+  return parts.length ? parts.join("\n") : "";
 }
 
 function formatLaundryColumnSummary(counts, weightKg) {
@@ -9124,7 +9130,10 @@ function formatLaundryListSummary(counts) {
 
 function laundryHasReceivedValues(record) {
   const itemTypes = laundryItemTypes();
-  return itemTypes.some((item) => Number(record?.receivedItems?.[item.id] || 0) > 0) || Number(record?.receivedWeightKg || 0) > 0;
+  return itemTypes.some((item) => {
+    const raw = record?.receivedItems?.[item.id];
+    return raw !== null && raw !== undefined && String(raw).trim() !== "";
+  }) || Number(record?.receivedWeightKg || 0) > 0;
 }
 
 function buildLaundryDifferenceLines(record) {
@@ -9163,7 +9172,7 @@ function renderLaundryItemInputs(container, counts, kind = "sent") {
   container.innerHTML = laundryItemTypes().map((item) => `
     <label>
       <span>${escape(item.name)} <small>(${escape(String(Number(item.weightKg || 0).toFixed(2)))} kg)</small></span>
-      <input data-laundry-count-kind="${escape(kind)}" data-laundry-item-id="${escape(item.id)}" type="number" min="0" step="1" value="${escape(String(Number(counts?.[item.id] || 0) || ""))}" />
+      <input data-laundry-count-kind="${escape(kind)}" data-laundry-item-id="${escape(item.id)}" type="number" min="0" step="1" value="${counts?.[item.id] === null || counts?.[item.id] === undefined || String(counts?.[item.id]).trim() === "" ? "" : escape(String(Number(counts?.[item.id] || 0)))}" />
     </label>
   `).join("");
 }
@@ -9174,7 +9183,7 @@ function renderLaundryDraft() {
   if (els.laundryProperty) els.laundryProperty.value = draft.property || "Hostel";
   if (els.laundryDate) els.laundryDate.value = draft.date || "";
   if (els.laundryReceiveDate) els.laundryReceiveDate.value = draft.receivedDate || "";
-  if (els.laundryReceivedWeight) els.laundryReceivedWeight.value = draft.receivedWeightKg === "" ? "" : String(draft.receivedWeightKg || "");
+  if (els.laundryReceivedWeight) els.laundryReceivedWeight.value = draft.receivedWeightKg === "" || draft.receivedWeightKg === null || draft.receivedWeightKg === undefined ? "" : String(draft.receivedWeightKg);
   if (els.laundryNotes) els.laundryNotes.value = draft.notes || "";
   renderLaundryItemInputs(els.laundrySentItemsGrid, draft.sentItems, "sent");
   renderLaundryItemInputs(els.laundryReceivedItemsGrid, draft.receivedItems, "received");
@@ -9229,7 +9238,10 @@ function onLaundryDraftInput(event) {
     }
   }
   if (target === els.laundryDate) state.laundryDraft.date = clean(target.value);
-  if (target === els.laundryReceivedWeight) state.laundryDraft.receivedWeightKg = Math.max(0, Number(normalizeNumber(target.value) || 0));
+  if (target === els.laundryReceivedWeight) {
+    const normalized = normalizeNumber(target.value);
+    state.laundryDraft.receivedWeightKg = normalized == null ? "" : Math.max(0, Number(normalized || 0));
+  }
   if (target === els.laundryNotes) state.laundryDraft.notes = clean(target.value);
   renderLaundryDraft();
 }
@@ -9239,7 +9251,8 @@ function onLaundryDraftGridInput(event) {
   const kind = clean(event.target.dataset.laundryCountKind);
   const itemId = clean(event.target.dataset.laundryItemId);
   if (!kind || !itemId) return;
-  const amount = Math.max(0, Math.round(Number(normalizeNumber(event.target.value) || 0)));
+  const normalized = normalizeNumber(event.target.value);
+  const amount = normalized == null ? null : Math.max(0, Math.round(Number(normalized || 0)));
   if (kind === "sent") state.laundryDraft.sentItems[itemId] = amount;
   if (kind === "received") state.laundryDraft.receivedItems[itemId] = amount;
   renderLaundryDraft();
@@ -9257,7 +9270,7 @@ function getFilteredLaundryRecords() {
     .filter((row) => !dateTo || clean(row.date) <= dateTo)
     .filter((row) => {
       if (!search) return true;
-      const haystack = [row.notes, formatLaundryItemsSummary(row.sentItems), formatLaundryItemsSummary(row.receivedItems)]
+    const haystack = [row.notes, formatLaundryItemsSummary(row.sentItems), formatLaundryItemsSummary(row.receivedItems)]
         .join("\n")
         .toLowerCase();
       return haystack.includes(search);
@@ -9306,7 +9319,7 @@ function renderLaundry() {
     const receivedDateCell = receiveDate
       ? `${escape(receiveDate)}${receiveDateNeedsFill ? '<br><span class="warning-text">please fill</span>' : ""}`
       : "-";
-    const diffHtml = diff.lines.map((line) => escape(line)).join("<br>");
+    const diffHtml = diff.lines.map((line) => hasReceivedValues ? escape(line) : `<span class="warning-text">${escape(line)}</span>`).join("<br>");
     const tr = document.createElement("tr");
     tr.className = "clickable-row";
     if (hasReceivedValues) {
@@ -9317,7 +9330,7 @@ function renderLaundry() {
     tr.dataset.laundryId = row.id;
     tr.innerHTML = `<td>${escape(row.date)}</td>
       <td>${escape(row.property)}</td>
-      <td>${escape(formatLaundryListSummary(row.sentItems)).replace(/\n/g, "<br>")}</td>
+      <td>${escape(formatLaundryListSummary(row.sentItems) || "-").replace(/\n/g, "<br>")}</td>
       <td>${receivedDateCell}</td>
       <td>${receivedSummary || "-"}</td>
       <td>${diffHtml}</td>
@@ -9402,13 +9415,14 @@ async function saveLaundrySettings() {
 }
 
 function buildLaundryPayload(draft) {
+  const receivedWeight = normalizeNumber(draft.receivedWeightKg);
   return {
     property: draft.property,
     date: draft.date,
     receivedDate: draft.receivedDate || laundryReceiveDate(draft.date),
     sentItems: sanitizeLaundryCountsClient(draft.sentItems),
     receivedItems: sanitizeLaundryCountsClient(draft.receivedItems),
-    receivedWeightKg: Number(normalizeNumber(draft.receivedWeightKg) || 0),
+    receivedWeightKg: receivedWeight == null ? 0 : Number(receivedWeight || 0),
     notes: clean(draft.notes),
   };
 }

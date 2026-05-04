@@ -85,8 +85,8 @@ function sanitizeLaundryCountMap(value, itemTypes = DEFAULT_LAUNDRY_SETTINGS.ite
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   return itemTypes.reduce((acc, item) => {
     const raw = source[item.id];
-    const numeric = Number.parseInt(String(raw ?? "").trim(), 10);
-    acc[item.id] = Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+    const normalized = normalizeNumeric(raw);
+    acc[item.id] = normalized == null ? null : Math.max(0, Math.round(Number(normalized || 0)));
     return acc;
   }, {});
 }
