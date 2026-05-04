@@ -1204,6 +1204,18 @@ td {
   background: rgba(67, 127, 211, 0.15);
 }
 
+.laundry-mobile-card.laundry-row-negative {
+  background: rgba(177, 32, 48, 0.15);
+}
+
+.laundry-mobile-card.laundry-row-positive {
+  background: rgba(55, 140, 92, 0.15);
+}
+
+.laundry-mobile-card.laundry-row-zero {
+  background: rgba(67, 127, 211, 0.15);
+}
+
 .laundry-table tr.laundry-row-negative:hover td,
 .laundry-table tr.laundry-row-positive:hover td,
 .laundry-table tr.laundry-row-zero:hover td,
@@ -1828,6 +1840,10 @@ select:disabled {
   display: none;
 }
 
+.laundry-mobile-cards {
+  display: none;
+}
+
 .service-mobile-card {
   display: grid;
   gap: 0.72rem;
@@ -1999,6 +2015,31 @@ select:disabled {
   border: 1px solid #e2d8cf;
   border-radius: 14px;
   background: #fffdfa;
+}
+
+.laundry-mobile-card {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid #e2d8cf;
+  border-radius: 14px;
+  background: #fffdfa;
+  cursor: pointer;
+}
+
+.laundry-mobile-date-block {
+  display: grid;
+  justify-items: end;
+  text-align: right;
+  gap: 0.16rem;
+}
+
+.laundry-mobile-date-block small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
 }
 
 .group-mobile-card {
@@ -3092,6 +3133,10 @@ select:disabled {
     display: none;
   }
 
+  #laundry-panel-list .table-wrap {
+    display: none;
+  }
+
   .communications-mobile-cards {
     display: grid;
     gap: 0.75rem;
@@ -3124,6 +3169,12 @@ select:disabled {
 
   .shopping-mobile-cards,
   .shopping-history-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
+  .laundry-mobile-cards {
     display: grid;
     gap: 0.75rem;
     margin-top: 0.85rem;

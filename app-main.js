@@ -1039,6 +1039,7 @@ const els = {
   laundryPanelResume: document.getElementById("laundry-panel-resume"),
   laundryExportExcel: document.getElementById("laundry-export-excel"),
   laundryRows: document.getElementById("laundry-rows"),
+  laundryMobileCards: document.getElementById("laundry-mobile-cards"),
   laundryCount: document.getElementById("laundry-count"),
   laundryDbStatus: document.getElementById("laundry-db-status"),
   laundryMissingWarning: document.getElementById("laundry-missing-warning"),
@@ -1325,6 +1326,7 @@ function bindEvents() {
   els.laundryReceivedItemsGrid?.addEventListener("input", onLaundryDraftGridInput);
   els.laundrySave?.addEventListener("click", saveLaundryRecord);
   els.laundryRows?.addEventListener("click", onLaundryRowClick);
+  els.laundryMobileCards?.addEventListener("click", onLaundryRowClick);
   els.laundrySaveSettings?.addEventListener("click", saveLaundrySettings);
   els.laundryAddItemType?.addEventListener("click", addLaundrySettingItemType);
   els.laundryPricePerKg?.addEventListener("input", onLaundrySettingsInput);
@@ -9788,6 +9790,9 @@ function renderLaundry() {
     if (els.laundryCount) els.laundryCount.textContent = "0 records";
     if (els.laundryMissingWarning) els.laundryMissingWarning.hidden = true;
     if (els.laundryRows) els.laundryRows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Laundry Control.</td></tr>';
+    if (els.laundryMobileCards) {
+      els.laundryMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Laundry Control.</div>';
+    }
     return;
   }
   renderLaundryScreenTabs();
@@ -9807,6 +9812,7 @@ function renderLaundry() {
   if (els.laundryFilterDateTo) els.laundryFilterDateTo.value = state.laundryFilters.dateTo;
   if (els.laundryFilterSearch) els.laundryFilterSearch.value = state.laundryFilters.search;
   if (els.laundryRows) els.laundryRows.innerHTML = "";
+  renderLaundryMobileCards(rows);
   if (!rows.length) {
     els.laundryRows.innerHTML = '<tr><td colspan="7" class="empty">No laundry records found.</td></tr>';
     return;
@@ -9842,6 +9848,65 @@ function renderLaundry() {
       <td>${escape(row.notes || "-")}</td>`;
     els.laundryRows.appendChild(tr);
   });
+}
+
+function renderLaundryMobileCards(rows) {
+  if (!els.laundryMobileCards) return;
+  const list = els.laundryMobileCards;
+  list.innerHTML = "";
+  if (!rows.length) {
+    list.innerHTML = '<div class="services-mobile-empty">No laundry records found.</div>';
+    return;
+  }
+  rows.forEach((row) => {
+    list.appendChild(buildLaundryMobileCard(row));
+  });
+}
+
+function buildLaundryMobileCard(row) {
+  const diff = buildLaundryDifferenceLines(row);
+  const receiveDate = clean(row.receivedDate) || laundryReceiveDate(row.date) || "";
+  const hasReceivedValues = diff.hasReceivedValues;
+  const receiveDateNeedsFill = Boolean(receiveDate) && receiveDate <= lisbonTodayIsoClient() && !hasReceivedValues;
+  const receivedSummary = hasReceivedValues ? formatLaundryListSummary(row.receivedItems) : "";
+  const card = document.createElement("article");
+  card.className = "laundry-mobile-card";
+  card.dataset.laundryId = row.id;
+  if (hasReceivedValues) {
+    if (diff.totalDiff > 0) card.classList.add("laundry-row-positive");
+    else if (diff.totalDiff < 0) card.classList.add("laundry-row-negative");
+    else card.classList.add("laundry-row-zero");
+  }
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(row.property)}</div>
+        <div class="communication-mobile-meta">Sent ${escape(row.date)}</div>
+      </div>
+      <div class="laundry-mobile-date-block">
+        <small>Received</small>
+        <strong>${receiveDate ? escape(receiveDate) : "-"}</strong>
+        ${receiveDateNeedsFill ? '<span class="warning-text">please fill</span>' : ""}
+      </div>
+    </div>
+    <div class="communication-mobile-grid">
+      <div class="communication-mobile-field">
+        <small>Sent</small>
+        <div class="communication-mobile-message">${escape(formatLaundryListSummary(row.sentItems) || "-").replace(/\n/g, "<br>")}</div>
+      </div>
+      <div class="communication-mobile-field">
+        <small>Received</small>
+        <div class="communication-mobile-message">${receivedSummary ? escape(receivedSummary).replace(/\n/g, "<br>") : "-"}</div>
+      </div>
+      <div class="communication-mobile-field communication-mobile-field-full">
+        <small>Difference</small>
+        <div class="communication-mobile-message">${diff.lines.map((line) => (!hasReceivedValues && diff.isReceiveDue) ? `<span class="warning-text">${escape(line)}</span>` : escape(line)).join("<br>")}</div>
+      </div>
+      <div class="communication-mobile-field communication-mobile-field-full">
+        <small>Notes</small>
+        <div class="communication-mobile-message">${escape(row.notes || "-")}</div>
+      </div>
+    </div>`;
+  return card;
 }
 
 function renderLaundrySettings() {
