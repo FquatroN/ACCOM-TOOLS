@@ -11410,8 +11410,27 @@ function emailScheduleSummaries(email) {
     .filter(Boolean);
 }
 
+function normalizeDateInput(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Europe/Lisbon",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(parsed);
+  }
+  return raw.slice(0, 10);
+}
+
 function normalizeTimeInput(value) {
-  return /^\d{2}:\d{2}$/.test(clean(value)) ? clean(value) : "00:00";
+  const raw = clean(value);
+  if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw.slice(0, 5);
+  return "00:00";
 }
 
 function normalizeStatusUi(value) {
