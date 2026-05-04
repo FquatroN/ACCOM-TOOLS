@@ -1,6 +1,7 @@
 {
   "crons": [
-    { "path": "/api/email-automation", "schedule": "* * * * *" }
+    { "path": "/api/email-automation", "schedule": "* * * * *" },
+    { "path": "/api/laundry-email-automation", "schedule": "* * * * *" }
   ],
   "redirects": [
     { "source": "/", "destination": "/gate.html", "permanent": false },

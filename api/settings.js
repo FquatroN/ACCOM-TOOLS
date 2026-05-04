@@ -2,7 +2,7 @@ const { parseBody, requireFeature, restQuery, sendError } = require("./_supabase
 
 const DEFAULT_SETTINGS = {
   general: {
-    bakeryEmailConfig: {
+    emailConfig: {
       provider: "resend",
       smtpHost: "smtp.gmail.com",
       smtpPort: 465,
@@ -88,17 +88,17 @@ function sanitizeSettings(input) {
   const output = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   const source = input && typeof input === "object" ? input : {};
   const general = source.general || {};
-  const generalEmail = general.bakeryEmailConfig || general.bakery_email_config || {};
-  output.general.bakeryEmailConfig.provider = normalizeBakeryEmailProvider(generalEmail.provider);
-  output.general.bakeryEmailConfig.smtpHost = String(generalEmail.smtpHost || generalEmail.smtp_host || DEFAULT_SETTINGS.general.bakeryEmailConfig.smtpHost).trim();
-  output.general.bakeryEmailConfig.smtpPort = Math.max(1, Number.parseInt(generalEmail.smtpPort ?? generalEmail.smtp_port ?? DEFAULT_SETTINGS.general.bakeryEmailConfig.smtpPort, 10) || DEFAULT_SETTINGS.general.bakeryEmailConfig.smtpPort);
-  output.general.bakeryEmailConfig.smtpSecure = generalEmail.smtpSecure === undefined && generalEmail.smtp_secure === undefined
-    ? !!DEFAULT_SETTINGS.general.bakeryEmailConfig.smtpSecure
+  const generalEmail = general.emailConfig || general.email_config || general.bakeryEmailConfig || general.bakery_email_config || {};
+  output.general.emailConfig.provider = normalizeBakeryEmailProvider(generalEmail.provider);
+  output.general.emailConfig.smtpHost = String(generalEmail.smtpHost || generalEmail.smtp_host || DEFAULT_SETTINGS.general.emailConfig.smtpHost).trim();
+  output.general.emailConfig.smtpPort = Math.max(1, Number.parseInt(generalEmail.smtpPort ?? generalEmail.smtp_port ?? DEFAULT_SETTINGS.general.emailConfig.smtpPort, 10) || DEFAULT_SETTINGS.general.emailConfig.smtpPort);
+  output.general.emailConfig.smtpSecure = generalEmail.smtpSecure === undefined && generalEmail.smtp_secure === undefined
+    ? !!DEFAULT_SETTINGS.general.emailConfig.smtpSecure
     : normalizeBakerySecure(generalEmail.smtpSecure ?? generalEmail.smtp_secure);
-  output.general.bakeryEmailConfig.smtpUser = String(generalEmail.smtpUser || generalEmail.smtp_user || "").trim().toLowerCase();
-  output.general.bakeryEmailConfig.smtpPassword = String(generalEmail.smtpPassword ?? generalEmail.smtp_password ?? "");
-  output.general.bakeryEmailConfig.fromEmail = String(generalEmail.fromEmail || generalEmail.from_email || "").trim().toLowerCase();
-  output.general.bakeryEmailConfig.fromName = String(generalEmail.fromName || generalEmail.from_name || DEFAULT_SETTINGS.general.bakeryEmailConfig.fromName).trim() || DEFAULT_SETTINGS.general.bakeryEmailConfig.fromName;
+  output.general.emailConfig.smtpUser = String(generalEmail.smtpUser || generalEmail.smtp_user || "").trim().toLowerCase();
+  output.general.emailConfig.smtpPassword = String(generalEmail.smtpPassword ?? generalEmail.smtp_password ?? "");
+  output.general.emailConfig.fromEmail = String(generalEmail.fromEmail || generalEmail.from_email || "").trim().toLowerCase();
+  output.general.emailConfig.fromName = String(generalEmail.fromName || generalEmail.from_name || DEFAULT_SETTINGS.general.emailConfig.fromName).trim() || DEFAULT_SETTINGS.general.emailConfig.fromName;
   const comm = source.communications || {};
   const categories = Array.isArray(comm.categories) ? comm.categories : [];
   const seen = new Set();

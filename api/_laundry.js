@@ -6,6 +6,8 @@ const LAUNDRY_PROPERTY_OPTIONS = ["Hostel", "Cruz"];
 const DEFAULT_LAUNDRY_SETTINGS = {
   pricePerKg: 0,
   emailRecipients: [],
+  emailEnabled: false,
+  emailTime: "00:00",
   itemTypes: [
     { id: "single-baixo", name: "single baixo", weightKg: 0.48 },
     { id: "single-cima", name: "single cima", weightKg: 0.5 },
@@ -25,6 +27,11 @@ function shiftLaundryDate(value, days = 2) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanText(value));
+}
+
+function normalizeTime(value) {
+  const raw = cleanText(value);
+  return /^\d{2}:\d{2}$/.test(raw) ? raw : "00:00";
 }
 
 function normalizeRecipients(value) {
@@ -77,6 +84,8 @@ function sanitizeLaundrySettings(input = {}) {
   return {
     pricePerKg: Math.max(0, Number(normalizeNumeric(source.pricePerKg ?? source.price_per_kg) || 0)),
     emailRecipients: normalizeRecipients(source.emailRecipients || source.email_recipients),
+    emailEnabled: normalizeBool(source.emailEnabled ?? source.email_enabled),
+    emailTime: normalizeTime(source.emailTime ?? source.email_time),
     itemTypes: itemTypes.length ? itemTypes : DEFAULT_LAUNDRY_SETTINGS.itemTypes.map((item, index) => sanitizeLaundryItemType(item, index)),
   };
 }

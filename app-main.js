@@ -50,7 +50,7 @@ const SHOPPING_WEEKDAY_OPTIONS = [
 
 const DEFAULT_SETTINGS = {
   general: {
-    bakeryEmailConfig: {
+    emailConfig: {
       provider: "resend",
       smtpHost: "smtp.gmail.com",
       smtpPort: 465,
@@ -343,6 +343,8 @@ const DEFAULT_BAKERY_SETTINGS = {
 const DEFAULT_LAUNDRY_SETTINGS = {
   pricePerKg: 0,
   emailRecipients: [],
+  emailEnabled: false,
+  emailTime: "00:00",
   itemTypes: [
     { id: "single-baixo", name: "single baixo", weightKg: 0.48 },
     { id: "single-cima", name: "single cima", weightKg: 0.5 },
@@ -1067,6 +1069,8 @@ const els = {
   laundryAddItemType: document.getElementById("laundry-add-item-type"),
   laundryPricePerKg: document.getElementById("laundry-price-per-kg"),
   laundryEmailRecipients: document.getElementById("laundry-email-recipients"),
+  laundryEmailEnabled: document.getElementById("laundry-email-enabled"),
+  laundryEmailTime: document.getElementById("laundry-email-time"),
   laundryItemTypesBody: document.getElementById("laundry-item-types-body"),
   laundrySettingsStatus: document.getElementById("laundry-settings-status"),
   bakerySaveSettings: document.getElementById("bakery-save-settings"),
@@ -1317,6 +1321,8 @@ function bindEvents() {
   els.laundryAddItemType?.addEventListener("click", addLaundrySettingItemType);
   els.laundryPricePerKg?.addEventListener("input", onLaundrySettingsInput);
   els.laundryEmailRecipients?.addEventListener("input", onLaundrySettingsInput);
+  els.laundryEmailEnabled?.addEventListener("change", onLaundrySettingsInput);
+  els.laundryEmailTime?.addEventListener("input", onLaundrySettingsInput);
   els.laundryItemTypesBody?.addEventListener("input", onLaundrySettingsInput);
   els.laundryItemTypesBody?.addEventListener("click", onLaundrySettingsAction);
   els.settingsReviewsImportTab.addEventListener("click", () => setReviewSettingsScreen("import"));
@@ -4189,7 +4195,7 @@ async function loadLostFound({ silent = false } = {}) {
 }
 
 function renderSettings() {
-  const general = state.settings.general?.bakeryEmailConfig || normalizeBakeryEmailConfigClient();
+  const general = state.settings.general?.emailConfig || normalizeBakeryEmailConfigClient();
   if (els.generalEmailProvider) els.generalEmailProvider.value = general.provider;
   if (els.generalEmailSmtpHost) els.generalEmailSmtpHost.value = general.smtpHost;
   if (els.generalEmailSmtpPort) els.generalEmailSmtpPort.value = general.smtpPort;
@@ -4222,7 +4228,7 @@ function renderSettings() {
 }
 
 function onGeneralSettingsInput(event) {
-  const general = state.settings.general.bakeryEmailConfig;
+  const general = state.settings.general.emailConfig;
   if (event.target === els.generalEmailProvider) general.provider = normalizeBakeryEmailProviderClient(event.target.value);
   if (event.target === els.generalEmailSmtpHost) general.smtpHost = clean(event.target.value);
   if (event.target === els.generalEmailSmtpPort) general.smtpPort = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
@@ -8975,6 +8981,8 @@ function normalizeLaundrySettingsClient(input = {}) {
       .map((item) => clean(item).toLowerCase())
       .filter(Boolean)
       .filter((item, index, items) => items.indexOf(item) === index),
+    emailEnabled: !!(source.emailEnabled ?? source.email_enabled),
+    emailTime: normalizeTimeInput(source.emailTime ?? source.email_time),
     itemTypes: itemTypes.length ? itemTypes : clone(DEFAULT_LAUNDRY_SETTINGS.itemTypes),
   };
 }
@@ -9757,6 +9765,8 @@ function renderLaundrySettings() {
   const settings = state.laundrySettings || clone(DEFAULT_LAUNDRY_SETTINGS);
   if (els.laundryPricePerKg) els.laundryPricePerKg.value = settings.pricePerKg || "";
   if (els.laundryEmailRecipients) els.laundryEmailRecipients.value = (settings.emailRecipients || []).join("\n");
+  if (els.laundryEmailEnabled) els.laundryEmailEnabled.checked = !!settings.emailEnabled;
+  if (els.laundryEmailTime) els.laundryEmailTime.value = settings.emailTime || "00:00";
   if (els.laundryItemTypesBody) {
     els.laundryItemTypesBody.innerHTML = "";
     settings.itemTypes.forEach((item, index) => {
@@ -9776,6 +9786,8 @@ function onLaundrySettingsInput() {
     .map((item) => clean(item).toLowerCase())
     .filter(Boolean)
     .filter((item, index, items) => items.indexOf(item) === index);
+  state.laundrySettings.emailEnabled = !!els.laundryEmailEnabled?.checked;
+  state.laundrySettings.emailTime = normalizeTimeInput(els.laundryEmailTime?.value);
   state.laundrySettings.itemTypes = (Array.from(els.laundryItemTypesBody?.querySelectorAll("tr") || [])).map((row, index) => ({
     id: clean(state.laundrySettings.itemTypes[index]?.id) || `laundry-item-${index + 1}`,
     name: clean(row.querySelector('[data-laundry-setting-field="name"]')?.value) || `item ${index + 1}`,
@@ -10496,7 +10508,7 @@ function csvCell(value) {
 function sanitizeSettings(settings) {
   const output = clone(DEFAULT_SETTINGS);
   const generalInput = settings?.general || {};
-  output.general.bakeryEmailConfig = normalizeBakeryEmailConfigClient(generalInput.bakeryEmailConfig || generalInput.bakery_email_config);
+  output.general.emailConfig = normalizeBakeryEmailConfigClient(generalInput.emailConfig || generalInput.email_config || generalInput.bakeryEmailConfig || generalInput.bakery_email_config);
   const input = settings?.communications || {};
   const categories = Array.isArray(input.categories) ? input.categories : [];
   const seen = new Set();

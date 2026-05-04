@@ -1386,8 +1386,9 @@
                 </div>
                 <section class="settings-block">
                   <div class="bar">
-                    <h3>Bakery Email Configuration</h3>
+                    <h3>Email Configuration</h3>
                   </div>
+                  <p class="auth-status">Used by Bakery Order and Laundry Control automatic emails.</p>
                   <div class="grid settings-grid">
                     <label>
                       Provider
@@ -1752,6 +1753,14 @@
                     <label class="settings-email-recipients">
                       Laundry email
                       <textarea id="laundry-email-recipients" rows="3" placeholder="email1@example.com, email2@example.com"></textarea>
+                    </label>
+                    <label class="filter-checkbox align-end">
+                      <span>Email to Laundry</span>
+                      <input id="laundry-email-enabled" type="checkbox" />
+                    </label>
+                    <label>
+                      Email time
+                      <input id="laundry-email-time" type="time" />
                     </label>
                   </div>
                   <div class="table-wrap">

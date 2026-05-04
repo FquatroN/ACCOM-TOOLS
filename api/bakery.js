@@ -18,7 +18,7 @@ async function loadBakerySettings() {
   const settings = sanitizeBakerySettings(payload);
   const generalRows = await restQuery("app_settings?select=payload&setting_key=eq.communications&limit=1", { method: "GET" });
   const generalPayload = Array.isArray(generalRows) && generalRows[0]?.payload ? generalRows[0].payload : {};
-  const generalEmailConfig = generalPayload?.general?.bakeryEmailConfig || generalPayload?.general?.bakery_email_config;
+  const generalEmailConfig = generalPayload?.general?.emailConfig || generalPayload?.general?.email_config || generalPayload?.general?.bakeryEmailConfig || generalPayload?.general?.bakery_email_config;
   if (generalEmailConfig && typeof generalEmailConfig === "object") {
     settings.emailConfig = sanitizeBakerySettings({ emailConfig: generalEmailConfig }).emailConfig;
   }
@@ -49,10 +49,12 @@ async function loadOrderById(id, settings) {
   return Array.isArray(rows) && rows[0] ? sanitizeBakeryOrderRow(rows[0], settings) : null;
 }
 
-async function sendWithResend({ to, subject, html, text }) {
+async function sendWithResend({ to, subject, html, text }, emailConfig = {}) {
   const apiKey = process.env.RESEND_API_KEY;
   const rawFrom = process.env.EMAIL_FROM;
-  const replyTo = "global@lisboacentralhostel.com";
+  const configuredFromEmail = cleanText(emailConfig.fromEmail || "").toLowerCase();
+  const configuredFromName = cleanText(emailConfig.fromName || "");
+  const replyTo = configuredFromEmail || "global@lisboacentralhostel.com";
   if (!apiKey) {
     const error = new Error("Missing server environment variable: RESEND_API_KEY");
     error.statusCode = 500;
@@ -63,7 +65,10 @@ async function sendWithResend({ to, subject, html, text }) {
     error.statusCode = 500;
     throw error;
   }
-  const from = /<[^>]+>/.test(rawFrom) ? rawFrom : `ACCOM Tools - LCH <${rawFrom}>`;
+  const envFromEmail = cleanText(rawFrom.replace(/^.*<([^>]+)>.*$/, "$1") || rawFrom).toLowerCase();
+  const effectiveFromEmail = configuredFromEmail || envFromEmail;
+  const effectiveFromName = configuredFromName || "ACCOM Tools - LCH";
+  const from = `${effectiveFromName} <${effectiveFromEmail}>`;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -86,7 +91,7 @@ async function sendBakeryMessage(settings, mail) {
   if (cleanText(emailConfig.provider).toLowerCase() === "smtp") {
     return sendWithSmtp(emailConfig, mail);
   }
-  return sendWithResend(mail);
+  return sendWithResend(mail, emailConfig);
 }
 
 async function sendBakeryEmail(order, settings) {
