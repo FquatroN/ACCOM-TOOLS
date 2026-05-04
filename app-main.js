@@ -2358,6 +2358,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-services="${id}"]`)?.checked) appFeatures.push("services");
   if (els.profilesBody.querySelector(`[data-profile-app-shopping="${id}"]`)?.checked) appFeatures.push("shopping");
   if (els.profilesBody.querySelector(`[data-profile-app-bakery="${id}"]`)?.checked) appFeatures.push("bakery");
+  if (els.profilesBody.querySelector(`[data-profile-app-laundry="${id}"]`)?.checked) appFeatures.push("laundry");
   const settingsFeatures = [];
   if (els.profilesBody.querySelector(`[data-profile-settings-communications="${id}"]`)?.checked) settingsFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-settings-reviews="${id}"]`)?.checked) settingsFeatures.push("reviews");
@@ -2365,6 +2366,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-settings-services="${id}"]`)?.checked) settingsFeatures.push("services");
   if (els.profilesBody.querySelector(`[data-profile-settings-shopping="${id}"]`)?.checked) settingsFeatures.push("shopping");
   if (els.profilesBody.querySelector(`[data-profile-settings-bakery="${id}"]`)?.checked) settingsFeatures.push("bakery");
+  if (els.profilesBody.querySelector(`[data-profile-settings-laundry="${id}"]`)?.checked) settingsFeatures.push("laundry");
   if (els.profilesBody.querySelector(`[data-profile-settings-admin-users="${id}"]`)?.checked) settingsFeatures.push("admin-users");
   return { name, appFeatures, settingsFeatures };
 }
