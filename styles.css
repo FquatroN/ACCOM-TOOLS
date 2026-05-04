@@ -2023,11 +2023,18 @@ select:disabled {
 
 .hours-mobile-card {
   display: grid;
-  gap: 0.72rem;
-  padding: 0.9rem 0.95rem;
+  gap: 0.48rem;
+  padding: 0.72rem 0.82rem;
   border: 1px solid #e2d8cf;
   border-radius: 14px;
   background: #fffdfa;
+}
+
+.hours-table th,
+.hours-table td {
+  padding-top: 0.28rem;
+  padding-bottom: 0.28rem;
+  line-height: 1.12;
 }
 
 .laundry-mobile-card {
