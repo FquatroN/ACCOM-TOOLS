@@ -49,6 +49,18 @@ const SHOPPING_WEEKDAY_OPTIONS = [
 ];
 
 const DEFAULT_SETTINGS = {
+  general: {
+    bakeryEmailConfig: {
+      provider: "resend",
+      smtpHost: "smtp.gmail.com",
+      smtpPort: 465,
+      smtpSecure: true,
+      smtpUser: "",
+      smtpPassword: "",
+      fromEmail: "",
+      fromName: "Lisboa Central Hostel",
+    },
+  },
   communications: {
     categories: [
       { name: "Warning", color: "#ffd89b" },
@@ -645,7 +657,7 @@ const state = {
   profilesLoaded: false,
   settings: clone(DEFAULT_SETTINGS),
   currentView: "communications",
-  settingsSection: "communications",
+  settingsSection: "general",
   autoRefreshTimer: null,
   lastAutoRefreshAt: 0,
   autoRefreshRunning: false,
@@ -693,6 +705,7 @@ const els = {
   viewBakery: document.getElementById("view-bakery"),
   viewLaundry: document.getElementById("view-laundry"),
   viewSettings: document.getElementById("view-settings"),
+  settingsMenuGeneral: document.getElementById("settings-menu-general"),
   settingsMenuCommunications: document.getElementById("settings-menu-communications"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
   settingsMenuGroups: document.getElementById("settings-menu-groups"),
@@ -701,6 +714,7 @@ const els = {
   settingsMenuBakery: document.getElementById("settings-menu-bakery"),
   settingsMenuLaundry: document.getElementById("settings-menu-laundry"),
   settingsMenuAdminUsers: document.getElementById("settings-menu-admin-users"),
+  settingsViewGeneral: document.getElementById("settings-view-general"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
   settingsViewGroups: document.getElementById("settings-view-groups"),
@@ -713,6 +727,7 @@ const els = {
   settingsReviewsConfigTab: document.getElementById("settings-reviews-config-tab"),
   settingsReviewsImportPanel: document.getElementById("settings-reviews-import-panel"),
   settingsReviewsConfigPanel: document.getElementById("settings-reviews-config-panel"),
+  closeSettingsGeneral: document.getElementById("close-settings-general"),
   closeSettingsAdmin: document.getElementById("close-settings-admin"),
   closeSettingsReviews: document.getElementById("close-settings-reviews"),
   closeSettingsGroups: document.getElementById("close-settings-groups"),
@@ -720,6 +735,17 @@ const els = {
   closeSettingsShopping: document.getElementById("close-settings-shopping"),
   closeSettingsBakery: document.getElementById("close-settings-bakery"),
   closeSettingsLaundry: document.getElementById("close-settings-laundry"),
+  generalSaveSettings: document.getElementById("general-save-settings"),
+  generalEmailProvider: document.getElementById("general-email-provider"),
+  generalEmailSmtpHost: document.getElementById("general-email-smtp-host"),
+  generalEmailSmtpPort: document.getElementById("general-email-smtp-port"),
+  generalEmailSmtpSecure: document.getElementById("general-email-smtp-secure"),
+  generalEmailSmtpUser: document.getElementById("general-email-smtp-user"),
+  generalEmailSmtpPassword: document.getElementById("general-email-smtp-password"),
+  generalEmailFromEmail: document.getElementById("general-email-from-email"),
+  generalEmailFromName: document.getElementById("general-email-from-name"),
+  generalEmailSmtpFields: document.getElementById("general-email-smtp-fields"),
+  generalSettingsStatus: document.getElementById("general-settings-status"),
   adminUserEmail: document.getElementById("admin-user-email"),
   adminUserPassword: document.getElementById("admin-user-password"),
   adminUserProfile: document.getElementById("admin-user-profile"),
@@ -1046,23 +1072,11 @@ const els = {
   bakerySaveSettings: document.getElementById("bakery-save-settings"),
   bakerySettingsTableTab: document.getElementById("bakery-settings-table-tab"),
   bakerySettingsTypesTab: document.getElementById("bakery-settings-types-tab"),
-  bakerySettingsEmailTab: document.getElementById("bakery-settings-email-tab"),
   bakerySettingsTablePanel: document.getElementById("bakery-settings-table-panel"),
   bakerySettingsTypesPanel: document.getElementById("bakery-settings-types-panel"),
-  bakerySettingsEmailPanel: document.getElementById("bakery-settings-email-panel"),
-  bakerySaveSettingsEmail: document.getElementById("bakery-save-settings-email"),
   bakerySelectedBase: document.getElementById("bakery-selected-base"),
   bakeryHostelCapacity: document.getElementById("bakery-hostel-capacity"),
   bakerySettingsEmailRecipients: document.getElementById("bakery-settings-email-recipients"),
-  bakeryEmailProvider: document.getElementById("bakery-email-provider"),
-  bakeryEmailSmtpHost: document.getElementById("bakery-email-smtp-host"),
-  bakeryEmailSmtpPort: document.getElementById("bakery-email-smtp-port"),
-  bakeryEmailSmtpSecure: document.getElementById("bakery-email-smtp-secure"),
-  bakeryEmailSmtpUser: document.getElementById("bakery-email-smtp-user"),
-  bakeryEmailSmtpPassword: document.getElementById("bakery-email-smtp-password"),
-  bakeryEmailFromEmail: document.getElementById("bakery-email-from-email"),
-  bakeryEmailFromName: document.getElementById("bakery-email-from-name"),
-  bakeryEmailSmtpFields: document.getElementById("bakery-email-smtp-fields"),
   bakeryBreadTableBody: document.getElementById("bakery-bread-table-body"),
   bakeryBreadTypesBody: document.getElementById("bakery-bread-types-body"),
   bakeryAddBreadType: document.getElementById("bakery-add-bread-type"),
@@ -1191,6 +1205,7 @@ function bindEvents() {
   });
   els.mobileMenuToggle?.addEventListener("click", toggleMobileNav);
   els.openSettings.addEventListener("click", () => setView("settings"));
+  els.closeSettingsGeneral?.addEventListener("click", () => setView("communications"));
   els.closeSettings.addEventListener("click", () => setView("communications"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
   els.closeSettingsReviews.addEventListener("click", () => setView("reviews"));
@@ -1199,6 +1214,7 @@ function bindEvents() {
   els.closeSettingsShopping.addEventListener("click", () => setView("shopping"));
   els.closeSettingsBakery.addEventListener("click", () => setView("bakery"));
   els.closeSettingsLaundry?.addEventListener("click", () => setView("laundry"));
+  els.settingsMenuGeneral?.addEventListener("click", () => setSettingsSection("general"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuGroups.addEventListener("click", () => setSettingsSection("groups"));
@@ -1265,15 +1281,14 @@ function bindEvents() {
   });
   els.bakerySettingsTableTab?.addEventListener("click", () => setBakerySettingsTab("table"));
   els.bakerySettingsTypesTab?.addEventListener("click", () => setBakerySettingsTab("types"));
-  els.bakerySettingsEmailTab?.addEventListener("click", () => setBakerySettingsTab("email"));
   els.bakerySaveSettings?.addEventListener("click", saveBakerySettings);
-  els.bakerySaveSettingsEmail?.addEventListener("click", saveBakerySettings);
+  els.generalSaveSettings?.addEventListener("click", saveSettings);
   els.bakerySelectedBase?.addEventListener("change", onBakerySettingsInput);
   els.bakeryHostelCapacity?.addEventListener("input", onBakerySettingsInput);
   els.bakerySettingsEmailRecipients?.addEventListener("input", onBakerySettingsInput);
-  [els.bakeryEmailProvider, els.bakeryEmailSmtpHost, els.bakeryEmailSmtpPort, els.bakeryEmailSmtpSecure, els.bakeryEmailSmtpUser, els.bakeryEmailSmtpPassword, els.bakeryEmailFromEmail, els.bakeryEmailFromName]
+  [els.generalEmailProvider, els.generalEmailSmtpHost, els.generalEmailSmtpPort, els.generalEmailSmtpSecure, els.generalEmailSmtpUser, els.generalEmailSmtpPassword, els.generalEmailFromEmail, els.generalEmailFromName]
     .filter(Boolean)
-    .forEach((el) => el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", onBakerySettingsInput));
+    .forEach((el) => el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", onGeneralSettingsInput));
   els.bakeryBreadTableBody?.addEventListener("input", onBakerySettingsInput);
   els.bakeryBreadTypesBody?.addEventListener("input", onBakerySettingsInput);
   els.bakeryBreadTypesBody?.addEventListener("click", onBakerySettingsAction);
@@ -1642,7 +1657,7 @@ async function setView(view) {
   setMobileNavOpen(false);
   state.currentView = view;
   if (view === "settings") {
-    if (canSettings("communications")) state.settingsSection = "communications";
+    if (canSettings("communications")) state.settingsSection = "general";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
     else if (canSettings("groups")) state.settingsSection = "groups";
     else if (canSettings("services")) state.settingsSection = "services";
@@ -1955,6 +1970,10 @@ async function ensureLaundryData() {
 }
 
 async function ensureSettingsSectionData() {
+  if (state.settingsSection === "general") {
+    await ensureCommunicationsData();
+    return;
+  }
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
     return;
@@ -2039,6 +2058,7 @@ function renderLayout() {
   els.viewBakery.hidden = !bakery;
   els.viewLaundry.hidden = !laundry;
   els.viewSettings.hidden = !settingsMode;
+  els.settingsMenuGeneral.hidden = !canSettings("communications");
   els.settingsMenuCommunications.hidden = !canSettings("communications");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
   els.settingsMenuGroups.hidden = !canSettings("groups");
@@ -2047,6 +2067,7 @@ function renderLayout() {
   els.settingsMenuBakery.hidden = !canSettings("bakery");
   els.settingsMenuLaundry.hidden = !canSettings("laundry");
   els.settingsMenuAdminUsers.hidden = !canSettings("admin-users");
+  els.settingsMenuGeneral.classList.toggle("active", state.settingsSection === "general");
   els.settingsMenuCommunications.classList.toggle("active", state.settingsSection === "communications");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
   els.settingsMenuGroups.classList.toggle("active", state.settingsSection === "groups");
@@ -2060,6 +2081,7 @@ function renderLayout() {
 }
 
 async function setSettingsSection(section) {
+  if (section === "general" && !canSettings("communications")) return;
   if (section === "communications" && !canSettings("communications")) return;
   if (section === "reviews" && !canSettings("reviews")) return;
   if (section === "groups" && !canSettings("groups")) return;
@@ -2083,7 +2105,9 @@ async function setSettingsSection(section) {
         ? "groups"
         : section === "reviews"
           ? "reviews"
-          : "communications";
+          : section === "communications"
+            ? "communications"
+            : "general";
   renderLayout();
   renderSettingsSection();
   await ensureSettingsSectionData();
@@ -2108,6 +2132,7 @@ async function ensureAdminUsersData() {
 }
 
 function renderSettingsSection() {
+  const isGeneral = state.settingsSection === "general" && canSettings("communications");
   const isComm = state.settingsSection === "communications" && canSettings("communications");
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
   const isGroups = state.settingsSection === "groups" && canSettings("groups");
@@ -2116,6 +2141,7 @@ function renderSettingsSection() {
   const isBakery = state.settingsSection === "bakery" && canSettings("bakery");
   const isLaundry = state.settingsSection === "laundry" && canSettings("laundry");
   const isAdmin = state.settingsSection === "admin-users" && canSettings("admin-users");
+  els.settingsViewGeneral.hidden = !isGeneral;
   els.settingsViewCommunications.hidden = !isComm;
   els.settingsViewReviews.hidden = !isReviews;
   els.settingsViewGroups.hidden = !isGroups;
@@ -2154,9 +2180,11 @@ async function loadSettings() {
     const result = await api("/api/settings");
     state.settings = sanitizeSettings(result.settings);
     setSettingsStatus("Settings loaded.");
+    setGeneralSettingsStatus("Settings loaded.");
   } catch (e) {
     state.settings = clone(DEFAULT_SETTINGS);
     setSettingsStatus(`Using defaults (${e.message}).`);
+    setGeneralSettingsStatus(`Using defaults (${e.message}).`);
   }
 }
 
@@ -2169,9 +2197,11 @@ async function saveSettings() {
   try {
     await api("/api/settings", { method: "PUT", body: { settings: state.settings } });
     setSettingsStatus("Settings saved.");
+    setGeneralSettingsStatus("Settings saved.");
     showToast("Settings saved.", "success");
   } catch (e) {
     setSettingsStatus(`Save failed: ${e.message}`);
+    setGeneralSettingsStatus(`Save failed: ${e.message}`);
     showToast(`Settings save failed: ${e.message}`, "error");
   }
 }
@@ -4159,6 +4189,16 @@ async function loadLostFound({ silent = false } = {}) {
 }
 
 function renderSettings() {
+  const general = state.settings.general?.bakeryEmailConfig || normalizeBakeryEmailConfigClient();
+  if (els.generalEmailProvider) els.generalEmailProvider.value = general.provider;
+  if (els.generalEmailSmtpHost) els.generalEmailSmtpHost.value = general.smtpHost;
+  if (els.generalEmailSmtpPort) els.generalEmailSmtpPort.value = general.smtpPort;
+  if (els.generalEmailSmtpSecure) els.generalEmailSmtpSecure.checked = !!general.smtpSecure;
+  if (els.generalEmailSmtpUser) els.generalEmailSmtpUser.value = general.smtpUser;
+  if (els.generalEmailSmtpPassword) els.generalEmailSmtpPassword.value = general.smtpPassword;
+  if (els.generalEmailFromEmail) els.generalEmailFromEmail.value = general.fromEmail;
+  if (els.generalEmailFromName) els.generalEmailFromName.value = general.fromName;
+  if (els.generalEmailSmtpFields) els.generalEmailSmtpFields.hidden = general.provider !== "smtp";
   const cfg = state.settings.communications;
   els.settingsCategoriesBody.innerHTML = "";
   cfg.categories.forEach((cat, index) => {
@@ -4179,6 +4219,20 @@ function renderSettings() {
   els.settingEmailRecipients2.value = (cfg.emailAutomation.recipients2 || []).join("\n");
   els.settingEmailPreview.textContent = emailPreview(cfg.emailAutomation);
   els.settingEmailNextPreview.textContent = nextSendTimesPreview(cfg.emailAutomation);
+}
+
+function onGeneralSettingsInput(event) {
+  const general = state.settings.general.bakeryEmailConfig;
+  if (event.target === els.generalEmailProvider) general.provider = normalizeBakeryEmailProviderClient(event.target.value);
+  if (event.target === els.generalEmailSmtpHost) general.smtpHost = clean(event.target.value);
+  if (event.target === els.generalEmailSmtpPort) general.smtpPort = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+  if (event.target === els.generalEmailSmtpSecure) general.smtpSecure = !!event.target.checked;
+  if (event.target === els.generalEmailSmtpUser) general.smtpUser = clean(event.target.value).toLowerCase();
+  if (event.target === els.generalEmailSmtpPassword) general.smtpPassword = String(event.target.value || "");
+  if (event.target === els.generalEmailFromEmail) general.fromEmail = clean(event.target.value).toLowerCase();
+  if (event.target === els.generalEmailFromName) general.fromName = clean(event.target.value);
+  state.settings = sanitizeSettings(state.settings);
+  renderSettings();
 }
 
 function addCategory() {
@@ -8640,7 +8694,7 @@ function renderBakery() {
 }
 
 function setBakerySettingsTab(tab) {
-  state.bakerySettingsTab = tab === "types" || tab === "email" ? tab : "table";
+  state.bakerySettingsTab = tab === "types" ? "types" : "table";
   if (els.bakerySettingsTableTab) {
     els.bakerySettingsTableTab.classList.toggle("active-tab", state.bakerySettingsTab === "table");
     els.bakerySettingsTableTab.classList.toggle("ghost", state.bakerySettingsTab !== "table");
@@ -8649,26 +8703,8 @@ function setBakerySettingsTab(tab) {
     els.bakerySettingsTypesTab.classList.toggle("active-tab", state.bakerySettingsTab === "types");
     els.bakerySettingsTypesTab.classList.toggle("ghost", state.bakerySettingsTab !== "types");
   }
-  if (els.bakerySettingsEmailTab) {
-    els.bakerySettingsEmailTab.classList.toggle("active-tab", state.bakerySettingsTab === "email");
-    els.bakerySettingsEmailTab.classList.toggle("ghost", state.bakerySettingsTab !== "email");
-  }
   if (els.bakerySettingsTablePanel) els.bakerySettingsTablePanel.hidden = state.bakerySettingsTab !== "table";
   if (els.bakerySettingsTypesPanel) els.bakerySettingsTypesPanel.hidden = state.bakerySettingsTab !== "types";
-  if (els.bakerySettingsEmailPanel) els.bakerySettingsEmailPanel.hidden = state.bakerySettingsTab !== "email";
-}
-
-function renderBakeryEmailConfigPanel() {
-  const emailConfig = state.bakerySettings?.emailConfig || normalizeBakeryEmailConfigClient();
-  if (els.bakeryEmailProvider) els.bakeryEmailProvider.value = emailConfig.provider;
-  if (els.bakeryEmailSmtpHost) els.bakeryEmailSmtpHost.value = emailConfig.smtpHost;
-  if (els.bakeryEmailSmtpPort) els.bakeryEmailSmtpPort.value = emailConfig.smtpPort;
-  if (els.bakeryEmailSmtpSecure) els.bakeryEmailSmtpSecure.checked = !!emailConfig.smtpSecure;
-  if (els.bakeryEmailSmtpUser) els.bakeryEmailSmtpUser.value = emailConfig.smtpUser;
-  if (els.bakeryEmailSmtpPassword) els.bakeryEmailSmtpPassword.value = emailConfig.smtpPassword;
-  if (els.bakeryEmailFromEmail) els.bakeryEmailFromEmail.value = emailConfig.fromEmail;
-  if (els.bakeryEmailFromName) els.bakeryEmailFromName.value = emailConfig.fromName;
-  if (els.bakeryEmailSmtpFields) els.bakeryEmailSmtpFields.hidden = emailConfig.provider !== "smtp";
 }
 
 function renderBakerySettings() {
@@ -8697,7 +8733,6 @@ function renderBakerySettings() {
       els.bakeryBreadTypesBody.appendChild(tr);
     });
   }
-  renderBakeryEmailConfigPanel();
   updateBakeryBreadTypesTotal();
   setBakerySettingsTab(state.bakerySettingsTab);
 }
@@ -8726,17 +8761,6 @@ function onBakerySettingsInput(event) {
   if (event.target === els.bakerySelectedBase) state.bakerySettings.selectedBase = normalizeBakeryBaseClient(event.target.value);
   if (event.target === els.bakeryHostelCapacity) state.bakerySettings.hostelCapacity = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
   if (event.target === els.bakerySettingsEmailRecipients) state.bakerySettings.emailRecipients = parseEmailList(event.target.value);
-  if (event.target === els.bakeryEmailProvider) state.bakerySettings.emailConfig.provider = normalizeBakeryEmailProviderClient(event.target.value);
-  if (event.target === els.bakeryEmailSmtpHost) state.bakerySettings.emailConfig.smtpHost = clean(event.target.value);
-  if (event.target === els.bakeryEmailSmtpPort) state.bakerySettings.emailConfig.smtpPort = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
-  if (event.target === els.bakeryEmailSmtpSecure) state.bakerySettings.emailConfig.smtpSecure = !!event.target.checked;
-  if (event.target === els.bakeryEmailSmtpUser) state.bakerySettings.emailConfig.smtpUser = clean(event.target.value).toLowerCase();
-  if (event.target === els.bakeryEmailSmtpPassword) state.bakerySettings.emailConfig.smtpPassword = String(event.target.value || "");
-  if (event.target === els.bakeryEmailFromEmail) state.bakerySettings.emailConfig.fromEmail = clean(event.target.value).toLowerCase();
-  if (event.target === els.bakeryEmailFromName) state.bakerySettings.emailConfig.fromName = clean(event.target.value);
-  if ([els.bakeryEmailProvider, els.bakeryEmailSmtpHost, els.bakeryEmailSmtpPort, els.bakeryEmailSmtpSecure, els.bakeryEmailSmtpUser, els.bakeryEmailSmtpPassword, els.bakeryEmailFromEmail, els.bakeryEmailFromName].includes(event.target)) {
-    renderBakeryEmailConfigPanel();
-  }
   updateBakeryBreadTypesTotal();
   if (state.bakeryOpenOrder) {
     refreshBakeryOpenOrderDerivedState();
@@ -8765,16 +8789,7 @@ async function saveBakerySettings() {
     selectedBase: state.bakerySettings.selectedBase,
     hostelCapacity: state.bakerySettings.hostelCapacity,
     emailRecipients: parseEmailList(els.bakerySettingsEmailRecipients?.value),
-    emailConfig: {
-      provider: normalizeBakeryEmailProviderClient(els.bakeryEmailProvider?.value || state.bakerySettings.emailConfig?.provider),
-      smtpHost: clean(els.bakeryEmailSmtpHost?.value || state.bakerySettings.emailConfig?.smtpHost),
-      smtpPort: Math.max(1, Number.parseInt(els.bakeryEmailSmtpPort?.value || state.bakerySettings.emailConfig?.smtpPort || 465, 10) || 465),
-      smtpSecure: !!(els.bakeryEmailSmtpSecure?.checked ?? state.bakerySettings.emailConfig?.smtpSecure),
-      smtpUser: clean(els.bakeryEmailSmtpUser?.value || state.bakerySettings.emailConfig?.smtpUser).toLowerCase(),
-      smtpPassword: String(els.bakeryEmailSmtpPassword?.value || state.bakerySettings.emailConfig?.smtpPassword || ""),
-      fromEmail: clean(els.bakeryEmailFromEmail?.value || state.bakerySettings.emailConfig?.fromEmail).toLowerCase(),
-      fromName: clean(els.bakeryEmailFromName?.value || state.bakerySettings.emailConfig?.fromName) || "Lisboa Central Hostel",
-    },
+    emailConfig: normalizeBakeryEmailConfigClient(state.bakerySettings.emailConfig),
     breadTable: (state.bakerySettings.breadTable || []).map((row) => ({
       guests: row.guests,
       baseBaixa: row.baseBaixa,
@@ -10480,6 +10495,8 @@ function csvCell(value) {
 
 function sanitizeSettings(settings) {
   const output = clone(DEFAULT_SETTINGS);
+  const generalInput = settings?.general || {};
+  output.general.bakeryEmailConfig = normalizeBakeryEmailConfigClient(generalInput.bakeryEmailConfig || generalInput.bakery_email_config);
   const input = settings?.communications || {};
   const categories = Array.isArray(input.categories) ? input.categories : [];
   const seen = new Set();
@@ -10727,6 +10744,10 @@ function setDbStatus(text) {
 
 function setSettingsStatus(text) {
   els.settingsStatus.textContent = text;
+}
+
+function setGeneralSettingsStatus(text) {
+  if (els.generalSettingsStatus) els.generalSettingsStatus.textContent = text;
 }
 
 function setAdminUsersStatus(text) {

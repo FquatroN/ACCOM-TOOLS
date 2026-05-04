@@ -1350,7 +1350,10 @@
           <section class="card settings-shell">
             <aside class="settings-nav">
               <p class="eyebrow">Settings</p>
-              <button id="settings-menu-communications" type="button" class="nav-link active">
+              <button id="settings-menu-general" type="button" class="nav-link active">
+                General
+              </button>
+              <button id="settings-menu-communications" type="button" class="nav-link">
                 Communications
               </button>
               <button id="settings-menu-laundry" type="button" class="nav-link">
@@ -1376,6 +1379,57 @@
               </button>
             </aside>
             <div class="settings-content">
+              <div id="settings-view-general">
+                <div class="actions">
+                  <button id="close-settings-general" type="button" class="ghost">Back To App</button>
+                  <button id="general-save-settings" type="button" class="ghost">Save Configuration</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Bakery Email Configuration</h3>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Provider
+                      <select id="general-email-provider">
+                        <option value="resend">Resend</option>
+                        <option value="smtp">SMTP / Gmail account</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div id="general-email-smtp-fields" class="grid settings-grid" hidden>
+                    <label>
+                      SMTP host
+                      <input id="general-email-smtp-host" type="text" placeholder="smtp.gmail.com" />
+                    </label>
+                    <label>
+                      SMTP port
+                      <input id="general-email-smtp-port" type="number" min="1" step="1" />
+                    </label>
+                    <label class="filter-checkbox align-end">
+                      <span>Secure connection</span>
+                      <input id="general-email-smtp-secure" type="checkbox" />
+                    </label>
+                    <label>
+                      Account email
+                      <input id="general-email-smtp-user" type="email" placeholder="global@lisboacentralhostel.com" />
+                    </label>
+                    <label>
+                      Password / app password
+                      <input id="general-email-smtp-password" type="password" />
+                    </label>
+                    <label>
+                      From email
+                      <input id="general-email-from-email" type="email" placeholder="global@lisboacentralhostel.com" />
+                    </label>
+                    <label>
+                      From name
+                      <input id="general-email-from-name" type="text" placeholder="Lisboa Central Hostel" />
+                    </label>
+                  </div>
+                  <p id="general-settings-status" class="auth-status"></p>
+                </section>
+              </div>
               <div id="settings-view-communications">
                 <div class="actions">
                   <button id="close-settings" type="button" class="ghost">Back To App</button>
@@ -1721,7 +1775,6 @@
                   <button id="close-settings-bakery" type="button" class="ghost">Back To App</button>
                   <button id="bakery-settings-table-tab" type="button" class="active-tab">Bread table</button>
                   <button id="bakery-settings-types-tab" type="button" class="ghost">Bread types</button>
-                  <button id="bakery-settings-email-tab" type="button" class="ghost">Email configuration</button>
                 </div>
                 <section id="bakery-settings-table-panel" class="settings-block">
                   <div class="bar">
@@ -1779,51 +1832,6 @@
                     </table>
                   </div>
                   <p id="bakery-bread-types-total" class="auth-status">Total: 0%</p>
-                </section>
-                <section id="bakery-settings-email-panel" class="settings-block" hidden>
-                  <div class="bar">
-                    <h3>Email Configuration</h3>
-                    <button id="bakery-save-settings-email" type="button" class="ghost">Save Configuration</button>
-                  </div>
-                  <div class="grid settings-grid">
-                    <label>
-                      Provider
-                      <select id="bakery-email-provider">
-                        <option value="resend">Resend</option>
-                        <option value="smtp">SMTP / Gmail account</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div id="bakery-email-smtp-fields" class="grid settings-grid" hidden>
-                    <label>
-                      SMTP host
-                      <input id="bakery-email-smtp-host" type="text" placeholder="smtp.gmail.com" />
-                    </label>
-                    <label>
-                      SMTP port
-                      <input id="bakery-email-smtp-port" type="number" min="1" step="1" />
-                    </label>
-                    <label class="filter-checkbox align-end">
-                      <span>Secure connection</span>
-                      <input id="bakery-email-smtp-secure" type="checkbox" />
-                    </label>
-                    <label>
-                      Account email
-                      <input id="bakery-email-smtp-user" type="email" placeholder="global@lisboacentralhostel.com" />
-                    </label>
-                    <label>
-                      Password / app password
-                      <input id="bakery-email-smtp-password" type="password" />
-                    </label>
-                    <label>
-                      From email
-                      <input id="bakery-email-from-email" type="email" placeholder="global@lisboacentralhostel.com" />
-                    </label>
-                    <label>
-                      From name
-                      <input id="bakery-email-from-name" type="text" placeholder="Lisboa Central Hostel" />
-                    </label>
-                  </div>
                 </section>
               </div>
 

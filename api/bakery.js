@@ -15,7 +15,14 @@ const { sendWithSmtp } = require("./_smtp");
 async function loadBakerySettings() {
   const rows = await restQuery("app_settings?select=payload&setting_key=eq.bakery&limit=1", { method: "GET" });
   const payload = Array.isArray(rows) && rows[0]?.payload ? rows[0].payload : DEFAULT_BAKERY_SETTINGS;
-  return sanitizeBakerySettings(payload);
+  const settings = sanitizeBakerySettings(payload);
+  const generalRows = await restQuery("app_settings?select=payload&setting_key=eq.communications&limit=1", { method: "GET" });
+  const generalPayload = Array.isArray(generalRows) && generalRows[0]?.payload ? generalRows[0].payload : {};
+  const generalEmailConfig = generalPayload?.general?.bakeryEmailConfig || generalPayload?.general?.bakery_email_config;
+  if (generalEmailConfig && typeof generalEmailConfig === "object") {
+    settings.emailConfig = sanitizeBakerySettings({ emailConfig: generalEmailConfig }).emailConfig;
+  }
+  return settings;
 }
 
 async function loadOpenOrder(settings) {
