@@ -9202,30 +9202,40 @@ function buildLaundryDifferenceLines(record) {
   const hasReceivedValues = laundryHasReceivedValues(record);
   const isReceiveDue = Boolean(receiveDate) && receiveDate <= lisbonTodayIsoClient();
   if (!hasReceivedValues) {
+    const waitingText = receiveDate ? `Waiting for received quantities on ${receiveDate}.` : "Waiting for received quantities.";
     return {
       matchDate: receiveDate,
       hasReceivedValues,
       isReceiveDue,
       totalDiff: null,
-      lines: [receiveDate ? `Waiting for received quantities on ${receiveDate}.` : "Waiting for received quantities."],
+      lines: [waitingText],
+      entries: [{ text: waitingText, tone: isReceiveDue ? "negative" : "" }],
     };
   }
   const lines = [];
+  const entries = [];
   let totalDiff = 0;
   itemTypes.forEach((item) => {
     const sent = Number(record.sentItems?.[item.id] || 0);
     const received = Number(record.receivedItems?.[item.id] || 0);
     const diff = received - sent;
     totalDiff += diff;
-    if (diff !== 0) lines.push(`${item.name}: ${sent} -> ${received} (${diff > 0 ? "+" : ""}${diff})`);
+    if (diff !== 0) {
+      const text = `${item.name}: ${sent} -> ${received} (${diff > 0 ? "+" : ""}${diff})`;
+      lines.push(text);
+      entries.push({ text, tone: diff > 0 ? "positive" : "negative" });
+    }
   });
-  lines.push(`Total counts difference: ${totalDiff > 0 ? "+" : ""}${totalDiff}`);
+  const totalText = `Total counts difference: ${totalDiff > 0 ? "+" : ""}${totalDiff}`;
+  lines.push(totalText);
+  entries.push({ text: totalText, tone: totalDiff > 0 ? "positive" : totalDiff < 0 ? "negative" : "zero" });
   return {
     matchDate: receiveDate,
     hasReceivedValues,
     isReceiveDue,
     totalDiff,
     lines,
+    entries,
   };
 }
 
@@ -9248,9 +9258,11 @@ function renderLaundryDraftComputedDetails(draft = state.laundryDraft || emptyLa
   if (els.laundryMatchDate) els.laundryMatchDate.textContent = diff.matchDate ? `Received date: ${diff.matchDate}` : "Received date pending.";
   if (els.laundryDifferenceSummary) {
     els.laundryDifferenceSummary.classList.toggle("empty", false);
-    const toneClass = !diff.hasReceivedValues ? "" : (diff.totalDiff > 0 ? "diff-positive" : diff.totalDiff < 0 ? "diff-negative" : "diff-zero");
-    els.laundryDifferenceSummary.className = `laundry-diff-grid${toneClass ? ` ${toneClass}` : ""}`;
-    els.laundryDifferenceSummary.innerHTML = diff.lines.map((line) => `<article class="laundry-diff-pill">${escape(line)}</article>`).join("");
+    els.laundryDifferenceSummary.className = "laundry-diff-grid";
+    els.laundryDifferenceSummary.innerHTML = (diff.entries || []).map((entry) => {
+      const toneClass = entry.tone ? ` diff-${entry.tone}` : "";
+      return `<article class="laundry-diff-pill${toneClass}">${escape(entry.text)}</article>`;
+    }).join("");
   }
 }
 

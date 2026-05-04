@@ -1641,15 +1641,15 @@ select:disabled {
   line-height: 1.22;
 }
 
-.laundry-diff-grid.diff-negative .laundry-diff-pill {
+.laundry-diff-pill.diff-negative {
   background: rgba(177, 32, 48, 0.15);
 }
 
-.laundry-diff-grid.diff-positive .laundry-diff-pill {
+.laundry-diff-pill.diff-positive {
   background: rgba(55, 140, 92, 0.15);
 }
 
-.laundry-diff-grid.diff-zero .laundry-diff-pill {
+.laundry-diff-pill.diff-zero {
   background: rgba(67, 127, 211, 0.15);
 }
 
