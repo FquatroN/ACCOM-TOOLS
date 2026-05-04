@@ -505,6 +505,7 @@ module.exports = {
   normalizeFeatureList,
   normalizeNumeric,
   normalizeSource,
+  normalizeTime,
   parseBody,
   requireFeature,
   requireSettingsAdmin,
