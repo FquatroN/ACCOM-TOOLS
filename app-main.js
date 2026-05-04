@@ -601,7 +601,7 @@ const state = {
   laundrySettingsLoaded: false,
   laundryScreen: "list",
   laundryFilters: { property: "", dateFrom: "", dateTo: "", search: "" },
-  laundryResumeFilters: { dateField: "sent", property: "", dateFrom: "", dateTo: "", detail: false },
+  laundryResumeFilters: { dateField: "sent", property: "", dateFrom: `${new Date().getFullYear()}-01-01`, dateTo: "", detail: false },
   laundryDraft: null,
   laundrySelectedId: "",
   serviceProviders: [],
@@ -9504,16 +9504,25 @@ function getLaundryResumeRows() {
     current.totalDiff += totalDiff;
     current.receivedWeightKg += receivedWeightKg;
     if (detail) {
-      current.records.push({
-        recordId: row.id,
-        date: basisDate,
-        difSingleBaixo,
-        difSingleCima,
-        difCasalBaixo,
-        difCasalCima,
-        totalDiff,
-        receivedWeightKg,
-      });
+      const existingRecord = (current.records || []).find((item) => clean(item.date) === basisDate);
+      if (existingRecord) {
+        existingRecord.difSingleBaixo += difSingleBaixo;
+        existingRecord.difSingleCima += difSingleCima;
+        existingRecord.difCasalBaixo += difCasalBaixo;
+        existingRecord.difCasalCima += difCasalCima;
+        existingRecord.totalDiff += totalDiff;
+        existingRecord.receivedWeightKg = Number((existingRecord.receivedWeightKg + receivedWeightKg).toFixed(2));
+      } else {
+        current.records.push({
+          date: basisDate,
+          difSingleBaixo,
+          difSingleCima,
+          difCasalBaixo,
+          difCasalCima,
+          totalDiff,
+          receivedWeightKg,
+        });
+      }
     }
     buckets.set(monthKey, current);
   });
@@ -9522,7 +9531,7 @@ function getLaundryResumeRows() {
       ...row,
       receivedWeightKg: Number(row.receivedWeightKg.toFixed(2)),
       records: detail
-        ? [...row.records].sort((a, b) => clean(b.date).localeCompare(clean(a.date)) || clean(a.recordId).localeCompare(clean(b.recordId)))
+        ? [...row.records].sort((a, b) => clean(b.date).localeCompare(clean(a.date)))
         : [],
     }))
     .sort((a, b) => clean(b.monthKey).localeCompare(clean(a.monthKey)));
