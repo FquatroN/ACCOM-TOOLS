@@ -2037,6 +2037,11 @@ select:disabled {
   line-height: 1.12;
 }
 
+.hours-table .inline-editor.sticky-new-row td {
+  position: static;
+  top: auto;
+}
+
 .laundry-mobile-card {
   display: grid;
   gap: 0.72rem;
