@@ -429,6 +429,27 @@ h3 {
   grid-column: 1 / -1;
 }
 
+#settings-view-laundry .settings-block > .grid.settings-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+}
+
+#settings-view-laundry .laundry-email-recipients-field {
+  grid-column: 2 / span 2;
+}
+
+.laundry-email-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+  align-self: start;
+}
+
+.laundry-email-enabled-row {
+  margin-top: 0;
+  min-height: 2.5rem;
+}
+
 .align-end {
   align-self: end;
 }

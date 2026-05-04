@@ -1389,7 +1389,7 @@
                     <h3>Email Configuration</h3>
                   </div>
                   <p class="auth-status">Used by Bakery Order and Laundry Control automatic emails.</p>
-                  <div class="grid settings-grid">
+                  <div class="grid settings-grid laundry-settings-top-grid">
                     <label>
                       Provider
                       <select id="general-email-provider">
@@ -1750,21 +1750,23 @@
                       Price per KG (€)
                       <input id="laundry-price-per-kg" type="number" min="0" step="0.01" />
                     </label>
-                    <label class="settings-email-recipients">
+                    <label class="laundry-email-recipients-field">
                       Laundry email
                       <textarea id="laundry-email-recipients" rows="3" placeholder="email1@example.com, email2@example.com"></textarea>
                     </label>
-                    <label class="filter-checkbox align-end">
-                      <span>Email to Laundry</span>
-                      <input id="laundry-email-enabled" type="checkbox" />
-                    </label>
-                    <label>
-                      Email time
-                      <div class="laundry-email-time-row">
-                        <input id="laundry-email-time" type="time" />
-                        <button id="laundry-test-email" type="button" class="ghost">Test email</button>
-                      </div>
-                    </label>
+                    <div class="laundry-email-controls">
+                      <label class="filter-checkbox align-end laundry-email-enabled-row">
+                        <span>Email to Laundry</span>
+                        <input id="laundry-email-enabled" type="checkbox" />
+                      </label>
+                      <label>
+                        Email time
+                        <div class="laundry-email-time-row">
+                          <input id="laundry-email-time" type="time" />
+                          <button id="laundry-test-email" type="button" class="ghost">Test email</button>
+                        </div>
+                      </label>
+                    </div>
                   </div>
                   <div class="table-wrap">
                     <table class="settings-table">
