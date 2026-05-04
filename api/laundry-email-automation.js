@@ -314,31 +314,37 @@ function buildLaundryManagementEmailContent(records, settings, currentDate) {
     ? records.map((record) => {
       const diff = buildLaundryDifference(record, settings);
       const rowColor = laundryRowColor(diff.totalDiff);
-      const tdStyle = `border:1px solid #d8d0c7;padding:6px;vertical-align:top;background:${rowColor};background-color:${rowColor};`;
+      const tdStyle = `border:1px solid #d8d0c7;padding:4px 5px;vertical-align:top;background:${rowColor};background-color:${rowColor};font-size:11px;line-height:1.2;`;
+      const dateCellStyle = `${tdStyle}white-space:nowrap;width:86px;`;
+      const propertyCellStyle = `${tdStyle}width:70px;`;
+      const sentCellStyle = `${tdStyle}width:170px;`;
+      const receivedCellStyle = `${tdStyle}width:170px;`;
+      const diffCellStyle = `${tdStyle}width:180px;`;
+      const notesCellStyle = `${tdStyle}font-size:10px;`;
       return `<tr>
-        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(record.date)}</td>
-        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(record.property)}</td>
-        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(formatLaundryItemsSummary(record.sentItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
-        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(record.receivedDate || "")}</td>
-        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(formatLaundryItemsSummary(record.receivedItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
-        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(diff.lines.join("\n")).replace(/\n/g, "<br />")}</td>
-        <td bgcolor="${rowColor}" style="${tdStyle}">${escapeHtml(record.notes || "-")}</td>
+        <td bgcolor="${rowColor}" style="${dateCellStyle}">${escapeHtml(record.date)}</td>
+        <td bgcolor="${rowColor}" style="${propertyCellStyle}">${escapeHtml(record.property)}</td>
+        <td bgcolor="${rowColor}" style="${sentCellStyle}">${escapeHtml(formatLaundryItemsSummary(record.sentItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${dateCellStyle}">${escapeHtml(record.receivedDate || "")}</td>
+        <td bgcolor="${rowColor}" style="${receivedCellStyle}">${escapeHtml(formatLaundryItemsSummary(record.receivedItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${diffCellStyle}">${escapeHtml(diff.lines.join("\n")).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${notesCellStyle}">${escapeHtml(record.notes || "-")}</td>
       </tr>`;
     }).join("")
-    : '<tr><td colspan="7" style="border:1px solid #d8d0c7;padding:6px;">No laundry records received in the last 3 days.</td></tr>';
+    : '<tr><td colspan="7" style="border:1px solid #d8d0c7;padding:4px 5px;font-size:11px;">No laundry records received in the last 3 days.</td></tr>';
   const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
     <p>Bom dia,</p>
     <p>Segue o resumo das diferenças de lavandaria dos últimos 3 dias.</p>
-    <table style="border-collapse:collapse;width:100%;max-width:980px;">
+    <table style="border-collapse:collapse;width:100%;max-width:980px;table-layout:fixed;">
       <thead>
         <tr>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Sent Date</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Property</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Sent</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Received Date</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Received</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Difference</th>
-          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Notes</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:11px;line-height:1.15;white-space:nowrap;width:86px;">Sent Date</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:11px;line-height:1.15;width:70px;">Property</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:11px;line-height:1.15;width:170px;">Sent</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:11px;line-height:1.15;white-space:nowrap;width:86px;">Received Date</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:11px;line-height:1.15;width:170px;">Received</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:11px;line-height:1.15;width:180px;">Difference</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:11px;line-height:1.15;">Notes</th>
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
