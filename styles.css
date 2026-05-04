@@ -1094,21 +1094,27 @@ td {
   background: #fff6eb;
 }
 
-.laundry-table tr.laundry-row-negative td {
+.laundry-table tr.laundry-row-negative td,
+.laundry-resume-table tr.laundry-row-negative td {
   background: rgba(177, 32, 48, 0.15);
 }
 
-.laundry-table tr.laundry-row-positive td {
+.laundry-table tr.laundry-row-positive td,
+.laundry-resume-table tr.laundry-row-positive td {
   background: rgba(55, 140, 92, 0.15);
 }
 
-.laundry-table tr.laundry-row-zero td {
+.laundry-table tr.laundry-row-zero td,
+.laundry-resume-table tr.laundry-row-zero td {
   background: rgba(67, 127, 211, 0.15);
 }
 
 .laundry-table tr.laundry-row-negative:hover td,
 .laundry-table tr.laundry-row-positive:hover td,
-.laundry-table tr.laundry-row-zero:hover td {
+.laundry-table tr.laundry-row-zero:hover td,
+.laundry-resume-table tr.laundry-row-negative:hover td,
+.laundry-resume-table tr.laundry-row-positive:hover td,
+.laundry-resume-table tr.laundry-row-zero:hover td {
   filter: brightness(0.985);
 }
 

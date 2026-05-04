@@ -9547,10 +9547,11 @@ function renderLaundryResume() {
   const rows = getLaundryResumeRows();
   const detail = !!state.laundryResumeFilters.detail;
   const detailCount = rows.reduce((sum, row) => sum + (row.records?.length || 0), 0);
+  const pricePerKg = Math.max(0, Number(state.laundrySettings?.pricePerKg || 0));
   els.laundryResumeCount.textContent = detail ? `${rows.length} month${rows.length === 1 ? "" : "s"} / ${detailCount} record${detailCount === 1 ? "" : "s"}` : `${rows.length} month${rows.length === 1 ? "" : "s"}`;
   els.laundryResumeBody.innerHTML = "";
   if (!rows.length) {
-    els.laundryResumeBody.innerHTML = '<tr><td colspan="7" class="empty">No laundry resume data found.</td></tr>';
+    els.laundryResumeBody.innerHTML = '<tr><td colspan="8" class="empty">No laundry resume data found.</td></tr>';
     return;
   }
   rows.forEach((row) => {
@@ -9566,7 +9567,8 @@ function renderLaundryResume() {
           <td>${escape(String(record.difCasalBaixo))}</td>
           <td>${escape(String(record.difCasalCima))}</td>
           <td>${escape(String(record.totalDiff))}</td>
-          <td>${escape(formatLaundryKg(record.receivedWeightKg))}</td>`;
+          <td>${escape(formatLaundryKg(record.receivedWeightKg))}</td>
+          <td>${escape(formatMoney(record.receivedWeightKg * pricePerKg))}</td>`;
         els.laundryResumeBody.appendChild(detailTr);
       });
     }
@@ -9581,7 +9583,8 @@ function renderLaundryResume() {
       <td>${escape(String(row.difCasalBaixo))}</td>
       <td>${escape(String(row.difCasalCima))}</td>
       <td>${escape(String(row.totalDiff))}</td>
-      <td>${escape(formatLaundryKg(row.receivedWeightKg))}</td>`;
+      <td>${escape(formatLaundryKg(row.receivedWeightKg))}</td>
+      <td>${escape(formatMoney(row.receivedWeightKg * pricePerKg))}</td>`;
     els.laundryResumeBody.appendChild(tr);
   });
 }
