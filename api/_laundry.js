@@ -8,6 +8,9 @@ const DEFAULT_LAUNDRY_SETTINGS = {
   emailRecipients: [],
   emailEnabled: false,
   emailTime: "00:00",
+  managementEmailRecipients: [],
+  managementEmailEnabled: false,
+  managementEmailTime: "00:00",
   itemTypes: [
     { id: "single-baixo", name: "single baixo", weightKg: 0.48 },
     { id: "single-cima", name: "single cima", weightKg: 0.5 },
@@ -86,6 +89,9 @@ function sanitizeLaundrySettings(input = {}) {
     emailRecipients: normalizeRecipients(source.emailRecipients || source.email_recipients),
     emailEnabled: normalizeBool(source.emailEnabled ?? source.email_enabled),
     emailTime: normalizeTime(source.emailTime ?? source.email_time),
+    managementEmailRecipients: normalizeRecipients(source.managementEmailRecipients || source.management_email_recipients),
+    managementEmailEnabled: normalizeBool(source.managementEmailEnabled ?? source.management_email_enabled),
+    managementEmailTime: normalizeTime(source.managementEmailTime ?? source.management_email_time),
     itemTypes: itemTypes.length ? itemTypes : DEFAULT_LAUNDRY_SETTINGS.itemTypes.map((item, index) => sanitizeLaundryItemType(item, index)),
   };
 }

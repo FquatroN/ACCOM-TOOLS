@@ -345,6 +345,9 @@ const DEFAULT_LAUNDRY_SETTINGS = {
   emailRecipients: [],
   emailEnabled: false,
   emailTime: "00:00",
+  managementEmailRecipients: [],
+  managementEmailEnabled: false,
+  managementEmailTime: "00:00",
   itemTypes: [
     { id: "single-baixo", name: "single baixo", weightKg: 0.48 },
     { id: "single-cima", name: "single cima", weightKg: 0.5 },
@@ -1072,6 +1075,10 @@ const els = {
   laundryEmailEnabled: document.getElementById("laundry-email-enabled"),
   laundryEmailTime: document.getElementById("laundry-email-time"),
   laundryTestEmail: document.getElementById("laundry-test-email"),
+  laundryManagementEmailRecipients: document.getElementById("laundry-management-email-recipients"),
+  laundryManagementEmailEnabled: document.getElementById("laundry-management-email-enabled"),
+  laundryManagementEmailTime: document.getElementById("laundry-management-email-time"),
+  laundryManagementTestEmail: document.getElementById("laundry-management-test-email"),
   laundryItemTypesBody: document.getElementById("laundry-item-types-body"),
   laundrySettingsStatus: document.getElementById("laundry-settings-status"),
   bakerySaveSettings: document.getElementById("bakery-save-settings"),
@@ -1325,6 +1332,10 @@ function bindEvents() {
   els.laundryEmailEnabled?.addEventListener("change", onLaundrySettingsInput);
   els.laundryEmailTime?.addEventListener("input", onLaundrySettingsInput);
   els.laundryTestEmail?.addEventListener("click", triggerLaundryEmailNow);
+  els.laundryManagementEmailRecipients?.addEventListener("input", onLaundrySettingsInput);
+  els.laundryManagementEmailEnabled?.addEventListener("change", onLaundrySettingsInput);
+  els.laundryManagementEmailTime?.addEventListener("input", onLaundrySettingsInput);
+  els.laundryManagementTestEmail?.addEventListener("click", triggerLaundryManagementEmailNow);
   els.laundryItemTypesBody?.addEventListener("input", onLaundrySettingsInput);
   els.laundryItemTypesBody?.addEventListener("click", onLaundrySettingsAction);
   els.settingsReviewsImportTab.addEventListener("click", () => setReviewSettingsScreen("import"));
@@ -4405,6 +4416,22 @@ async function triggerLaundryEmailNow() {
     setLaundrySettingsStatus(`Laundry test email failed: ${e.message}`);
   } finally {
     els.laundryTestEmail.disabled = false;
+  }
+}
+
+async function triggerLaundryManagementEmailNow() {
+  els.laundryManagementTestEmail.disabled = true;
+  setLaundrySettingsStatus("Sending management test email...");
+  try {
+    await api("/api/laundry-email-automation?force=1", {
+      method: "POST",
+      body: { mode: "management" },
+    });
+    setLaundrySettingsStatus("Laundry management test email sent successfully.");
+  } catch (e) {
+    setLaundrySettingsStatus(`Laundry management test email failed: ${e.message}`);
+  } finally {
+    els.laundryManagementTestEmail.disabled = false;
   }
 }
 
@@ -9000,6 +9027,13 @@ function normalizeLaundrySettingsClient(input = {}) {
       .filter((item, index, items) => items.indexOf(item) === index),
     emailEnabled: !!(source.emailEnabled ?? source.email_enabled),
     emailTime: normalizeTimeInput(source.emailTime ?? source.email_time),
+    managementEmailRecipients: String(Array.isArray(source.managementEmailRecipients) ? source.managementEmailRecipients.join("\n") : source.managementEmailRecipients || source.management_email_recipients || "")
+      .split(/[\n,;]/)
+      .map((item) => clean(item).toLowerCase())
+      .filter(Boolean)
+      .filter((item, index, items) => items.indexOf(item) === index),
+    managementEmailEnabled: !!(source.managementEmailEnabled ?? source.management_email_enabled),
+    managementEmailTime: normalizeTimeInput(source.managementEmailTime ?? source.management_email_time),
     itemTypes: itemTypes.length ? itemTypes : clone(DEFAULT_LAUNDRY_SETTINGS.itemTypes),
   };
 }
@@ -9784,6 +9818,9 @@ function renderLaundrySettings() {
   if (els.laundryEmailRecipients) els.laundryEmailRecipients.value = (settings.emailRecipients || []).join("\n");
   if (els.laundryEmailEnabled) els.laundryEmailEnabled.checked = !!settings.emailEnabled;
   if (els.laundryEmailTime) els.laundryEmailTime.value = settings.emailTime || "00:00";
+  if (els.laundryManagementEmailRecipients) els.laundryManagementEmailRecipients.value = (settings.managementEmailRecipients || []).join("\n");
+  if (els.laundryManagementEmailEnabled) els.laundryManagementEmailEnabled.checked = !!settings.managementEmailEnabled;
+  if (els.laundryManagementEmailTime) els.laundryManagementEmailTime.value = settings.managementEmailTime || "00:00";
   if (els.laundryItemTypesBody) {
     els.laundryItemTypesBody.innerHTML = "";
     settings.itemTypes.forEach((item, index) => {
@@ -9805,6 +9842,13 @@ function onLaundrySettingsInput() {
     .filter((item, index, items) => items.indexOf(item) === index);
   state.laundrySettings.emailEnabled = !!els.laundryEmailEnabled?.checked;
   state.laundrySettings.emailTime = normalizeTimeInput(els.laundryEmailTime?.value);
+  state.laundrySettings.managementEmailRecipients = String(els.laundryManagementEmailRecipients?.value || "")
+    .split(/[\n,;]/)
+    .map((item) => clean(item).toLowerCase())
+    .filter(Boolean)
+    .filter((item, index, items) => items.indexOf(item) === index);
+  state.laundrySettings.managementEmailEnabled = !!els.laundryManagementEmailEnabled?.checked;
+  state.laundrySettings.managementEmailTime = normalizeTimeInput(els.laundryManagementEmailTime?.value);
   state.laundrySettings.itemTypes = (Array.from(els.laundryItemTypesBody?.querySelectorAll("tr") || [])).map((row, index) => ({
     id: clean(state.laundrySettings.itemTypes[index]?.id) || `laundry-item-${index + 1}`,
     name: clean(row.querySelector('[data-laundry-setting-field="name"]')?.value) || `item ${index + 1}`,
