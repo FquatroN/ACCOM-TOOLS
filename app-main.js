@@ -9163,6 +9163,24 @@ function laundryHasMissingSentRecords() {
   });
 }
 
+function describeLaundryMissingSentRecords() {
+  const today = lisbonTodayIsoClient();
+  const messages = [];
+  ["Hostel", "Cruz"].forEach((property) => {
+    const latest = state.laundryRecords
+      .filter((row) => clean(row?.property) === property)
+      .map((row) => clean(row?.date))
+      .filter(Boolean)
+      .sort()
+      .at(-1) || "";
+    if (latest && latest >= today) return;
+    const firstMissing = latest ? shiftDate(latest, 1) : today;
+    const dateLabel = firstMissing && firstMissing < today ? `${firstMissing} to ${today}` : (firstMissing || today);
+    messages.push(`Missing records for ${dateLabel} for ${property}`);
+  });
+  return messages;
+}
+
 function laundryHasOverduePendingReceipts() {
   const today = lisbonTodayIsoClient();
   return state.laundryRecords.some((row) => {
@@ -9216,6 +9234,12 @@ function renderLaundryItemInputs(container, counts, kind = "sent") {
 }
 
 function renderLaundryDraft() {
+  const focusTarget = document.activeElement?.matches?.("[data-laundry-count-kind][data-laundry-item-id], #laundry-received-weight") ? document.activeElement : null;
+  const focusKind = focusTarget ? clean(focusTarget.dataset?.laundryCountKind) : "";
+  const focusItemId = focusTarget ? clean(focusTarget.dataset?.laundryItemId) : "";
+  const focusIsWeight = focusTarget === els.laundryReceivedWeight;
+  const caretStart = focusTarget && typeof focusTarget.selectionStart === "number" ? focusTarget.selectionStart : null;
+  const caretEnd = focusTarget && typeof focusTarget.selectionEnd === "number" ? focusTarget.selectionEnd : null;
   const draft = state.laundryDraft || emptyLaundryDraft();
   draft.receivedDate = laundryReceiveDate(draft.date);
   if (els.laundryProperty) els.laundryProperty.value = draft.property || "Hostel";
@@ -9231,7 +9255,23 @@ function renderLaundryDraft() {
   if (els.laundryMatchDate) els.laundryMatchDate.textContent = diff.matchDate ? `Received date: ${diff.matchDate}` : "Received date pending.";
   if (els.laundryDifferenceSummary) {
     els.laundryDifferenceSummary.classList.toggle("empty", false);
-    els.laundryDifferenceSummary.innerHTML = diff.lines.map((line) => `<article>${escape(line)}</article>`).join("");
+    const toneClass = !diff.hasReceivedValues ? "" : (diff.totalDiff > 0 ? "diff-positive" : diff.totalDiff < 0 ? "diff-negative" : "diff-zero");
+    els.laundryDifferenceSummary.className = `laundry-diff-grid${toneClass ? ` ${toneClass}` : ""}`;
+    els.laundryDifferenceSummary.innerHTML = diff.lines.map((line) => `<article class="laundry-diff-pill">${escape(line)}</article>`).join("");
+  }
+  let restoreTarget = null;
+  if (focusKind && focusItemId) {
+    restoreTarget = document.querySelector(`[data-laundry-count-kind="${focusKind}"][data-laundry-item-id="${focusItemId}"]`);
+  } else if (focusIsWeight) {
+    restoreTarget = els.laundryReceivedWeight;
+  }
+  if (restoreTarget) {
+    restoreTarget.focus();
+    if (typeof caretStart === "number" && typeof restoreTarget.setSelectionRange === "function") {
+      const nextStart = Math.min(caretStart, String(restoreTarget.value || "").length);
+      const nextEnd = Math.min(caretEnd ?? caretStart, String(restoreTarget.value || "").length);
+      restoreTarget.setSelectionRange(nextStart, nextEnd);
+    }
   }
 }
 
@@ -9331,7 +9371,10 @@ function renderLaundry() {
   const rows = getFilteredLaundryRecords();
   const showMissingRecords = laundryHasMissingSentRecords();
   if (els.laundryCount) els.laundryCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
-  if (els.laundryMissingWarning) els.laundryMissingWarning.hidden = !showMissingRecords;
+  if (els.laundryMissingWarning) {
+    els.laundryMissingWarning.hidden = !showMissingRecords;
+    els.laundryMissingWarning.innerHTML = showMissingRecords ? describeLaundryMissingSentRecords().map((line) => escape(line)).join("<br>") : "";
+  }
   if (els.laundryFilterProperty) els.laundryFilterProperty.value = state.laundryFilters.property;
   if (els.laundryFilterDateFrom) els.laundryFilterDateFrom.value = state.laundryFilters.dateFrom;
   if (els.laundryFilterDateTo) els.laundryFilterDateTo.value = state.laundryFilters.dateTo;
