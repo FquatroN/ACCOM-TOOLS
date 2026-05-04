@@ -1601,6 +1601,11 @@ select:disabled {
   vertical-align: top;
 }
 
+.laundry-table td:nth-child(7) {
+  font-size: 0.84em;
+  line-height: 1.25;
+}
+
 .laundry-table td small {
   color: var(--muted);
 }

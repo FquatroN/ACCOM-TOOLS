@@ -9140,10 +9140,12 @@ function buildLaundryDifferenceLines(record) {
   const itemTypes = laundryItemTypes();
   const receiveDate = clean(record?.receivedDate) || laundryReceiveDate(record?.date);
   const hasReceivedValues = laundryHasReceivedValues(record);
+  const isReceiveDue = Boolean(receiveDate) && receiveDate <= lisbonTodayIsoClient();
   if (!hasReceivedValues) {
     return {
       matchDate: receiveDate,
       hasReceivedValues,
+      isReceiveDue,
       totalDiff: null,
       lines: [receiveDate ? `Waiting for received quantities on ${receiveDate}.` : "Waiting for received quantities."],
     };
@@ -9157,11 +9159,11 @@ function buildLaundryDifferenceLines(record) {
     totalDiff += diff;
     if (diff !== 0) lines.push(`${item.name}: ${sent} -> ${received} (${diff > 0 ? "+" : ""}${diff})`);
   });
-  if (!lines.length) lines.push("All received quantities match the sent batch.");
   lines.push(`Total counts difference: ${totalDiff > 0 ? "+" : ""}${totalDiff}`);
   return {
     matchDate: receiveDate,
     hasReceivedValues,
+    isReceiveDue,
     totalDiff,
     lines,
   };
@@ -9319,7 +9321,9 @@ function renderLaundry() {
     const receivedDateCell = receiveDate
       ? `${escape(receiveDate)}${receiveDateNeedsFill ? '<br><span class="warning-text">please fill</span>' : ""}`
       : "-";
-    const diffHtml = diff.lines.map((line) => hasReceivedValues ? escape(line) : `<span class="warning-text">${escape(line)}</span>`).join("<br>");
+    const diffHtml = diff.lines
+      .map((line) => (!hasReceivedValues && diff.isReceiveDue) ? `<span class="warning-text">${escape(line)}</span>` : escape(line))
+      .join("<br>");
     const tr = document.createElement("tr");
     tr.className = "clickable-row";
     if (hasReceivedValues) {
