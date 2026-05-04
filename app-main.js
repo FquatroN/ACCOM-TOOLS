@@ -9014,6 +9014,12 @@ function formatLaundryKg(value) {
   return `${formatted} kg`;
 }
 
+function formatLaundryKgWithPrice(weightKg) {
+  const amount = Math.max(0, Number(weightKg || 0));
+  const pricePerKg = Math.max(0, Number(state.laundrySettings?.pricePerKg || 0));
+  return `${formatLaundryKg(amount)} | ${formatMoney(amount * pricePerKg)}`;
+}
+
 function shiftLaundryDate(value, days) {
   const raw = clean(value);
   if (!raw) return "";
@@ -9233,11 +9239,27 @@ function renderLaundryItemInputs(container, counts, kind = "sent") {
   `).join("");
 }
 
+function renderLaundryDraftComputedDetails(draft = state.laundryDraft || emptyLaundryDraft()) {
+  const sentWeightKg = countLaundryWeightKgClient(draft.sentItems);
+  const receivedComputedWeightKg = countLaundryWeightKgClient(draft.receivedItems);
+  if (els.laundrySentWeight) els.laundrySentWeight.textContent = formatLaundryKgWithPrice(sentWeightKg);
+  if (els.laundryReceivedComputedWeight) els.laundryReceivedComputedWeight.textContent = formatLaundryKgWithPrice(receivedComputedWeightKg);
+  const diff = buildLaundryDifferenceLines(draft);
+  if (els.laundryMatchDate) els.laundryMatchDate.textContent = diff.matchDate ? `Received date: ${diff.matchDate}` : "Received date pending.";
+  if (els.laundryDifferenceSummary) {
+    els.laundryDifferenceSummary.classList.toggle("empty", false);
+    const toneClass = !diff.hasReceivedValues ? "" : (diff.totalDiff > 0 ? "diff-positive" : diff.totalDiff < 0 ? "diff-negative" : "diff-zero");
+    els.laundryDifferenceSummary.className = `laundry-diff-grid${toneClass ? ` ${toneClass}` : ""}`;
+    els.laundryDifferenceSummary.innerHTML = diff.lines.map((line) => `<article class="laundry-diff-pill">${escape(line)}</article>`).join("");
+  }
+}
+
 function renderLaundryDraft() {
-  const focusTarget = document.activeElement?.matches?.("[data-laundry-count-kind][data-laundry-item-id], #laundry-received-weight") ? document.activeElement : null;
+  const focusTarget = document.activeElement?.matches?.("[data-laundry-count-kind][data-laundry-item-id], #laundry-received-weight, #laundry-notes") ? document.activeElement : null;
   const focusKind = focusTarget ? clean(focusTarget.dataset?.laundryCountKind) : "";
   const focusItemId = focusTarget ? clean(focusTarget.dataset?.laundryItemId) : "";
   const focusIsWeight = focusTarget === els.laundryReceivedWeight;
+  const focusIsNotes = focusTarget === els.laundryNotes;
   const caretStart = focusTarget && typeof focusTarget.selectionStart === "number" ? focusTarget.selectionStart : null;
   const caretEnd = focusTarget && typeof focusTarget.selectionEnd === "number" ? focusTarget.selectionEnd : null;
   const draft = state.laundryDraft || emptyLaundryDraft();
@@ -9249,21 +9271,14 @@ function renderLaundryDraft() {
   if (els.laundryNotes) els.laundryNotes.value = draft.notes || "";
   renderLaundryItemInputs(els.laundrySentItemsGrid, draft.sentItems, "sent");
   renderLaundryItemInputs(els.laundryReceivedItemsGrid, draft.receivedItems, "received");
-  if (els.laundrySentWeight) els.laundrySentWeight.textContent = formatLaundryKg(countLaundryWeightKgClient(draft.sentItems));
-  if (els.laundryReceivedComputedWeight) els.laundryReceivedComputedWeight.textContent = formatLaundryKg(countLaundryWeightKgClient(draft.receivedItems));
-  const diff = buildLaundryDifferenceLines(draft);
-  if (els.laundryMatchDate) els.laundryMatchDate.textContent = diff.matchDate ? `Received date: ${diff.matchDate}` : "Received date pending.";
-  if (els.laundryDifferenceSummary) {
-    els.laundryDifferenceSummary.classList.toggle("empty", false);
-    const toneClass = !diff.hasReceivedValues ? "" : (diff.totalDiff > 0 ? "diff-positive" : diff.totalDiff < 0 ? "diff-negative" : "diff-zero");
-    els.laundryDifferenceSummary.className = `laundry-diff-grid${toneClass ? ` ${toneClass}` : ""}`;
-    els.laundryDifferenceSummary.innerHTML = diff.lines.map((line) => `<article class="laundry-diff-pill">${escape(line)}</article>`).join("");
-  }
+  renderLaundryDraftComputedDetails(draft);
   let restoreTarget = null;
   if (focusKind && focusItemId) {
     restoreTarget = document.querySelector(`[data-laundry-count-kind="${focusKind}"][data-laundry-item-id="${focusItemId}"]`);
   } else if (focusIsWeight) {
     restoreTarget = els.laundryReceivedWeight;
+  } else if (focusIsNotes) {
+    restoreTarget = els.laundryNotes;
   }
   if (restoreTarget) {
     restoreTarget.focus();
@@ -9319,8 +9334,12 @@ function onLaundryDraftInput(event) {
   if (target === els.laundryReceivedWeight) {
     const normalized = normalizeNumber(target.value);
     state.laundryDraft.receivedWeightKg = normalized == null ? "" : Math.max(0, Number(normalized || 0));
+    return;
   }
-  if (target === els.laundryNotes) state.laundryDraft.notes = clean(target.value);
+  if (target === els.laundryNotes) {
+    state.laundryDraft.notes = clean(target.value);
+    return;
+  }
   renderLaundryDraft();
 }
 
@@ -9333,7 +9352,7 @@ function onLaundryDraftGridInput(event) {
   const amount = normalized == null ? null : Math.max(0, Math.round(Number(normalized || 0)));
   if (kind === "sent") state.laundryDraft.sentItems[itemId] = amount;
   if (kind === "received") state.laundryDraft.receivedItems[itemId] = amount;
-  renderLaundryDraft();
+  renderLaundryDraftComputedDetails(state.laundryDraft);
 }
 
 function getFilteredLaundryRecords() {
