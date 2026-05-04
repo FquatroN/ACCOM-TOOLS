@@ -9580,12 +9580,17 @@ function getHoursResumeRows() {
     const monthKey = clean(row.date).slice(0, 7);
     if (!monthKey) return;
     const key = `${monthKey}::${clean(row.person).toLowerCase()}`;
-    const current = buckets.get(key) || { monthKey, person: row.person, hours: 0 };
+    const current = buckets.get(key) || { monthKey, person: row.person, hours: 0, records: 0 };
     current.hours += Math.max(0, (hoursDurationMinutes(row.start, row.finish) || 0) / 60);
+    current.records += 1;
     buckets.set(key, current);
   });
   return [...buckets.values()]
-    .map((row) => ({ ...row, hours: Number(row.hours.toFixed(2)) }))
+    .map((row) => ({
+      ...row,
+      hours: Number(row.hours.toFixed(2)),
+      averageHours: row.records ? Number((row.hours / row.records).toFixed(2)) : 0,
+    }))
     .sort((a, b) => {
       const monthCompare = clean(b.monthKey).localeCompare(clean(a.monthKey));
       if (monthCompare !== 0) return monthCompare;
@@ -9632,12 +9637,12 @@ function renderHoursResume() {
   if (!els.hoursResumeBody) return;
   els.hoursResumeBody.innerHTML = "";
   if (!rows.length) {
-    els.hoursResumeBody.innerHTML = '<tr><td colspan="3" class="empty">No hours summary found.</td></tr>';
+    els.hoursResumeBody.innerHTML = '<tr><td colspan="5" class="empty">No hours summary found.</td></tr>';
     return;
   }
   rows.forEach((row) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escape(formatHoursMonthLabel(row.monthKey))}</td><td>${escape(row.person)}</td><td>${escape(row.hours.toFixed(2))} h</td>`;
+    tr.innerHTML = `<td>${escape(formatHoursMonthLabel(row.monthKey))}</td><td>${escape(row.person)}</td><td>${escape(String(row.records))}</td><td>${escape(row.averageHours.toFixed(2))} h</td><td>${escape(row.hours.toFixed(2))} h</td>`;
     els.hoursResumeBody.appendChild(tr);
   });
 }
