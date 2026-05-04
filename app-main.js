@@ -2006,6 +2006,7 @@ function renderLayout() {
   els.navLaundry.hidden = !canLaundry;
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
   els.navBakery.classList.toggle("has-alert", shouldShowBakeryAlert());
+  els.navLaundry.classList.toggle("has-alert", shouldShowLaundryAlert());
   els.openSettings.hidden = !state.access.settingsFeatures.length;
   els.leftNav.hidden = settingsMode;
   els.topbar.hidden = false;
@@ -7385,6 +7386,11 @@ function shouldShowBakeryAlert() {
   return !state.bakeryHistory.some((order) => clean(order.submittedAt).slice(0, 10) === todayIso);
 }
 
+function shouldShowLaundryAlert() {
+  if (!canApp("laundry")) return false;
+  return laundryHasMissingSentRecords() || laundryHasOverduePendingReceipts();
+}
+
 function hexToShoppingRowColor(hex, alpha = 0.5) {
   const raw = clean(hex).replace("#", "");
   if (!/^[0-9a-f]{6}$/i.test(raw)) return "";
@@ -9136,6 +9142,36 @@ function laundryHasReceivedValues(record) {
   }) || Number(record?.receivedWeightKg || 0) > 0;
 }
 
+function laundryHasReceivedItemEntries(record) {
+  const itemTypes = laundryItemTypes();
+  return itemTypes.some((item) => {
+    const raw = record?.receivedItems?.[item.id];
+    return raw !== null && raw !== undefined && String(raw).trim() !== "";
+  });
+}
+
+function laundryHasMissingSentRecords() {
+  const today = lisbonTodayIsoClient();
+  return ["Hostel", "Cruz"].some((property) => {
+    const latest = state.laundryRecords
+      .filter((row) => clean(row?.property) === property)
+      .map((row) => clean(row?.date))
+      .filter(Boolean)
+      .sort()
+      .at(-1) || "";
+    return !latest || latest < today;
+  });
+}
+
+function laundryHasOverduePendingReceipts() {
+  const today = lisbonTodayIsoClient();
+  return state.laundryRecords.some((row) => {
+    const receiveDate = clean(row?.receivedDate) || laundryReceiveDate(row?.date);
+    if (!receiveDate || receiveDate > today) return false;
+    return !laundryHasReceivedItemEntries(row);
+  });
+}
+
 function buildLaundryDifferenceLines(record) {
   const itemTypes = laundryItemTypes();
   const receiveDate = clean(record?.receivedDate) || laundryReceiveDate(record?.date);
@@ -9293,12 +9329,7 @@ function renderLaundry() {
     return;
   }
   const rows = getFilteredLaundryRecords();
-  const latestSentDate = state.laundryRecords
-    .map((row) => clean(row?.date))
-    .filter(Boolean)
-    .sort()
-    .at(-1) || "";
-  const showMissingRecords = Boolean(latestSentDate) && latestSentDate < lisbonTodayIsoClient();
+  const showMissingRecords = laundryHasMissingSentRecords();
   if (els.laundryCount) els.laundryCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   if (els.laundryMissingWarning) els.laundryMissingWarning.hidden = !showMissingRecords;
   if (els.laundryFilterProperty) els.laundryFilterProperty.value = state.laundryFilters.property;
