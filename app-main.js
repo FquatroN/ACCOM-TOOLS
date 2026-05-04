@@ -1003,6 +1003,7 @@ const els = {
   laundryRows: document.getElementById("laundry-rows"),
   laundryCount: document.getElementById("laundry-count"),
   laundryDbStatus: document.getElementById("laundry-db-status"),
+  laundryMissingWarning: document.getElementById("laundry-missing-warning"),
   laundryFilterProperty: document.getElementById("laundry-filter-property"),
   laundryFilterDateFrom: document.getElementById("laundry-filter-date-from"),
   laundryFilterDateTo: document.getElementById("laundry-filter-date-to"),
@@ -9104,12 +9105,6 @@ function resetLaundryDraft() {
   state.laundryDraft = emptyLaundryDraft();
 }
 
-function findLaundryMatchedRecord(record) {
-  const targetDate = shiftLaundryDate(record?.date, -2);
-  const property = normalizeLaundryPropertyClient(record?.property);
-  return state.laundryRecords.find((item) => clean(item.date) === targetDate && normalizeLaundryPropertyClient(item.property) === property) || null;
-}
-
 function formatLaundryItemsSummary(counts) {
   const parts = laundryItemTypes()
     .map((item) => ({ name: item.name, qty: Number(counts?.[item.id] || 0) }))
@@ -9123,32 +9118,34 @@ function formatLaundryColumnSummary(counts, weightKg) {
   return `${itemsText}\nKg: ${formatLaundryKg(weightKg)}`;
 }
 
+function laundryHasReceivedValues(record) {
+  const itemTypes = laundryItemTypes();
+  return itemTypes.some((item) => Number(record?.receivedItems?.[item.id] || 0) > 0) || Number(record?.receivedWeightKg || 0) > 0;
+}
+
 function buildLaundryDifferenceLines(record) {
-  const matched = findLaundryMatchedRecord(record);
-  if (!matched) {
+  const itemTypes = laundryItemTypes();
+  const receiveDate = clean(record?.receivedDate) || laundryReceiveDate(record?.date);
+  const hasReceivedValues = laundryHasReceivedValues(record);
+  if (!hasReceivedValues) {
     return {
-      matchDate: "",
-      lines: ["No matching sent batch found yet."],
+      matchDate: receiveDate,
+      lines: [receiveDate ? `Waiting for received quantities on ${receiveDate}.` : "Waiting for received quantities."],
     };
   }
-  const itemTypes = laundryItemTypes();
   const lines = [];
   let totalDiff = 0;
   itemTypes.forEach((item) => {
-    const sent = Number(matched.sentItems?.[item.id] || 0);
+    const sent = Number(record.sentItems?.[item.id] || 0);
     const received = Number(record.receivedItems?.[item.id] || 0);
     const diff = received - sent;
     totalDiff += diff;
     if (diff !== 0) lines.push(`${item.name}: ${sent} -> ${received} (${diff > 0 ? "+" : ""}${diff})`);
   });
   if (!lines.length) lines.push("All received quantities match the sent batch.");
-  const sentWeight = countLaundryWeightKgClient(matched.sentItems, itemTypes);
-  const receivedWeight = countLaundryWeightKgClient(record.receivedItems, itemTypes);
-  const weightDiff = Number((receivedWeight - sentWeight).toFixed(2));
   lines.push(`Total counts difference: ${totalDiff > 0 ? "+" : ""}${totalDiff}`);
-  lines.push(`Weight difference: ${weightDiff > 0 ? "+" : ""}${weightDiff.toFixed(2)} kg`);
   return {
-    matchDate: matched.date,
+    matchDate: receiveDate,
     lines,
   };
 }
@@ -9176,9 +9173,9 @@ function renderLaundryDraft() {
   if (els.laundrySentWeight) els.laundrySentWeight.textContent = formatLaundryKg(countLaundryWeightKgClient(draft.sentItems));
   if (els.laundryReceivedComputedWeight) els.laundryReceivedComputedWeight.textContent = formatLaundryKg(countLaundryWeightKgClient(draft.receivedItems));
   const diff = buildLaundryDifferenceLines(draft);
-  if (els.laundryMatchDate) els.laundryMatchDate.textContent = diff.matchDate ? `Matching sent batch: ${diff.matchDate}` : "No sent batch from 2 days earlier.";
+  if (els.laundryMatchDate) els.laundryMatchDate.textContent = diff.matchDate ? `Received date: ${diff.matchDate}` : "Received date pending.";
   if (els.laundryDifferenceSummary) {
-    els.laundryDifferenceSummary.classList.toggle("empty", !diff.matchDate);
+    els.laundryDifferenceSummary.classList.toggle("empty", false);
     els.laundryDifferenceSummary.innerHTML = diff.lines.map((line) => `<article>${escape(line)}</article>`).join("");
   }
 }
@@ -9268,11 +9265,19 @@ function getFilteredLaundryRecords() {
 function renderLaundry() {
   if (!canApp("laundry")) {
     if (els.laundryCount) els.laundryCount.textContent = "0 records";
+    if (els.laundryMissingWarning) els.laundryMissingWarning.hidden = true;
     if (els.laundryRows) els.laundryRows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Laundry Control.</td></tr>';
     return;
   }
   const rows = getFilteredLaundryRecords();
+  const latestSentDate = state.laundryRecords
+    .map((row) => clean(row?.date))
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
+  const showMissingRecords = Boolean(latestSentDate) && latestSentDate < lisbonTodayIsoClient();
   if (els.laundryCount) els.laundryCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.laundryMissingWarning) els.laundryMissingWarning.hidden = !showMissingRecords;
   if (els.laundryFilterProperty) els.laundryFilterProperty.value = state.laundryFilters.property;
   if (els.laundryFilterDateFrom) els.laundryFilterDateFrom.value = state.laundryFilters.dateFrom;
   if (els.laundryFilterDateTo) els.laundryFilterDateTo.value = state.laundryFilters.dateTo;
@@ -9284,18 +9289,26 @@ function renderLaundry() {
   }
   rows.forEach((row) => {
     const diff = buildLaundryDifferenceLines(row);
-    const matched = findLaundryMatchedRecord(row);
     const sentWeight = countLaundryWeightKgClient(row.sentItems);
     const receivedWeight = Number(row.receivedWeightKg) || countLaundryWeightKgClient(row.receivedItems);
+    const receiveDate = clean(row.receivedDate) || laundryReceiveDate(row.date) || "";
+    const hasReceivedValues = laundryHasReceivedValues(row);
+    const receiveDateNeedsFill = Boolean(receiveDate) && receiveDate <= lisbonTodayIsoClient() && !hasReceivedValues;
+    const receivedSummary = hasReceivedValues
+      ? escape(formatLaundryColumnSummary(row.receivedItems, receivedWeight)).replace(/\n/g, "<br>")
+      : "";
+    const receivedDateCell = receiveDate
+      ? `${escape(receiveDate)}${receiveDateNeedsFill ? '<br><span class="warning-text">please fill</span>' : ""}`
+      : "-";
     const tr = document.createElement("tr");
     tr.className = "clickable-row";
     tr.dataset.laundryId = row.id;
     tr.innerHTML = `<td>${escape(row.date)}</td>
       <td>${escape(row.property)}</td>
       <td>${escape(formatLaundryColumnSummary(row.sentItems, sentWeight)).replace(/\n/g, "<br>")}</td>
-      <td>${escape(row.receivedDate || laundryReceiveDate(row.date) || "-")}</td>
-      <td>${escape(formatLaundryColumnSummary(row.receivedItems, receivedWeight)).replace(/\n/g, "<br>")}</td>
-      <td>${matched ? `<small>Match ${escape(diff.matchDate)}</small><br>${escape(diff.lines.join(" | ")).replace(/\n/g, "<br>")}` : escape(diff.lines[0])}</td>
+      <td>${receivedDateCell}</td>
+      <td>${receivedSummary || "-"}</td>
+      <td>${diff.matchDate ? `<small>Receive ${escape(diff.matchDate)}</small><br>${escape(diff.lines.join(" | ")).replace(/\n/g, "<br>")}` : escape(diff.lines[0])}</td>
       <td>${escape(row.notes || "-")}</td>`;
     els.laundryRows.appendChild(tr);
   });

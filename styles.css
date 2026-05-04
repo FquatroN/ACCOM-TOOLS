@@ -1520,6 +1520,17 @@ select:disabled {
   max-width: 220px;
 }
 
+.laundry-modal-card .laundry-form-grid,
+.laundry-modal-card .settings-block,
+.laundry-modal-card .services-notes-field {
+  margin-top: 0.75rem;
+}
+
+.laundry-modal-card .settings-block + .settings-block,
+.laundry-modal-card .services-notes-field + .settings-block {
+  margin-top: 0.9rem;
+}
+
 .laundry-items-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem 0.9rem;
@@ -1546,7 +1557,7 @@ select:disabled {
 
 .laundry-table th:nth-child(1),
 .laundry-table td:nth-child(1) {
-  width: 118px;
+  width: 104px;
 }
 
 .laundry-table th:nth-child(2),
@@ -1556,7 +1567,12 @@ select:disabled {
 
 .laundry-table th:nth-child(4),
 .laundry-table td:nth-child(4) {
-  width: 118px;
+  width: 104px;
+}
+
+.laundry-table th:nth-child(6),
+.laundry-table td:nth-child(6) {
+  width: 250px;
 }
 
 .laundry-table td:nth-child(3),
@@ -1569,6 +1585,12 @@ select:disabled {
 
 .laundry-table td small {
   color: var(--muted);
+}
+
+.laundry-table .warning-text {
+  display: inline-block;
+  margin-top: 0.18rem;
+  font-size: 0.74rem;
 }
 
 .services-subbar {
