@@ -63,19 +63,16 @@ function mapHoursTableRow(row, settings) {
   return sanitizeHoursRecord({
     id: row?.id,
     person: row?.person,
-    date: row?.record_date,
-    start: row?.start_time,
-    finish: row?.finish_time,
+    date: row?.record_date ?? row?.date,
+    start: row?.start_time ?? row?.start,
+    finish: row?.finish_time ?? row?.finish,
     createdAt: row?.created_at,
     updatedAt: row?.updated_at,
   }, settings);
 }
 
 async function loadHoursTableRows(settings) {
-  const rows = await restQuery(
-    "hours_register_records?select=id,person,record_date,start_time,finish_time,created_at,updated_at&order=record_date.desc,person.asc,start_time.desc",
-    { method: "GET" }
-  );
+  const rows = await restQuery("hours_register_records?select=*", { method: "GET" });
   return sanitizeHoursRecords((Array.isArray(rows) ? rows : []).map((row) => mapHoursTableRow(row, settings)), settings);
 }
 
