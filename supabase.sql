@@ -157,6 +157,7 @@ create table if not exists public.laundry_records (
   id uuid primary key default gen_random_uuid(),
   property text not null,
   record_date date not null,
+  received_date date not null,
   sent_items jsonb not null default '{}'::jsonb,
   received_items jsonb not null default '{}'::jsonb,
   received_weight_kg numeric(12, 2) not null default 0,
@@ -165,6 +166,13 @@ create table if not exists public.laundry_records (
   updated_at timestamptz not null default now(),
   constraint laundry_records_property_date_unique unique (property, record_date)
 );
+
+alter table public.laundry_records
+  add column if not exists received_date date;
+
+update public.laundry_records
+set received_date = coalesce(received_date, record_date + integer '2')
+where received_date is null;
 
 alter table public.shopping_orders
 add column if not exists notes text not null default '';
@@ -929,6 +937,7 @@ insert into public.laundry_records (
   id,
   property,
   record_date,
+  received_date,
   sent_items,
   received_items,
   received_weight_kg,
@@ -944,6 +953,7 @@ select
   end,
   coalesce(nullif(item ->> 'property', ''), 'Hostel'),
   (item ->> 'date')::date,
+  coalesce(nullif(item ->> 'receivedDate', '')::date, ((item ->> 'date')::date + integer '2')),
   coalesce(item -> 'sentItems', '{}'::jsonb),
   coalesce(item -> 'receivedItems', '{}'::jsonb),
   coalesce(nullif(item ->> 'receivedWeightKg', '')::numeric, 0),
@@ -957,6 +967,7 @@ where settings.setting_key = 'laundry_control'
   and (item ->> 'date')::date <= current_date
 on conflict (property, record_date) do update
 set
+  received_date = excluded.received_date,
   sent_items = excluded.sent_items,
   received_items = excluded.received_items,
   received_weight_kg = excluded.received_weight_kg,

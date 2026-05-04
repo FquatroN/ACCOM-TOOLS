@@ -7,6 +7,7 @@ const {
   sanitizeLaundryRecord,
   sanitizeLaundryRecords,
   sanitizeLaundrySettings,
+  shiftLaundryDate,
 } = require("./_laundry");
 
 function recordKey(record) {
@@ -89,6 +90,7 @@ function mapLaundryTableRow(row, settings) {
     id: row?.id,
     property: row?.property,
     date: row?.record_date,
+    receivedDate: row?.received_date,
     sentItems: row?.sent_items,
     receivedItems: row?.received_items,
     receivedWeightKg: row?.received_weight_kg,
@@ -111,6 +113,7 @@ function buildLaundryTableBody(record, existing = {}) {
     id: record.id || existing.id || randomUUID(),
     property: record.property,
     record_date: record.date,
+    received_date: record.receivedDate || shiftLaundryDate(record.date, 2) || null,
     sent_items: record.sentItems,
     received_items: record.receivedItems,
     received_weight_kg: Number(record.receivedWeightKg || 0),

@@ -14,6 +14,15 @@ const DEFAULT_LAUNDRY_SETTINGS = {
   ],
 };
 
+function shiftLaundryDate(value, days = 2) {
+  const raw = cleanText(value);
+  if (!raw) return "";
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanText(value));
 }
@@ -95,6 +104,7 @@ function sanitizeLaundryRecord(input = {}, settings = DEFAULT_LAUNDRY_SETTINGS, 
     id: cleanText(input.id || existing.id),
     property,
     date,
+    receivedDate: shiftLaundryDate(date, 2),
     sentItems: sanitizeLaundryCountMap(input.sentItems ?? input.sent_items ?? existing.sentItems ?? existing.sent_items, safeSettings.itemTypes),
     receivedItems: sanitizeLaundryCountMap(input.receivedItems ?? input.received_items ?? existing.receivedItems ?? existing.received_items, safeSettings.itemTypes),
     receivedWeightKg: Math.max(0, Number(normalizeNumeric(input.receivedWeightKg ?? input.received_weight_kg ?? existing.receivedWeightKg ?? existing.received_weight_kg) || 0)),
@@ -148,6 +158,7 @@ module.exports = {
   countMapWeightKg,
   normalizeLaundryProperty,
   normalizeRecipients,
+  shiftLaundryDate,
   sanitizeLaundryCountMap,
   sanitizeLaundryItemType,
   sanitizeLaundryPayload,

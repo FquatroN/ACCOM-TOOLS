@@ -8954,10 +8954,12 @@ function sanitizeLaundryCountsClient(value, itemTypes = state.laundrySettings?.i
 
 function normalizeLaundryRecordClient(input = {}, settings = state.laundrySettings) {
   const safeSettings = normalizeLaundrySettingsClient(settings);
+  const sentDate = clean(input.date);
   return {
     id: clean(input.id),
     property: normalizeLaundryPropertyClient(input.property),
-    date: clean(input.date),
+    date: sentDate,
+    receivedDate: clean(input.receivedDate) || laundryReceiveDate(sentDate),
     sentItems: sanitizeLaundryCountsClient(input.sentItems, safeSettings.itemTypes),
     receivedItems: sanitizeLaundryCountsClient(input.receivedItems, safeSettings.itemTypes),
     receivedWeightKg: Math.max(0, Number(normalizeNumber(input.receivedWeightKg) || 0)),
@@ -9163,9 +9165,10 @@ function renderLaundryItemInputs(container, counts, kind = "sent") {
 
 function renderLaundryDraft() {
   const draft = state.laundryDraft || emptyLaundryDraft();
+  draft.receivedDate = laundryReceiveDate(draft.date);
   if (els.laundryProperty) els.laundryProperty.value = draft.property || "Hostel";
   if (els.laundryDate) els.laundryDate.value = draft.date || "";
-  if (els.laundryReceiveDate) els.laundryReceiveDate.value = laundryReceiveDate(draft.date) || "";
+  if (els.laundryReceiveDate) els.laundryReceiveDate.value = draft.receivedDate || "";
   if (els.laundryReceivedWeight) els.laundryReceivedWeight.value = draft.receivedWeightKg === "" ? "" : String(draft.receivedWeightKg || "");
   if (els.laundryNotes) els.laundryNotes.value = draft.notes || "";
   renderLaundryItemInputs(els.laundrySentItemsGrid, draft.sentItems, "sent");
@@ -9290,7 +9293,7 @@ function renderLaundry() {
     tr.innerHTML = `<td>${escape(row.date)}</td>
       <td>${escape(row.property)}</td>
       <td>${escape(formatLaundryColumnSummary(row.sentItems, sentWeight)).replace(/\n/g, "<br>")}</td>
-      <td>${escape(laundryReceiveDate(row.date) || "-")}</td>
+      <td>${escape(row.receivedDate || laundryReceiveDate(row.date) || "-")}</td>
       <td>${escape(formatLaundryColumnSummary(row.receivedItems, receivedWeight)).replace(/\n/g, "<br>")}</td>
       <td>${matched ? `<small>Match ${escape(diff.matchDate)}</small><br>${escape(diff.lines.join(" | ")).replace(/\n/g, "<br>")}` : escape(diff.lines[0])}</td>
       <td>${escape(row.notes || "-")}</td>`;
@@ -9377,6 +9380,7 @@ function buildLaundryPayload(draft) {
   return {
     property: draft.property,
     date: draft.date,
+    receivedDate: draft.receivedDate || laundryReceiveDate(draft.date),
     sentItems: sanitizeLaundryCountsClient(draft.sentItems),
     receivedItems: sanitizeLaundryCountsClient(draft.receivedItems),
     receivedWeightKg: Number(normalizeNumber(draft.receivedWeightKg) || 0),
