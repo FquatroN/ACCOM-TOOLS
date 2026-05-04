@@ -102,7 +102,7 @@ function mapLaundryTableRow(row, settings) {
 
 async function loadLaundryTableRows(settings) {
   const rows = await restQuery(
-    "laundry_records?select=id,property,record_date,sent_items,received_items,received_weight_kg,notes,created_at,updated_at&order=record_date.desc,property.asc",
+    "laundry_records?select=id,property,record_date,received_date,sent_items,received_items,received_weight_kg,notes,created_at,updated_at&order=record_date.desc,property.asc",
     { method: "GET" }
   );
   return sanitizeLaundryRecords((Array.isArray(rows) ? rows : []).map((row) => mapLaundryTableRow(row, settings)), settings);
