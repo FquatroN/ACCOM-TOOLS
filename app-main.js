@@ -1006,6 +1006,7 @@ const els = {
   laundryTabResume: document.getElementById("laundry-tab-resume"),
   laundryPanelList: document.getElementById("laundry-panel-list"),
   laundryPanelResume: document.getElementById("laundry-panel-resume"),
+  laundryExportExcel: document.getElementById("laundry-export-excel"),
   laundryRows: document.getElementById("laundry-rows"),
   laundryCount: document.getElementById("laundry-count"),
   laundryDbStatus: document.getElementById("laundry-db-status"),
@@ -1284,6 +1285,7 @@ function bindEvents() {
   });
   els.laundryTabList?.addEventListener("click", () => setLaundryScreen("list"));
   els.laundryTabResume?.addEventListener("click", () => setLaundryScreen("resume"));
+  els.laundryExportExcel?.addEventListener("click", exportLaundryToExcel);
   els.laundryCloseModal?.addEventListener("click", closeLaundryModal);
   els.laundryFilterProperty?.addEventListener("change", onLaundryFilterInput);
   [els.laundryFilterDateFrom, els.laundryFilterDateTo, els.laundryFilterSearch].forEach((el) => el?.addEventListener("input", onLaundryFilterInput));
@@ -9587,6 +9589,91 @@ function renderLaundryResume() {
       <td>${escape(formatMoney(row.receivedWeightKg * pricePerKg))}</td>`;
     els.laundryResumeBody.appendChild(tr);
   });
+}
+
+function laundryRawCountValue(counts, itemId) {
+  const raw = counts?.[itemId];
+  if (raw === null || raw === undefined || String(raw).trim() === "") return "";
+  return String(Number(raw || 0));
+}
+
+function buildLaundryExportRows() {
+  const itemTypes = laundryItemTypes();
+  const pricePerKg = Math.max(0, Number(state.laundrySettings?.pricePerKg || 0));
+  return getFilteredLaundryRecords().map((row) => {
+    const sentWeightKg = countLaundryWeightKgClient(row.sentItems || {});
+    const hasReceivedComplete = laundryHasCompleteReceivedItemEntries(row);
+    const receivedWeightKg = hasReceivedComplete ? countLaundryWeightKgClient(row.receivedItems || {}) : null;
+    const receivedKgManual = row.receivedWeightKg === null || row.receivedWeightKg === undefined || String(row.receivedWeightKg).trim() === "" ? "" : Number(row.receivedWeightKg || 0);
+    const sentCounts = Object.fromEntries(itemTypes.map((item) => [item.id, laundryRawCountValue(row.sentItems, item.id)]));
+    const receivedCounts = Object.fromEntries(itemTypes.map((item) => [item.id, laundryRawCountValue(row.receivedItems, item.id)]));
+    const diffs = Object.fromEntries(itemTypes.map((item) => {
+      const sentRaw = row.sentItems?.[item.id];
+      const receivedRaw = row.receivedItems?.[item.id];
+      const sentFilled = sentRaw !== null && sentRaw !== undefined && String(sentRaw).trim() !== "";
+      const receivedFilled = receivedRaw !== null && receivedRaw !== undefined && String(receivedRaw).trim() !== "";
+      const value = receivedFilled ? Number(receivedRaw || 0) - Number(sentRaw || 0) : "";
+      return [item.id, sentFilled || receivedFilled ? value : ""];
+    }));
+    const totalDifference = hasReceivedComplete
+      ? itemTypes.reduce((sum, item) => sum + Number(diffs[item.id] || 0), 0)
+      : "";
+    const price = receivedWeightKg == null ? "" : formatMoney(receivedWeightKg * pricePerKg);
+    return {
+      sentDate: row.date,
+      property: row.property,
+      sentCounts,
+      sentWeightKg,
+      receivedDate: row.receivedDate || laundryReceiveDate(row.date),
+      receivedCounts,
+      calculatedReceivedWeightKg: receivedWeightKg,
+      receivedKg: receivedKgManual,
+      diffs,
+      totalDifference,
+      price,
+      notes: row.notes || "",
+    };
+  });
+}
+
+function exportLaundryToExcel() {
+  const itemTypes = laundryItemTypes();
+  const rows = buildLaundryExportRows();
+  if (!rows.length) {
+    showToast("No laundry records to export.", "error");
+    return;
+  }
+  const headers = [
+    "Sent Date",
+    "Property",
+    ...itemTypes.map((item) => `Sent ${item.name}`),
+    "Calculated sent Kg",
+    "Received Date",
+    ...itemTypes.map((item) => `Received ${item.name}`),
+    "Calculated received Kg",
+    "Received Kg",
+    ...itemTypes.map((item) => `Dif ${item.name}`),
+    "Total Difference",
+    "Price",
+    "Notes",
+  ];
+  const bodyRows = rows.map((row) => [
+    row.sentDate,
+    row.property,
+    ...itemTypes.map((item) => row.sentCounts[item.id]),
+    Number(row.sentWeightKg || 0).toFixed(2),
+    row.receivedDate,
+    ...itemTypes.map((item) => row.receivedCounts[item.id]),
+    row.calculatedReceivedWeightKg == null ? "" : Number(row.calculatedReceivedWeightKg).toFixed(2),
+    row.receivedKg === "" ? "" : Number(row.receivedKg).toFixed(2),
+    ...itemTypes.map((item) => row.diffs[item.id]),
+    row.totalDifference,
+    row.price,
+    row.notes,
+  ]);
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers.map((cell) => `<th>${escape(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${escape(cell === null || cell === undefined ? "" : String(cell))}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+  downloadBlob(`laundry_records_${formatDate(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8;");
+  showToast(`Exported ${rows.length} laundry record${rows.length === 1 ? "" : "s"} to Excel.`, "success");
 }
 
 function renderLaundry() {
