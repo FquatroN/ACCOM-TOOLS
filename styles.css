@@ -1624,6 +1624,10 @@ select:disabled {
   text-align: center;
 }
 
+.laundry-resume-total-row td {
+  font-weight: 700;
+}
+
 .laundry-table td small {
   color: var(--muted);
 }

@@ -601,7 +601,7 @@ const state = {
   laundrySettingsLoaded: false,
   laundryScreen: "list",
   laundryFilters: { property: "", dateFrom: "", dateTo: "", search: "" },
-  laundryResumeFilters: { dateField: "sent", property: "", dateFrom: "", dateTo: "" },
+  laundryResumeFilters: { dateField: "sent", property: "", dateFrom: "", dateTo: "", detail: false },
   laundryDraft: null,
   laundrySelectedId: "",
   serviceProviders: [],
@@ -1015,6 +1015,7 @@ const els = {
   laundryFilterDateTo: document.getElementById("laundry-filter-date-to"),
   laundryFilterSearch: document.getElementById("laundry-filter-search"),
   laundryResumeDateField: document.getElementById("laundry-resume-date-field"),
+  laundryResumeDetail: document.getElementById("laundry-resume-detail"),
   laundryResumeFilterProperty: document.getElementById("laundry-resume-filter-property"),
   laundryResumeFilterDateFrom: document.getElementById("laundry-resume-filter-date-from"),
   laundryResumeFilterDateTo: document.getElementById("laundry-resume-filter-date-to"),
@@ -1286,7 +1287,7 @@ function bindEvents() {
   els.laundryCloseModal?.addEventListener("click", closeLaundryModal);
   els.laundryFilterProperty?.addEventListener("change", onLaundryFilterInput);
   [els.laundryFilterDateFrom, els.laundryFilterDateTo, els.laundryFilterSearch].forEach((el) => el?.addEventListener("input", onLaundryFilterInput));
-  [els.laundryResumeDateField, els.laundryResumeFilterProperty].forEach((el) => el?.addEventListener("change", onLaundryResumeFilterInput));
+  [els.laundryResumeDateField, els.laundryResumeFilterProperty, els.laundryResumeDetail].forEach((el) => el?.addEventListener("change", onLaundryResumeFilterInput));
   [els.laundryResumeFilterDateFrom, els.laundryResumeFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryResumeFilterInput));
   [els.laundryProperty, els.laundryDate, els.laundryReceivedWeight, els.laundryNotes].forEach((el) =>
     el?.addEventListener(el.tagName === "SELECT" ? "change" : "input", onLaundryDraftInput)
@@ -9174,6 +9175,14 @@ function laundryHasReceivedItemEntries(record) {
   });
 }
 
+function laundryHasCompleteReceivedItemEntries(record) {
+  const itemTypes = laundryItemTypes();
+  return itemTypes.every((item) => {
+    const raw = record?.receivedItems?.[item.id];
+    return raw !== null && raw !== undefined && String(raw).trim() !== "";
+  });
+}
+
 function laundryHasMissingSentRecords() {
   const today = lisbonTodayIsoClient();
   return ["Hostel", "Cruz"].some((property) => {
@@ -9353,6 +9362,7 @@ function onLaundryFilterInput() {
 
 function onLaundryResumeFilterInput() {
   state.laundryResumeFilters.dateField = clean(els.laundryResumeDateField?.value) === "received" ? "received" : "sent";
+  state.laundryResumeFilters.detail = !!els.laundryResumeDetail?.checked;
   state.laundryResumeFilters.property = clean(els.laundryResumeFilterProperty?.value);
   state.laundryResumeFilters.dateFrom = clean(els.laundryResumeFilterDateFrom?.value);
   state.laundryResumeFilters.dateTo = clean(els.laundryResumeFilterDateTo?.value);
@@ -9455,12 +9465,14 @@ function formatLaundryMonthLabel(monthKey) {
 function getLaundryResumeRows() {
   const filters = state.laundryResumeFilters || {};
   const dateField = clean(filters.dateField) === "received" ? "received" : "sent";
+  const detail = !!filters.detail;
   const property = clean(filters.property);
   const dateFrom = clean(filters.dateFrom);
   const dateTo = clean(filters.dateTo);
   const ids = getLaundryResumeColumnIds();
   const buckets = new Map();
   state.laundryRecords.forEach((row) => {
+    if (!laundryHasCompleteReceivedItemEntries(row)) return;
     const basisDate = clean(dateField === "received" ? row.receivedDate : row.date);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(basisDate)) return;
     if (property && clean(row.property) !== property) return;
@@ -9469,6 +9481,7 @@ function getLaundryResumeRows() {
     const monthKey = basisDate.slice(0, 7);
     const current = buckets.get(monthKey) || {
       monthKey,
+      records: [],
       difSingleBaixo: 0,
       difSingleCima: 0,
       difCasalBaixo: 0,
@@ -9476,46 +9489,84 @@ function getLaundryResumeRows() {
       totalDiff: 0,
       receivedWeightKg: 0,
     };
-    if (laundryHasReceivedValues(row)) {
-      const sentItems = row.sentItems || {};
-      const receivedItems = row.receivedItems || {};
-      const difSingleBaixo = Number(receivedItems?.[ids.singleBaixo] || 0) - Number(sentItems?.[ids.singleBaixo] || 0);
-      const difSingleCima = Number(receivedItems?.[ids.singleCima] || 0) - Number(sentItems?.[ids.singleCima] || 0);
-      const difCasalBaixo = Number(receivedItems?.[ids.casalBaixo] || 0) - Number(sentItems?.[ids.casalBaixo] || 0);
-      const difCasalCima = Number(receivedItems?.[ids.casalCima] || 0) - Number(sentItems?.[ids.casalCima] || 0);
-      current.difSingleBaixo += difSingleBaixo;
-      current.difSingleCima += difSingleCima;
-      current.difCasalBaixo += difCasalBaixo;
-      current.difCasalCima += difCasalCima;
-      current.totalDiff += difSingleBaixo + difSingleCima + difCasalBaixo + difCasalCima;
-      current.receivedWeightKg += countLaundryWeightKgClient(receivedItems);
+    const sentItems = row.sentItems || {};
+    const receivedItems = row.receivedItems || {};
+    const difSingleBaixo = Number(receivedItems?.[ids.singleBaixo] || 0) - Number(sentItems?.[ids.singleBaixo] || 0);
+    const difSingleCima = Number(receivedItems?.[ids.singleCima] || 0) - Number(sentItems?.[ids.singleCima] || 0);
+    const difCasalBaixo = Number(receivedItems?.[ids.casalBaixo] || 0) - Number(sentItems?.[ids.casalBaixo] || 0);
+    const difCasalCima = Number(receivedItems?.[ids.casalCima] || 0) - Number(sentItems?.[ids.casalCima] || 0);
+    const totalDiff = difSingleBaixo + difSingleCima + difCasalBaixo + difCasalCima;
+    const receivedWeightKg = countLaundryWeightKgClient(receivedItems);
+    current.difSingleBaixo += difSingleBaixo;
+    current.difSingleCima += difSingleCima;
+    current.difCasalBaixo += difCasalBaixo;
+    current.difCasalCima += difCasalCima;
+    current.totalDiff += totalDiff;
+    current.receivedWeightKg += receivedWeightKg;
+    if (detail) {
+      current.records.push({
+        recordId: row.id,
+        date: basisDate,
+        difSingleBaixo,
+        difSingleCima,
+        difCasalBaixo,
+        difCasalCima,
+        totalDiff,
+        receivedWeightKg,
+      });
     }
     buckets.set(monthKey, current);
   });
   return [...buckets.values()]
-    .map((row) => ({ ...row, receivedWeightKg: Number(row.receivedWeightKg.toFixed(2)) }))
+    .map((row) => ({
+      ...row,
+      receivedWeightKg: Number(row.receivedWeightKg.toFixed(2)),
+      records: detail
+        ? [...row.records].sort((a, b) => clean(b.date).localeCompare(clean(a.date)) || clean(a.recordId).localeCompare(clean(b.recordId)))
+        : [],
+    }))
     .sort((a, b) => clean(b.monthKey).localeCompare(clean(a.monthKey)));
 }
 
 function renderLaundryResume() {
   if (!els.laundryResumeBody || !els.laundryResumeCount) return;
   els.laundryResumeDateField.value = clean(state.laundryResumeFilters.dateField) === "received" ? "received" : "sent";
+  els.laundryResumeDetail.checked = !!state.laundryResumeFilters.detail;
   els.laundryResumeFilterProperty.value = clean(state.laundryResumeFilters.property);
   els.laundryResumeFilterDateFrom.value = clean(state.laundryResumeFilters.dateFrom);
   els.laundryResumeFilterDateTo.value = clean(state.laundryResumeFilters.dateTo);
   const rows = getLaundryResumeRows();
-  els.laundryResumeCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
+  const detail = !!state.laundryResumeFilters.detail;
+  const detailCount = rows.reduce((sum, row) => sum + (row.records?.length || 0), 0);
+  els.laundryResumeCount.textContent = detail ? `${rows.length} month${rows.length === 1 ? "" : "s"} / ${detailCount} record${detailCount === 1 ? "" : "s"}` : `${rows.length} month${rows.length === 1 ? "" : "s"}`;
   els.laundryResumeBody.innerHTML = "";
   if (!rows.length) {
     els.laundryResumeBody.innerHTML = '<tr><td colspan="7" class="empty">No laundry resume data found.</td></tr>';
     return;
   }
   rows.forEach((row) => {
+    if (detail) {
+      (row.records || []).forEach((record) => {
+        const detailTr = document.createElement("tr");
+        if (record.totalDiff > 0) detailTr.classList.add("laundry-row-positive");
+        else if (record.totalDiff < 0) detailTr.classList.add("laundry-row-negative");
+        else detailTr.classList.add("laundry-row-zero");
+        detailTr.innerHTML = `<td>${escape(record.date)}</td>
+          <td>${escape(String(record.difSingleBaixo))}</td>
+          <td>${escape(String(record.difSingleCima))}</td>
+          <td>${escape(String(record.difCasalBaixo))}</td>
+          <td>${escape(String(record.difCasalCima))}</td>
+          <td>${escape(String(record.totalDiff))}</td>
+          <td>${escape(formatLaundryKg(record.receivedWeightKg))}</td>`;
+        els.laundryResumeBody.appendChild(detailTr);
+      });
+    }
     const tr = document.createElement("tr");
+    tr.classList.add("laundry-resume-total-row");
     if (row.totalDiff > 0) tr.classList.add("laundry-row-positive");
     else if (row.totalDiff < 0) tr.classList.add("laundry-row-negative");
     else tr.classList.add("laundry-row-zero");
-    tr.innerHTML = `<td>${escape(formatLaundryMonthLabel(row.monthKey))}</td>
+    tr.innerHTML = `<td>${escape(detail ? `Total ${formatLaundryMonthLabel(row.monthKey)}` : formatLaundryMonthLabel(row.monthKey))}</td>
       <td>${escape(String(row.difSingleBaixo))}</td>
       <td>${escape(String(row.difSingleCima))}</td>
       <td>${escape(String(row.difCasalBaixo))}</td>
