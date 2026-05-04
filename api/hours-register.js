@@ -9,6 +9,29 @@ const {
   sanitizeHoursSettings,
 } = require("./_hours-register");
 
+function cleanId(value) {
+  return String(value || "").trim();
+}
+
+function isMissingHoursTableError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("hours_register_records") && (
+    message.includes("could not find") ||
+    message.includes("schema cache") ||
+    message.includes("relation") ||
+    message.includes("does not exist")
+  );
+}
+
+function recordKey(record) {
+  return [
+    cleanId(record?.person).toLowerCase(),
+    cleanId(record?.date),
+    cleanId(record?.start),
+    cleanId(record?.finish),
+  ].join("::");
+}
+
 async function loadHoursPayloadRow() {
   const rows = await restQuery(`app_settings?select=id,payload&setting_key=eq.${encodeURIComponent(HOURS_REGISTER_SETTING_KEY)}&limit=1`, {
     method: "GET",
@@ -36,39 +59,126 @@ async function saveHoursPayload(rowId, payload) {
   return sanitizeHoursPayload(Array.isArray(created) && created[0]?.payload ? created[0].payload : safe);
 }
 
+function mapHoursTableRow(row, settings) {
+  return sanitizeHoursRecord({
+    id: row?.id,
+    person: row?.person,
+    date: row?.record_date,
+    start: row?.start_time,
+    finish: row?.finish_time,
+    createdAt: row?.created_at,
+    updatedAt: row?.updated_at,
+  }, settings);
+}
+
+async function loadHoursTableRows(settings) {
+  const rows = await restQuery(
+    "hours_register_records?select=id,person,record_date,start_time,finish_time,created_at,updated_at&order=record_date.desc,person.asc,start_time.desc",
+    { method: "GET" }
+  );
+  return sanitizeHoursRecords((Array.isArray(rows) ? rows : []).map((row) => mapHoursTableRow(row, settings)), settings);
+}
+
+function buildHoursTableBody(record, existing = {}) {
+  return {
+    id: record.id || existing.id,
+    person: record.person,
+    record_date: record.date,
+    start_time: record.start,
+    finish_time: record.finish,
+    created_at: existing.createdAt || record.createdAt || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function createHoursTableRow(record, existing = {}) {
+  await restQuery("hours_register_records", {
+    method: "POST",
+    body: [buildHoursTableBody(record, existing)],
+    preferRepresentation: true,
+  });
+}
+
+async function updateHoursTableRow(id, record, existing = {}) {
+  await restQuery(`hours_register_records?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: buildHoursTableBody(record, existing),
+    preferRepresentation: true,
+  });
+}
+
+function validateHoursSave(existingRows, record, { excludeId = "" } = {}) {
+  const duplicate = existingRows.find((row) => recordKey(row) === recordKey(record) && cleanId(row.id) !== cleanId(excludeId));
+  if (duplicate) {
+    const error = new Error(`A hours record for ${record.person} on ${record.date} from ${record.start} to ${record.finish} already exists.`);
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function mergeLegacyRecords(existingRecords, incomingRecord, settings, id = "") {
+  const safe = sanitizeHoursRecord(incomingRecord, settings, existingRecords.find((item) => cleanId(item.id) === cleanId(id)) || {});
+  const next = [...existingRecords];
+  validateHoursSave(next, safe, { excludeId: id || safe.id });
+  const index = id ? next.findIndex((item) => cleanId(item.id) === cleanId(id)) : -1;
+  if (index >= 0) {
+    next[index] = {
+      ...safe,
+      id: next[index].id,
+      createdAt: next[index].createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  } else {
+    next.push({
+      ...safe,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+  return sanitizeHoursRecords(next, settings);
+}
+
+async function loadRecordsAndSettings() {
+  const { payload } = await loadHoursPayloadRow();
+  const settings = payload.settings;
+  try {
+    const rows = await loadHoursTableRows(settings);
+    return { mode: "table", settings, rows };
+  } catch (error) {
+    if (!isMissingHoursTableError(error)) throw error;
+    return { mode: "legacy", settings, rows: payload.records };
+  }
+}
+
 module.exports = async function handler(req, res) {
   try {
     await requireFeature(req, "app", "hours");
 
     if (req.method === "GET") {
-      const { payload } = await loadHoursPayloadRow();
-      res.status(200).json({ rows: payload.records, settings: payload.settings });
+      const current = await loadRecordsAndSettings();
+      res.status(200).json({ rows: current.rows, settings: current.settings });
       return;
     }
 
     if (req.method === "POST") {
       const body = await parseBody(req);
-      const { rowId, payload } = await loadHoursPayloadRow();
-      const record = sanitizeHoursRecord(body, payload.settings);
-      const duplicate = payload.records.find((item) => item.id === record.id);
-      if (duplicate) {
-        const error = new Error("A record with this id already exists.");
-        error.statusCode = 400;
-        throw error;
+      const current = await loadRecordsAndSettings();
+      if (current.mode === "legacy") {
+        const { rowId, payload } = await loadHoursPayloadRow();
+        const nextRecords = mergeLegacyRecords(payload.records, body, payload.settings);
+        const saved = await saveHoursPayload(rowId, { settings: payload.settings, records: nextRecords });
+        res.status(200).json({ rows: saved.records, settings: saved.settings });
+        return;
       }
-      const next = {
-        settings: payload.settings,
-        records: sanitizeHoursRecords([
-          ...payload.records,
-          {
-            ...record,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ], payload.settings),
-      };
-      const saved = await saveHoursPayload(rowId, next);
-      res.status(200).json({ rows: saved.records, settings: saved.settings });
+      const nextRecord = sanitizeHoursRecord(body, current.settings);
+      validateHoursSave(current.rows, nextRecord);
+      await createHoursTableRow({
+        ...nextRecord,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      const rows = await loadHoursTableRows(current.settings);
+      res.status(200).json({ rows, settings: current.settings });
       return;
     }
 
@@ -79,23 +189,29 @@ module.exports = async function handler(req, res) {
         return;
       }
       const body = await parseBody(req);
-      const { rowId, payload } = await loadHoursPayloadRow();
-      const existing = payload.records.find((item) => cleanId(item.id) === id);
+      const current = await loadRecordsAndSettings();
+      if (current.mode === "legacy") {
+        const { rowId, payload } = await loadHoursPayloadRow();
+        const existing = payload.records.find((item) => cleanId(item.id) === id);
+        if (!existing) {
+          res.status(404).json({ error: "Record not found." });
+          return;
+        }
+        const nextRecords = mergeLegacyRecords(payload.records, { ...existing, ...body, id: existing.id }, payload.settings, id);
+        const saved = await saveHoursPayload(rowId, { settings: payload.settings, records: nextRecords });
+        res.status(200).json({ rows: saved.records, settings: saved.settings });
+        return;
+      }
+      const existing = current.rows.find((item) => cleanId(item.id) === id);
       if (!existing) {
         res.status(404).json({ error: "Record not found." });
         return;
       }
-      const updated = sanitizeHoursRecord({ ...existing, ...body, id: existing.id }, payload.settings, existing);
-      const next = {
-        settings: payload.settings,
-        records: sanitizeHoursRecords(payload.records.map((item) => (
-          cleanId(item.id) === id
-            ? { ...updated, createdAt: existing.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() }
-            : item
-        )), payload.settings),
-      };
-      const saved = await saveHoursPayload(rowId, next);
-      res.status(200).json({ rows: saved.records, settings: saved.settings });
+      const updated = sanitizeHoursRecord({ ...existing, ...body, id: existing.id }, current.settings, existing);
+      validateHoursSave(current.rows, updated, { excludeId: existing.id });
+      await updateHoursTableRow(existing.id, updated, existing);
+      const rows = await loadHoursTableRows(current.settings);
+      res.status(200).json({ rows, settings: current.settings });
       return;
     }
 
@@ -104,7 +220,3 @@ module.exports = async function handler(req, res) {
     sendError(res, error);
   }
 };
-
-function cleanId(value) {
-  return String(value || "").trim();
-}

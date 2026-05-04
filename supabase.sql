@@ -167,6 +167,17 @@ create table if not exists public.laundry_records (
   constraint laundry_records_property_date_unique unique (property, record_date)
 );
 
+create table if not exists public.hours_register_records (
+  id uuid primary key default gen_random_uuid(),
+  person text not null,
+  record_date date not null,
+  start_time time not null,
+  finish_time time not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint hours_register_records_unique unique (person, record_date, start_time, finish_time)
+);
+
 alter table public.laundry_records
   add column if not exists received_date date;
 
@@ -208,6 +219,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists laundry_records_set_updated_at on public.laundry_records;
 create trigger laundry_records_set_updated_at
 before update on public.laundry_records
+for each row execute function public.set_updated_at();
+
+drop trigger if exists hours_register_records_set_updated_at on public.hours_register_records;
+create trigger hours_register_records_set_updated_at
+before update on public.hours_register_records
 for each row execute function public.set_updated_at();
 
 create table if not exists public.properties (
@@ -345,6 +361,7 @@ alter table public.services enable row level security;
 alter table public.shopping_orders enable row level security;
 alter table public.bakery_orders enable row level security;
 alter table public.laundry_records enable row level security;
+alter table public.hours_register_records enable row level security;
 alter table public.properties enable row level security;
 alter table public.review_import_runs enable row level security;
 alter table public.review_import_staging enable row level security;
@@ -528,6 +545,7 @@ grant select, insert, update, delete on table public.services to authenticated;
 grant select, insert, update, delete on table public.shopping_orders to authenticated;
 grant select, insert, update, delete on table public.bakery_orders to authenticated;
 grant select, insert, update, delete on table public.laundry_records to authenticated;
+grant select, insert, update, delete on table public.hours_register_records to authenticated;
 grant select, insert, update, delete on table public.properties to authenticated;
 grant select, insert, update, delete on table public.review_import_runs to authenticated;
 grant select, insert, update, delete on table public.review_import_staging to authenticated;
@@ -543,6 +561,7 @@ grant select, insert, update, delete on table public.services to anon;
 grant select, insert, update, delete on table public.shopping_orders to anon;
 grant select, insert, update, delete on table public.bakery_orders to anon;
 grant select, insert, update, delete on table public.laundry_records to anon;
+grant select, insert, update, delete on table public.hours_register_records to anon;
 grant select, insert, update, delete on table public.properties to anon;
 grant select, insert, update, delete on table public.review_import_runs to anon;
 grant select, insert, update, delete on table public.review_import_staging to anon;
@@ -710,6 +729,36 @@ with check (auth.uid() is not null);
 
 create policy "laundry_records_delete_authenticated"
 on public.laundry_records
+for delete
+to public
+using (auth.uid() is not null);
+
+drop policy if exists "hours_register_records_select_authenticated" on public.hours_register_records;
+drop policy if exists "hours_register_records_insert_authenticated" on public.hours_register_records;
+drop policy if exists "hours_register_records_update_authenticated" on public.hours_register_records;
+drop policy if exists "hours_register_records_delete_authenticated" on public.hours_register_records;
+
+create policy "hours_register_records_select_authenticated"
+on public.hours_register_records
+for select
+to public
+using (auth.uid() is not null);
+
+create policy "hours_register_records_insert_authenticated"
+on public.hours_register_records
+for insert
+to public
+with check (auth.uid() is not null);
+
+create policy "hours_register_records_update_authenticated"
+on public.hours_register_records
+for update
+to public
+using (auth.uid() is not null)
+with check (auth.uid() is not null);
+
+create policy "hours_register_records_delete_authenticated"
+on public.hours_register_records
 for delete
 to public
 using (auth.uid() is not null);
@@ -915,7 +964,7 @@ to public
 using (auth.uid() is not null);
 
 insert into public.app_profiles (name, app_features, settings_features)
-values ('Administrator', '["communications","lost-found","reviews","groups","services","shopping","bakery","laundry"]'::jsonb, '["communications","reviews","groups","services","shopping","bakery","laundry","admin-users"]'::jsonb)
+values ('Administrator', '["communications","lost-found","reviews","groups","services","shopping","hours","bakery","laundry"]'::jsonb, '["communications","reviews","groups","services","shopping","hours","bakery","laundry","admin-users"]'::jsonb)
 on conflict (name) do nothing;
 
 update public.app_profiles
@@ -925,10 +974,12 @@ set
   ) || case when app_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end
     || case when app_features ? 'lost-found' then '[]'::jsonb else '["lost-found"]'::jsonb end
     || case when app_features ? 'shopping' then '[]'::jsonb else '["shopping"]'::jsonb end
+    || case when app_features ? 'hours' then '[]'::jsonb else '["hours"]'::jsonb end
     || case when app_features ? 'bakery' then '[]'::jsonb else '["bakery"]'::jsonb end
     || case when app_features ? 'laundry' then '[]'::jsonb else '["laundry"]'::jsonb end,
   settings_features = (case when settings_features ? 'groups' then settings_features else settings_features || '["groups"]'::jsonb end) || case when settings_features ? 'services' then '[]'::jsonb else '["services"]'::jsonb end
     || case when settings_features ? 'shopping' then '[]'::jsonb else '["shopping"]'::jsonb end
+    || case when settings_features ? 'hours' then '[]'::jsonb else '["hours"]'::jsonb end
     || case when settings_features ? 'bakery' then '[]'::jsonb else '["bakery"]'::jsonb end
     || case when settings_features ? 'laundry' then '[]'::jsonb else '["laundry"]'::jsonb end
 where name = 'Administrator';
@@ -990,6 +1041,111 @@ set payload = jsonb_set(
   true
 )
 where setting_key = 'laundry_control';
+
+insert into public.hours_register_records (
+  person,
+  record_date,
+  start_time,
+  finish_time
+)
+values
+  ('Fernanda Pereira', '2026-01-02', '10:50', '16:00'),
+  ('Fernanda Pereira', '2026-01-05', '11:00', '17:40'),
+  ('Fernanda Pereira', '2026-01-07', '10:30', '16:00'),
+  ('Fernanda Pereira', '2026-01-10', '10:55', '16:10'),
+  ('Fernanda Pereira', '2026-01-11', '11:00', '16:00'),
+  ('Fernanda Pereira', '2026-01-12', '11:20', '16:20'),
+  ('Fernanda Pereira', '2026-01-15', '10:07', '14:50'),
+  ('Fernanda Pereira', '2026-01-16', '09:00', '13:30'),
+  ('Fernanda Pereira', '2026-01-18', '09:30', '14:15'),
+  ('Fernanda Pereira', '2026-01-19', '10:00', '14:00'),
+  ('Fernanda Pereira', '2026-01-20', '10:05', '15:30'),
+  ('Fernanda Pereira', '2026-01-21', '10:40', '14:30'),
+  ('Fernanda Pereira', '2026-01-26', '10:41', '14:45'),
+  ('Fernanda Pereira', '2026-01-30', '11:00', '15:30'),
+  ('Fernanda Pereira', '2026-01-31', '10:40', '16:00'),
+  ('Fernanda Pereira', '2026-02-01', '11:00', '17:40'),
+  ('Fernanda Pereira', '2026-02-02', '09:45', '14:35'),
+  ('Fernanda Pereira', '2026-02-05', '10:46', '14:45'),
+  ('Fernanda Pereira', '2026-02-09', '11:25', '12:45'),
+  ('Fernanda Pereira', '2026-02-10', '11:00', '14:20'),
+  ('Fernanda Pereira', '2026-02-14', '11:00', '13:18'),
+  ('Fernanda Pereira', '2026-02-15', '11:00', '14:10'),
+  ('Fernanda Pereira', '2026-02-16', '08:10', '12:05'),
+  ('Fernanda Pereira', '2026-02-17', '09:45', '15:04'),
+  ('Fernanda Pereira', '2026-02-18', '10:20', '13:20'),
+  ('Fernanda Pereira', '2026-02-20', '11:00', '16:25'),
+  ('Fernanda Pereira', '2026-02-22', '10:45', '15:05'),
+  ('Fernanda Pereira', '2026-02-24', '11:00', '16:10'),
+  ('Fernanda Pereira', '2026-02-27', '10:50', '15:00'),
+  ('Fernanda Pereira', '2026-02-28', '10:50', '15:25'),
+  ('Fernanda Pereira', '2026-03-02', '10:00', '14:50'),
+  ('Fernanda Pereira', '2026-03-05', '09:45', '14:15'),
+  ('Fernanda Pereira', '2026-03-06', '09:45', '14:40'),
+  ('Fernanda Pereira', '2026-03-07', '09:45', '13:05'),
+  ('Fernanda Pereira', '2026-03-08', '10:30', '16:20'),
+  ('Fernanda Pereira', '2026-03-11', '10:00', '15:10'),
+  ('Fernanda Pereira', '2026-03-12', '09:40', '15:15'),
+  ('Fernanda Pereira', '2026-03-14', '11:00', '14:00'),
+  ('Fernanda Pereira', '2026-03-15', '11:00', '15:25'),
+  ('Fernanda Pereira', '2026-03-18', '10:25', '15:57'),
+  ('Fernanda Pereira', '2026-03-19', '10:58', '15:50'),
+  ('Fernanda Pereira', '2026-03-21', '11:00', '15:32'),
+  ('Fernanda Pereira', '2026-03-22', '10:30', '15:23'),
+  ('Fernanda Pereira', '2026-03-24', '10:30', '14:40'),
+  ('Fernanda Pereira', '2026-03-25', '11:00', '14:00'),
+  ('Fernanda Pereira', '2026-03-31', '11:00', '15:00'),
+  ('Fernanda Pereira', '2026-04-01', '10:50', '14:50'),
+  ('Fernanda Pereira', '2026-04-02', '11:00', '16:10'),
+  ('Fernanda Pereira', '2026-04-04', '10:40', '14:35'),
+  ('Fernanda Pereira', '2026-04-05', '09:08', '12:43'),
+  ('Fernanda Pereira', '2026-04-06', '10:20', '15:40'),
+  ('Fernanda Pereira', '2026-04-09', '10:40', '14:59'),
+  ('Fernanda Pereira', '2026-04-11', '11:00', '15:50'),
+  ('Fernanda Pereira', '2026-04-12', '11:00', '15:00'),
+  ('Fernanda Pereira', '2026-04-13', '11:40', '14:50'),
+  ('Fernanda Pereira', '2026-04-15', '11:00', '13:40'),
+  ('Fernanda Pereira', '2026-04-16', '11:00', '16:05'),
+  ('Fernanda Pereira', '2026-04-21', '10:58', '15:51'),
+  ('Fernanda Pereira', '2026-04-23', '09:10', '14:00'),
+  ('Fernanda Pereira', '2026-04-24', '10:00', '15:00'),
+  ('Fernanda Pereira', '2026-04-26', '11:00', '15:41'),
+  ('Fernanda Pereira', '2026-04-27', '11:10', '13:31'),
+  ('Fernanda Pereira', '2026-04-28', '10:00', '14:40'),
+  ('Fernanda Pereira', '2026-04-30', '09:30', '13:37'),
+  ('Fernanda Pereira', '2026-05-01', '11:00', '15:15'),
+  ('Fernanda Pereira', '2026-05-03', '10:45', '15:36'),
+  ('Fernanda Pereira', '2026-05-04', '10:20', '14:30')
+on conflict (person, record_date, start_time, finish_time) do nothing;
+
+insert into public.hours_register_records (
+  id,
+  person,
+  record_date,
+  start_time,
+  finish_time,
+  created_at,
+  updated_at
+)
+select
+  case
+    when coalesce(item ->> 'id', '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      then (item ->> 'id')::uuid
+    else gen_random_uuid()
+  end,
+  coalesce(nullif(item ->> 'person', ''), 'Fernanda Pereira'),
+  (item ->> 'date')::date,
+  (item ->> 'start')::time,
+  (item ->> 'finish')::time,
+  coalesce(nullif(item ->> 'createdAt', '')::timestamptz, now()),
+  coalesce(nullif(item ->> 'updatedAt', '')::timestamptz, now())
+from public.app_settings settings
+cross join lateral jsonb_array_elements(coalesce(settings.payload -> 'records', '[]'::jsonb)) item
+where settings.setting_key = 'hours_register'
+  and nullif(item ->> 'date', '') is not null
+  and nullif(item ->> 'start', '') is not null
+  and nullif(item ->> 'finish', '') is not null
+on conflict (person, record_date, start_time, finish_time) do nothing;
 
 insert into public.app_profiles (name, app_features, settings_features)
 values ('Service Provider', '["services"]'::jsonb, '[]'::jsonb)
