@@ -9118,6 +9118,10 @@ function formatLaundryColumnSummary(counts, weightKg) {
   return `${itemsText}\nKg: ${formatLaundryKg(weightKg)}`;
 }
 
+function formatLaundryListSummary(counts) {
+  return formatLaundryItemsSummary(counts);
+}
+
 function laundryHasReceivedValues(record) {
   const itemTypes = laundryItemTypes();
   return itemTypes.some((item) => Number(record?.receivedItems?.[item.id] || 0) > 0) || Number(record?.receivedWeightKg || 0) > 0;
@@ -9130,6 +9134,8 @@ function buildLaundryDifferenceLines(record) {
   if (!hasReceivedValues) {
     return {
       matchDate: receiveDate,
+      hasReceivedValues,
+      totalDiff: null,
       lines: [receiveDate ? `Waiting for received quantities on ${receiveDate}.` : "Waiting for received quantities."],
     };
   }
@@ -9146,6 +9152,8 @@ function buildLaundryDifferenceLines(record) {
   lines.push(`Total counts difference: ${totalDiff > 0 ? "+" : ""}${totalDiff}`);
   return {
     matchDate: receiveDate,
+    hasReceivedValues,
+    totalDiff,
     lines,
   };
 }
@@ -9289,26 +9297,30 @@ function renderLaundry() {
   }
   rows.forEach((row) => {
     const diff = buildLaundryDifferenceLines(row);
-    const sentWeight = countLaundryWeightKgClient(row.sentItems);
-    const receivedWeight = Number(row.receivedWeightKg) || countLaundryWeightKgClient(row.receivedItems);
     const receiveDate = clean(row.receivedDate) || laundryReceiveDate(row.date) || "";
-    const hasReceivedValues = laundryHasReceivedValues(row);
+    const hasReceivedValues = diff.hasReceivedValues;
     const receiveDateNeedsFill = Boolean(receiveDate) && receiveDate <= lisbonTodayIsoClient() && !hasReceivedValues;
     const receivedSummary = hasReceivedValues
-      ? escape(formatLaundryColumnSummary(row.receivedItems, receivedWeight)).replace(/\n/g, "<br>")
+      ? escape(formatLaundryListSummary(row.receivedItems)).replace(/\n/g, "<br>")
       : "";
     const receivedDateCell = receiveDate
       ? `${escape(receiveDate)}${receiveDateNeedsFill ? '<br><span class="warning-text">please fill</span>' : ""}`
       : "-";
+    const diffHtml = diff.lines.map((line) => escape(line)).join("<br>");
     const tr = document.createElement("tr");
     tr.className = "clickable-row";
+    if (hasReceivedValues) {
+      if (diff.totalDiff > 0) tr.classList.add("laundry-row-positive");
+      else if (diff.totalDiff < 0) tr.classList.add("laundry-row-negative");
+      else tr.classList.add("laundry-row-zero");
+    }
     tr.dataset.laundryId = row.id;
     tr.innerHTML = `<td>${escape(row.date)}</td>
       <td>${escape(row.property)}</td>
-      <td>${escape(formatLaundryColumnSummary(row.sentItems, sentWeight)).replace(/\n/g, "<br>")}</td>
+      <td>${escape(formatLaundryListSummary(row.sentItems)).replace(/\n/g, "<br>")}</td>
       <td>${receivedDateCell}</td>
       <td>${receivedSummary || "-"}</td>
-      <td>${diff.matchDate ? `<small>Receive ${escape(diff.matchDate)}</small><br>${escape(diff.lines.join(" | ")).replace(/\n/g, "<br>")}` : escape(diff.lines[0])}</td>
+      <td>${diffHtml}</td>
       <td>${escape(row.notes || "-")}</td>`;
     els.laundryRows.appendChild(tr);
   });

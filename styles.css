@@ -1094,6 +1094,24 @@ td {
   background: #fff6eb;
 }
 
+.laundry-table tr.laundry-row-negative td {
+  background: rgba(177, 32, 48, 0.15);
+}
+
+.laundry-table tr.laundry-row-positive td {
+  background: rgba(55, 140, 92, 0.15);
+}
+
+.laundry-table tr.laundry-row-zero td {
+  background: rgba(67, 127, 211, 0.15);
+}
+
+.laundry-table tr.laundry-row-negative:hover td,
+.laundry-table tr.laundry-row-positive:hover td,
+.laundry-table tr.laundry-row-zero:hover td {
+  filter: brightness(0.985);
+}
+
 .selected-row td {
   background: #eef9f5;
 }
@@ -1587,10 +1605,26 @@ select:disabled {
   color: var(--muted);
 }
 
+.warning-text {
+  color: var(--danger) !important;
+  font-weight: 700;
+}
+
 .laundry-table .warning-text {
   display: inline-block;
   margin-top: 0.18rem;
   font-size: 0.74rem;
+}
+
+.laundry-actions-stack {
+  display: grid;
+  justify-items: start;
+  gap: 0.15rem;
+}
+
+.laundry-actions-stack .warning-text {
+  margin: 0;
+  font-size: 0.78rem;
 }
 
 .services-subbar {
