@@ -1550,13 +1550,17 @@ select:disabled {
 }
 
 .laundry-items-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem 0.9rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem 0.7rem;
 }
 
 .laundry-items-grid label {
   display: grid;
   gap: 0.32rem;
+}
+
+.laundry-items-grid input {
+  max-width: 88px;
 }
 
 .laundry-items-grid small {
@@ -2802,6 +2806,10 @@ select:disabled {
   }
 
   .laundry-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .laundry-items-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
