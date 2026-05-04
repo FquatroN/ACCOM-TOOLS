@@ -17,8 +17,8 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services", "shopping", "bakery", "laundry"];
-const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "shopping", "bakery", "laundry", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry"];
+const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -356,6 +356,10 @@ const DEFAULT_LAUNDRY_SETTINGS = {
   ],
 };
 
+const DEFAULT_HOURS_SETTINGS = {
+  people: ["Fernanda Pereira"],
+};
+
 const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
   { label: "App: Communications", kind: "app", key: "communications" },
@@ -364,6 +368,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Groups", kind: "app", key: "groups" },
   { label: "App: Services", kind: "app", key: "services" },
   { label: "App: Shopping", kind: "app", key: "shopping" },
+  { label: "App: Hours Register", kind: "app", key: "hours" },
   { label: "App: Bakery", kind: "app", key: "bakery" },
   { label: "App: Laundry Control", kind: "app", key: "laundry" },
   { label: "Settings: Communications", kind: "settings", key: "communications" },
@@ -371,6 +376,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "Settings: Groups", kind: "settings", key: "groups" },
   { label: "Settings: Services", kind: "settings", key: "services" },
   { label: "Settings: Shopping", kind: "settings", key: "shopping" },
+  { label: "Settings: Hours Register", kind: "settings", key: "hours" },
   { label: "Settings: Bakery", kind: "settings", key: "bakery" },
   { label: "Settings: Laundry Control", kind: "settings", key: "laundry" },
   { label: "Settings: Admin Users", kind: "settings", key: "admin-users" },
@@ -603,6 +609,15 @@ const state = {
   shoppingSubmitNotes: "",
   shoppingSubmitPromptOpen: false,
   shoppingSelectedHistoryId: "",
+  hoursRecords: [],
+  hoursLoaded: false,
+  hoursSettings: clone(DEFAULT_HOURS_SETTINGS),
+  hoursSettingsLoaded: false,
+  hoursScreen: "list",
+  hoursFilters: { person: "", dateFrom: "", dateTo: "" },
+  hoursDraft: null,
+  hoursEditDraft: null,
+  hoursEditingId: null,
   bakeryOpenOrder: null,
   bakeryHistory: [],
   bakeryLoaded: false,
@@ -698,6 +713,7 @@ const els = {
   navGroups: document.getElementById("nav-groups"),
   navServices: document.getElementById("nav-services"),
   navShopping: document.getElementById("nav-shopping"),
+  navHours: document.getElementById("nav-hours"),
   navBakery: document.getElementById("nav-bakery"),
   navLaundry: document.getElementById("nav-laundry"),
   openSettings: document.getElementById("open-settings"),
@@ -707,6 +723,7 @@ const els = {
   viewReviews: document.getElementById("view-reviews"),
   viewServices: document.getElementById("view-services"),
   viewShopping: document.getElementById("view-shopping"),
+  viewHours: document.getElementById("view-hours"),
   viewBakery: document.getElementById("view-bakery"),
   viewLaundry: document.getElementById("view-laundry"),
   viewSettings: document.getElementById("view-settings"),
@@ -716,6 +733,7 @@ const els = {
   settingsMenuGroups: document.getElementById("settings-menu-groups"),
   settingsMenuServices: document.getElementById("settings-menu-services"),
   settingsMenuShopping: document.getElementById("settings-menu-shopping"),
+  settingsMenuHours: document.getElementById("settings-menu-hours"),
   settingsMenuBakery: document.getElementById("settings-menu-bakery"),
   settingsMenuLaundry: document.getElementById("settings-menu-laundry"),
   settingsMenuAdminUsers: document.getElementById("settings-menu-admin-users"),
@@ -725,6 +743,7 @@ const els = {
   settingsViewGroups: document.getElementById("settings-view-groups"),
   settingsViewServices: document.getElementById("settings-view-services"),
   settingsViewShopping: document.getElementById("settings-view-shopping"),
+  settingsViewHours: document.getElementById("settings-view-hours"),
   settingsViewBakery: document.getElementById("settings-view-bakery"),
   settingsViewLaundry: document.getElementById("settings-view-laundry"),
   settingsViewAdminUsers: document.getElementById("settings-view-admin-users"),
@@ -738,6 +757,7 @@ const els = {
   closeSettingsGroups: document.getElementById("close-settings-groups"),
   closeSettingsServices: document.getElementById("close-settings-services"),
   closeSettingsShopping: document.getElementById("close-settings-shopping"),
+  closeSettingsHours: document.getElementById("close-settings-hours"),
   closeSettingsBakery: document.getElementById("close-settings-bakery"),
   closeSettingsLaundry: document.getElementById("close-settings-laundry"),
   generalSaveSettings: document.getElementById("general-save-settings"),
@@ -1007,6 +1027,25 @@ const els = {
   shoppingAddItem: document.getElementById("shopping-add-item"),
   shoppingSettingsItemsBody: document.getElementById("shopping-settings-items-body"),
   shoppingSettingsStatus: document.getElementById("shopping-settings-status"),
+  hoursTabList: document.getElementById("hours-tab-list"),
+  hoursTabResume: document.getElementById("hours-tab-resume"),
+  hoursPanelList: document.getElementById("hours-panel-list"),
+  hoursPanelResume: document.getElementById("hours-panel-resume"),
+  hoursRows: document.getElementById("hours-rows"),
+  hoursMobileCards: document.getElementById("hours-mobile-cards"),
+  hoursCount: document.getElementById("hours-count"),
+  hoursStatus: document.getElementById("hours-status"),
+  hoursFilterPerson: document.getElementById("hours-filter-person"),
+  hoursFilterDateFrom: document.getElementById("hours-filter-date-from"),
+  hoursFilterDateTo: document.getElementById("hours-filter-date-to"),
+  hoursResumeFilterPerson: document.getElementById("hours-resume-filter-person"),
+  hoursResumeFilterDateFrom: document.getElementById("hours-resume-filter-date-from"),
+  hoursResumeFilterDateTo: document.getElementById("hours-resume-filter-date-to"),
+  hoursResumeCount: document.getElementById("hours-resume-count"),
+  hoursResumeBody: document.getElementById("hours-resume-body"),
+  hoursSaveSettings: document.getElementById("hours-save-settings"),
+  hoursSettingsPersons: document.getElementById("hours-settings-persons"),
+  hoursSettingsStatus: document.getElementById("hours-settings-status"),
   bakeryTabCurrent: document.getElementById("bakery-tab-current"),
   bakeryTabHistory: document.getElementById("bakery-tab-history"),
   bakeryPanelCurrent: document.getElementById("bakery-panel-current"),
@@ -1177,17 +1216,19 @@ async function init() {
   else if (!canApp("communications") && !canApp("lost-found") && canApp("groups")) state.currentView = "groups";
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
   else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("shopping")) state.currentView = "shopping";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("bakery")) state.currentView = "bakery";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("hours")) state.currentView = "hours";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && canApp("bakery")) state.currentView = "bakery";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
+  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   if (!canSettings("communications") && canSettings("reviews")) state.settingsSection = "reviews";
   else if (!canSettings("communications") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
   else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
-  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("bakery")) state.settingsSection = "bakery";
-  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
+  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
+  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
+  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
   else if (!canSettings("communications") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
@@ -1197,6 +1238,7 @@ async function init() {
   if (canApp("communications")) loadSidebarReviewSummary({ silent: true }).catch(() => {});
   await ensureCurrentViewData();
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canApp("hours")) loadHoursData({ silent: true }).catch(() => {});
   if (canApp("bakery")) loadBakeryData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("laundry")) loadLaundryRecords({ silent: true }).then(() => renderLayout()).catch(() => {});
   startAutoRefresh();
@@ -1209,6 +1251,7 @@ function bindEvents() {
   els.navGroups.addEventListener("click", () => setView("groups"));
   els.navServices.addEventListener("click", () => setView("services"));
   els.navShopping.addEventListener("click", () => setView("shopping"));
+  els.navHours.addEventListener("click", () => setView("hours"));
   els.navBakery.addEventListener("click", () => setView("bakery"));
   els.navLaundry.addEventListener("click", () => setView("laundry"));
   els.sidebarReviewSummaryCard?.addEventListener("click", async () => {
@@ -1225,6 +1268,7 @@ function bindEvents() {
   els.closeSettingsGroups.addEventListener("click", () => setView("groups"));
   els.closeSettingsServices.addEventListener("click", () => setView("services"));
   els.closeSettingsShopping.addEventListener("click", () => setView("shopping"));
+  els.closeSettingsHours?.addEventListener("click", () => setView("hours"));
   els.closeSettingsBakery.addEventListener("click", () => setView("bakery"));
   els.closeSettingsLaundry?.addEventListener("click", () => setView("laundry"));
   els.settingsMenuGeneral?.addEventListener("click", () => setSettingsSection("general"));
@@ -1233,6 +1277,7 @@ function bindEvents() {
   els.settingsMenuGroups.addEventListener("click", () => setSettingsSection("groups"));
   els.settingsMenuServices.addEventListener("click", () => setSettingsSection("services"));
   els.settingsMenuShopping.addEventListener("click", () => setSettingsSection("shopping"));
+  els.settingsMenuHours?.addEventListener("click", () => setSettingsSection("hours"));
   els.settingsMenuBakery.addEventListener("click", () => setSettingsSection("bakery"));
   els.settingsMenuLaundry.addEventListener("click", () => setSettingsSection("laundry"));
   els.settingsMenuAdminUsers.addEventListener("click", () => setSettingsSection("admin-users"));
@@ -1268,6 +1313,18 @@ function bindEvents() {
   els.shoppingSettingsCategoryColors?.addEventListener("input", onShoppingSettingsInput);
   els.shoppingSettingsCategoryColors?.addEventListener("change", onShoppingSettingsInput);
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
+  els.hoursTabList?.addEventListener("click", () => setHoursScreen("list"));
+  els.hoursTabResume?.addEventListener("click", () => setHoursScreen("resume"));
+  [els.hoursFilterPerson, els.hoursResumeFilterPerson].forEach((el) => el?.addEventListener("change", onHoursFilterInput));
+  [els.hoursFilterDateFrom, els.hoursFilterDateTo, els.hoursResumeFilterDateFrom, els.hoursResumeFilterDateTo].forEach((el) => el?.addEventListener("input", onHoursFilterInput));
+  els.hoursRows?.addEventListener("click", onHoursAction);
+  els.hoursRows?.addEventListener("input", onHoursDraftInput);
+  els.hoursRows?.addEventListener("change", onHoursDraftInput);
+  els.hoursMobileCards?.addEventListener("click", onHoursAction);
+  els.hoursMobileCards?.addEventListener("input", onHoursDraftInput);
+  els.hoursMobileCards?.addEventListener("change", onHoursDraftInput);
+  els.hoursSaveSettings?.addEventListener("click", saveHoursSettings);
+  els.hoursSettingsPersons?.addEventListener("input", onHoursSettingsInput);
   els.shoppingSubmitName.addEventListener("input", () => {
     state.shoppingSubmitName = clean(els.shoppingSubmitName.value);
   });
@@ -1640,6 +1697,9 @@ function applyInitialRouteFromUrl() {
     if (view === "shopping" && canApp("shopping")) {
       state.currentView = "shopping";
     }
+    if (view === "hours" && canApp("hours")) {
+      state.currentView = "hours";
+    }
     if (view === "bakery" && canApp("bakery")) {
       state.currentView = "bakery";
     }
@@ -1657,6 +1717,9 @@ function syncAppRoute() {
       url.searchParams.set("view", "services");
       if (clean(state.serviceSelectedId)) url.searchParams.set("service", clean(state.serviceSelectedId));
       else url.searchParams.delete("service");
+    } else if (state.currentView === "hours") {
+      url.searchParams.set("view", "hours");
+      url.searchParams.delete("service");
     } else {
       url.searchParams.delete("view");
       url.searchParams.delete("service");
@@ -1673,6 +1736,7 @@ async function setView(view) {
   if (view === "groups" && !canApp("groups")) return showToast("No groups access.", "error");
   if (view === "services" && !canApp("services")) return showToast("No services access.", "error");
   if (view === "shopping" && !canApp("shopping")) return showToast("No shopping access.", "error");
+  if (view === "hours" && !canApp("hours")) return showToast("No hours register access.", "error");
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
@@ -1683,6 +1747,7 @@ async function setView(view) {
     else if (canSettings("groups")) state.settingsSection = "groups";
     else if (canSettings("services")) state.settingsSection = "services";
     else if (canSettings("shopping")) state.settingsSection = "shopping";
+    else if (canSettings("hours")) state.settingsSection = "hours";
     else if (canSettings("bakery")) state.settingsSection = "bakery";
     else if (canSettings("laundry")) state.settingsSection = "laundry";
     else if (canSettings("admin-users")) state.settingsSection = "admin-users";
@@ -1737,6 +1802,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "shopping") {
     await ensureShoppingData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "hours") {
+    await ensureHoursData();
     renderSettingsSection();
     render();
     return;
@@ -1822,6 +1893,13 @@ async function refreshCurrentViewData(reason = "timer") {
       state.lastAutoRefreshAt = now;
       return;
     }
+    if (state.currentView === "hours" && canApp("hours")) {
+      await loadHoursData({ silent: true });
+      state.hoursLoaded = true;
+      renderHours();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
     if (state.currentView === "bakery" && canApp("bakery")) {
       await loadBakeryData({ silent: true });
       state.bakeryLoaded = true;
@@ -1848,6 +1926,7 @@ function shouldSkipAutoRefresh() {
   if (state.currentView === "groups" && els.groupEditorModal && !els.groupEditorModal.hidden) return true;
   if (state.currentView === "services" && els.serviceEditorModal && !els.serviceEditorModal.hidden) return true;
   if (state.currentView === "shopping" && state.shoppingOpenOrder) return true;
+  if (state.currentView === "hours" && (state.hoursEditingId || hasHoursDraft())) return true;
   if (state.currentView === "bakery" && state.bakeryOpenOrder) return true;
   if (state.currentView === "laundry" && els.laundryEditorModal && !els.laundryEditorModal.hidden) return true;
   if (state.reviewQa.loading) return true;
@@ -1962,6 +2041,20 @@ async function ensureShoppingData() {
   renderShoppingSettings();
 }
 
+async function ensureHoursData() {
+  if (!canApp("hours") && !canSettings("hours")) return;
+  if (canSettings("hours") && !state.hoursSettingsLoaded) {
+    await loadHoursSettings();
+    state.hoursSettingsLoaded = true;
+  }
+  if (canApp("hours") && !state.hoursLoaded) {
+    await loadHoursData();
+    state.hoursLoaded = true;
+  }
+  renderHours();
+  renderHoursSettings();
+}
+
 async function ensureBakeryData() {
   if (!canApp("bakery") && !canSettings("bakery")) return;
   if (canSettings("bakery") && !state.bakerySettingsLoaded) {
@@ -2015,6 +2108,10 @@ async function ensureSettingsSectionData() {
     await ensureShoppingData();
     return;
   }
+  if (state.settingsSection === "hours") {
+    await ensureHoursData();
+    return;
+  }
   if (state.settingsSection === "bakery") {
     await ensureBakeryData();
     return;
@@ -2033,6 +2130,7 @@ function renderLayout() {
   const groups = state.currentView === "groups";
   const services = state.currentView === "services";
   const shopping = state.currentView === "shopping";
+  const hours = state.currentView === "hours";
   const bakery = state.currentView === "bakery";
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
@@ -2042,6 +2140,7 @@ function renderLayout() {
   const canGroups = canApp("groups");
   const canServices = canApp("services");
   const canShopping = canApp("shopping");
+  const canHours = canApp("hours");
   const canBakery = canApp("bakery");
   const canLaundry = canApp("laundry");
   if (els.sidebarReviewSummaryCard) els.sidebarReviewSummaryCard.hidden = !canComm;
@@ -2053,6 +2152,7 @@ function renderLayout() {
   els.navGroups.classList.toggle("active", groups);
   els.navServices.classList.toggle("active", services);
   els.navShopping.classList.toggle("active", shopping);
+  els.navHours.classList.toggle("active", hours);
   els.navBakery.classList.toggle("active", bakery);
   els.navLaundry.classList.toggle("active", laundry);
   els.navCommunications.hidden = !canComm;
@@ -2061,6 +2161,7 @@ function renderLayout() {
   els.navGroups.hidden = !canGroups;
   els.navServices.hidden = !canServices;
   els.navShopping.hidden = !canShopping;
+  els.navHours.hidden = !canHours;
   els.navBakery.hidden = !canBakery;
   els.navLaundry.hidden = !canLaundry;
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
@@ -2076,6 +2177,7 @@ function renderLayout() {
   els.viewGroups.hidden = !groups;
   els.viewServices.hidden = !services;
   els.viewShopping.hidden = !shopping;
+  els.viewHours.hidden = !hours;
   els.viewBakery.hidden = !bakery;
   els.viewLaundry.hidden = !laundry;
   els.viewSettings.hidden = !settingsMode;
@@ -2085,6 +2187,7 @@ function renderLayout() {
   els.settingsMenuGroups.hidden = !canSettings("groups");
   els.settingsMenuServices.hidden = !canSettings("services");
   els.settingsMenuShopping.hidden = !canSettings("shopping");
+  els.settingsMenuHours.hidden = !canSettings("hours");
   els.settingsMenuBakery.hidden = !canSettings("bakery");
   els.settingsMenuLaundry.hidden = !canSettings("laundry");
   els.settingsMenuAdminUsers.hidden = !canSettings("admin-users");
@@ -2094,6 +2197,7 @@ function renderLayout() {
   els.settingsMenuGroups.classList.toggle("active", state.settingsSection === "groups");
   els.settingsMenuServices.classList.toggle("active", state.settingsSection === "services");
   els.settingsMenuShopping.classList.toggle("active", state.settingsSection === "shopping");
+  els.settingsMenuHours.classList.toggle("active", state.settingsSection === "hours");
   els.settingsMenuBakery.classList.toggle("active", state.settingsSection === "bakery");
   els.settingsMenuLaundry.classList.toggle("active", state.settingsSection === "laundry");
   els.settingsMenuAdminUsers.classList.toggle("active", state.settingsSection === "admin-users");
@@ -2108,6 +2212,7 @@ async function setSettingsSection(section) {
   if (section === "groups" && !canSettings("groups")) return;
   if (section === "services" && !canSettings("services")) return;
   if (section === "shopping" && !canSettings("shopping")) return;
+  if (section === "hours" && !canSettings("hours")) return;
   if (section === "bakery" && !canSettings("bakery")) return;
   if (section === "laundry" && !canSettings("laundry")) return;
   if (section === "admin-users" && !canSettings("admin-users")) return;
@@ -2116,6 +2221,8 @@ async function setSettingsSection(section) {
     ? "admin-users"
     : section === "shopping"
       ? "shopping"
+    : section === "hours"
+      ? "hours"
     : section === "bakery"
       ? "bakery"
     : section === "laundry"
@@ -2159,6 +2266,7 @@ function renderSettingsSection() {
   const isGroups = state.settingsSection === "groups" && canSettings("groups");
   const isServices = state.settingsSection === "services" && canSettings("services");
   const isShopping = state.settingsSection === "shopping" && canSettings("shopping");
+  const isHours = state.settingsSection === "hours" && canSettings("hours");
   const isBakery = state.settingsSection === "bakery" && canSettings("bakery");
   const isLaundry = state.settingsSection === "laundry" && canSettings("laundry");
   const isAdmin = state.settingsSection === "admin-users" && canSettings("admin-users");
@@ -2168,6 +2276,7 @@ function renderSettingsSection() {
   els.settingsViewGroups.hidden = !isGroups;
   els.settingsViewServices.hidden = !isServices;
   els.settingsViewShopping.hidden = !isShopping;
+  els.settingsViewHours.hidden = !isHours;
   els.settingsViewBakery.hidden = !isBakery;
   els.settingsViewLaundry.hidden = !isLaundry;
   els.settingsViewAdminUsers.hidden = !isAdmin;
@@ -9044,6 +9153,518 @@ function onBakeryHistoryAction(event) {
   openBakeryDetailModal(clean(row.dataset.bakeryHistoryId));
 }
 
+function normalizeHoursSettingsClient(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const seen = new Set();
+  const people = (Array.isArray(source.people) ? source.people : String(source.people || source.persons || "").split(/[\n,;]/))
+    .map((item) => clean(item))
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return {
+    people: people.length ? people : clone(DEFAULT_HOURS_SETTINGS.people),
+  };
+}
+
+function hoursParseMinutes(value) {
+  const safe = normalizeTimeInput(value);
+  if (!/^\d{2}:\d{2}$/.test(safe)) return null;
+  const [hours, minutes] = safe.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function hoursDurationMinutes(start, finish) {
+  const startMinutes = hoursParseMinutes(start);
+  const finishMinutes = hoursParseMinutes(finish);
+  if (startMinutes == null || finishMinutes == null) return null;
+  return finishMinutes - startMinutes;
+}
+
+function formatHoursDuration(start, finish) {
+  const minutes = hoursDurationMinutes(start, finish);
+  if (minutes == null || minutes <= 0) return "-";
+  return `${(minutes / 60).toFixed(2)} h`;
+}
+
+function emptyHoursDraft() {
+  const people = state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people;
+  return {
+    id: "",
+    person: people.length === 1 ? people[0] : "",
+    date: "",
+    start: "",
+    finish: "",
+  };
+}
+
+function normalizeHoursRecordClient(input = {}, settings = state.hoursSettings || DEFAULT_HOURS_SETTINGS) {
+  const safeSettings = normalizeHoursSettingsClient(settings);
+  const people = safeSettings.people || [];
+  const person = clean(input.person);
+  return {
+    id: clean(input.id),
+    person: person || (people.length === 1 ? people[0] : ""),
+    date: normalizeDateInput(input.date),
+    start: normalizeTimeInput(input.start),
+    finish: normalizeTimeInput(input.finish),
+    createdAt: clean(input.createdAt || input.created_at),
+    updatedAt: clean(input.updatedAt || input.updated_at),
+  };
+}
+
+function sortHoursRecordsClient(rows) {
+  return [...rows].sort((a, b) => {
+    const dateCompare = clean(b.date).localeCompare(clean(a.date));
+    if (dateCompare !== 0) return dateCompare;
+    const personCompare = clean(a.person).localeCompare(clean(b.person));
+    if (personCompare !== 0) return personCompare;
+    return clean(b.start).localeCompare(clean(a.start));
+  });
+}
+
+function setHoursStatus(text) {
+  if (els.hoursStatus) els.hoursStatus.textContent = text;
+}
+
+function setHoursSettingsStatus(text) {
+  if (els.hoursSettingsStatus) els.hoursSettingsStatus.textContent = text;
+}
+
+async function loadHoursSettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/hours-register-settings");
+    state.hoursSettings = normalizeHoursSettingsClient(result?.settings);
+    state.hoursSettingsLoaded = true;
+    renderHoursSettings();
+    if (!silent) setHoursSettingsStatus("Hours configuration loaded.");
+  } catch (e) {
+    state.hoursSettings = clone(DEFAULT_HOURS_SETTINGS);
+    renderHoursSettings();
+    if (!silent) setHoursSettingsStatus(`Using default hours configuration (${e.message}).`);
+  }
+}
+
+async function loadHoursData({ silent = false } = {}) {
+  try {
+    const result = await api("/api/hours-register");
+    state.hoursSettings = normalizeHoursSettingsClient(result?.settings || state.hoursSettings);
+    state.hoursRecords = sortHoursRecordsClient((Array.isArray(result?.rows) ? result.rows : []).map((row) => normalizeHoursRecordClient(row, state.hoursSettings)));
+    state.hoursLoaded = true;
+    if (!state.hoursEditingId) state.hoursDraft = emptyHoursDraft();
+    renderHours();
+    renderHoursSettings();
+    if (!silent) setHoursStatus("Hours records loaded.");
+  } catch (e) {
+    state.hoursRecords = [];
+    state.hoursSettings = clone(DEFAULT_HOURS_SETTINGS);
+    state.hoursDraft = emptyHoursDraft();
+    renderHours();
+    renderHoursSettings();
+    if (!silent) setHoursStatus(`Using default hours data (${e.message}).`);
+  }
+}
+
+function onHoursSettingsInput() {
+  state.hoursSettings = normalizeHoursSettingsClient({
+    people: String(els.hoursSettingsPersons?.value || "").split(/\r?\n/),
+  });
+  if (!state.hoursEditingId && !clean(state.hoursDraft?.person) && state.hoursSettings.people.length === 1) {
+    state.hoursDraft = { ...(state.hoursDraft || emptyHoursDraft()), person: state.hoursSettings.people[0] };
+  }
+}
+
+async function saveHoursSettings() {
+  onHoursSettingsInput();
+  if (!state.hoursSettings.people.length) {
+    setHoursSettingsStatus("At least one person is required.");
+    return;
+  }
+  try {
+    const result = await api("/api/hours-register-settings", { method: "PUT", body: { settings: state.hoursSettings } });
+    state.hoursSettings = normalizeHoursSettingsClient(result?.settings);
+    state.hoursSettingsLoaded = true;
+    state.hoursRecords = state.hoursRecords.map((row) => normalizeHoursRecordClient(row, state.hoursSettings));
+    if (!state.hoursEditingId) state.hoursDraft = emptyHoursDraft();
+    renderHoursSettings();
+    renderHours();
+    setHoursSettingsStatus("Hours configuration saved.");
+    showToast("Hours configuration saved.", "success");
+  } catch (e) {
+    setHoursSettingsStatus(`Save failed: ${e.message}`);
+    showToast(`Hours configuration save failed: ${e.message}`, "error");
+  }
+}
+
+function renderHoursSettings() {
+  const settings = state.hoursSettings || clone(DEFAULT_HOURS_SETTINGS);
+  if (els.hoursSettingsPersons) els.hoursSettingsPersons.value = (settings.people || []).join("\n");
+}
+
+function setHoursScreen(screen) {
+  state.hoursScreen = screen === "resume" ? "resume" : "list";
+  renderHours();
+}
+
+function onHoursFilterInput(event) {
+  const target = event?.target;
+  if (target === els.hoursFilterPerson || target === els.hoursResumeFilterPerson) state.hoursFilters.person = clean(target.value);
+  if (target === els.hoursFilterDateFrom || target === els.hoursResumeFilterDateFrom) state.hoursFilters.dateFrom = clean(target.value);
+  if (target === els.hoursFilterDateTo || target === els.hoursResumeFilterDateTo) state.hoursFilters.dateTo = clean(target.value);
+  renderHours();
+}
+
+function getFilteredHoursRecords() {
+  const filters = state.hoursFilters || {};
+  const person = clean(filters.person).toLowerCase();
+  const dateFrom = clean(filters.dateFrom);
+  const dateTo = clean(filters.dateTo);
+  return sortHoursRecordsClient(state.hoursRecords)
+    .filter((row) => !person || clean(row.person).toLowerCase() === person)
+    .filter((row) => !dateFrom || clean(row.date) >= dateFrom)
+    .filter((row) => !dateTo || clean(row.date) <= dateTo);
+}
+
+function renderHoursPersonOptions() {
+  const people = state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people;
+  const allOptions = [`<option value="">All</option>`, ...people.map((person) => option(person, ""))].join("");
+  if (els.hoursFilterPerson) {
+    els.hoursFilterPerson.innerHTML = allOptions;
+    els.hoursFilterPerson.value = state.hoursFilters.person;
+  }
+  if (els.hoursResumeFilterPerson) {
+    els.hoursResumeFilterPerson.innerHTML = allOptions;
+    els.hoursResumeFilterPerson.value = state.hoursFilters.person;
+  }
+}
+
+function validateHoursDraftClient(draft) {
+  const person = clean(draft?.person);
+  if (!person) return "Person is required.";
+  if (!(state.hoursSettings?.people || []).some((item) => clean(item).toLowerCase() === person.toLowerCase())) return "Person must exist in the configured list.";
+  if (!clean(draft?.date)) return "Date is required.";
+  if (!clean(draft?.start) || !clean(draft?.finish)) return "Start and finish are required.";
+  const minutes = hoursDurationMinutes(draft.start, draft.finish);
+  if (minutes == null || minutes <= 0) return "Finish time must be after start time.";
+  return "";
+}
+
+function buildHoursPayload(draft) {
+  return {
+    person: clean(draft.person),
+    date: normalizeDateInput(draft.date),
+    start: normalizeTimeInput(draft.start),
+    finish: normalizeTimeInput(draft.finish),
+  };
+}
+
+async function saveHoursRecord(mode = "new", id = "") {
+  const isEdit = mode === "edit";
+  const draft = isEdit ? state.hoursEditDraft : state.hoursDraft;
+  const validationError = validateHoursDraftClient(draft);
+  if (validationError) {
+    setHoursStatus(validationError);
+    showToast(validationError, "error");
+    return;
+  }
+  try {
+    const result = await api(isEdit ? `/api/hours-register?id=${encodeURIComponent(id)}` : "/api/hours-register", {
+      method: isEdit ? "PUT" : "POST",
+      body: buildHoursPayload(draft),
+    });
+    state.hoursSettings = normalizeHoursSettingsClient(result?.settings || state.hoursSettings);
+    state.hoursRecords = sortHoursRecordsClient((Array.isArray(result?.rows) ? result.rows : []).map((row) => normalizeHoursRecordClient(row, state.hoursSettings)));
+    state.hoursLoaded = true;
+    state.hoursEditingId = null;
+    state.hoursEditDraft = null;
+    state.hoursDraft = emptyHoursDraft();
+    renderHours();
+    renderHoursSettings();
+    setHoursStatus(isEdit ? "Hours record saved." : "Hours record added.");
+    showToast(isEdit ? "Hours record saved." : "Hours record added.", "success");
+  } catch (e) {
+    setHoursStatus(`Save failed: ${e.message}`);
+    showToast(`Hours record save failed: ${e.message}`, "error");
+  }
+}
+
+function onHoursDraftInput(event) {
+  const field = clean(event.target.dataset.field);
+  const scope = clean(event.target.dataset.scope || "new");
+  if (!field) return;
+  const targetDraft = scope === "edit" ? state.hoursEditDraft : state.hoursDraft;
+  if (!targetDraft) return;
+  targetDraft[field] = event.target.value;
+  if ((field === "person" || field === "date" || field === "start" || field === "finish") && els.hoursStatus) {
+    setHoursStatus("");
+  }
+  renderHours();
+}
+
+async function onHoursAction(event) {
+  const button = event.target.closest("button[data-hours-action]");
+  if (!button) return;
+  const action = clean(button.dataset.hoursAction);
+  const id = clean(button.dataset.id);
+  if (action === "save-inline") {
+    await saveHoursRecord("new");
+    return;
+  }
+  if (action === "edit" && id) {
+    await loadHoursData({ silent: true });
+    const record = state.hoursRecords.find((item) => clean(item.id) === id);
+    if (!record) return;
+    state.hoursEditingId = id;
+    state.hoursEditDraft = { ...record };
+    renderHours();
+    return;
+  }
+  if (action === "save-edit" && id) {
+    await saveHoursRecord("edit", id);
+    return;
+  }
+  if (action === "cancel-edit") {
+    state.hoursEditingId = null;
+    state.hoursEditDraft = null;
+    renderHours();
+  }
+}
+
+function buildHoursInlineRow() {
+  const draft = state.hoursDraft || emptyHoursDraft();
+  const tr = document.createElement("tr");
+  tr.className = "inline-editor sticky-new-row";
+  tr.innerHTML = `<td><select data-field="person" data-scope="new">${(state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people).map((person) => option(person, draft.person)).join("")}</select></td>
+    <td><input data-field="date" data-scope="new" type="date" value="${escape(draft.date)}" /></td>
+    <td><input data-field="start" data-scope="new" type="time" value="${escape(draft.start)}" /></td>
+    <td><input data-field="finish" data-scope="new" type="time" value="${escape(draft.finish)}" /></td>
+    <td>${escape(formatHoursDuration(draft.start, draft.finish))}</td>
+    <td class="row-actions"><button type="button" data-hours-action="save-inline">Add</button></td>`;
+  return tr;
+}
+
+function buildHoursReadOnlyRow(record) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${escape(record.person)}</td>
+    <td>${escape(record.date)}</td>
+    <td>${escape(record.start)}</td>
+    <td>${escape(record.finish)}</td>
+    <td>${escape(formatHoursDuration(record.start, record.finish))}</td>
+    <td class="row-actions"><button type="button" class="ghost" data-hours-action="edit" data-id="${escape(record.id)}">Edit</button></td>`;
+  return tr;
+}
+
+function buildHoursEditableRow(record) {
+  const draft = state.hoursEditDraft || record;
+  const tr = document.createElement("tr");
+  tr.className = "inline-editor";
+  tr.innerHTML = `<td><select data-field="person" data-scope="edit" data-id="${escape(record.id)}">${(state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people).map((person) => option(person, draft.person)).join("")}</select></td>
+    <td><input data-field="date" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.date)}" /></td>
+    <td><input data-field="start" data-scope="edit" data-id="${escape(record.id)}" type="time" value="${escape(draft.start)}" /></td>
+    <td><input data-field="finish" data-scope="edit" data-id="${escape(record.id)}" type="time" value="${escape(draft.finish)}" /></td>
+    <td>${escape(formatHoursDuration(draft.start, draft.finish))}</td>
+    <td class="row-actions"><button type="button" data-hours-action="save-edit" data-id="${escape(record.id)}">Save</button>
+    <button type="button" class="ghost" data-hours-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
+  return tr;
+}
+
+function buildHoursInlineCard() {
+  const draft = state.hoursDraft || emptyHoursDraft();
+  const card = document.createElement("article");
+  card.className = "hours-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-grid">
+      <label class="communication-mobile-field">
+        <small>Person</small>
+        <select data-field="person" data-scope="new">${(state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people).map((person) => option(person, draft.person)).join("")}</select>
+      </label>
+      <label class="communication-mobile-field">
+        <small>Date</small>
+        <input data-field="date" data-scope="new" type="date" value="${escape(draft.date)}" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Start</small>
+        <input data-field="start" data-scope="new" type="time" value="${escape(draft.start)}" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Finish</small>
+        <input data-field="finish" data-scope="new" type="time" value="${escape(draft.finish)}" />
+      </label>
+      <div class="communication-mobile-field communication-mobile-field-full">
+        <small>Hours</small>
+        <div class="communication-mobile-message">${escape(formatHoursDuration(draft.start, draft.finish))}</div>
+      </div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-hours-action="save-inline">Add</button></div></div>`;
+  return card;
+}
+
+function buildHoursReadOnlyCard(record) {
+  const card = document.createElement("article");
+  card.className = "hours-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(record.person)}</div>
+        <div class="communication-mobile-meta">${escape(record.date)}</div>
+      </div>
+      <div class="group-mobile-total">
+        <strong>${escape(formatHoursDuration(record.start, record.finish))}</strong>
+        <small>Hours</small>
+      </div>
+    </div>
+    <div class="communication-mobile-grid">
+      <div class="communication-mobile-field"><small>Start</small><div class="communication-mobile-message">${escape(record.start)}</div></div>
+      <div class="communication-mobile-field"><small>Finish</small><div class="communication-mobile-message">${escape(record.finish)}</div></div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost" data-hours-action="edit" data-id="${escape(record.id)}">Edit</button></div></div>`;
+  return card;
+}
+
+function buildHoursEditableCard(record) {
+  const draft = state.hoursEditDraft || record;
+  const card = document.createElement("article");
+  card.className = "hours-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-grid">
+      <label class="communication-mobile-field">
+        <small>Person</small>
+        <select data-field="person" data-scope="edit" data-id="${escape(record.id)}">${(state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people).map((person) => option(person, draft.person)).join("")}</select>
+      </label>
+      <label class="communication-mobile-field">
+        <small>Date</small>
+        <input data-field="date" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.date)}" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Start</small>
+        <input data-field="start" data-scope="edit" data-id="${escape(record.id)}" type="time" value="${escape(draft.start)}" />
+      </label>
+      <label class="communication-mobile-field">
+        <small>Finish</small>
+        <input data-field="finish" data-scope="edit" data-id="${escape(record.id)}" type="time" value="${escape(draft.finish)}" />
+      </label>
+      <div class="communication-mobile-field communication-mobile-field-full">
+        <small>Hours</small>
+        <div class="communication-mobile-message">${escape(formatHoursDuration(draft.start, draft.finish))}</div>
+      </div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions">
+      <button type="button" data-hours-action="save-edit" data-id="${escape(record.id)}">Save</button>
+      <button type="button" class="ghost" data-hours-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button>
+    </div></div>`;
+  return card;
+}
+
+function renderHoursMobileCards(rows) {
+  if (!els.hoursMobileCards) return;
+  const list = els.hoursMobileCards;
+  list.innerHTML = "";
+  list.appendChild(buildHoursInlineCard());
+  if (!rows.length) {
+    list.innerHTML += '<div class="services-mobile-empty">No hours records found.</div>';
+    return;
+  }
+  rows.forEach((record) => {
+    list.appendChild(state.hoursEditingId === record.id ? buildHoursEditableCard(record) : buildHoursReadOnlyCard(record));
+  });
+}
+
+function getHoursResumeRows() {
+  const buckets = new Map();
+  getFilteredHoursRecords().forEach((row) => {
+    const monthKey = clean(row.date).slice(0, 7);
+    if (!monthKey) return;
+    const key = `${monthKey}::${clean(row.person).toLowerCase()}`;
+    const current = buckets.get(key) || { monthKey, person: row.person, hours: 0 };
+    current.hours += Math.max(0, (hoursDurationMinutes(row.start, row.finish) || 0) / 60);
+    buckets.set(key, current);
+  });
+  return [...buckets.values()]
+    .map((row) => ({ ...row, hours: Number(row.hours.toFixed(2)) }))
+    .sort((a, b) => {
+      const monthCompare = clean(b.monthKey).localeCompare(clean(a.monthKey));
+      if (monthCompare !== 0) return monthCompare;
+      return clean(a.person).localeCompare(clean(b.person));
+    });
+}
+
+function formatHoursMonthLabel(monthKey) {
+  if (!/^\d{4}-\d{2}$/.test(clean(monthKey))) return monthKey || "-";
+  const dt = new Date(`${monthKey}-01T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return monthKey;
+  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "Europe/Lisbon" }).format(dt);
+}
+
+function renderHoursResume() {
+  const rows = getHoursResumeRows();
+  if (els.hoursResumeCount) els.hoursResumeCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
+  if (els.hoursResumeFilterPerson) els.hoursResumeFilterPerson.value = state.hoursFilters.person;
+  if (els.hoursResumeFilterDateFrom) els.hoursResumeFilterDateFrom.value = state.hoursFilters.dateFrom;
+  if (els.hoursResumeFilterDateTo) els.hoursResumeFilterDateTo.value = state.hoursFilters.dateTo;
+  if (!els.hoursResumeBody) return;
+  els.hoursResumeBody.innerHTML = "";
+  if (!rows.length) {
+    els.hoursResumeBody.innerHTML = '<tr><td colspan="3" class="empty">No hours summary found.</td></tr>';
+    return;
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escape(formatHoursMonthLabel(row.monthKey))}</td><td>${escape(row.person)}</td><td>${escape(row.hours.toFixed(2))} h</td>`;
+    els.hoursResumeBody.appendChild(tr);
+  });
+}
+
+function renderHoursScreenTabs() {
+  if (els.hoursTabList) {
+    els.hoursTabList.classList.toggle("active-tab", state.hoursScreen === "list");
+    els.hoursTabList.classList.toggle("ghost", state.hoursScreen !== "list");
+  }
+  if (els.hoursTabResume) {
+    els.hoursTabResume.classList.toggle("active-tab", state.hoursScreen === "resume");
+    els.hoursTabResume.classList.toggle("ghost", state.hoursScreen !== "resume");
+  }
+  if (els.hoursPanelList) els.hoursPanelList.hidden = state.hoursScreen !== "list";
+  if (els.hoursPanelResume) els.hoursPanelResume.hidden = state.hoursScreen !== "resume";
+}
+
+function renderHours() {
+  if (!canApp("hours")) {
+    if (els.hoursCount) els.hoursCount.textContent = "0 records";
+    if (els.hoursRows) els.hoursRows.innerHTML = '<tr><td colspan="6" class="empty">Your profile has no access to Hours Register.</td></tr>';
+    if (els.hoursMobileCards) els.hoursMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Hours Register.</div>';
+    return;
+  }
+  renderHoursScreenTabs();
+  renderHoursPersonOptions();
+  if (state.hoursScreen === "resume") {
+    renderHoursResume();
+    return;
+  }
+  const rows = getFilteredHoursRecords();
+  if (els.hoursCount) els.hoursCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.hoursFilterDateFrom) els.hoursFilterDateFrom.value = state.hoursFilters.dateFrom;
+  if (els.hoursFilterDateTo) els.hoursFilterDateTo.value = state.hoursFilters.dateTo;
+  if (els.hoursRows) els.hoursRows.innerHTML = "";
+  renderHoursMobileCards(rows);
+  if (!els.hoursRows) return;
+  els.hoursRows.appendChild(buildHoursInlineRow());
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6" class="empty">No hours records found.</td>';
+    els.hoursRows.appendChild(tr);
+    return;
+  }
+  rows.forEach((record) => {
+    els.hoursRows.appendChild(state.hoursEditingId === record.id ? buildHoursEditableRow(record) : buildHoursReadOnlyRow(record));
+  });
+}
+
+function hasHoursDraft() {
+  const draft = state.hoursEditingId ? state.hoursEditDraft : state.hoursDraft;
+  return !!(clean(draft?.person) || clean(draft?.date) || clean(draft?.start) || clean(draft?.finish));
+}
+
 function normalizeLaundrySettingsClient(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const itemTypes = (Array.isArray(source.itemTypes) ? source.itemTypes : [])
@@ -10074,6 +10695,10 @@ function render() {
   }
   if (state.currentView === "shopping") {
     renderShopping();
+    return;
+  }
+  if (state.currentView === "hours") {
+    renderHours();
     return;
   }
   if (state.currentView === "bakery") {

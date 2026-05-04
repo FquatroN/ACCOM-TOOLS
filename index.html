@@ -33,6 +33,7 @@
           <button id="nav-lost-found" type="button" class="nav-link">Lost&amp;Found</button>
           <button id="nav-services" type="button" class="nav-link">Services</button>
           <button id="nav-shopping" type="button" class="nav-link">Shopping</button>
+          <button id="nav-hours" type="button" class="nav-link">Hours Register</button>
           <button id="nav-groups" type="button" class="nav-link">Groups</button>
           <button id="nav-reviews" type="button" class="nav-link">Reviews</button>
         </aside>
@@ -1067,6 +1068,97 @@
           </section>
         </section>
 
+        <section id="view-hours" class="view" hidden>
+          <section class="feature-title">
+            <h2>Hours Register</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Hours Register</h2>
+              <div class="actions">
+                <button id="hours-tab-list" type="button" class="active-tab">List</button>
+                <button id="hours-tab-resume" type="button" class="ghost">Resume</button>
+              </div>
+            </div>
+
+            <section id="hours-panel-list">
+              <div class="bar services-subbar">
+                <h3>Records</h3>
+                <div class="actions">
+                  <p id="hours-count">0 records</p>
+                </div>
+              </div>
+              <div class="grid filters hours-filters">
+                <label>
+                  Person
+                  <select id="hours-filter-person"></select>
+                </label>
+                <label>
+                  Date From
+                  <input id="hours-filter-date-from" type="date" />
+                </label>
+                <label>
+                  Date To
+                  <input id="hours-filter-date-to" type="date" />
+                </label>
+              </div>
+              <div id="hours-mobile-cards" class="hours-mobile-cards"></div>
+              <div class="table-wrap">
+                <table class="shopping-history-table hours-table">
+                  <thead>
+                    <tr>
+                      <th>Person</th>
+                      <th>Date</th>
+                      <th>Start</th>
+                      <th>Finish</th>
+                      <th>Hours</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="hours-rows"></tbody>
+                </table>
+              </div>
+              <p id="hours-status" class="auth-status"></p>
+            </section>
+
+            <section id="hours-panel-resume" hidden>
+              <div class="bar services-subbar">
+                <h3>Resume</h3>
+                <div class="actions">
+                  <p id="hours-resume-count">0 rows</p>
+                </div>
+              </div>
+              <div class="grid filters hours-filters">
+                <label>
+                  Person
+                  <select id="hours-resume-filter-person"></select>
+                </label>
+                <label>
+                  Date From
+                  <input id="hours-resume-filter-date-from" type="date" />
+                </label>
+                <label>
+                  Date To
+                  <input id="hours-resume-filter-date-to" type="date" />
+                </label>
+              </div>
+              <div class="table-wrap services-resume-table-wrap">
+                <table class="settings-table hours-resume-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th>Person</th>
+                      <th>Total Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody id="hours-resume-body"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        </section>
+
         <section id="view-bakery" class="view" hidden>
           <section class="feature-title">
             <h2>Bakery Order</h2>
@@ -1362,6 +1454,9 @@
               </button>
               <button id="settings-menu-shopping" type="button" class="nav-link">
                 Shopping
+              </button>
+              <button id="settings-menu-hours" type="button" class="nav-link">
+                Hours Register
               </button>
               <button id="settings-menu-services" type="button" class="nav-link">
                 Services
@@ -1733,6 +1828,24 @@
                     </table>
                   </div>
                   <p id="shopping-settings-status" class="auth-status"></p>
+                </section>
+              </div>
+
+              <div id="settings-view-hours" hidden>
+                <div class="actions">
+                  <button id="close-settings-hours" type="button" class="ghost">Back To App</button>
+                  <button id="hours-save-settings" type="button" class="ghost">Save Configuration</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Hours Register Configuration</h3>
+                  </div>
+                  <label class="settings-email-recipients">
+                    Persons (one per line)
+                    <textarea id="hours-settings-persons" rows="6" placeholder="Fernanda Pereira"></textarea>
+                    <small class="field-hint">These people will be available for selection in the Hours Register.</small>
+                  </label>
+                  <p id="hours-settings-status" class="auth-status"></p>
                 </section>
               </div>
 

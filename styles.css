@@ -1840,6 +1840,10 @@ select:disabled {
   display: none;
 }
 
+.hours-mobile-cards {
+  display: none;
+}
+
 .laundry-mobile-cards {
   display: none;
 }
@@ -2009,6 +2013,15 @@ select:disabled {
 }
 
 .lost-found-mobile-card {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid #e2d8cf;
+  border-radius: 14px;
+  background: #fffdfa;
+}
+
+.hours-mobile-card {
   display: grid;
   gap: 0.72rem;
   padding: 0.9rem 0.95rem;
@@ -3133,6 +3146,10 @@ select:disabled {
     display: none;
   }
 
+  #hours-panel-list .table-wrap {
+    display: none;
+  }
+
   #laundry-panel-list .table-wrap {
     display: none;
   }
@@ -3169,6 +3186,12 @@ select:disabled {
 
   .shopping-mobile-cards,
   .shopping-history-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
+  .hours-mobile-cards {
     display: grid;
     gap: 0.75rem;
     margin-top: 0.85rem;
