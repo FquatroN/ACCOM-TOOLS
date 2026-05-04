@@ -606,6 +606,23 @@ button.danger {
   align-items: center;
 }
 
+.laundry-email-time-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: nowrap;
+}
+
+.laundry-email-time-row input[type="time"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.laundry-email-time-row button {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
 .actions .active-tab {
   background: #0a5f57;
   color: #fff;
