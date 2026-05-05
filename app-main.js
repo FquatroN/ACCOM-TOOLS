@@ -10314,6 +10314,22 @@ function renderLaundryResume() {
     els.laundryResumeBody.innerHTML = '<tr><td colspan="8" class="empty">No laundry resume data found.</td></tr>';
     return;
   }
+  const overall = rows.reduce((acc, row) => {
+    acc.difSingleBaixo += Number(row.difSingleBaixo || 0);
+    acc.difSingleCima += Number(row.difSingleCima || 0);
+    acc.difCasalBaixo += Number(row.difCasalBaixo || 0);
+    acc.difCasalCima += Number(row.difCasalCima || 0);
+    acc.totalDiff += Number(row.totalDiff || 0);
+    acc.receivedWeightKg += Number(row.receivedWeightKg || 0);
+    return acc;
+  }, {
+    difSingleBaixo: 0,
+    difSingleCima: 0,
+    difCasalBaixo: 0,
+    difCasalCima: 0,
+    totalDiff: 0,
+    receivedWeightKg: 0,
+  });
   rows.forEach((row) => {
     if (detail) {
       (row.records || []).forEach((record) => {
@@ -10347,6 +10363,20 @@ function renderLaundryResume() {
       <td>${escape(formatMoney(row.receivedWeightKg * pricePerKg))}</td>`;
     els.laundryResumeBody.appendChild(tr);
   });
+  const overallTr = document.createElement("tr");
+  overallTr.classList.add("laundry-resume-total-row");
+  if (overall.totalDiff > 0) overallTr.classList.add("laundry-row-positive");
+  else if (overall.totalDiff < 0) overallTr.classList.add("laundry-row-negative");
+  else overallTr.classList.add("laundry-row-zero");
+  overallTr.innerHTML = `<td>Overall Total</td>
+    <td>${escape(String(overall.difSingleBaixo))}</td>
+    <td>${escape(String(overall.difSingleCima))}</td>
+    <td>${escape(String(overall.difCasalBaixo))}</td>
+    <td>${escape(String(overall.difCasalCima))}</td>
+    <td>${escape(String(overall.totalDiff))}</td>
+    <td>${escape(formatLaundryKg(Number(overall.receivedWeightKg.toFixed(2))))}</td>
+    <td>${escape(formatMoney(overall.receivedWeightKg * pricePerKg))}</td>`;
+  els.laundryResumeBody.appendChild(overallTr);
 }
 
 function laundryRawCountValue(counts, itemId) {
