@@ -10027,6 +10027,30 @@ function laundryHasOverduePendingReceipts() {
   });
 }
 
+function describeLaundryPendingReceipts() {
+  const today = lisbonTodayIsoClient();
+  const seen = new Set();
+  return state.laundryRecords
+    .filter((row) => {
+      const receiveDate = clean(row?.receivedDate) || laundryReceiveDate(row?.date);
+      return !!receiveDate && receiveDate <= today && !laundryHasCompleteReceivedItemEntries(row);
+    })
+    .sort((a, b) => {
+      const dateCompare = clean(a.receivedDate || laundryReceiveDate(a.date)).localeCompare(clean(b.receivedDate || laundryReceiveDate(b.date)));
+      if (dateCompare !== 0) return dateCompare;
+      return clean(a.property).localeCompare(clean(b.property));
+    })
+    .map((row) => {
+      const receiveDate = clean(row?.receivedDate) || laundryReceiveDate(row?.date);
+      return `Pending received quantities for ${receiveDate} for ${clean(row.property) || "-"}`;
+    })
+    .filter((message) => {
+      if (seen.has(message)) return false;
+      seen.add(message);
+      return true;
+    });
+}
+
 function buildLaundryDifferenceLines(record) {
   const itemTypes = laundryItemTypes();
   const receiveDate = clean(record?.receivedDate) || laundryReceiveDate(record?.date);
@@ -10524,11 +10548,14 @@ function renderLaundry() {
     return;
   }
   const rows = getFilteredLaundryRecords();
-  const showMissingRecords = laundryHasMissingSentRecords();
+  const warningMessages = [
+    ...describeLaundryMissingSentRecords(),
+    ...describeLaundryPendingReceipts(),
+  ];
   if (els.laundryCount) els.laundryCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   if (els.laundryMissingWarning) {
-    els.laundryMissingWarning.hidden = !showMissingRecords;
-    els.laundryMissingWarning.innerHTML = showMissingRecords ? describeLaundryMissingSentRecords().map((line) => escape(line)).join("<br>") : "";
+    els.laundryMissingWarning.hidden = warningMessages.length === 0;
+    els.laundryMissingWarning.innerHTML = warningMessages.map((line) => escape(line)).join("<br>");
   }
   if (els.laundryFilterProperty) els.laundryFilterProperty.value = state.laundryFilters.property;
   if (els.laundryFilterDateFrom) els.laundryFilterDateFrom.value = state.laundryFilters.dateFrom;
