@@ -112,6 +112,10 @@ function calculateDurationHours(start, finish) {
   return Number((minutes / 60).toFixed(2));
 }
 
+function hasPendingFinish(record) {
+  return !cleanText(record?.finish);
+}
+
 function sanitizeHoursSettings(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const people = normalizePersonList(source.people || source.persons);
@@ -141,16 +145,18 @@ function sanitizeHoursRecord(input = {}, settings = DEFAULT_HOURS_SETTINGS, exis
     error.statusCode = 400;
     throw error;
   }
-  if (!start || !finish) {
-    const error = new Error("Start and finish time are required.");
+  if (!start) {
+    const error = new Error("Start time is required.");
     error.statusCode = 400;
     throw error;
   }
-  const minutes = calculateDurationMinutes(start, finish);
-  if (minutes == null || minutes <= 0) {
-    const error = new Error("Finish time must be after start time.");
-    error.statusCode = 400;
-    throw error;
+  if (finish) {
+    const minutes = calculateDurationMinutes(start, finish);
+    if (minutes == null || minutes <= 0) {
+      const error = new Error("Finish time must be after start time.");
+      error.statusCode = 400;
+      throw error;
+    }
   }
   return {
     id: cleanText(input.id || existing.id) || randomUUID(),
@@ -223,6 +229,7 @@ module.exports = {
   DEFAULT_HOURS_RECORDS,
   calculateDurationHours,
   calculateDurationMinutes,
+  hasPendingFinish,
   normalizePersonList,
   parseMinutes,
   sanitizeHoursPayload,

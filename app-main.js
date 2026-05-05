@@ -2167,6 +2167,7 @@ function renderLayout() {
   els.navBakery.hidden = !canBakery;
   els.navLaundry.hidden = !canLaundry;
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
+  els.navHours.classList.toggle("has-alert", shouldShowHoursAlert());
   els.navBakery.classList.toggle("has-alert", shouldShowBakeryAlert());
   els.navLaundry.classList.toggle("has-alert", shouldShowLaundryAlert());
   els.openSettings.hidden = !state.access.settingsFeatures.length;
@@ -9175,6 +9176,7 @@ function normalizeHoursSettingsClient(input = {}) {
 }
 
 function hoursParseMinutes(value) {
+  if (!clean(value)) return null;
   const safe = normalizeTimeInput(value);
   if (!/^\d{2}:\d{2}$/.test(safe)) return null;
   const [hours, minutes] = safe.split(":").map(Number);
@@ -9206,6 +9208,27 @@ function emptyHoursDraft() {
   };
 }
 
+function normalizeHoursTimeValue(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw.slice(0, 5);
+  return raw;
+}
+
+function hoursRecordNeedsFinish(record) {
+  return !clean(record?.finish);
+}
+
+function getPendingHoursRecord(excludeId = "") {
+  return state.hoursRecords.find((row) => hoursRecordNeedsFinish(row) && clean(row.id) !== clean(excludeId)) || null;
+}
+
+function shouldShowHoursAlert() {
+  if (!canApp("hours")) return false;
+  return !!getPendingHoursRecord();
+}
+
 function normalizeHoursRecordClient(input = {}, settings = state.hoursSettings || DEFAULT_HOURS_SETTINGS) {
   const safeSettings = normalizeHoursSettingsClient(settings);
   const people = safeSettings.people || [];
@@ -9214,8 +9237,8 @@ function normalizeHoursRecordClient(input = {}, settings = state.hoursSettings |
     id: clean(input.id),
     person: person || (people.length === 1 ? people[0] : ""),
     date: normalizeDateInput(input.date),
-    start: normalizeTimeInput(input.start),
-    finish: normalizeTimeInput(input.finish),
+    start: normalizeHoursTimeValue(input.start),
+    finish: normalizeHoursTimeValue(input.finish),
     createdAt: clean(input.createdAt || input.created_at),
     updatedAt: clean(input.updatedAt || input.updated_at),
   };
@@ -9351,9 +9374,11 @@ function validateHoursDraftClient(draft) {
   if (!person) return "Person is required.";
   if (!(state.hoursSettings?.people || []).some((item) => clean(item).toLowerCase() === person.toLowerCase())) return "Person must exist in the configured list.";
   if (!clean(draft?.date)) return "Date is required.";
-  if (!clean(draft?.start) || !clean(draft?.finish)) return "Start and finish are required.";
-  const minutes = hoursDurationMinutes(draft.start, draft.finish);
-  if (minutes == null || minutes <= 0) return "Finish time must be after start time.";
+  if (!clean(draft?.start)) return "Start time is required.";
+  if (clean(draft?.finish)) {
+    const minutes = hoursDurationMinutes(draft.start, draft.finish);
+    if (minutes == null || minutes <= 0) return "Finish time must be after start time.";
+  }
   return "";
 }
 
@@ -9361,14 +9386,21 @@ function buildHoursPayload(draft) {
   return {
     person: clean(draft.person),
     date: normalizeDateInput(draft.date),
-    start: normalizeTimeInput(draft.start),
-    finish: normalizeTimeInput(draft.finish),
+    start: normalizeHoursTimeValue(draft.start),
+    finish: normalizeHoursTimeValue(draft.finish),
   };
 }
 
 async function saveHoursRecord(mode = "new", id = "") {
   const isEdit = mode === "edit";
   const draft = isEdit ? state.hoursEditDraft : state.hoursDraft;
+  const pending = !isEdit ? getPendingHoursRecord() : null;
+  if (pending) {
+    const message = `Please fill finish time for ${pending.person} on ${pending.date} before adding a new record.`;
+    setHoursStatus(message);
+    showToast(message, "error");
+    return;
+  }
   const validationError = validateHoursDraftClient(draft);
   if (validationError) {
     setHoursStatus(validationError);
@@ -9440,6 +9472,7 @@ async function onHoursAction(event) {
 
 function buildHoursInlineRow() {
   const draft = state.hoursDraft || emptyHoursDraft();
+  const pending = getPendingHoursRecord();
   const tr = document.createElement("tr");
   tr.className = "inline-editor sticky-new-row";
   tr.innerHTML = `<td><select data-field="person" data-scope="new">${(state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people).map((person) => option(person, draft.person)).join("")}</select></td>
@@ -9447,7 +9480,7 @@ function buildHoursInlineRow() {
     <td><input data-field="start" data-scope="new" type="time" value="${escape(draft.start)}" /></td>
     <td><input data-field="finish" data-scope="new" type="time" value="${escape(draft.finish)}" /></td>
     <td>${escape(formatHoursDuration(draft.start, draft.finish))}</td>
-    <td class="row-actions"><button type="button" data-hours-action="save-inline">Add</button></td>`;
+    <td class="row-actions"><button type="button" data-hours-action="save-inline" ${pending ? "disabled" : ""}>Add</button>${pending ? '<div class="warning-text hours-pending-inline">please fill finish time</div>' : ""}</td>`;
   return tr;
 }
 
@@ -9456,7 +9489,7 @@ function buildHoursReadOnlyRow(record) {
   tr.innerHTML = `<td>${escape(record.person)}</td>
     <td>${escape(record.date)}</td>
     <td>${escape(record.start)}</td>
-    <td>${escape(record.finish)}</td>
+    <td>${escape(record.finish || "-")}${hoursRecordNeedsFinish(record) ? '<br><span class="warning-text">please fill finish time</span>' : ""}</td>
     <td>${escape(formatHoursDuration(record.start, record.finish))}</td>
     <td class="row-actions"><button type="button" class="ghost" data-hours-action="edit" data-id="${escape(record.id)}">Edit</button></td>`;
   return tr;
@@ -9478,6 +9511,7 @@ function buildHoursEditableRow(record) {
 
 function buildHoursInlineCard() {
   const draft = state.hoursDraft || emptyHoursDraft();
+  const pending = getPendingHoursRecord();
   const card = document.createElement("article");
   card.className = "hours-mobile-card";
   card.innerHTML = `<div class="communication-mobile-grid">
@@ -9502,7 +9536,7 @@ function buildHoursInlineCard() {
         <div class="communication-mobile-message">${escape(formatHoursDuration(draft.start, draft.finish))}</div>
       </div>
     </div>
-    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-hours-action="save-inline">Add</button></div></div>`;
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-hours-action="save-inline" ${pending ? "disabled" : ""}>Add</button></div>${pending ? '<span class="warning-text">please fill finish time</span>' : ""}</div>`;
   return card;
 }
 
@@ -9521,7 +9555,7 @@ function buildHoursReadOnlyCard(record) {
     </div>
     <div class="communication-mobile-grid">
       <div class="communication-mobile-field"><small>Start</small><div class="communication-mobile-message">${escape(record.start)}</div></div>
-      <div class="communication-mobile-field"><small>Finish</small><div class="communication-mobile-message">${escape(record.finish)}</div></div>
+      <div class="communication-mobile-field"><small>Finish</small><div class="communication-mobile-message">${escape(record.finish || "-")}${hoursRecordNeedsFinish(record) ? '<br><span class="warning-text">please fill finish time</span>' : ""}</div></div>
     </div>
     <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost" data-hours-action="edit" data-id="${escape(record.id)}">Edit</button></div></div>`;
   return card;
@@ -9576,7 +9610,7 @@ function renderHoursMobileCards(rows) {
 
 function getHoursResumeRows() {
   const buckets = new Map();
-  getFilteredHoursRecords().forEach((row) => {
+  getFilteredHoursRecords().filter((row) => !hoursRecordNeedsFinish(row)).forEach((row) => {
     const monthKey = clean(row.date).slice(0, 7);
     if (!monthKey) return;
     const key = `${monthKey}::${clean(row.person).toLowerCase()}`;

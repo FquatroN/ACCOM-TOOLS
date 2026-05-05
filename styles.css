@@ -1756,6 +1756,17 @@ select:disabled {
   font-size: 0.74rem;
 }
 
+.hours-table .warning-text,
+.hours-mobile-card .warning-text {
+  display: inline-block;
+  margin-top: 0.18rem;
+  font-size: 0.74rem;
+}
+
+.hours-pending-inline {
+  margin-left: 0.4rem;
+}
+
 .laundry-missing-warning {
   margin: 0.15rem 0 0.5rem;
   font-size: 0.82rem;
