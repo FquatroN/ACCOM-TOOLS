@@ -9191,10 +9191,16 @@ function hoursDurationMinutes(start, finish) {
   return finishMinutes - startMinutes;
 }
 
-function formatHoursDuration(start, finish) {
-  const minutes = hoursDurationMinutes(start, finish);
+function formatHoursMinutes(minutes) {
   if (minutes == null || minutes <= 0) return "-";
-  return `${(minutes / 60).toFixed(2)} h`;
+  const totalMinutes = Math.round(Number(minutes) || 0);
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  return `${(totalMinutes / 60).toFixed(2)}h (${hours}h${String(remainingMinutes).padStart(2, "0")}m)`;
+}
+
+function formatHoursDuration(start, finish) {
+  return formatHoursMinutes(hoursDurationMinutes(start, finish));
 }
 
 function emptyHoursDraft() {
@@ -9614,8 +9620,10 @@ function getHoursResumeRows() {
     const monthKey = clean(row.date).slice(0, 7);
     if (!monthKey) return;
     const key = `${monthKey}::${clean(row.person).toLowerCase()}`;
-    const current = buckets.get(key) || { monthKey, person: row.person, hours: 0, records: 0 };
-    current.hours += Math.max(0, (hoursDurationMinutes(row.start, row.finish) || 0) / 60);
+    const durationMinutes = Math.max(0, hoursDurationMinutes(row.start, row.finish) || 0);
+    const current = buckets.get(key) || { monthKey, person: row.person, hours: 0, totalMinutes: 0, records: 0 };
+    current.hours += durationMinutes / 60;
+    current.totalMinutes += durationMinutes;
     current.records += 1;
     buckets.set(key, current);
   });
@@ -9623,7 +9631,9 @@ function getHoursResumeRows() {
     .map((row) => ({
       ...row,
       hours: Number(row.hours.toFixed(2)),
+      totalMinutes: Math.round(row.totalMinutes),
       averageHours: row.records ? Number((row.hours / row.records).toFixed(2)) : 0,
+      averageMinutes: row.records ? Math.round(row.totalMinutes / row.records) : 0,
     }))
     .sort((a, b) => {
       const monthCompare = clean(b.monthKey).localeCompare(clean(a.monthKey));
@@ -9676,7 +9686,7 @@ function renderHoursResume() {
   }
   rows.forEach((row) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escape(formatHoursMonthLabel(row.monthKey))}</td><td>${escape(row.person)}</td><td>${escape(String(row.records))}</td><td>${escape(row.averageHours.toFixed(2))} h</td><td>${escape(row.hours.toFixed(2))} h</td>`;
+    tr.innerHTML = `<td>${escape(formatHoursMonthLabel(row.monthKey))}</td><td>${escape(row.person)}</td><td>${escape(String(row.records))}</td><td>${escape(formatHoursMinutes(row.averageMinutes))}</td><td>${escape(formatHoursMinutes(row.totalMinutes))}</td>`;
     els.hoursResumeBody.appendChild(tr);
   });
 }
