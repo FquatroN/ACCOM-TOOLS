@@ -9924,11 +9924,7 @@ function formatLaundryListSummary(counts) {
 }
 
 function laundryHasReceivedValues(record) {
-  const itemTypes = laundryItemTypes();
-  return itemTypes.some((item) => {
-    const raw = record?.receivedItems?.[item.id];
-    return raw !== null && raw !== undefined && String(raw).trim() !== "";
-  }) || Number(record?.receivedWeightKg || 0) > 0;
+  return laundryHasCompleteReceivedItemEntries(record);
 }
 
 function laundryHasReceivedItemEntries(record) {
@@ -9983,7 +9979,7 @@ function laundryHasOverduePendingReceipts() {
   return state.laundryRecords.some((row) => {
     const receiveDate = clean(row?.receivedDate) || laundryReceiveDate(row?.date);
     if (!receiveDate || receiveDate > today) return false;
-    return !laundryHasReceivedItemEntries(row);
+    return !laundryHasCompleteReceivedItemEntries(row);
   });
 }
 
