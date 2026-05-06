@@ -1373,6 +1373,7 @@
                 <button id="laundry-new" type="button" class="ghost">New record</button>
                 <button id="laundry-tab-list" type="button" class="active-tab">List</button>
                 <button id="laundry-tab-resume" type="button" class="ghost">Resume</button>
+                <button id="laundry-tab-analysis" type="button" class="ghost">Analysis</button>
               </div>
             </div>
             <section id="laundry-panel-list">
@@ -1478,6 +1479,43 @@
                   <tbody id="laundry-resume-body"></tbody>
                 </table>
               </div>
+            </section>
+            <section id="laundry-panel-analysis" hidden>
+              <div class="bar services-subbar">
+                <h3>Analysis</h3>
+                <div class="actions">
+                  <p id="laundry-analysis-status">Accumulated differences by date</p>
+                </div>
+              </div>
+              <div class="grid filters laundry-resume-filters">
+                <label>
+                  Use Date
+                  <select id="laundry-analysis-date-field">
+                    <option value="sent">Sent Date</option>
+                    <option value="received">Received Date</option>
+                  </select>
+                </label>
+                <label>
+                  Property
+                  <select id="laundry-analysis-filter-property">
+                    <option value="">All</option>
+                    <option value="Hostel">Hostel</option>
+                    <option value="Cruz">Cruz</option>
+                  </select>
+                </label>
+                <label>
+                  Date From
+                  <input id="laundry-analysis-filter-date-from" type="date" />
+                </label>
+                <label>
+                  Date To
+                  <input id="laundry-analysis-filter-date-to" type="date" />
+                </label>
+              </div>
+              <section class="card laundry-analysis-card">
+                <div id="laundry-analysis-chart" class="review-analysis-chart"></div>
+                <div id="laundry-analysis-legend" class="review-analysis-legend"></div>
+              </section>
             </section>
           </section>
         </section>

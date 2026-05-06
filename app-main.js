@@ -1084,8 +1084,10 @@ const els = {
   laundryNew: document.getElementById("laundry-new"),
   laundryTabList: document.getElementById("laundry-tab-list"),
   laundryTabResume: document.getElementById("laundry-tab-resume"),
+  laundryTabAnalysis: document.getElementById("laundry-tab-analysis"),
   laundryPanelList: document.getElementById("laundry-panel-list"),
   laundryPanelResume: document.getElementById("laundry-panel-resume"),
+  laundryPanelAnalysis: document.getElementById("laundry-panel-analysis"),
   laundryExportExcel: document.getElementById("laundry-export-excel"),
   laundryRows: document.getElementById("laundry-rows"),
   laundryMobileCards: document.getElementById("laundry-mobile-cards"),
@@ -1103,6 +1105,13 @@ const els = {
   laundryResumeFilterDateTo: document.getElementById("laundry-resume-filter-date-to"),
   laundryResumeCount: document.getElementById("laundry-resume-count"),
   laundryResumeBody: document.getElementById("laundry-resume-body"),
+  laundryAnalysisDateField: document.getElementById("laundry-analysis-date-field"),
+  laundryAnalysisFilterProperty: document.getElementById("laundry-analysis-filter-property"),
+  laundryAnalysisFilterDateFrom: document.getElementById("laundry-analysis-filter-date-from"),
+  laundryAnalysisFilterDateTo: document.getElementById("laundry-analysis-filter-date-to"),
+  laundryAnalysisStatus: document.getElementById("laundry-analysis-status"),
+  laundryAnalysisChart: document.getElementById("laundry-analysis-chart"),
+  laundryAnalysisLegend: document.getElementById("laundry-analysis-legend"),
   laundryEditorModal: document.getElementById("laundry-editor-modal"),
   laundryCloseModal: document.getElementById("laundry-close-modal"),
   laundryStatus: document.getElementById("laundry-status"),
@@ -1381,12 +1390,15 @@ function bindEvents() {
   });
   els.laundryTabList?.addEventListener("click", () => setLaundryScreen("list"));
   els.laundryTabResume?.addEventListener("click", () => setLaundryScreen("resume"));
+  els.laundryTabAnalysis?.addEventListener("click", () => setLaundryScreen("analysis"));
   els.laundryExportExcel?.addEventListener("click", exportLaundryToExcel);
   els.laundryCloseModal?.addEventListener("click", closeLaundryModal);
   els.laundryFilterProperty?.addEventListener("change", onLaundryFilterInput);
   [els.laundryFilterDateFrom, els.laundryFilterDateTo, els.laundryFilterSearch].forEach((el) => el?.addEventListener("input", onLaundryFilterInput));
   [els.laundryResumeDateField, els.laundryResumeFilterProperty, els.laundryResumeDetail].forEach((el) => el?.addEventListener("change", onLaundryResumeFilterInput));
   [els.laundryResumeFilterDateFrom, els.laundryResumeFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryResumeFilterInput));
+  [els.laundryAnalysisDateField, els.laundryAnalysisFilterProperty].forEach((el) => el?.addEventListener("change", onLaundryAnalysisFilterInput));
+  [els.laundryAnalysisFilterDateFrom, els.laundryAnalysisFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryAnalysisFilterInput));
   [els.laundryProperty, els.laundryDate, els.laundryReceivedWeight, els.laundryNotes].forEach((el) =>
     el?.addEventListener(el.tagName === "SELECT" ? "change" : "input", onLaundryDraftInput)
   );
@@ -10295,19 +10307,32 @@ function onLaundryResumeFilterInput() {
   renderLaundry();
 }
 
+function onLaundryAnalysisFilterInput() {
+  state.laundryResumeFilters.dateField = clean(els.laundryAnalysisDateField?.value) === "received" ? "received" : "sent";
+  state.laundryResumeFilters.property = clean(els.laundryAnalysisFilterProperty?.value);
+  state.laundryResumeFilters.dateFrom = clean(els.laundryAnalysisFilterDateFrom?.value);
+  state.laundryResumeFilters.dateTo = clean(els.laundryAnalysisFilterDateTo?.value);
+  renderLaundry();
+}
+
 function setLaundryScreen(screen) {
-  state.laundryScreen = screen === "resume" ? "resume" : "list";
+  state.laundryScreen = screen === "resume" || screen === "analysis" ? screen : "list";
   renderLaundry();
 }
 
 function renderLaundryScreenTabs() {
+  const isList = state.laundryScreen === "list";
   const isResume = state.laundryScreen === "resume";
-  els.laundryTabList?.classList.toggle("active-tab", !isResume);
-  els.laundryTabList?.classList.toggle("ghost", isResume);
+  const isAnalysis = state.laundryScreen === "analysis";
+  els.laundryTabList?.classList.toggle("active-tab", isList);
+  els.laundryTabList?.classList.toggle("ghost", !isList);
   els.laundryTabResume?.classList.toggle("active-tab", isResume);
   els.laundryTabResume?.classList.toggle("ghost", !isResume);
-  if (els.laundryPanelList) els.laundryPanelList.hidden = isResume;
+  els.laundryTabAnalysis?.classList.toggle("active-tab", isAnalysis);
+  els.laundryTabAnalysis?.classList.toggle("ghost", !isAnalysis);
+  if (els.laundryPanelList) els.laundryPanelList.hidden = !isList;
   if (els.laundryPanelResume) els.laundryPanelResume.hidden = !isResume;
+  if (els.laundryPanelAnalysis) els.laundryPanelAnalysis.hidden = !isAnalysis;
 }
 
 function onLaundryDraftInput(event) {
@@ -10461,6 +10486,197 @@ function getLaundryResumeRows() {
         : [],
     }))
     .sort((a, b) => clean(b.monthKey).localeCompare(clean(a.monthKey)));
+}
+
+function getLaundryCompletedAnalysisEntries() {
+  const filters = state.laundryResumeFilters || {};
+  const dateField = clean(filters.dateField) === "received" ? "received" : "sent";
+  const property = clean(filters.property);
+  const dateFrom = clean(filters.dateFrom);
+  const dateTo = clean(filters.dateTo);
+  const itemTypes = laundryItemTypes();
+  const grouped = new Map();
+  state.laundryRecords.forEach((row) => {
+    if (!laundryHasCompleteReceivedItemEntries(row)) return;
+    const basisDate = clean(dateField === "received" ? row.receivedDate : row.date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(basisDate)) return;
+    if (property && clean(row.property) !== property) return;
+    if (dateFrom && basisDate < dateFrom) return;
+    if (dateTo && basisDate > dateTo) return;
+    const sentItems = row.sentItems || {};
+    const receivedItems = row.receivedItems || {};
+    const current = grouped.get(basisDate) || {
+      date: basisDate,
+      diffs: Object.fromEntries(itemTypes.map((item) => [item.id, 0])),
+      total: 0,
+    };
+    itemTypes.forEach((item) => {
+      const diff = Number(receivedItems?.[item.id] || 0) - Number(sentItems?.[item.id] || 0);
+      current.diffs[item.id] += diff;
+      current.total += diff;
+    });
+    grouped.set(basisDate, current);
+  });
+  return [...grouped.values()].sort((a, b) => clean(a.date).localeCompare(clean(b.date)));
+}
+
+const LAUNDRY_ANALYSIS_COLORS = ["#2563eb", "#ef4444", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#be185d", "#4b5563"];
+
+function buildLaundryAnalysisSeries() {
+  const itemTypes = laundryItemTypes();
+  const entries = getLaundryCompletedAnalysisEntries();
+  const labels = entries.map((entry) => entry.date);
+  const running = Object.fromEntries(itemTypes.map((item) => [item.id, 0]));
+  let runningTotal = 0;
+  const series = itemTypes.map((item, index) => ({
+    key: item.id,
+    label: item.name,
+    color: LAUNDRY_ANALYSIS_COLORS[index % LAUNDRY_ANALYSIS_COLORS.length],
+    points: [],
+  }));
+  const totalSeries = {
+    key: "total",
+    label: "Total",
+    color: "#111827",
+    points: [],
+  };
+  entries.forEach((entry, index) => {
+    itemTypes.forEach((item, itemIndex) => {
+      running[item.id] += Number(entry.diffs?.[item.id] || 0);
+      series[itemIndex].points.push({
+        index,
+        value: running[item.id],
+        delta: Number(entry.diffs?.[item.id] || 0),
+        date: entry.date,
+      });
+    });
+    runningTotal += Number(entry.total || 0);
+    totalSeries.points.push({
+      index,
+      value: runningTotal,
+      delta: Number(entry.total || 0),
+      date: entry.date,
+    });
+  });
+  return {
+    labels,
+    entries,
+    series: [...series, totalSeries].filter((row) => row.points.length > 0),
+  };
+}
+
+function laundryAnalysisScale(series) {
+  const values = series.flatMap((item) => item.points.map((point) => point.value)).filter((value) => Number.isFinite(value));
+  if (!values.length) return { min: -1, max: 1 };
+  const minRaw = Math.min(...values, 0);
+  const maxRaw = Math.max(...values, 0);
+  let min = minRaw;
+  let max = maxRaw;
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+  const padding = Math.max(1, Math.ceil((max - min) * 0.08));
+  return { min: min - padding, max: max + padding };
+}
+
+function laundryAnalysisTicks(scale) {
+  const span = scale.max - scale.min;
+  const rough = span / 5;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(Math.max(rough, 1))));
+  const normalized = rough / magnitude;
+  const stepBase = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const step = stepBase * magnitude;
+  const start = Math.floor(scale.min / step) * step;
+  const ticks = [];
+  for (let value = start; value <= scale.max + step * 0.5; value += step) {
+    ticks.push(Number(value.toFixed(6)));
+  }
+  return ticks;
+}
+
+function renderLaundryAnalysisChart() {
+  if (!els.laundryAnalysisChart || !els.laundryAnalysisLegend || !els.laundryAnalysisStatus) return;
+  const analysis = buildLaundryAnalysisSeries();
+  els.laundryAnalysisChart.innerHTML = "";
+  els.laundryAnalysisLegend.innerHTML = "";
+  if (!analysis.labels.length || !analysis.series.length) {
+    els.laundryAnalysisStatus.textContent = "No completed laundry records in the current filters";
+    els.laundryAnalysisChart.innerHTML = '<div class="empty">No completed laundry records available for this chart.</div>';
+    return;
+  }
+  els.laundryAnalysisStatus.textContent = `${analysis.labels.length} date${analysis.labels.length === 1 ? "" : "s"} shown`;
+  const width = 920;
+  const height = 330;
+  const margin = { top: 22, right: 24, bottom: 58, left: 56 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const scale = laundryAnalysisScale(analysis.series);
+  const x = (index) => margin.left + (analysis.labels.length === 1 ? plotWidth / 2 : (index / (analysis.labels.length - 1)) * plotWidth);
+  const y = (value) => margin.top + ((scale.max - value) / (scale.max - scale.min)) * plotHeight;
+  const labelStep = Math.max(1, Math.ceil(analysis.labels.length / 6));
+  const labelIndexes = analysis.labels
+    .map((label, index) => ({ label, index }))
+    .filter((item, index) => index === 0 || index === analysis.labels.length - 1 || index % labelStep === 0);
+  const gridLines = laundryAnalysisTicks(scale).map((value) => {
+    const yy = y(value);
+    return `<line x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}" class="analysis-grid-line" />
+      <text x="${margin.left - 10}" y="${yy + 4}" text-anchor="end" class="analysis-axis-label">${escape(String(value))}</text>`;
+  }).join("");
+  const zeroLine = scale.min <= 0 && scale.max >= 0
+    ? `<line x1="${margin.left}" y1="${y(0)}" x2="${width - margin.right}" y2="${y(0)}" class="analysis-axis-line" />`
+    : "";
+  const labels = labelIndexes.map(({ label, index }) => {
+    const xx = x(index);
+    return `<text x="${xx}" y="${height - 24}" text-anchor="end" transform="rotate(-35 ${xx} ${height - 24})" class="analysis-axis-label">${escape(label)}</text>`;
+  }).join("");
+  const seriesSvg = analysis.series.map((series) => {
+    const coordinates = series.points.map((point) => `${x(point.index).toFixed(1)},${y(point.value).toFixed(1)}`).join(" ");
+    const circles = series.points.map((point) => {
+      const tooltip = `${series.label} | ${point.date} | Accumulated ${point.value} | Change ${point.delta >= 0 ? "+" : ""}${point.delta}`;
+      return `<circle class="analysis-point laundry-analysis-point" cx="${x(point.index).toFixed(1)}" cy="${y(point.value).toFixed(1)}" r="${series.key === "total" ? 4 : 3}" fill="${series.color}" tabindex="0" data-tooltip="${escape(tooltip)}">
+        <title>${escape(tooltip)}</title>
+      </circle>`;
+    }).join("");
+    return `<polyline points="${coordinates}" fill="none" stroke="${series.color}" stroke-width="${series.key === "total" ? 3.2 : 2}" stroke-linecap="round" stroke-linejoin="round" opacity="${series.key === "total" ? "1" : "0.88"}" />${circles}`;
+  }).join("");
+  els.laundryAnalysisChart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Accumulated laundry differences by date">
+    <rect x="0" y="0" width="${width}" height="${height}" rx="16" class="analysis-chart-bg" />
+    ${gridLines}
+    ${zeroLine}
+    <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" class="analysis-axis-line" />
+    <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" class="analysis-axis-line" />
+    ${labels}
+    ${seriesSvg}
+  </svg><div class="analysis-tooltip" role="status" aria-live="polite"></div>`;
+  els.laundryAnalysisLegend.innerHTML = analysis.series.map((series) =>
+    `<span class="analysis-legend-item"><span class="analysis-legend-swatch" style="background:${escape(series.color)}"></span>${escape(series.label)}</span>`
+  ).join("");
+  bindAnalysisTooltip(els.laundryAnalysisChart);
+}
+
+function bindAnalysisTooltip(container) {
+  if (!container) return;
+  const tooltip = container.querySelector(".analysis-tooltip");
+  if (!tooltip) return;
+  const hideTooltip = () => {
+    tooltip.classList.remove("visible");
+    tooltip.textContent = "";
+  };
+  container.querySelectorAll(".analysis-point").forEach((point) => {
+    const showTooltip = () => {
+      const chartRect = container.getBoundingClientRect();
+      const pointRect = point.getBoundingClientRect();
+      tooltip.textContent = point.dataset.tooltip || "";
+      tooltip.style.left = `${pointRect.left - chartRect.left + pointRect.width / 2}px`;
+      tooltip.style.top = `${pointRect.top - chartRect.top}px`;
+      tooltip.classList.add("visible");
+    };
+    point.addEventListener("mouseenter", showTooltip);
+    point.addEventListener("focus", showTooltip);
+    point.addEventListener("mouseleave", hideTooltip);
+    point.addEventListener("blur", hideTooltip);
+  });
 }
 
 function renderLaundryResume() {
@@ -10643,6 +10859,14 @@ function renderLaundry() {
   renderLaundryScreenTabs();
   if (state.laundryScreen === "resume") {
     renderLaundryResume();
+    return;
+  }
+  if (state.laundryScreen === "analysis") {
+    if (els.laundryAnalysisDateField) els.laundryAnalysisDateField.value = clean(state.laundryResumeFilters.dateField) === "received" ? "received" : "sent";
+    if (els.laundryAnalysisFilterProperty) els.laundryAnalysisFilterProperty.value = clean(state.laundryResumeFilters.property);
+    if (els.laundryAnalysisFilterDateFrom) els.laundryAnalysisFilterDateFrom.value = clean(state.laundryResumeFilters.dateFrom);
+    if (els.laundryAnalysisFilterDateTo) els.laundryAnalysisFilterDateTo.value = clean(state.laundryResumeFilters.dateTo);
+    renderLaundryAnalysisChart();
     return;
   }
   const rows = getFilteredLaundryRecords();
