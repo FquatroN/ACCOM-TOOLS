@@ -1213,6 +1213,7 @@
               <div class="actions bakery-tabs">
                 <button id="bakery-tab-current" type="button" class="active-tab">Current Order</button>
                 <button id="bakery-tab-history" type="button" class="ghost">Order History</button>
+                <button id="bakery-tab-resume" type="button" class="ghost">Resume</button>
               </div>
             </div>
 
@@ -1282,6 +1283,25 @@
                 </table>
               </div>
               <p id="bakery-history-status" class="auth-status"></p>
+            </section>
+            <section id="bakery-panel-resume" hidden>
+              <div class="bar">
+                <h3>Resume</h3>
+                <div class="actions">
+                  <p id="bakery-resume-count">0 months</p>
+                </div>
+              </div>
+              <div class="table-wrap shopping-history-table-wrap">
+                <table class="shopping-history-table">
+                  <thead>
+                    <tr id="bakery-resume-head">
+                      <th>Month</th>
+                      <th>Pastéis de nata</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bakery-resume-rows"></tbody>
+                </table>
+              </div>
             </section>
           </section>
 

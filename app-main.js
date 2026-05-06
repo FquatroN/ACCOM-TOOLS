@@ -1058,8 +1058,10 @@ const els = {
   hoursSettingsStatus: document.getElementById("hours-settings-status"),
   bakeryTabCurrent: document.getElementById("bakery-tab-current"),
   bakeryTabHistory: document.getElementById("bakery-tab-history"),
+  bakeryTabResume: document.getElementById("bakery-tab-resume"),
   bakeryPanelCurrent: document.getElementById("bakery-panel-current"),
   bakeryPanelHistory: document.getElementById("bakery-panel-history"),
+  bakeryPanelResume: document.getElementById("bakery-panel-resume"),
   bakeryNewOrder: document.getElementById("bakery-new-order"),
   bakerySaveOrder: document.getElementById("bakery-save-order"),
   bakeryOpenSummary: document.getElementById("bakery-open-summary"),
@@ -1076,6 +1078,9 @@ const els = {
   bakeryHistoryMobileCards: document.getElementById("bakery-history-mobile-cards"),
   bakeryHistoryCount: document.getElementById("bakery-history-count"),
   bakeryHistoryStatus: document.getElementById("bakery-history-status"),
+  bakeryResumeHead: document.getElementById("bakery-resume-head"),
+  bakeryResumeRows: document.getElementById("bakery-resume-rows"),
+  bakeryResumeCount: document.getElementById("bakery-resume-count"),
   bakeryDetailModal: document.getElementById("bakery-detail-modal"),
   bakeryDetailClose: document.getElementById("bakery-detail-close"),
   bakeryDetailResend: document.getElementById("bakery-detail-resend"),
@@ -1353,6 +1358,7 @@ function bindEvents() {
   });
   els.bakeryTabCurrent?.addEventListener("click", () => setBakeryTab("current"));
   els.bakeryTabHistory?.addEventListener("click", () => setBakeryTab("history"));
+  els.bakeryTabResume?.addEventListener("click", () => setBakeryTab("resume"));
   els.bakeryNewOrder?.addEventListener("click", createBakeryOrder);
   els.bakerySaveOrder?.addEventListener("click", saveBakeryOrderDraft);
   els.bakerySubmitOrder?.addEventListener("click", submitBakeryOrder);
@@ -8730,7 +8736,7 @@ async function loadBakeryData({ silent = false } = {}) {
 }
 
 function setBakeryTab(tab) {
-  state.bakeryTab = tab === "history" ? "history" : "current";
+  state.bakeryTab = tab === "history" || tab === "resume" ? tab : "current";
   if (els.bakeryTabCurrent) {
     els.bakeryTabCurrent.classList.toggle("active-tab", state.bakeryTab === "current");
     els.bakeryTabCurrent.classList.toggle("ghost", state.bakeryTab !== "current");
@@ -8739,8 +8745,13 @@ function setBakeryTab(tab) {
     els.bakeryTabHistory.classList.toggle("active-tab", state.bakeryTab === "history");
     els.bakeryTabHistory.classList.toggle("ghost", state.bakeryTab !== "history");
   }
+  if (els.bakeryTabResume) {
+    els.bakeryTabResume.classList.toggle("active-tab", state.bakeryTab === "resume");
+    els.bakeryTabResume.classList.toggle("ghost", state.bakeryTab !== "resume");
+  }
   if (els.bakeryPanelCurrent) els.bakeryPanelCurrent.hidden = state.bakeryTab !== "current";
   if (els.bakeryPanelHistory) els.bakeryPanelHistory.hidden = state.bakeryTab !== "history";
+  if (els.bakeryPanelResume) els.bakeryPanelResume.hidden = state.bakeryTab !== "resume";
 }
 
 function refreshBakeryOpenOrderDerivedState() {
@@ -8867,6 +8878,63 @@ function bakeryOrderTotals(order) {
     });
   });
   return totals;
+}
+
+function bakeryResumeMonthKey(order) {
+  const raw = clean(order?.submittedAt || order?.updatedAt || order?.createdAt);
+  const iso = raw.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.slice(0, 7) : "";
+}
+
+function formatBakeryMonthLabel(monthKey) {
+  const raw = clean(monthKey);
+  if (!/^\d{4}-\d{2}$/.test(raw)) return raw || "-";
+  const dt = new Date(`${raw}-01T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return raw;
+  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "Europe/Lisbon" }).format(dt);
+}
+
+function getBakeryResumeRows() {
+  const rows = Array.isArray(state.bakeryHistory) ? state.bakeryHistory : [];
+  const breadTypeColumns = bakeryHistoryBreadTypeColumns(rows);
+  const buckets = new Map();
+  rows.forEach((order) => {
+    const monthKey = bakeryResumeMonthKey(order);
+    if (!monthKey) return;
+    const totals = bakeryOrderTotals(order);
+    const current = buckets.get(monthKey) || {
+      monthKey,
+      pasteisDeNata: 0,
+      breadByType: Object.fromEntries(breadTypeColumns.map((name) => [name, 0])),
+    };
+    current.pasteisDeNata += Number(totals.pasteisDeNata || 0);
+    breadTypeColumns.forEach((name) => {
+      current.breadByType[name] = (current.breadByType[name] || 0) + Number(totals.breadByType[name] || 0);
+    });
+    buckets.set(monthKey, current);
+  });
+  return {
+    breadTypeColumns,
+    rows: [...buckets.values()].sort((a, b) => clean(b.monthKey).localeCompare(clean(a.monthKey))),
+  };
+}
+
+function renderBakeryResumeRows() {
+  const { breadTypeColumns, rows } = getBakeryResumeRows();
+  if (els.bakeryResumeHead) {
+    els.bakeryResumeHead.innerHTML = `<th>Month</th><th>Pastéis de nata</th>${breadTypeColumns.map((name) => `<th>${escape(name)}</th>`).join("")}`;
+  }
+  if (els.bakeryResumeCount) els.bakeryResumeCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
+  if (!els.bakeryResumeRows) return;
+  if (!rows.length) {
+    els.bakeryResumeRows.innerHTML = `<tr><td colspan="${2 + breadTypeColumns.length}" class="empty">No bakery orders found.</td></tr>`;
+    return;
+  }
+  els.bakeryResumeRows.innerHTML = rows.map((row) => `<tr>
+      <td>${escape(formatBakeryMonthLabel(row.monthKey))}</td>
+      <td>${escape(String(row.pasteisDeNata))}</td>
+      ${breadTypeColumns.map((name) => `<td>${escape(String(row.breadByType[name] || 0))}</td>`).join("")}
+    </tr>`).join("");
 }
 
 function renderBakeryHistoryRows() {
@@ -9000,6 +9068,7 @@ function renderBakery() {
     if (els.bakeryGeneratedText) els.bakeryGeneratedText.innerHTML = "";
   }
   renderBakeryHistoryRows();
+  renderBakeryResumeRows();
 }
 
 function setBakerySettingsTab(tab) {
