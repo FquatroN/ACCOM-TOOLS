@@ -588,6 +588,8 @@ const state = {
   groupSelectedId: "",
   groupEditorTab: "details",
   groupProposalLanguage: "en",
+  groupsScreen: "list",
+  groupResumeMonthMode: "created",
   groupSort: { key: "dates", dir: "asc" },
   groupSettingsTab: "config",
   groupSettings: clone(DEFAULT_GROUP_SETTINGS),
@@ -830,6 +832,8 @@ const els = {
   settingsStatus: document.getElementById("settings-status"),
   viewGroups: document.getElementById("view-groups"),
   groupsNew: document.getElementById("groups-new"),
+  groupsTabList: document.getElementById("groups-tab-list"),
+  groupsTabResume: document.getElementById("groups-tab-resume"),
   groupsStatus: document.getElementById("groups-status"),
   groupReservationNumber: document.getElementById("group-reservation-number"),
   groupName: document.getElementById("group-name"),
@@ -870,6 +874,11 @@ const els = {
   groupsExportExcel: document.getElementById("groups-export-excel"),
   groupsExportPdf: document.getElementById("groups-export-pdf"),
   groupsCount: document.getElementById("groups-count"),
+  groupsPanelList: document.getElementById("groups-panel-list"),
+  groupsPanelResume: document.getElementById("groups-panel-resume"),
+  groupsResumeMonthMode: document.getElementById("groups-resume-month-mode"),
+  groupsResumeCount: document.getElementById("groups-resume-count"),
+  groupsResumeBody: document.getElementById("groups-resume-body"),
   groupsRows: document.getElementById("groups-rows"),
   groupsMobileCards: document.getElementById("groups-mobile-cards"),
   groupsStatusFooter: document.getElementById("groups-status-footer"),
@@ -1457,6 +1466,8 @@ function bindEvents() {
     resetGroupDraft();
     openGroupModal();
   });
+  els.groupsTabList?.addEventListener("click", () => setGroupsScreen("list"));
+  els.groupsTabResume?.addEventListener("click", () => setGroupsScreen("resume"));
   els.groupCloseModal.addEventListener("click", closeGroupModal);
   els.groupTabDetails.addEventListener("click", () => setGroupEditorTab("details"));
   els.groupTabEmail.addEventListener("click", () => setGroupEditorTab("email"));
@@ -1483,6 +1494,10 @@ function bindEvents() {
   els.groupsExportPdf.addEventListener("click", exportGroupsToPdf);
   els.groupsShowActive.addEventListener("change", () => {
     state.groupsShowActive = els.groupsShowActive.checked;
+    renderGroups();
+  });
+  els.groupsResumeMonthMode?.addEventListener("change", () => {
+    state.groupResumeMonthMode = clean(els.groupsResumeMonthMode.value) === "checkin" ? "checkin" : "created";
     renderGroups();
   });
   [els.groupsFilterCreatedFrom, els.groupsFilterCreatedTo, els.groupsFilterDateFrom, els.groupsFilterDateTo, els.groupsFilterSearch].forEach((el) =>
@@ -2678,8 +2693,87 @@ function renderGroupEmailProposalHint() {
   }
 }
 
+function setGroupsScreen(screen) {
+  state.groupsScreen = screen === "resume" ? "resume" : "list";
+  renderGroups();
+}
+
+function renderGroupsScreenTabs() {
+  const isResume = state.groupsScreen === "resume";
+  els.groupsTabList?.classList.toggle("active-tab", !isResume);
+  els.groupsTabList?.classList.toggle("ghost", isResume);
+  els.groupsTabResume?.classList.toggle("active-tab", isResume);
+  els.groupsTabResume?.classList.toggle("ghost", !isResume);
+  if (els.groupsPanelList) els.groupsPanelList.hidden = isResume;
+  if (els.groupsPanelResume) els.groupsPanelResume.hidden = !isResume;
+}
+
+function formatGroupMonthLabel(monthKey) {
+  const raw = clean(monthKey);
+  if (!/^\d{4}-\d{2}$/.test(raw)) return raw || "-";
+  const dt = new Date(`${raw}-01T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return raw;
+  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "Europe/Lisbon" }).format(dt);
+}
+
+function getGroupResumeRows() {
+  const mode = state.groupResumeMonthMode === "checkin" ? "checkin" : "created";
+  const buckets = new Map();
+  getFilteredGroups().forEach((row) => {
+    const sourceDate = mode === "checkin" ? clean(row.checkIn) : clean(row.creationDate).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sourceDate)) return;
+    const monthKey = sourceDate.slice(0, 7);
+    const current = buckets.get(monthKey) || {
+      monthKey,
+      totalProposals: 0,
+      totalGuests: 0,
+      totalAmount: 0,
+      acceptedProposals: 0,
+      acceptedGuests: 0,
+      acceptedAmount: 0,
+    };
+    const guests = Math.max(0, Number(row.guests || 0));
+    const amount = Math.max(0, Number(row.totalValue || 0));
+    const isAccepted = clean(row.status) === "Accepted";
+    current.totalProposals += 1;
+    current.totalGuests += guests;
+    current.totalAmount += amount;
+    if (isAccepted) {
+      current.acceptedProposals += 1;
+      current.acceptedGuests += guests;
+      current.acceptedAmount += amount;
+    }
+    buckets.set(monthKey, current);
+  });
+  return [...buckets.values()].sort((a, b) => clean(b.monthKey).localeCompare(clean(a.monthKey)));
+}
+
+function renderGroupsResume() {
+  if (!els.groupsResumeBody || !els.groupsResumeCount) return;
+  if (els.groupsResumeMonthMode) els.groupsResumeMonthMode.value = state.groupResumeMonthMode === "checkin" ? "checkin" : "created";
+  const rows = getGroupResumeRows();
+  els.groupsResumeCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
+  els.groupsResumeBody.innerHTML = "";
+  if (!rows.length) {
+    els.groupsResumeBody.innerHTML = '<tr><td colspan="7" class="empty">No group proposals found.</td></tr>';
+    return;
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escape(formatGroupMonthLabel(row.monthKey))}</td>
+      <td>${escape(String(row.totalProposals))}</td>
+      <td>${escape(String(row.totalGuests))}</td>
+      <td>${escape(formatMoney(row.totalAmount))}</td>
+      <td>${escape(String(row.acceptedProposals))}</td>
+      <td>${escape(String(row.acceptedGuests))}</td>
+      <td>${escape(formatMoney(row.acceptedAmount))}</td>`;
+    els.groupsResumeBody.appendChild(tr);
+  });
+}
+
 function renderGroups() {
   if (!els.groupsRows || !canApp("groups")) return;
+  renderGroupsScreenTabs();
   if (!els.groupEditorModal.hidden) renderGroupDraft();
   if (els.groupsFilterCreatedFrom) els.groupsFilterCreatedFrom.value = clean(state.groupFilters.createdFrom);
   if (els.groupsFilterCreatedTo) els.groupsFilterCreatedTo.value = clean(state.groupFilters.createdTo);
@@ -2689,6 +2783,10 @@ function renderGroups() {
   const rows = getFilteredGroups();
   updateGroupSortIndicators();
   els.groupsCount.textContent = `${rows.length} proposal${rows.length === 1 ? "" : "s"}`;
+  if (state.groupsScreen === "resume") {
+    renderGroupsResume();
+    return;
+  }
   els.groupsRows.innerHTML = "";
   if (els.groupsMobileCards) els.groupsMobileCards.innerHTML = "";
   if (rows.length === 0) {

@@ -411,8 +411,8 @@
               <h2>Group Proposals</h2>
               <div class="actions">
                 <button id="groups-new" type="button" class="ghost">New proposal</button>
-                <button id="groups-export-excel" type="button" class="ghost">Export Excel</button>
-                <button id="groups-export-pdf" type="button" class="ghost">Export PDF</button>
+                <button id="groups-tab-list" type="button" class="active-tab">List</button>
+                <button id="groups-tab-resume" type="button" class="ghost">Resume</button>
                 <label class="filter-checkbox">
                   Show Active
                   <input type="checkbox" id="groups-show-active" checked />
@@ -442,36 +442,76 @@
                 <input id="groups-filter-search" type="text" placeholder="Search name or reservation" />
               </label>
             </div>
-            <div class="table-wrap">
-              <table class="groups-table">
-                <colgroup>
-                  <col />
-                  <col />
-                  <col />
-                  <col class="narrow-col" />
-                  <col />
-                  <col class="room-types-col" />
-                  <col class="summary-col" />
-                  <col class="narrow-col" />
-                  <col class="reservation-col" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th><button type="button" class="sort-toggle" data-group-sort="created">Created <span class="sort-indicator"></span></button></th>
-                    <th>Name</th>
-                    <th><button type="button" class="sort-toggle" data-group-sort="dates">Dates <span class="sort-indicator"></span></button></th>
-                    <th>Guests</th>
-                    <th>Total</th>
-                    <th>Room Types</th>
-                    <th>Rooms</th>
-                    <th>Option</th>
-                    <th>Reservation</th>
-                  </tr>
-                </thead>
-                <tbody id="groups-rows"></tbody>
-              </table>
-            </div>
-            <div id="groups-mobile-cards" class="groups-mobile-cards"></div>
+            <section id="groups-panel-list">
+              <div class="bar services-subbar">
+                <h3>List</h3>
+                <div class="actions">
+                  <button id="groups-export-excel" type="button" class="ghost">Export Excel</button>
+                  <button id="groups-export-pdf" type="button" class="ghost">Export PDF</button>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="groups-table">
+                  <colgroup>
+                    <col />
+                    <col />
+                    <col />
+                    <col class="narrow-col" />
+                    <col />
+                    <col class="room-types-col" />
+                    <col class="summary-col" />
+                    <col class="narrow-col" />
+                    <col class="reservation-col" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th><button type="button" class="sort-toggle" data-group-sort="created">Created <span class="sort-indicator"></span></button></th>
+                      <th>Name</th>
+                      <th><button type="button" class="sort-toggle" data-group-sort="dates">Dates <span class="sort-indicator"></span></button></th>
+                      <th>Guests</th>
+                      <th>Total</th>
+                      <th>Room Types</th>
+                      <th>Rooms</th>
+                      <th>Option</th>
+                      <th>Reservation</th>
+                    </tr>
+                  </thead>
+                  <tbody id="groups-rows"></tbody>
+                </table>
+              </div>
+              <div id="groups-mobile-cards" class="groups-mobile-cards"></div>
+            </section>
+            <section id="groups-panel-resume" hidden>
+              <div class="bar services-subbar">
+                <h3>Resume</h3>
+                <div class="actions">
+                  <label>
+                    Use Month
+                    <select id="groups-resume-month-mode">
+                      <option value="created">Created month</option>
+                      <option value="checkin">Check-in month</option>
+                    </select>
+                  </label>
+                  <p id="groups-resume-count">0 months</p>
+                </div>
+              </div>
+              <div class="table-wrap groups-resume-table-wrap">
+                <table class="settings-table groups-resume-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th>Proposals</th>
+                      <th>Guests</th>
+                      <th>Total €</th>
+                      <th>Accepted</th>
+                      <th>Guests (Accepted)</th>
+                      <th>Total € (Accepted)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="groups-resume-body"></tbody>
+                </table>
+              </div>
+            </section>
           </section>
         </section>
 
