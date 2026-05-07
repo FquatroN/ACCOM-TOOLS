@@ -299,25 +299,32 @@ async function findExistingReviewId(payload) {
   return "";
 }
 
+function reviewTablePayload(payload = {}) {
+  const next = { ...payload };
+  delete next.is_valid;
+  return next;
+}
+
 function isDuplicateReviewError(error) {
   const message = cleanText(error?.message).toLowerCase();
   return message.includes("duplicate key") || message.includes("unique constraint");
 }
 
 async function upsertReview(payload) {
+  const dbPayload = reviewTablePayload(payload);
   const existingId = await findExistingReviewId(payload);
   if (existingId) {
-    await restQuery(`reviews?id=eq.${encodeURIComponent(existingId)}`, { method: "PATCH", body: payload });
+    await restQuery(`reviews?id=eq.${encodeURIComponent(existingId)}`, { method: "PATCH", body: dbPayload });
     return "replaced";
   }
   try {
-    await restQuery("reviews", { method: "POST", body: payload });
+    await restQuery("reviews", { method: "POST", body: dbPayload });
     return "inserted";
   } catch (error) {
     if (!isDuplicateReviewError(error)) throw error;
     const duplicateId = await findExistingReviewId(payload);
     if (!duplicateId) throw error;
-    await restQuery(`reviews?id=eq.${encodeURIComponent(duplicateId)}`, { method: "PATCH", body: payload });
+    await restQuery(`reviews?id=eq.${encodeURIComponent(duplicateId)}`, { method: "PATCH", body: dbPayload });
     return "replaced";
   }
 }
