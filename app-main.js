@@ -1625,6 +1625,7 @@ function bindEvents() {
   els.reviewsGoogleLoadLocations.addEventListener("click", loadGoogleBusinessLocations);
   els.reviewsGoogleSaveMapping.addEventListener("click", saveGoogleBusinessMapping);
   els.reviewsGoogleSync.addEventListener("click", syncGoogleBusinessReviews);
+  els.reviewsGoogleMappingsBody?.addEventListener("click", onReviewGoogleMappingAction);
   els.adminUsersBody.addEventListener("click", (event) => {
     const btn = event.target.closest("button[data-action]");
     if (!btn) return;
@@ -12429,7 +12430,7 @@ function renderGoogleBusinessSettings() {
   setReviewGoogleStatus(state.reviewGoogle.status || googleBusinessStatusText());
   const properties = state.reviewProperties.filter((row) => row.active !== false);
   if (properties.length === 0) {
-    els.reviewsGoogleMappingsBody.innerHTML = '<tr><td colspan="2" class="empty">Add a property before mapping Google locations.</td></tr>';
+    els.reviewsGoogleMappingsBody.innerHTML = '<tr><td colspan="3" class="empty">Add a property before mapping Google locations.</td></tr>';
     return;
   }
   const locations = Array.isArray(state.reviewGoogle.locations) ? state.reviewGoogle.locations : [];
@@ -12444,7 +12445,8 @@ function renderGoogleBusinessSettings() {
   properties.forEach((property) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escape(property.name)}</td>
-      <td><select data-google-property-location="${escape(property.id)}">${locationOptions}</select></td>`;
+      <td><select data-google-property-location="${escape(property.id)}">${locationOptions}</select></td>
+      <td class="row-actions"><button type="button" class="ghost" data-action="sync-google-property" data-id="${escape(property.id)}" data-name="${escape(property.name)}">Sync</button></td>`;
     const select = tr.querySelector("select");
     if (select) select.value = clean(state.reviewGoogle.propertyLocations?.[property.id]);
     els.reviewsGoogleMappingsBody.appendChild(tr);
@@ -13336,20 +13338,42 @@ async function saveGoogleBusinessMapping() {
 }
 
 async function syncGoogleBusinessReviews() {
+  return syncGoogleBusinessReviewsForProperty("", "");
+}
+
+async function syncGoogleBusinessReviewsForProperty(propertyId = "", propertyName = "") {
   try {
-    setReviewGoogleStatus("Syncing Google reviews...");
-    const result = await api("/api/google-business?action=sync", { method: "POST", body: {} });
+    const name = clean(propertyName);
+    const propertyIdValue = clean(propertyId);
+    setReviewGoogleStatus(name ? `Syncing Google reviews for ${name}...` : "Syncing Google reviews...");
+    const result = await api("/api/google-business?action=sync", { method: "POST", body: propertyIdValue ? { propertyId: propertyIdValue } : {} });
     await Promise.all([loadReviews({ useFilters: true }), loadReviewImportRuns()]);
     loadSidebarReviewSummary({ silent: true }).catch(() => {});
     render();
     const inserted = Number(result.insertedCount || 0);
     const replaced = Number(result.replacedCount || 0);
     const imported = Number(result.importedCount || 0);
-    setReviewGoogleStatus(`Google sync complete: ${imported} review${imported === 1 ? "" : "s"} processed, ${inserted} inserted, ${replaced} replaced.`);
-    showToast("Google reviews synced.", "success");
+    const prefix = name ? `Google sync complete for ${name}` : "Google sync complete";
+    setReviewGoogleStatus(`${prefix}: ${imported} review${imported === 1 ? "" : "s"} processed, ${inserted} inserted, ${replaced} replaced.`);
+    showToast(name ? `Google reviews synced for ${name}.` : "Google reviews synced.", "success");
   } catch (e) {
-    setReviewGoogleStatus(`Google sync failed: ${e.message}`);
-    showToast(`Google sync failed: ${e.message}`, "error");
+    const prefix = propertyName ? `Google sync failed for ${propertyName}` : "Google sync failed";
+    setReviewGoogleStatus(`${prefix}: ${e.message}`);
+    showToast(`${prefix}: ${e.message}`, "error");
+  }
+}
+
+async function onReviewGoogleMappingAction(event) {
+  const button = event.target.closest('button[data-action="sync-google-property"]');
+  if (!button) return;
+  const propertyId = clean(button.dataset.id);
+  const propertyName = clean(button.dataset.name);
+  if (!propertyId) return;
+  button.disabled = true;
+  try {
+    await syncGoogleBusinessReviewsForProperty(propertyId, propertyName);
+  } finally {
+    button.disabled = false;
   }
 }
 
