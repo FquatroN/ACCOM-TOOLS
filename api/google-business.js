@@ -17,6 +17,7 @@ const GOOGLE_ACCOUNTS_URL = "https://mybusinessaccountmanagement.googleapis.com/
 const GOOGLE_BUSINESS_INFO_URL = "https://mybusinessbusinessinformation.googleapis.com/v1";
 const GOOGLE_REVIEWS_URL = "https://mybusiness.googleapis.com/v4";
 const LOCATION_LOAD_COOLDOWN_MS = 90 * 1000;
+const GOOGLE_REVIEW_UPDATE_SAFETY_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 function requireGoogleEnv() {
   const clientId = cleanText(process.env.GOOGLE_CLIENT_ID);
@@ -252,6 +253,22 @@ function isoDate(value) {
   return date.toISOString().slice(0, 10);
 }
 
+function timestampMs(value) {
+  const raw = cleanText(value);
+  if (!raw) return 0;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function googleReviewUpdatedAtMs(review) {
+  if (!review || typeof review !== "object") return 0;
+  return Math.max(
+    timestampMs(review.updateTime),
+    timestampMs(review.createTime),
+    timestampMs(review.reviewReply?.updateTime)
+  );
+}
+
 function googleReviewToPayload(review, propertyId, importRunId) {
   const rating = googleStarRatingToNumber(review.starRating);
   const comment = cleanText(review.comment);
@@ -313,6 +330,7 @@ function emptyGoogleReviewLookup() {
     bySourceReviewId: new Map(),
     byComposite: new Map(),
     byFingerprint: new Map(),
+    latestKnownUpdateMs: 0,
   };
 }
 
@@ -331,12 +349,19 @@ function addReviewToLookup(lookup, row = {}, payload = {}) {
   if (sourceReviewId) lookup.bySourceReviewId.set(sourceReviewId, id);
   if (fingerprint) lookup.byFingerprint.set(fingerprint, id);
   if (composite) lookup.byComposite.set(composite, id);
+  const latestUpdateMs = Math.max(
+    googleReviewUpdatedAtMs(row.raw_payload),
+    googleReviewUpdatedAtMs(payload.raw_payload)
+  );
+  if (latestUpdateMs > lookup.latestKnownUpdateMs) {
+    lookup.latestKnownUpdateMs = latestUpdateMs;
+  }
 }
 
 async function loadExistingGoogleReviewLookup(propertyId) {
   const lookup = emptyGoogleReviewLookup();
   const rows = await restQuery(
-    `reviews?select=id,property_id,source_review_id,review_date,reviewer_name,rating_raw,dedupe_fingerprint&property_id=eq.${encodeURIComponent(propertyId)}&source=eq.google&limit=5000`,
+    `reviews?select=id,property_id,source_review_id,review_date,reviewer_name,rating_raw,dedupe_fingerprint,raw_payload&property_id=eq.${encodeURIComponent(propertyId)}&source=eq.google&limit=5000`,
     { method: "GET" }
   );
   (Array.isArray(rows) ? rows : []).forEach((row) => addReviewToLookup(lookup, row));
@@ -433,16 +458,33 @@ async function createApiImportRun(propertyId, reviewCount, userId) {
   return Array.isArray(created) && created[0] ? created[0] : { id };
 }
 
-async function fetchReviewsForLocation(accessToken, reviewParent) {
+async function fetchReviewsForLocation(accessToken, reviewParent, latestKnownUpdateMs = 0) {
   const reviews = [];
+  const cutoffMs = latestKnownUpdateMs > 0
+    ? Math.max(0, latestKnownUpdateMs - GOOGLE_REVIEW_UPDATE_SAFETY_WINDOW_MS)
+    : 0;
   let pageToken = "";
+  let shouldContinue = true;
   do {
     const params = new URLSearchParams({ pageSize: "50", orderBy: "updateTime desc" });
     if (pageToken) params.set("pageToken", pageToken);
     const payload = await googleJson(`${GOOGLE_REVIEWS_URL}/${reviewParent}/reviews?${params.toString()}`, accessToken);
-    reviews.push(...(Array.isArray(payload.reviews) ? payload.reviews : []));
+    const pageReviews = Array.isArray(payload.reviews) ? payload.reviews : [];
+    if (!cutoffMs) {
+      reviews.push(...pageReviews);
+    } else {
+      reviews.push(...pageReviews.filter((review) => googleReviewUpdatedAtMs(review) >= cutoffMs));
+      const oldestReviewMs = pageReviews.reduce((min, review) => {
+        const reviewMs = googleReviewUpdatedAtMs(review);
+        if (!reviewMs) return min;
+        return min === 0 ? reviewMs : Math.min(min, reviewMs);
+      }, 0);
+      if (oldestReviewMs && oldestReviewMs < cutoffMs) {
+        shouldContinue = false;
+      }
+    }
     pageToken = cleanText(payload.nextPageToken);
-  } while (pageToken);
+  } while (pageToken && shouldContinue);
   return reviews;
 }
 
@@ -470,7 +512,7 @@ async function syncGoogleReviews(req, userId) {
 
   for (const item of properties) {
     const existingLookup = await loadExistingGoogleReviewLookup(item.propertyId);
-    const googleReviews = await fetchReviewsForLocation(accessToken, item.reviewParent);
+    const googleReviews = await fetchReviewsForLocation(accessToken, item.reviewParent, existingLookup.latestKnownUpdateMs);
     const run = await createApiImportRun(item.propertyId, googleReviews.length, userId);
     let propertyImported = 0;
     let propertyInserted = 0;
