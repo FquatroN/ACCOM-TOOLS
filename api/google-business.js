@@ -300,10 +300,31 @@ async function findExistingReviewId(payload) {
 }
 
 function reviewTablePayload(payload = {}) {
-  const next = { ...payload };
-  delete next.is_valid;
-  delete next.selected_for_import;
-  return next;
+  return {
+    property_id: payload.property_id ?? null,
+    import_run_id: payload.import_run_id ?? null,
+    source: payload.source ?? "",
+    source_review_id: payload.source_review_id ?? "",
+    source_reservation_id: payload.source_reservation_id ?? "",
+    review_date: payload.review_date ?? null,
+    reviewer_name: payload.reviewer_name ?? "",
+    reviewer_country: payload.reviewer_country ?? "",
+    language: payload.language ?? "",
+    rating_raw: payload.rating_raw ?? null,
+    rating_scale: payload.rating_scale ?? null,
+    rating_normalized_100: payload.rating_normalized_100 ?? null,
+    title: payload.title ?? "",
+    positive_review_text: payload.positive_review_text ?? "",
+    negative_review_text: payload.negative_review_text ?? "",
+    body: payload.body ?? "",
+    subscores: payload.subscores ?? {},
+    host_reply_text: payload.host_reply_text ?? "",
+    host_reply_date: payload.host_reply_date ?? null,
+    raw_text: payload.raw_text ?? "",
+    parse_confidence: payload.parse_confidence ?? null,
+    dedupe_fingerprint: payload.dedupe_fingerprint ?? "",
+    raw_payload: payload.raw_payload ?? {},
+  };
 }
 
 function isDuplicateReviewError(error) {
