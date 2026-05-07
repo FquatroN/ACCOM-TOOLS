@@ -302,6 +302,7 @@ async function findExistingReviewId(payload) {
 function reviewTablePayload(payload = {}) {
   const next = { ...payload };
   delete next.is_valid;
+  delete next.selected_for_import;
   return next;
 }
 
