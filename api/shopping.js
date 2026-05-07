@@ -42,6 +42,10 @@ function formatDateTimeShort(value) {
   }).format(date);
 }
 
+function dateOnlyIso(value) {
+  return cleanText(value).slice(0, 10);
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -503,8 +507,9 @@ module.exports = async function handler(req, res) {
         const history = await loadSubmittedHistory();
         const latest = history[0];
         const sourceId = cleanText(body?.sourceOrderId);
-        if (!latest || !sourceId || sourceId !== latest.id) {
-          const error = new Error("Only the latest submitted shopping order can be reopened.");
+        const latestSubmittedDate = dateOnlyIso(latest?.submittedAt || latest?.updatedAt || latest?.createdAt);
+        if (!latest || !sourceId || sourceId !== latest.id || latestSubmittedDate !== todayInLisbon()) {
+          const error = new Error("Only the latest submitted shopping order from today can be reopened.");
           error.statusCode = 400;
           throw error;
         }

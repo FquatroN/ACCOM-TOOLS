@@ -7517,6 +7517,13 @@ function dateOnlyIso(value) {
   return clean(value).slice(0, 10);
 }
 
+function canReopenShoppingOrderClient(order, historyRows = state.shoppingHistory) {
+  const rows = Array.isArray(historyRows) ? historyRows : [];
+  const latestId = rows[0]?.id || "";
+  const submittedDate = dateOnlyIso(order?.submittedAt || order?.updatedAt || order?.createdAt);
+  return !state.shoppingOpenOrder && clean(order?.id) === clean(latestId) && submittedDate === lisbonTodayIsoClient();
+}
+
 function isShoppingRecentlyOrdered(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return false;
@@ -8047,7 +8054,7 @@ function renderShoppingHistoryRows() {
   }
   const latestId = totalRows[0]?.id || "";
   rows.forEach((order) => {
-    const canReopen = !state.shoppingOpenOrder && clean(order.id) === clean(latestId);
+    const canReopen = canReopenShoppingOrderClient(order, totalRows);
     const canCopy = !state.shoppingOpenOrder;
     const tr = document.createElement("tr");
     tr.className = "clickable-row";
@@ -8326,9 +8333,8 @@ function renderShoppingDetail(order) {
   }
   els.shoppingDetailBody.className = "review-detail";
   els.shoppingDetailBody.innerHTML = detail.join("");
-  const latestId = state.shoppingHistory[0]?.id || "";
   if (els.shoppingCopyOrder) els.shoppingCopyOrder.hidden = !!state.shoppingOpenOrder;
-  els.shoppingReopenOrder.hidden = !!state.shoppingOpenOrder || clean(order.id) !== clean(latestId);
+  els.shoppingReopenOrder.hidden = !canReopenShoppingOrderClient(order, state.shoppingHistory);
 }
 
 function openShoppingDetailModal(orderId) {
@@ -8625,6 +8631,13 @@ function onShoppingHistoryAction(event) {
 async function reopenLatestShoppingOrder(sourceId = "") {
   const latestId = sourceId || state.shoppingHistory[0]?.id;
   if (!latestId) return;
+  const order = state.shoppingHistory.find((item) => clean(item.id) === clean(latestId));
+  if (!canReopenShoppingOrderClient(order, state.shoppingHistory)) {
+    const message = "Only the latest shopping order from today can be reopened.";
+    setShoppingDetailStatus(message);
+    showToast(message, "error");
+    return;
+  }
   try {
     const result = await api("/api/shopping", {
       method: "POST",
