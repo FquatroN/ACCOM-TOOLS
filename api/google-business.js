@@ -299,6 +299,61 @@ async function findExistingReviewId(payload) {
   return "";
 }
 
+function reviewCompositeKey(payload = {}) {
+  const propertyId = cleanText(payload.property_id);
+  const reviewDate = cleanText(payload.review_date);
+  const reviewerName = cleanText(payload.reviewer_name).toLowerCase();
+  const ratingRaw = payload.rating_raw;
+  if (!propertyId || !reviewDate || !reviewerName || ratingRaw === null || ratingRaw === undefined || ratingRaw === "") return "";
+  return `${propertyId}::${reviewDate}::${reviewerName}::${ratingRaw}`;
+}
+
+function emptyGoogleReviewLookup() {
+  return {
+    bySourceReviewId: new Map(),
+    byComposite: new Map(),
+    byFingerprint: new Map(),
+  };
+}
+
+function addReviewToLookup(lookup, row = {}, payload = {}) {
+  if (!lookup) return;
+  const id = cleanText(row.id || payload.id);
+  if (!id) return;
+  const sourceReviewId = cleanText(row.source_review_id || payload.source_review_id);
+  const fingerprint = cleanText(row.dedupe_fingerprint || payload.dedupe_fingerprint);
+  const composite = reviewCompositeKey({
+    property_id: row.property_id || payload.property_id,
+    review_date: row.review_date || payload.review_date,
+    reviewer_name: row.reviewer_name || payload.reviewer_name,
+    rating_raw: row.rating_raw ?? payload.rating_raw,
+  });
+  if (sourceReviewId) lookup.bySourceReviewId.set(sourceReviewId, id);
+  if (fingerprint) lookup.byFingerprint.set(fingerprint, id);
+  if (composite) lookup.byComposite.set(composite, id);
+}
+
+async function loadExistingGoogleReviewLookup(propertyId) {
+  const lookup = emptyGoogleReviewLookup();
+  const rows = await restQuery(
+    `reviews?select=id,property_id,source_review_id,review_date,reviewer_name,rating_raw,dedupe_fingerprint&property_id=eq.${encodeURIComponent(propertyId)}&source=eq.google&limit=5000`,
+    { method: "GET" }
+  );
+  (Array.isArray(rows) ? rows : []).forEach((row) => addReviewToLookup(lookup, row));
+  return lookup;
+}
+
+function findExistingReviewIdFromLookup(payload, lookup) {
+  if (!lookup) return "";
+  const sourceReviewId = cleanText(payload.source_review_id);
+  if (sourceReviewId && lookup.bySourceReviewId.has(sourceReviewId)) return lookup.bySourceReviewId.get(sourceReviewId);
+  const composite = reviewCompositeKey(payload);
+  if (composite && lookup.byComposite.has(composite)) return lookup.byComposite.get(composite);
+  const fingerprint = cleanText(payload.dedupe_fingerprint);
+  if (fingerprint && lookup.byFingerprint.has(fingerprint)) return lookup.byFingerprint.get(fingerprint);
+  return "";
+}
+
 function reviewTablePayload(payload = {}) {
   return {
     property_id: payload.property_id ?? null,
@@ -332,21 +387,28 @@ function isDuplicateReviewError(error) {
   return message.includes("duplicate key") || message.includes("unique constraint");
 }
 
-async function upsertReview(payload) {
+async function upsertReview(payload, lookup = null) {
   const dbPayload = reviewTablePayload(payload);
-  const existingId = await findExistingReviewId(payload);
+  const existingId = findExistingReviewIdFromLookup(payload, lookup) || await findExistingReviewId(payload);
   if (existingId) {
     await restQuery(`reviews?id=eq.${encodeURIComponent(existingId)}`, { method: "PATCH", body: dbPayload });
+    addReviewToLookup(lookup, { id: existingId }, payload);
     return "replaced";
   }
   try {
-    await restQuery("reviews", { method: "POST", body: dbPayload });
+    const created = await restQuery("reviews?select=id,property_id,source_review_id,review_date,reviewer_name,rating_raw,dedupe_fingerprint", {
+      method: "POST",
+      body: [dbPayload],
+      preferRepresentation: true,
+    });
+    addReviewToLookup(lookup, Array.isArray(created) ? created[0] : {}, payload);
     return "inserted";
   } catch (error) {
     if (!isDuplicateReviewError(error)) throw error;
-    const duplicateId = await findExistingReviewId(payload);
+    const duplicateId = findExistingReviewIdFromLookup(payload, lookup) || await findExistingReviewId(payload);
     if (!duplicateId) throw error;
     await restQuery(`reviews?id=eq.${encodeURIComponent(duplicateId)}`, { method: "PATCH", body: dbPayload });
+    addReviewToLookup(lookup, { id: duplicateId }, payload);
     return "replaced";
   }
 }
@@ -407,6 +469,7 @@ async function syncGoogleReviews(req, userId) {
   const syncedProperties = [];
 
   for (const item of properties) {
+    const existingLookup = await loadExistingGoogleReviewLookup(item.propertyId);
     const googleReviews = await fetchReviewsForLocation(accessToken, item.reviewParent);
     const run = await createApiImportRun(item.propertyId, googleReviews.length, userId);
     let propertyImported = 0;
@@ -415,7 +478,7 @@ async function syncGoogleReviews(req, userId) {
 
     for (const review of googleReviews) {
       const payloadReview = googleReviewToPayload(review, item.propertyId, run.id);
-      const action = await upsertReview(payloadReview);
+      const action = await upsertReview(payloadReview, existingLookup);
       propertyImported += 1;
       if (action === "inserted") propertyInserted += 1;
       if (action === "replaced") propertyReplaced += 1;
