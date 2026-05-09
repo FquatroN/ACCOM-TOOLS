@@ -2007,8 +2007,18 @@ select:disabled {
   width: min(960px, 96vw);
 }
 
+.cash-items-table th,
+.cash-items-table td {
+  padding-top: 0.28rem;
+  padding-bottom: 0.28rem;
+  line-height: 1.12;
+}
+
 .cash-items-table input {
   width: 100%;
+  padding-top: 0.22rem;
+  padding-bottom: 0.22rem;
+  min-height: 1.85rem;
 }
 
 .danger-text {
