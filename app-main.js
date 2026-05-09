@@ -9715,6 +9715,20 @@ function normalizeCashCountsClient(value = {}) {
   }, {});
 }
 
+function normalizeCashMoneyText(value) {
+  const raw = clean(value).replace(",", ".");
+  if (!raw) return "";
+  if (/^-?\d*(?:\.\d{0,2})?$/.test(raw)) return raw;
+  const numeric = normalizeNumber(raw);
+  return numeric == null ? "" : String(Number(numeric.toFixed(2)));
+}
+
+function cashMoneyNumber(value) {
+  const numeric = normalizeNumber(value);
+  if (numeric == null) return 0;
+  return Number(numeric.toFixed(2));
+}
+
 function normalizeCashItemCountsClient(value = {}, settings = state.cashSettings) {
   const source = value && typeof value === "object" ? value : {};
   return (settings?.items || []).reduce((acc, item) => {
@@ -9748,9 +9762,9 @@ function normalizeCashRecordClient(input = {}, settings = state.cashSettings) {
     shiftName: clean(shift?.name || shiftNameRaw),
     name: clean(input.name),
     denominations: normalizeCashCountsClient(input.denominations),
-    cardPos: Number(normalizeNumber(input.cardPos ?? input.card_pos) || 0),
-    cashFdm: Number(normalizeNumber(input.cashFdm ?? input.cash_fdm) || 0),
-    cardFdm: Number(normalizeNumber(input.cardFdm ?? input.card_fdm) || 0),
+    cardPos: normalizeCashMoneyText(input.cardPos ?? input.card_pos),
+    cashFdm: normalizeCashMoneyText(input.cashFdm ?? input.cash_fdm),
+    cardFdm: normalizeCashMoneyText(input.cardFdm ?? input.card_fdm),
     justification: clean(input.justification),
     itemCounts: normalizeCashItemCountsClient(input.itemCounts ?? input.item_counts, safeSettings),
     itemJustifications: normalizeCashItemJustificationsClient(input.itemJustifications ?? input.item_justifications, safeSettings),
@@ -9810,9 +9824,9 @@ function buildComputedCashRowsClient(records = state.cashRecords, settings = sta
     const previousRef = getPreviousCashDescriptor(row.day, row.shiftId, settings);
     const previous = previousRef ? byKey.get(`${previousRef.day}::${previousRef.shiftId}`) : null;
     const cashTotal = calculateCashTotalClient(row.denominations);
-    const calculatedCash = previous ? Number((calculateCashTotalClient(previous.denominations) + Number(row.cashFdm || 0)).toFixed(2)) : null;
+    const calculatedCash = previous ? Number((calculateCashTotalClient(previous.denominations) + cashMoneyNumber(row.cashFdm)).toFixed(2)) : null;
     const diffCash = calculatedCash == null ? null : Number((cashTotal - calculatedCash).toFixed(2));
-    const diffCard = Number((Number(row.cardPos || 0) - Number(row.cardFdm || 0)).toFixed(2));
+    const diffCard = Number((cashMoneyNumber(row.cardPos) - cashMoneyNumber(row.cardFdm)).toFixed(2));
     const itemDiffs = (settings?.items || []).map((item) => {
       const counted = row.itemCounts?.[item.id];
       const diff = counted == null ? null : counted - Number(item.defaultQuantity || 0);
@@ -9851,9 +9865,9 @@ function emptyCashDraft() {
     shiftName: next.shiftName,
     name: "",
     denominations: {},
-    cardPos: 0,
-    cashFdm: 0,
-    cardFdm: 0,
+    cardPos: "",
+    cashFdm: "",
+    cardFdm: "",
     justification: "",
     itemCounts: (state.cashSettings?.items || DEFAULT_CASH_SETTINGS.items).reduce((acc, item) => {
       acc[item.id] = item.defaultQuantity;
@@ -9869,9 +9883,9 @@ function hasCashDraft() {
     clean(draft?.name) ||
     clean(draft?.day) ||
     Object.values(draft?.denominations || {}).some((value) => Number(value || 0) !== 0) ||
-    Number(draft?.cardPos || 0) !== 0 ||
-    Number(draft?.cashFdm || 0) !== 0 ||
-    Number(draft?.cardFdm || 0) !== 0
+    clean(draft?.cardPos) ||
+    clean(draft?.cashFdm) ||
+    clean(draft?.cardFdm)
   );
 }
 
@@ -9882,7 +9896,7 @@ function cashDraftComputed(draft) {
     cashTotal: calculateCashTotalClient(draft.denominations),
     calculatedCash: null,
     diffCash: null,
-    diffCard: Number((Number(draft.cardPos || 0) - Number(draft.cardFdm || 0)).toFixed(2)),
+    diffCard: Number((cashMoneyNumber(draft.cardPos) - cashMoneyNumber(draft.cardFdm)).toFixed(2)),
     itemDiffs: [],
     hasItemDiffs: false,
   };
@@ -9914,7 +9928,7 @@ function validateCashDraftClient(draft, { isCreate = false } = {}) {
 
 function formatCashMoney(value) {
   if (value == null || value === "") return "-";
-  return formatMoney(Number(value || 0));
+  return formatMoney(cashMoneyNumber(value));
 }
 
 function cashItemDiffLabel(record) {
@@ -9990,9 +10004,9 @@ function buildCashInlineRow() {
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || cashShiftById(draft.shiftId)?.name || ""))}</td>
     <td><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
     <td><button type="button" class="ghost" data-cash-action="cash" data-scope="new">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? 0))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
     <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
@@ -10030,9 +10044,9 @@ function buildCashEditableRow(record) {
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || ""))}</td>
     <td><input data-cash-field="name" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
     <td><button type="button" class="ghost" data-cash-action="cash" data-id="${escape(record.id)}" data-scope="edit">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? 0))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
     <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
@@ -10264,7 +10278,7 @@ function onCashTableInput(event) {
   if (field.startsWith("denom:")) {
     draft.denominations[field.split(":")[1]] = Math.max(0, Math.round(Number(normalizeNumber(target.value) || 0)));
   } else if (field === "cardPos" || field === "cashFdm" || field === "cardFdm") {
-    draft[field] = Number(normalizeNumber(target.value) || 0);
+    draft[field] = normalizeCashMoneyText(target.value);
   } else {
     draft[field] = target.value;
   }
