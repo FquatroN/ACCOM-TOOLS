@@ -9985,7 +9985,7 @@ function buildCashInlineRow() {
     <td>${escape(formatCashMoney(computed.diffCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
     <td><input data-cash-field="justification" data-scope="new" type="text" value="${escape(draft.justification)}" /></td>
-    <td><button type="button" class="${computed.hasItemDiffs ? "danger-text" : "ghost"}" data-cash-action="items" data-scope="new">${escape(cashItemDiffLabel(computed))}</button></td>
+    <td><button type="button" class="ghost${computed.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items" data-scope="new">${escape(cashItemDiffLabel(computed))}</button></td>
     <td><button type="button" data-cash-action="save-new">Add</button></td>`;
   return tr;
 }
@@ -10004,7 +10004,7 @@ function buildCashReadOnlyRow(record) {
     <td>${escape(formatCashMoney(record.diffCash))}</td>
     <td>${escape(formatCashMoney(record.diffCard))}</td>
     <td>${escape(record.justification || "-")}</td>
-    <td><button type="button" class="${record.hasItemDiffs ? "danger-text" : "ghost"}" data-cash-action="items-existing" data-id="${escape(record.id)}">${escape(cashItemDiffLabel(record))}</button></td>
+    <td><button type="button" class="ghost${record.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items-existing" data-id="${escape(record.id)}">${escape(cashItemDiffLabel(record))}</button></td>
     <td><button type="button" class="ghost" data-cash-action="edit" data-id="${escape(record.id)}">Edit</button></td>`;
   return tr;
 }
@@ -10025,7 +10025,7 @@ function buildCashEditableRow(record) {
     <td>${escape(formatCashMoney(computed.diffCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
     <td><input data-cash-field="justification" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
-    <td><button type="button" class="${computed.hasItemDiffs ? "danger-text" : "ghost"}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="edit">${escape(cashItemDiffLabel(computed))}</button></td>
+    <td><button type="button" class="ghost${computed.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="edit">${escape(cashItemDiffLabel(computed))}</button></td>
     <td><button type="button" data-cash-action="save-edit" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
   return tr;
 }

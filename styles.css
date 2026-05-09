@@ -1886,6 +1886,11 @@ select:disabled {
   padding: 0.26rem 0.3rem;
 }
 
+.cash-table th {
+  text-align: center;
+  vertical-align: middle;
+}
+
 .cash-table th:nth-child(3),
 .cash-table td:nth-child(3),
 .cash-table th:nth-child(5),
@@ -1961,8 +1966,8 @@ select:disabled {
 
 .cash-table th:nth-child(11),
 .cash-table td:nth-child(11) {
-  min-width: 220px;
-  width: 220px;
+  min-width: 280px;
+  width: 280px;
   white-space: normal;
   overflow-wrap: anywhere;
   vertical-align: top;
@@ -1984,6 +1989,11 @@ select:disabled {
 
 .cash-diff-row td {
   background: rgba(180, 35, 24, 0.25);
+}
+
+.cash-items-alert {
+  color: #b42318;
+  font-weight: 400;
 }
 
 .cash-items-modal-card {
