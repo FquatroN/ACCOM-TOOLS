@@ -9743,6 +9743,17 @@ function cashMoneyNumber(value) {
   return Number(numeric.toFixed(2));
 }
 
+function normalizeCashStatusClient(value, fallback = "C") {
+  const raw = clean(value).toUpperCase();
+  if (raw === "O") return "O";
+  if (raw === "C") return "C";
+  return fallback === "O" ? "O" : "C";
+}
+
+function isCashOpenStatusClient(value) {
+  return normalizeCashStatusClient(value) === "O";
+}
+
 function normalizeCashItemCountsClient(value = {}, settings = state.cashSettings) {
   const source = value && typeof value === "object" ? value : {};
   return (settings?.items || []).reduce((acc, item) => {
@@ -9774,6 +9785,7 @@ function normalizeCashRecordClient(input = {}, settings = state.cashSettings) {
     day: clean(input.day ?? input.date),
     shiftId: clean(shift?.id || shiftId),
     shiftName: clean(shift?.name || shiftNameRaw),
+    status: normalizeCashStatusClient(input.status, "C"),
     name: clean(input.name),
     denominations: normalizeCashCountsClient(input.denominations),
     cardPos: normalizeCashMoneyText(input.cardPos ?? input.card_pos),
@@ -9785,6 +9797,10 @@ function normalizeCashRecordClient(input = {}, settings = state.cashSettings) {
     createdAt: clean(input.createdAt ?? input.created_at),
     updatedAt: clean(input.updatedAt ?? input.updated_at),
   };
+}
+
+function getOpenCashRecordClient(records = state.cashRecords) {
+  return (records || []).find((record) => isCashOpenStatusClient(record?.status)) || null;
 }
 
 function cashSortRecordsClient(records = state.cashRecords, settings = state.cashSettings) {
@@ -9877,6 +9893,7 @@ function emptyCashDraft() {
     day: next.day,
     shiftId: next.shiftId,
     shiftName: next.shiftName,
+    status: "O",
     name: "",
     denominations: {},
     cardPos: "",
@@ -9920,6 +9937,13 @@ function validateCashDraftClient(draft, { isCreate = false } = {}) {
   if (!clean(draft?.name)) return "Name is required.";
   const duplicate = state.cashRecords.find((row) => cashRecordKey(row) === cashRecordKey(draft) && clean(row.id) !== clean(draft.id));
   if (duplicate) return `A cash control record for ${draft.day} ${draft.shiftName || draft.shiftId} already exists.`;
+  const existing = state.cashRecords.find((row) => clean(row.id) === clean(draft.id)) || null;
+  const otherOpen = state.cashRecords.find((row) => isCashOpenStatusClient(row.status) && clean(row.id) !== clean(draft.id));
+  if (isCreate && otherOpen) return "Close the current open shift before adding a new record.";
+  if (isCashOpenStatusClient(draft.status) && otherOpen) return "Only one cash control shift can stay open at a time.";
+  if (existing && normalizeCashStatusClient(existing.status) === "C" && normalizeCashStatusClient(draft.status) !== "C") {
+    return "A closed cash control shift cannot be reopened.";
+  }
   if (isCreate) {
     const next = getNextExpectedCashRecordClient();
     if (clean(draft.day) !== clean(next.day) || clean(draft.shiftId) !== clean(next.shiftId)) {
@@ -10080,7 +10104,7 @@ function buildCashReadOnlyRow(record) {
   return tr;
 }
 
-function buildCashEditableRow(record) {
+function buildCashEditableRow(record, { openMode = false } = {}) {
   const draft = state.cashEditDraft || record;
   const computed = cashDraftComputed(draft);
   const tr = document.createElement("tr");
@@ -10097,7 +10121,9 @@ function buildCashEditableRow(record) {
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
     <td><input data-cash-field="justification" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
     <td><button type="button" class="ghost${computed.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="edit">${escape(cashItemDiffLabel(computed))}</button></td>
-    <td><button type="button" data-cash-action="save-edit" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
+    <td>${openMode
+      ? `<button type="button" data-cash-action="save-edit" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="close-open" data-id="${escape(record.id)}">Close</button>`
+      : `<button type="button" data-cash-action="save-edit" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button>`}</td>`;
   return tr;
 }
 
@@ -10148,6 +10174,19 @@ function renderCash() {
     return;
   }
   const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
+  const openRecord = getOpenCashRecordClient(rows);
+  if (openRecord) {
+    state.cashEditingId = openRecord.id;
+    if (clean(state.cashEditDraft?.id) !== clean(openRecord.id)) {
+      state.cashEditDraft = clone(openRecord);
+    }
+  } else if (state.cashEditingId) {
+    const editingRecord = rows.find((record) => clean(record.id) === clean(state.cashEditingId));
+    if (!editingRecord || isCashOpenStatusClient(editingRecord.status)) {
+      state.cashEditingId = "";
+      state.cashEditDraft = null;
+    }
+  }
   const visibleRows = visibleCashRows(rows, state.cashSettings);
   renderCashScreenTabs();
   const focusTarget = document.activeElement?.matches?.("[data-cash-field]") ? document.activeElement : null;
@@ -10171,9 +10210,14 @@ function renderCash() {
   renderCashMobileCards(visibleRows);
   if (els.cashRows) {
     els.cashRows.innerHTML = "";
-    els.cashRows.appendChild(buildCashInlineRow());
+    if (!openRecord) {
+      els.cashRows.appendChild(buildCashInlineRow());
+    }
     visibleRows.forEach((record) => {
-      els.cashRows.appendChild(state.cashEditingId === record.id ? buildCashEditableRow(record) : buildCashReadOnlyRow(record));
+      const isOpenRow = isCashOpenStatusClient(record.status);
+      els.cashRows.appendChild(state.cashEditingId === record.id || isOpenRow
+        ? buildCashEditableRow(record, { openMode: isOpenRow })
+        : buildCashReadOnlyRow(record));
     });
   }
   const restoreTarget = focusField
@@ -10343,6 +10387,13 @@ function onCashFilterInput() {
 }
 
 function startCashEdit(id) {
+  const openRecord = getOpenCashRecordClient();
+  if (openRecord && clean(openRecord.id) !== clean(id)) {
+    const message = "Close the current open shift before editing a closed record.";
+    setCashStatus(message);
+    showToast(message, "error");
+    return;
+  }
   const record = state.cashRecords.find((row) => clean(row.id) === clean(id));
   if (!record) return;
   state.cashEditingId = record.id;
@@ -10351,13 +10402,17 @@ function startCashEdit(id) {
 }
 
 function cancelCashEdit() {
+  const editingRecord = state.cashRecords.find((row) => clean(row.id) === clean(state.cashEditingId));
+  if (editingRecord && isCashOpenStatusClient(editingRecord.status)) return;
   state.cashEditingId = "";
   state.cashEditDraft = null;
   renderCash();
 }
 
-async function saveCashDraft(scope = "new", id = "") {
+async function saveCashDraft(scope = "new", id = "", { closeRecord = false } = {}) {
   const draft = normalizeCashRecordClient(currentCashDraft(scope, id) || {}, state.cashSettings);
+  if (scope === "new") draft.status = "O";
+  if (closeRecord) draft.status = "C";
   const error = validateCashDraftClient(draft, { isCreate: scope !== "edit" });
   if (error) {
     setCashStatus(error);
@@ -10375,12 +10430,13 @@ async function saveCashDraft(scope = "new", id = "") {
     }
     state.cashRecords = (Array.isArray(result?.rows) ? result.rows : []).map((row) => normalizeCashRecordClient(row, state.cashSettings));
     state.cashLoaded = true;
-    state.cashEditingId = "";
-    state.cashEditDraft = null;
+    const openRecord = getOpenCashRecordClient(state.cashRecords);
+    state.cashEditingId = openRecord ? openRecord.id : "";
+    state.cashEditDraft = openRecord ? clone(openRecord) : null;
     state.cashDraft = emptyCashDraft();
     renderCash();
     renderLayout();
-    setCashStatus(scope === "edit" ? "Cash record saved." : "Cash record added.");
+    setCashStatus(closeRecord ? "Cash shift closed." : scope === "edit" ? "Cash record saved." : "Cash record added.");
   } catch (e) {
     setCashStatus(`Save failed: ${e.message}`);
     showToast(`Save failed: ${e.message}`, "error");
@@ -10551,6 +10607,7 @@ function onCashTableAction(event) {
   if (action === "cancel-edit") cancelCashEdit();
   if (action === "save-new") saveCashDraft("new");
   if (action === "save-edit" && id) saveCashDraft("edit", id);
+  if (action === "close-open" && id) saveCashDraft("edit", id, { closeRecord: true });
   if (action === "cash" || action === "cash-existing") openCashMoneyModal(action === "cash-existing" ? "edit" : scope, id);
   if (action === "items" || action === "items-existing") openCashItemsModal(action === "items-existing" ? "edit" : scope, id);
 }

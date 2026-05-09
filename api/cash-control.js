@@ -54,6 +54,7 @@ function mapCashTableRow(row, settings) {
     day: row?.record_day ?? row?.day,
     shiftId: row?.shift_id,
     shiftName: row?.shift_name,
+    status: row?.status,
     name: row?.name,
     denominations: row?.denominations,
     cardPos: row?.card_pos,
@@ -78,6 +79,7 @@ function buildCashTableBody(record, existing = {}) {
     record_day: record.day,
     shift_id: record.shiftId,
     shift_name: record.shiftName,
+    status: record.status,
     name: record.name,
     denominations: record.denominations,
     card_pos: Number(record.cardPos || 0),
@@ -162,7 +164,7 @@ module.exports = async function handler(req, res) {
         res.status(200).json({ rows: saved.records, settings: saved.settings });
         return;
       }
-      const nextRecord = sanitizeCashControlRecord(body, current.settings);
+      const nextRecord = sanitizeCashControlRecord({ ...body, status: "O" }, current.settings);
       validateCashControlRecord(nextRecord, current.rows, current.settings, { isCreate: true });
       await createCashTableRows([{
         ...nextRecord,
@@ -199,7 +201,7 @@ module.exports = async function handler(req, res) {
         res.status(404).json({ error: "Record not found." });
         return;
       }
-      const updated = sanitizeCashControlRecord({ ...existing, ...body, id: existing.id }, current.settings, existing);
+      const updated = sanitizeCashControlRecord({ ...existing, ...body, id: existing.id, status: body?.status ?? existing.status }, current.settings, existing);
       validateCashControlRecord(updated, current.rows, current.settings, { excludeId: existing.id, isCreate: false });
       await updateCashTableRow(existing.id, updated, existing);
       const rows = await loadCashTableRows(current.settings);

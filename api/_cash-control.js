@@ -21,6 +21,17 @@ const CASH_DENOMINATIONS = Object.freeze([
   { key: "0.01", value: 0.01 },
 ]);
 
+function normalizeCashStatus(value, fallback = "C") {
+  const raw = cleanText(value).toUpperCase();
+  if (raw === "O") return "O";
+  if (raw === "C") return "C";
+  return fallback === "O" ? "O" : "C";
+}
+
+function isOpenCashStatus(value) {
+  return normalizeCashStatus(value) === "O";
+}
+
 function slugify(value) {
   return cleanText(value)
     .normalize("NFD")
@@ -155,6 +166,7 @@ function sanitizeCashControlRecord(input = {}, settings, existing = {}) {
     day,
     shiftId: cleanText(shift?.id),
     shiftName: cleanText(shift?.name),
+    status: normalizeCashStatus(input.status ?? existing.status, "C"),
     name: cleanText(input.name ?? existing.name),
     denominations: sanitizeDenominations(input.denominations ?? existing.denominations),
     cardPos: normalizeMoney(input.cardPos ?? input.card_pos ?? existing.cardPos ?? existing.card_pos),
@@ -275,6 +287,23 @@ function validateCashControlRecord(record, records, settings, { excludeId = "", 
     error.statusCode = 400;
     throw error;
   }
+  const existing = records.find((row) => cleanText(row.id) === cleanText(excludeId)) || null;
+  const otherOpen = records.find((row) => isOpenCashStatus(row.status) && cleanText(row.id) !== cleanText(excludeId));
+  if (isCreate && otherOpen) {
+    const error = new Error("Close the current open shift before adding a new record.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (isOpenCashStatus(record.status) && otherOpen) {
+    const error = new Error("Only one cash control shift can stay open at a time.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (existing && normalizeCashStatus(existing.status) === "C" && normalizeCashStatus(record.status) !== "C") {
+    const error = new Error("A closed cash control shift cannot be reopened.");
+    error.statusCode = 400;
+    throw error;
+  }
   const computedRows = buildComputedCashRows(
     sortCashControlRecords(
       [...records.filter((row) => cleanText(row.id) !== cleanText(excludeId)), record],
@@ -370,6 +399,8 @@ module.exports = {
   calculateCashTotal,
   buildComputedCashRows,
   getNextExpectedCashRecord,
+  isOpenCashStatus,
+  normalizeCashStatus,
   normalizeCashInteger,
   normalizeCashNumber,
   normalizeMoney,
