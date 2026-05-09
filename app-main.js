@@ -9688,6 +9688,20 @@ function cashShiftOrder(settings = state.cashSettings) {
   return (settings?.shifts || DEFAULT_CASH_SETTINGS.shifts).map((shift) => clean(shift.id));
 }
 
+function cashShiftSortIndex(value, settings = state.cashSettings) {
+  const raw = clean(value);
+  const order = cashShiftOrder(settings);
+  if (raw) {
+    const directIndex = order.indexOf(raw);
+    if (directIndex >= 0) return directIndex;
+  }
+  const normalized = cashShiftDisplayLabel(raw).toLowerCase();
+  if (normalized === "n") return 0;
+  if (normalized === "m") return 1;
+  if (normalized === "t") return 2;
+  return Number.MAX_SAFE_INTEGER;
+}
+
 function normalizeCashCountsClient(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   return CASH_DENOMINATIONS.reduce((acc, denom) => {
@@ -9742,11 +9756,12 @@ function normalizeCashRecordClient(input = {}, settings = state.cashSettings) {
 }
 
 function cashSortRecordsClient(records = state.cashRecords, settings = state.cashSettings) {
-  const order = cashShiftOrder(settings);
   return [...records].sort((a, b) => {
     const dayCompare = clean(a.day).localeCompare(clean(b.day));
     if (dayCompare !== 0) return dayCompare;
-    return order.indexOf(clean(a.shiftId)) - order.indexOf(clean(b.shiftId));
+    const shiftCompare = cashShiftSortIndex(clean(a.shiftId) || clean(a.shiftName), settings) - cashShiftSortIndex(clean(b.shiftId) || clean(b.shiftName), settings);
+    if (shiftCompare !== 0) return shiftCompare;
+    return clean(a.shiftName).localeCompare(clean(b.shiftName));
   });
 }
 
@@ -9941,11 +9956,12 @@ function filteredCashRows(rows) {
 
 function visibleCashRows(rows, settings = state.cashSettings) {
   const filtered = filteredCashRows(rows);
-  const order = cashShiftOrder(settings);
   return [...filtered].sort((a, b) => {
     const dayCompare = clean(b.day).localeCompare(clean(a.day));
     if (dayCompare !== 0) return dayCompare;
-    return order.indexOf(clean(a.shiftId)) - order.indexOf(clean(b.shiftId));
+    const shiftCompare = cashShiftSortIndex(clean(a.shiftId) || clean(a.shiftName), settings) - cashShiftSortIndex(clean(b.shiftId) || clean(b.shiftName), settings);
+    if (shiftCompare !== 0) return shiftCompare;
+    return clean(a.shiftName).localeCompare(clean(b.shiftName));
   });
 }
 
