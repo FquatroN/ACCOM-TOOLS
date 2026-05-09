@@ -10321,7 +10321,7 @@ function renderCashMoneyModal(scope = "new", id = "") {
       const value = Number((quantity * denom.value).toFixed(2));
       return `<tr>
         <td>${escape(denom.key)}</td>
-        <td><input data-cash-money-key="${escape(denom.key)}" type="number" min="0" step="1" value="${escape(String(quantity))}" /></td>
+        <td><input data-cash-money-key="${escape(denom.key)}" type="text" inputmode="numeric" value="${escape(String(quantity))}" /></td>
         <td>${escape(formatCashMoney(value))}</td>
       </tr>`;
     }).join("");
@@ -10334,8 +10334,9 @@ function renderCashMoneyModal(scope = "new", id = "") {
     if (restoreTarget) {
       restoreTarget.focus();
       if (typeof caretStart === "number" && typeof restoreTarget.setSelectionRange === "function") {
-        const nextStart = Math.min(caretStart, String(restoreTarget.value || "").length);
-        const nextEnd = Math.min(caretEnd ?? caretStart, String(restoreTarget.value || "").length);
+        const valueLength = String(restoreTarget.value || "").length;
+        const nextStart = valueLength;
+        const nextEnd = valueLength;
         restoreTarget.setSelectionRange(nextStart, nextEnd);
       }
     }
@@ -10396,7 +10397,7 @@ function renderCashItemsModal(scope = "new", id = "") {
       return `<tr>
         <td>${escape(item.name)}</td>
         <td>${escape(String(item.defaultQuantity || 0))}</td>
-        <td><input data-cash-item-field="count" data-cash-item-id="${escape(item.id)}" type="number" min="0" step="1" value="${counted == null ? "" : escape(String(counted))}" /></td>
+        <td><input data-cash-item-field="count" data-cash-item-id="${escape(item.id)}" type="text" inputmode="numeric" value="${counted == null ? "" : escape(String(counted))}" /></td>
         <td>${escape(diff == null ? "-" : `${diff > 0 ? "+" : ""}${diff}`)}</td>
         <td><input data-cash-item-field="justification" data-cash-item-id="${escape(item.id)}" type="text" value="${escape(state.cashItemsJustificationsDraft[item.id] || "")}" ${needsJustification ? "" : "disabled"} /></td>
       </tr>`;
@@ -10411,8 +10412,10 @@ function renderCashItemsModal(scope = "new", id = "") {
   if (restoreTarget) {
     restoreTarget.focus();
     if (typeof caretStart === "number" && typeof restoreTarget.setSelectionRange === "function") {
-      const nextStart = Math.min(caretStart, String(restoreTarget.value || "").length);
-      const nextEnd = Math.min(caretEnd ?? caretStart, String(restoreTarget.value || "").length);
+      const forceEnd = focusField === "count";
+      const valueLength = String(restoreTarget.value || "").length;
+      const nextStart = forceEnd ? valueLength : Math.min(caretStart, valueLength);
+      const nextEnd = forceEnd ? valueLength : Math.min(caretEnd ?? caretStart, valueLength);
       restoreTarget.setSelectionRange(nextStart, nextEnd);
     }
   }
