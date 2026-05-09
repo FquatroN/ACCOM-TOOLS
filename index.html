@@ -1145,21 +1145,7 @@
                     <th>Day</th>
                     <th>Shift</th>
                     <th>Name</th>
-                    <th>500</th>
-                    <th>200</th>
-                    <th>100</th>
-                    <th>50</th>
-                    <th>20</th>
-                    <th>10</th>
-                    <th>5</th>
-                    <th>2</th>
-                    <th>1</th>
-                    <th>0,5</th>
-                    <th>0,2</th>
-                    <th>0,1</th>
-                    <th>0,05</th>
-                    <th>0,02</th>
-                    <th>0,01</th>
+                    <th>Cash</th>
                     <th>€ Caixa</th>
                     <th>Card POS</th>
                     <th>Cash FDM</th>
@@ -1176,6 +1162,34 @@
               </table>
             </div>
             <p id="cash-status" class="auth-status"></p>
+          </section>
+        </section>
+
+        <section id="cash-money-modal" class="modal-backdrop" hidden>
+          <section class="card modal-card cash-items-modal-card">
+            <div class="bar">
+              <h2>Cash Count</h2>
+              <div class="actions">
+                <button id="cash-money-close" type="button" class="ghost">Close</button>
+              </div>
+            </div>
+            <div id="cash-money-meta" class="review-detail empty"></div>
+            <div class="table-wrap">
+              <table class="settings-table cash-items-table">
+                <thead>
+                  <tr>
+                    <th>Denomination</th>
+                    <th>Quantity</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody id="cash-money-body"></tbody>
+              </table>
+            </div>
+            <p id="cash-money-total" class="auth-status"></p>
+            <div class="actions">
+              <button id="cash-money-save" type="button">Save Cash</button>
+            </div>
           </section>
         </section>
 

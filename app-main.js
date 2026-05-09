@@ -668,6 +668,7 @@ const state = {
   cashDraft: null,
   cashEditDraft: null,
   cashEditingId: "",
+  cashMoneyModalOpen: false,
   cashItemsModalOpen: false,
   cashItemsDraft: {},
   cashItemsJustificationsDraft: {},
@@ -816,6 +817,12 @@ const els = {
   cashRows: document.getElementById("cash-rows"),
   cashMobileCards: document.getElementById("cash-mobile-cards"),
   cashStatus: document.getElementById("cash-status"),
+  cashMoneyModal: document.getElementById("cash-money-modal"),
+  cashMoneyClose: document.getElementById("cash-money-close"),
+  cashMoneyMeta: document.getElementById("cash-money-meta"),
+  cashMoneyBody: document.getElementById("cash-money-body"),
+  cashMoneyTotal: document.getElementById("cash-money-total"),
+  cashMoneySave: document.getElementById("cash-money-save"),
   cashItemsModal: document.getElementById("cash-items-modal"),
   cashItemsClose: document.getElementById("cash-items-close"),
   cashItemsMeta: document.getElementById("cash-items-meta"),
@@ -1436,6 +1443,9 @@ function bindEvents() {
   els.cashSaveSettings?.addEventListener("click", saveCashSettings);
   els.cashAddShift?.addEventListener("click", addCashShiftSetting);
   els.cashAddItem?.addEventListener("click", addCashItemSetting);
+  els.cashMoneyClose?.addEventListener("click", closeCashMoneyModal);
+  els.cashMoneyBody?.addEventListener("input", onCashMoneyModalInput);
+  els.cashMoneySave?.addEventListener("click", saveCashMoneyModal);
   els.cashSettingsShiftsBody?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsItemsBody?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsShiftsBody?.addEventListener("click", onCashSettingsAction);
@@ -1912,6 +1922,9 @@ async function setView(view) {
   if (view !== "bakery" && els.bakeryDetailModal && !els.bakeryDetailModal.hidden) {
     closeBakeryDetailModal();
   }
+  if (view !== "cash" && state.cashMoneyModalOpen) {
+    closeCashMoneyModal();
+  }
   if (view !== "cash" && state.cashItemsModalOpen) {
     closeCashItemsModal();
   }
@@ -2089,7 +2102,7 @@ async function refreshCurrentViewData(reason = "timer") {
 function shouldSkipAutoRefresh() {
   if (state.currentView === "settings") return true;
   if (state.currentView === "communications" && (state.editingId || hasCommunicationDraft())) return true;
-  if (state.currentView === "cash" && (state.cashEditingId || hasCashDraft() || state.cashItemsModalOpen)) return true;
+  if (state.currentView === "cash" && (state.cashEditingId || hasCashDraft() || state.cashMoneyModalOpen || state.cashItemsModalOpen)) return true;
   if (state.currentView === "lost-found" && (state.lostFoundEditingId || hasLostFoundDraft())) return true;
   if (state.currentView === "groups" && els.groupEditorModal && !els.groupEditorModal.hidden) return true;
   if (state.currentView === "services" && els.serviceEditorModal && !els.serviceEditorModal.hidden) return true;
@@ -9924,6 +9937,10 @@ function visibleCashRows(rows, settings = state.cashSettings) {
   });
 }
 
+function cashSummaryButtonLabel(record) {
+  return record.cashTotal > 0 ? `Cash ${formatCashMoney(record.cashTotal)}` : "Cash";
+}
+
 function buildCashInlineRow() {
   const draft = state.cashDraft || emptyCashDraft();
   const computed = cashDraftComputed(draft);
@@ -9932,7 +9949,7 @@ function buildCashInlineRow() {
   tr.innerHTML = `<td>${escape(formatCashDateCompact(draft.day))}</td>
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || cashShiftById(draft.shiftId)?.name || ""))}</td>
     <td><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
-    ${CASH_DENOMINATIONS.map((denom) => `<td><input class="cash-count-input" data-cash-field="denom:${escape(denom.key)}" data-scope="new" type="number" min="0" step="1" value="${escape(String(draft.denominations?.[denom.key] || 0))}" /></td>`).join("")}
+    <td><button type="button" class="ghost" data-cash-action="cash" data-scope="new">${escape(cashSummaryButtonLabel(computed))}</button></td>
     <td>${escape(formatCashMoney(computed.cashTotal))}</td>
     <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cardPos ?? 0))}" /></td>
     <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
@@ -9952,7 +9969,7 @@ function buildCashReadOnlyRow(record) {
   tr.innerHTML = `<td>${escape(formatCashDateCompact(record.day))}</td>
     <td>${escape(cashShiftDisplayLabel(record.shiftName || ""))}</td>
     <td>${escape(record.name || "-")}</td>
-    ${CASH_DENOMINATIONS.map((denom) => `<td>${escape(String(record.denominations?.[denom.key] || 0))}</td>`).join("")}
+    <td><button type="button" class="ghost" data-cash-action="cash-existing" data-id="${escape(record.id)}">${escape(cashSummaryButtonLabel(record))}</button></td>
     <td>${escape(formatCashMoney(record.cashTotal))}</td>
     <td>${escape(formatCashMoney(record.cardPos))}</td>
     <td>${escape(formatCashMoney(record.cashFdm))}</td>
@@ -9974,7 +9991,7 @@ function buildCashEditableRow(record) {
   tr.innerHTML = `<td>${escape(formatCashDateCompact(draft.day))}</td>
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || ""))}</td>
     <td><input data-cash-field="name" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
-    ${CASH_DENOMINATIONS.map((denom) => `<td><input class="cash-count-input" data-cash-field="denom:${escape(denom.key)}" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="1" value="${escape(String(draft.denominations?.[denom.key] || 0))}" /></td>`).join("")}
+    <td><button type="button" class="ghost" data-cash-action="cash" data-id="${escape(record.id)}" data-scope="edit">${escape(cashSummaryButtonLabel(computed))}</button></td>
     <td>${escape(formatCashMoney(computed.cashTotal))}</td>
     <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cardPos ?? 0))}" /></td>
     <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
@@ -10000,6 +10017,7 @@ function buildCashReadOnlyCard(record) {
       <div class="group-mobile-total"><strong>${escape(formatCashMoney(record.cashTotal))}</strong><small>€ Caixa</small></div>
     </div>
     <div class="communication-mobile-grid">
+      <div class="communication-mobile-field"><small>Cash</small><div class="communication-mobile-message"><button type="button" class="ghost" data-cash-action="cash-existing" data-id="${escape(record.id)}">${escape(cashSummaryButtonLabel(record))}</button></div></div>
       <div class="communication-mobile-field"><small>Dif. Cash</small><div class="communication-mobile-message">${escape(formatCashMoney(record.diffCash))}</div></div>
       <div class="communication-mobile-field"><small>Dif. Card</small><div class="communication-mobile-message">${escape(formatCashMoney(record.diffCard))}</div></div>
       <div class="communication-mobile-field communication-mobile-field-full"><small>Justification</small><div class="communication-mobile-message">${escape(record.justification || "-")}</div></div>
@@ -10030,7 +10048,7 @@ function renderCashWarning() {
 function renderCash() {
   if (!canApp("cash")) {
     if (els.cashCount) els.cashCount.textContent = "0 records";
-    if (els.cashRows) els.cashRows.innerHTML = '<tr><td colspan="28" class="empty">Your profile has no access to Cash Control.</td></tr>';
+    if (els.cashRows) els.cashRows.innerHTML = '<tr><td colspan="14" class="empty">Your profile has no access to Cash Control.</td></tr>';
     return;
   }
   const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
@@ -10260,6 +10278,72 @@ async function saveCashDraft(scope = "new", id = "") {
   }
 }
 
+function renderCashMoneyModal(scope = "new", id = "") {
+  const draft = currentCashDraft(scope, id) || emptyCashDraft();
+  const computed = cashDraftComputed(draft);
+  const focusTarget = document.activeElement?.matches?.("[data-cash-money-key]") ? document.activeElement : null;
+  const focusKey = clean(focusTarget?.dataset?.cashMoneyKey);
+  const caretStart = focusTarget && typeof focusTarget.selectionStart === "number" ? focusTarget.selectionStart : null;
+  const caretEnd = focusTarget && typeof focusTarget.selectionEnd === "number" ? focusTarget.selectionEnd : null;
+  if (els.cashMoneyMeta) {
+    els.cashMoneyMeta.classList.remove("empty");
+    els.cashMoneyMeta.textContent = `${draft.day} · ${draft.shiftName || cashShiftById(draft.shiftId)?.name || ""} · ${draft.name || "-"}`;
+  }
+  if (els.cashMoneyBody) {
+    els.cashMoneyBody.innerHTML = CASH_DENOMINATIONS.map((denom) => {
+      const quantity = Math.max(0, Math.round(Number(draft.denominations?.[denom.key] || 0)));
+      const value = Number((quantity * denom.value).toFixed(2));
+      return `<tr>
+        <td>${escape(denom.key)}</td>
+        <td><input data-cash-money-key="${escape(denom.key)}" type="number" min="0" step="1" value="${escape(String(quantity))}" /></td>
+        <td>${escape(formatCashMoney(value))}</td>
+      </tr>`;
+    }).join("");
+  }
+  if (els.cashMoneyTotal) els.cashMoneyTotal.textContent = `Total cash: ${formatCashMoney(computed.cashTotal)}`;
+  if (els.cashMoneyModal) els.cashMoneyModal.hidden = false;
+  document.body.classList.add("modal-open");
+  if (focusKey) {
+    const restoreTarget = document.querySelector(`[data-cash-money-key="${CSS.escape(focusKey)}"]`);
+    if (restoreTarget) {
+      restoreTarget.focus();
+      if (typeof caretStart === "number" && typeof restoreTarget.setSelectionRange === "function") {
+        const nextStart = Math.min(caretStart, String(restoreTarget.value || "").length);
+        const nextEnd = Math.min(caretEnd ?? caretStart, String(restoreTarget.value || "").length);
+        restoreTarget.setSelectionRange(nextStart, nextEnd);
+      }
+    }
+  }
+}
+
+function openCashMoneyModal(scope = "new", id = "") {
+  if (scope === "edit" && id && clean(state.cashEditingId) !== clean(id)) startCashEdit(id);
+  state.cashMoneyModalOpen = true;
+  renderCashMoneyModal(scope, id);
+}
+
+function closeCashMoneyModal() {
+  state.cashMoneyModalOpen = false;
+  if (els.cashMoneyModal) els.cashMoneyModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function onCashMoneyModalInput(event) {
+  const target = event.target;
+  const key = clean(target?.dataset?.cashMoneyKey);
+  if (!key) return;
+  const scope = state.cashEditingId ? "edit" : "new";
+  const draft = clone(currentCashDraft(scope, state.cashEditingId) || emptyCashDraft());
+  draft.denominations[key] = Math.max(0, Math.round(Number(normalizeNumber(target.value) || 0)));
+  setCurrentCashDraft(normalizeCashRecordClient(draft, state.cashSettings), scope);
+  renderCashMoneyModal(scope, state.cashEditingId);
+}
+
+function saveCashMoneyModal() {
+  closeCashMoneyModal();
+  renderCash();
+}
+
 function ensureCashItemsDraft(scope = "new", id = "") {
   const draft = currentCashDraft(scope, id) || emptyCashDraft();
   state.cashItemsDraft = clone(draft.itemCounts || {});
@@ -10355,6 +10439,7 @@ function onCashTableAction(event) {
   if (action === "cancel-edit") cancelCashEdit();
   if (action === "save-new") saveCashDraft("new");
   if (action === "save-edit" && id) saveCashDraft("edit", id);
+  if (action === "cash" || action === "cash-existing") openCashMoneyModal(action === "cash-existing" ? "edit" : scope, id);
   if (action === "items" || action === "items-existing") openCashItemsModal(action === "items-existing" ? "edit" : scope, id);
 }
 
