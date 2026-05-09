@@ -1973,8 +1973,8 @@ select:disabled {
 
 .cash-table th:nth-child(11),
 .cash-table td:nth-child(11) {
-  min-width: 840px;
-  width: 840px;
+  min-width: 280px;
+  width: 280px;
   white-space: normal;
   overflow-wrap: anywhere;
   vertical-align: top;
