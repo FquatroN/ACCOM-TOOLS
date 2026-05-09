@@ -664,7 +664,7 @@ const state = {
   cashLoaded: false,
   cashSettings: clone(DEFAULT_CASH_SETTINGS),
   cashSettingsLoaded: false,
-  cashFilters: { dateFrom: cashDefaultDateFrom(), dateTo: "" },
+  cashFilters: { dateFrom: cashDefaultDateFrom(), dateTo: "", shift: "", name: "" },
   cashDraft: null,
   cashEditDraft: null,
   cashEditingId: "",
@@ -814,6 +814,8 @@ const els = {
   cashWarning: document.getElementById("cash-warning"),
   cashFilterDateFrom: document.getElementById("cash-filter-date-from"),
   cashFilterDateTo: document.getElementById("cash-filter-date-to"),
+  cashFilterShift: document.getElementById("cash-filter-shift"),
+  cashFilterName: document.getElementById("cash-filter-name"),
   cashRows: document.getElementById("cash-rows"),
   cashMobileCards: document.getElementById("cash-mobile-cards"),
   cashStatus: document.getElementById("cash-status"),
@@ -1440,6 +1442,8 @@ function bindEvents() {
   els.cashMobileCards?.addEventListener("input", onCashTableInput);
   els.cashFilterDateFrom?.addEventListener("input", onCashFilterInput);
   els.cashFilterDateTo?.addEventListener("input", onCashFilterInput);
+  els.cashFilterShift?.addEventListener("input", onCashFilterInput);
+  els.cashFilterName?.addEventListener("input", onCashFilterInput);
   els.cashSaveSettings?.addEventListener("click", saveCashSettings);
   els.cashAddShift?.addEventListener("click", addCashShiftSetting);
   els.cashAddItem?.addEventListener("click", addCashItemSetting);
@@ -9946,10 +9950,18 @@ function formatCashDateCompact(value) {
 function filteredCashRows(rows) {
   const dateFrom = clean(state.cashFilters.dateFrom);
   const dateTo = clean(state.cashFilters.dateTo);
+  const shift = clean(state.cashFilters.shift).toLowerCase();
+  const name = clean(state.cashFilters.name).toLowerCase();
   return rows.filter((row) => {
     const day = clean(row.day);
     if (dateFrom && day && day < dateFrom) return false;
     if (dateTo && day && day > dateTo) return false;
+    if (shift) {
+      const rowShift = clean(row.shiftId || row.shiftName).toLowerCase();
+      const rowShiftLabel = cashShiftDisplayLabel(row.shiftName || row.shiftId || "").toLowerCase();
+      if (rowShift !== shift && rowShiftLabel !== shift) return false;
+    }
+    if (name && !clean(row.name).toLowerCase().includes(name)) return false;
     return true;
   });
 }
@@ -10085,6 +10097,13 @@ function renderCash() {
   const caretEnd = focusTarget && typeof focusTarget.selectionEnd === "number" ? focusTarget.selectionEnd : null;
   if (els.cashFilterDateFrom) els.cashFilterDateFrom.value = clean(state.cashFilters.dateFrom);
   if (els.cashFilterDateTo) els.cashFilterDateTo.value = clean(state.cashFilters.dateTo);
+  if (els.cashFilterShift) {
+    const shifts = state.cashSettings?.shifts || DEFAULT_CASH_SETTINGS.shifts;
+    const current = clean(state.cashFilters.shift);
+    els.cashFilterShift.innerHTML = [`<option value="">All</option>`, ...shifts.map((shift) => `<option value="${escape(clean(shift.id))}">${escape(shift.name)}</option>`)].join("");
+    els.cashFilterShift.value = current;
+  }
+  if (els.cashFilterName) els.cashFilterName.value = clean(state.cashFilters.name);
   if (els.cashCount) els.cashCount.textContent = `${visibleRows.length} record${visibleRows.length === 1 ? "" : "s"}`;
   renderCashWarning();
   renderCashMobileCards(visibleRows);
@@ -10256,6 +10275,8 @@ function onCashTableInput(event) {
 function onCashFilterInput() {
   state.cashFilters.dateFrom = clean(els.cashFilterDateFrom?.value) || cashDefaultDateFrom();
   state.cashFilters.dateTo = clean(els.cashFilterDateTo?.value);
+  state.cashFilters.shift = clean(els.cashFilterShift?.value);
+  state.cashFilters.name = clean(els.cashFilterName?.value);
   renderCash();
 }
 

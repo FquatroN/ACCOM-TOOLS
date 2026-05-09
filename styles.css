@@ -1871,7 +1871,7 @@ select:disabled {
 .cash-filters {
   margin-top: 0.45rem;
   gap: 0.65rem;
-  grid-template-columns: minmax(150px, 0.9fr) minmax(150px, 0.9fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: end;
 }
 
