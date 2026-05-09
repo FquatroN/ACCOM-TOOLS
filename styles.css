@@ -1886,6 +1886,15 @@ select:disabled {
   padding: 0.26rem 0.3rem;
 }
 
+.cash-table th:nth-child(3),
+.cash-table td:nth-child(3),
+.cash-table th:nth-child(5),
+.cash-table td:nth-child(5),
+.cash-table th:nth-child(7),
+.cash-table td:nth-child(7) {
+  border-right: 2px solid var(--line);
+}
+
 .cash-table input {
   width: 4.6rem;
   min-width: 4.6rem;
@@ -1906,7 +1915,8 @@ select:disabled {
 
 .cash-table th:nth-child(1),
 .cash-table td:nth-child(1) {
-  min-width: 60px;
+  min-width: 46px;
+  width: 46px;
 }
 
 .cash-table th:nth-child(2),
@@ -1936,24 +1946,26 @@ select:disabled {
 .cash-table th:nth-child(9),
 .cash-table td:nth-child(9),
 .cash-table th:nth-child(10),
-.cash-table td:nth-child(10),
+.cash-table td:nth-child(10) {
+  min-width: 74px;
+}
+
 .cash-table th:nth-child(11),
 .cash-table td:nth-child(11) {
-  min-width: 74px;
+  min-width: 220px;
+  width: 220px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
 }
 
 .cash-table th:nth-child(12),
 .cash-table td:nth-child(12) {
-  min-width: 170px;
+  min-width: 68px;
 }
 
 .cash-table th:nth-child(13),
 .cash-table td:nth-child(13) {
-  min-width: 68px;
-}
-
-.cash-table th:nth-child(14),
-.cash-table td:nth-child(14) {
   min-width: 88px;
 }
 
