@@ -9914,6 +9914,16 @@ function filteredCashRows(rows) {
   });
 }
 
+function visibleCashRows(rows, settings = state.cashSettings) {
+  const filtered = filteredCashRows(rows);
+  const order = cashShiftOrder(settings);
+  return [...filtered].sort((a, b) => {
+    const dayCompare = clean(b.day).localeCompare(clean(a.day));
+    if (dayCompare !== 0) return dayCompare;
+    return order.indexOf(clean(a.shiftId)) - order.indexOf(clean(b.shiftId));
+  });
+}
+
 function buildCashInlineRow() {
   const draft = state.cashDraft || emptyCashDraft();
   const computed = cashDraftComputed(draft);
@@ -10024,7 +10034,7 @@ function renderCash() {
     return;
   }
   const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
-  const visibleRows = filteredCashRows(rows);
+  const visibleRows = visibleCashRows(rows, state.cashSettings);
   const focusTarget = document.activeElement?.matches?.("[data-cash-field]") ? document.activeElement : null;
   const focusField = clean(focusTarget?.dataset?.cashField);
   const focusScope = clean(focusTarget?.dataset?.scope);
