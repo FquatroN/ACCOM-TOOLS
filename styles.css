@@ -1909,6 +1909,11 @@ select:disabled {
   font-size: 0.72rem;
 }
 
+.cash-table td:nth-child(11) input {
+  width: 100%;
+  min-width: 100%;
+}
+
 .cash-table .cash-count-input {
   width: 3.4rem;
   min-width: 3.4rem;
@@ -1968,8 +1973,8 @@ select:disabled {
 
 .cash-table th:nth-child(11),
 .cash-table td:nth-child(11) {
-  min-width: 280px;
-  width: 280px;
+  min-width: 840px;
+  width: 840px;
   white-space: normal;
   overflow-wrap: anywhere;
   vertical-align: top;
