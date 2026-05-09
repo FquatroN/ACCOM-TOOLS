@@ -359,7 +359,7 @@ function sanitizeCashControlPayload(input = {}) {
   const settings = sanitizeCashControlSettings(input.settings || input.cashSettings || input);
   const rawRecords = Array.isArray(input.records || input.cashRecords)
     ? input.records || input.cashRecords
-    : cashDefaults.records;
+    : [];
   const records = sanitizeCashControlRecords(rawRecords, settings);
   return { settings, records };
 }

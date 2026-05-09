@@ -130,25 +130,12 @@ function mergeCashRecord(records, input, settings, id = "") {
   return sanitizeCashControlRecords(nextRows, settings);
 }
 
-async function seedCashTableIfEmpty(settings, legacyRecords) {
-  const safe = sanitizeCashControlRecords(legacyRecords, settings);
-  if (!safe.length) return [];
-  await createCashTableRows(safe.map((record) => ({
-    ...record,
-    createdAt: record.createdAt || new Date().toISOString(),
-    updatedAt: record.updatedAt || new Date().toISOString(),
-  })));
-  return loadCashTableRows(settings);
-}
-
 async function loadRecordsAndSettings() {
   const { payload } = await loadCashPayloadRow();
   const settings = payload.settings;
   try {
     const rows = await loadCashTableRows(settings);
-    if (rows.length > 0) return { mode: "table", settings, rows };
-    const seededRows = await seedCashTableIfEmpty(settings, payload.records);
-    return { mode: "table", settings, rows: seededRows };
+    return { mode: "table", settings, rows };
   } catch (error) {
     if (!isMissingCashTableError(error)) throw error;
     return { mode: "legacy", settings, rows: payload.records };
