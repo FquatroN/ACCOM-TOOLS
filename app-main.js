@@ -664,6 +664,7 @@ const state = {
   cashLoaded: false,
   cashSettings: clone(DEFAULT_CASH_SETTINGS),
   cashSettingsLoaded: false,
+  cashScreen: "list",
   cashFilters: { dateFrom: cashDefaultDateFrom(), dateTo: "", shift: "", name: "" },
   cashDraft: null,
   cashEditDraft: null,
@@ -810,13 +811,18 @@ const els = {
   cashSettingsShiftsBody: document.getElementById("cash-settings-shifts-body"),
   cashSettingsItemsBody: document.getElementById("cash-settings-items-body"),
   cashSettingsStatus: document.getElementById("cash-settings-status"),
+  cashTabList: document.getElementById("cash-tab-list"),
+  cashTabDetail: document.getElementById("cash-tab-detail"),
   cashCount: document.getElementById("cash-count"),
   cashWarning: document.getElementById("cash-warning"),
   cashFilterDateFrom: document.getElementById("cash-filter-date-from"),
   cashFilterDateTo: document.getElementById("cash-filter-date-to"),
   cashFilterShift: document.getElementById("cash-filter-shift"),
   cashFilterName: document.getElementById("cash-filter-name"),
+  cashPanelList: document.getElementById("cash-panel-list"),
+  cashPanelDetail: document.getElementById("cash-panel-detail"),
   cashRows: document.getElementById("cash-rows"),
+  cashDetailRows: document.getElementById("cash-detail-rows"),
   cashMobileCards: document.getElementById("cash-mobile-cards"),
   cashStatus: document.getElementById("cash-status"),
   cashMoneyModal: document.getElementById("cash-money-modal"),
@@ -1444,6 +1450,14 @@ function bindEvents() {
   els.cashFilterDateTo?.addEventListener("input", onCashFilterInput);
   els.cashFilterShift?.addEventListener("input", onCashFilterInput);
   els.cashFilterName?.addEventListener("input", onCashFilterInput);
+  els.cashTabList?.addEventListener("click", () => {
+    state.cashScreen = "list";
+    renderCash();
+  });
+  els.cashTabDetail?.addEventListener("click", () => {
+    state.cashScreen = "detail";
+    renderCash();
+  });
   els.cashSaveSettings?.addEventListener("click", saveCashSettings);
   els.cashAddShift?.addEventListener("click", addCashShiftSetting);
   els.cashAddItem?.addEventListener("click", addCashItemSetting);
@@ -9991,6 +10005,37 @@ function visibleCashRows(rows, settings = state.cashSettings) {
   });
 }
 
+function renderCashScreenTabs() {
+  if (els.cashTabList) {
+    els.cashTabList.classList.toggle("active-tab", state.cashScreen === "list");
+    els.cashTabList.classList.toggle("ghost", state.cashScreen !== "list");
+  }
+  if (els.cashTabDetail) {
+    els.cashTabDetail.classList.toggle("active-tab", state.cashScreen === "detail");
+    els.cashTabDetail.classList.toggle("ghost", state.cashScreen !== "detail");
+  }
+  if (els.cashPanelList) els.cashPanelList.hidden = state.cashScreen !== "list";
+  if (els.cashPanelDetail) els.cashPanelDetail.hidden = state.cashScreen !== "detail";
+}
+
+function renderCashDetailRows(rows) {
+  if (!els.cashDetailRows) return;
+  els.cashDetailRows.innerHTML = "";
+  if (!rows.length) {
+    els.cashDetailRows.innerHTML = '<tr><td colspan="19" class="empty">No cash records found.</td></tr>';
+    return;
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escape(formatCashDateCompact(row.day))}</td>
+      <td>${escape(cashShiftDisplayLabel(row.shiftName || row.shiftId || ""))}</td>
+      <td>${escape(row.name || "-")}</td>
+      ${CASH_DENOMINATIONS.map((denom) => `<td>${escape(String(Number(row.denominations?.[denom.key] || 0)))}</td>`).join("")}
+      <td>${escape(formatCashMoney(row.cashTotal))}</td>`;
+    els.cashDetailRows.appendChild(tr);
+  });
+}
+
 function cashSummaryButtonLabel(record) {
   return record.cashTotal > 0 ? formatCashMoney(record.cashTotal) : "Cash";
 }
@@ -10099,10 +10144,12 @@ function renderCash() {
   if (!canApp("cash")) {
     if (els.cashCount) els.cashCount.textContent = "0 records";
     if (els.cashRows) els.cashRows.innerHTML = '<tr><td colspan="13" class="empty">Your profile has no access to Cash Control.</td></tr>';
+    if (els.cashDetailRows) els.cashDetailRows.innerHTML = '<tr><td colspan="19" class="empty">Your profile has no access to Cash Control.</td></tr>';
     return;
   }
   const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
   const visibleRows = visibleCashRows(rows, state.cashSettings);
+  renderCashScreenTabs();
   const focusTarget = document.activeElement?.matches?.("[data-cash-field]") ? document.activeElement : null;
   const focusField = clean(focusTarget?.dataset?.cashField);
   const focusScope = clean(focusTarget?.dataset?.scope);
@@ -10120,6 +10167,7 @@ function renderCash() {
   if (els.cashFilterName) els.cashFilterName.value = clean(state.cashFilters.name);
   if (els.cashCount) els.cashCount.textContent = `${visibleRows.length} record${visibleRows.length === 1 ? "" : "s"}`;
   renderCashWarning();
+  renderCashDetailRows(visibleRows);
   renderCashMobileCards(visibleRows);
   if (els.cashRows) {
     els.cashRows.innerHTML = "";

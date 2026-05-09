@@ -1118,6 +1118,8 @@
             <div class="bar">
               <h2>Cash Control</h2>
               <div class="actions">
+                <button id="cash-tab-list" type="button" class="active-tab">List</button>
+                <button id="cash-tab-detail" type="button" class="ghost">Cash Detail</button>
                 <p id="cash-count">0 records</p>
               </div>
             </div>
@@ -1145,29 +1147,61 @@
                 <input id="cash-filter-name" type="text" />
               </label>
             </div>
-            <div id="cash-mobile-cards" class="cash-mobile-cards"></div>
-            <div class="table-wrap cash-table-wrap">
-              <table class="shopping-history-table cash-table">
-                <thead>
-                  <tr>
-                    <th>Day</th>
-                    <th>Shift</th>
-                    <th>Name</th>
-                    <th>Cash</th>
-                    <th>Card POS</th>
-                    <th>Cash FDM</th>
-                    <th>Card FDM</th>
-                    <th>Cash (Calc)</th>
-                    <th>Dif. Cash</th>
-                    <th>Dif. Card</th>
-                    <th>Justification</th>
-                    <th>Items</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="cash-rows"></tbody>
-              </table>
-            </div>
+            <section id="cash-panel-list">
+              <div id="cash-mobile-cards" class="cash-mobile-cards"></div>
+              <div class="table-wrap cash-table-wrap">
+                <table class="shopping-history-table cash-table">
+                  <thead>
+                    <tr>
+                      <th>Day</th>
+                      <th>Shift</th>
+                      <th>Name</th>
+                      <th>Cash</th>
+                      <th>Card POS</th>
+                      <th>Cash FDM</th>
+                      <th>Card FDM</th>
+                      <th>Cash (Calc)</th>
+                      <th>Dif. Cash</th>
+                      <th>Dif. Card</th>
+                      <th>Justification</th>
+                      <th>Items</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cash-rows"></tbody>
+                </table>
+              </div>
+            </section>
+            <section id="cash-panel-detail" hidden>
+              <div class="table-wrap cash-detail-table-wrap">
+                <table class="shopping-history-table cash-detail-table">
+                  <thead>
+                    <tr>
+                      <th>Day</th>
+                      <th>Shift</th>
+                      <th>Name</th>
+                      <th>500</th>
+                      <th>200</th>
+                      <th>100</th>
+                      <th>50</th>
+                      <th>20</th>
+                      <th>10</th>
+                      <th>5</th>
+                      <th>2</th>
+                      <th>1</th>
+                      <th>0,5</th>
+                      <th>0,2</th>
+                      <th>0,1</th>
+                      <th>0,05</th>
+                      <th>0,02</th>
+                      <th>0,01</th>
+                      <th>€ Calculated</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cash-detail-rows"></tbody>
+                </table>
+              </div>
+            </section>
             <p id="cash-status" class="auth-status"></p>
           </section>
         </section>

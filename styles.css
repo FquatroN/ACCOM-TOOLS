@@ -1879,11 +1879,52 @@ select:disabled {
   min-width: 1280px;
 }
 
+.cash-detail-table-wrap {
+  overflow-x: auto;
+  padding-bottom: 0.4rem;
+}
+
+.cash-detail-table {
+  min-width: 1300px;
+}
+
 .cash-table th,
 .cash-table td {
   white-space: nowrap;
   font-size: 0.74rem;
   padding: 0.26rem 0.3rem;
+}
+
+.cash-detail-table th,
+.cash-detail-table td {
+  white-space: nowrap;
+  font-size: 0.68rem;
+  padding: 0.22rem 0.28rem;
+  text-align: center;
+}
+
+.cash-detail-table th:nth-child(1),
+.cash-detail-table td:nth-child(1) {
+  width: 46px;
+  min-width: 46px;
+}
+
+.cash-detail-table th:nth-child(2),
+.cash-detail-table td:nth-child(2) {
+  width: 42px;
+  min-width: 42px;
+}
+
+.cash-detail-table th:nth-child(3),
+.cash-detail-table td:nth-child(3) {
+  min-width: 120px;
+  text-align: left;
+}
+
+.cash-detail-table th:last-child,
+.cash-detail-table td:last-child {
+  min-width: 88px;
+  text-align: right;
 }
 
 .cash-table th {
