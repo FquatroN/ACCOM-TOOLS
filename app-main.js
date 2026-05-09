@@ -9901,7 +9901,7 @@ function emptyCashDraft() {
     cardFdm: "",
     justification: "",
     itemCounts: (state.cashSettings?.items || DEFAULT_CASH_SETTINGS.items).reduce((acc, item) => {
-      acc[item.id] = item.defaultQuantity;
+      acc[item.id] = null;
       return acc;
     }, {}),
     itemJustifications: {},
