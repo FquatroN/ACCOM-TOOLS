@@ -1950,6 +1950,15 @@ select:disabled {
   min-width: 74px;
 }
 
+.cash-table td:nth-child(5),
+.cash-table td:nth-child(6),
+.cash-table td:nth-child(7),
+.cash-table td:nth-child(8),
+.cash-table td:nth-child(9),
+.cash-table td:nth-child(10) {
+  text-align: right;
+}
+
 .cash-table th:nth-child(11),
 .cash-table td:nth-child(11) {
   min-width: 220px;

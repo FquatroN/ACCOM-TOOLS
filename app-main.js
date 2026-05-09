@@ -9966,7 +9966,7 @@ function visibleCashRows(rows, settings = state.cashSettings) {
 }
 
 function cashSummaryButtonLabel(record) {
-  return record.cashTotal > 0 ? `Cash ${formatCashMoney(record.cashTotal)}` : "Cash";
+  return record.cashTotal > 0 ? formatCashMoney(record.cashTotal) : "Cash";
 }
 
 function buildCashInlineRow() {
