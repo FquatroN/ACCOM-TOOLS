@@ -1896,7 +1896,9 @@ select:disabled {
 .cash-table th:nth-child(5),
 .cash-table td:nth-child(5),
 .cash-table th:nth-child(7),
-.cash-table td:nth-child(7) {
+.cash-table td:nth-child(7),
+.cash-table th:nth-child(8),
+.cash-table td:nth-child(8) {
   border-right: 2px solid var(--line);
 }
 
