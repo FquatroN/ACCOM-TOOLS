@@ -9959,9 +9959,9 @@ function visibleCashRows(rows, settings = state.cashSettings) {
   return [...filtered].sort((a, b) => {
     const dayCompare = clean(b.day).localeCompare(clean(a.day));
     if (dayCompare !== 0) return dayCompare;
-    const shiftCompare = cashShiftSortIndex(clean(a.shiftId) || clean(a.shiftName), settings) - cashShiftSortIndex(clean(b.shiftId) || clean(b.shiftName), settings);
+    const shiftCompare = cashShiftSortIndex(clean(b.shiftId) || clean(b.shiftName), settings) - cashShiftSortIndex(clean(a.shiftId) || clean(a.shiftName), settings);
     if (shiftCompare !== 0) return shiftCompare;
-    return clean(a.shiftName).localeCompare(clean(b.shiftName));
+    return clean(b.shiftName).localeCompare(clean(a.shiftName));
   });
 }
 
