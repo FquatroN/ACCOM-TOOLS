@@ -10068,6 +10068,10 @@ function cashDiffValueClass(value) {
   return value != null && Number(value) !== 0 ? "cash-diff-value" : "";
 }
 
+function formatCashDiffValue(value) {
+  return value != null && Number(value) === 0 ? "" : formatCashMoney(value);
+}
+
 function buildCashInlineRow() {
   const draft = state.cashDraft || emptyCashDraft();
   const computed = cashDraftComputed(draft);
@@ -10100,8 +10104,8 @@ function buildCashReadOnlyRow(record) {
     <td>${escape(formatCashMoney(record.cashFdm))}</td>
     <td>${escape(formatCashMoney(record.cardFdm))}</td>
     <td>${escape(formatCashMoney(record.calculatedCash))}</td>
-    <td class="${cashDiffValueClass(record.diffCash)}">${escape(formatCashMoney(record.diffCash))}</td>
-    <td class="${cashDiffValueClass(record.diffCard)}">${escape(formatCashMoney(record.diffCard))}</td>
+    <td class="${cashDiffValueClass(record.diffCash)}">${escape(formatCashDiffValue(record.diffCash))}</td>
+    <td class="${cashDiffValueClass(record.diffCard)}">${escape(formatCashDiffValue(record.diffCard))}</td>
     <td>${escape(record.justification || "-")}</td>
     <td><button type="button" class="ghost${record.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items-existing" data-id="${escape(record.id)}">${escape(cashItemDiffLabel(record))}</button></td>
     <td><button type="button" class="ghost" data-cash-action="edit" data-id="${escape(record.id)}">Edit</button></td>`;
@@ -10121,8 +10125,8 @@ function buildCashEditableRow(record, { openMode = false } = {}) {
     <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
     <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
     <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
-    <td class="${cashDiffValueClass(computed.diffCash)}">${escape(formatCashMoney(computed.diffCash))}</td>
-    <td class="${cashDiffValueClass(computed.diffCard)}">${escape(formatCashMoney(computed.diffCard))}</td>
+    <td class="${cashDiffValueClass(computed.diffCash)}">${escape(formatCashDiffValue(computed.diffCash))}</td>
+    <td class="${cashDiffValueClass(computed.diffCard)}">${escape(formatCashDiffValue(computed.diffCard))}</td>
     <td><input data-cash-field="justification" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
     <td><button type="button" class="ghost${computed.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="edit">${escape(cashItemDiffLabel(computed))}</button></td>
     <td>${openMode
@@ -10143,8 +10147,8 @@ function buildCashReadOnlyCard(record) {
     </div>
     <div class="communication-mobile-grid">
       <div class="communication-mobile-field"><small>Cash</small><div class="communication-mobile-message"><button type="button" class="ghost" data-cash-action="cash-existing" data-id="${escape(record.id)}">${escape(cashSummaryButtonLabel(record))}</button></div></div>
-      <div class="communication-mobile-field"><small>Dif. Cash</small><div class="communication-mobile-message ${cashDiffValueClass(record.diffCash)}">${escape(formatCashMoney(record.diffCash))}</div></div>
-      <div class="communication-mobile-field"><small>Dif. Card</small><div class="communication-mobile-message ${cashDiffValueClass(record.diffCard)}">${escape(formatCashMoney(record.diffCard))}</div></div>
+      <div class="communication-mobile-field"><small>Dif. Cash</small><div class="communication-mobile-message ${cashDiffValueClass(record.diffCash)}">${escape(formatCashDiffValue(record.diffCash))}</div></div>
+      <div class="communication-mobile-field"><small>Dif. Card</small><div class="communication-mobile-message ${cashDiffValueClass(record.diffCard)}">${escape(formatCashDiffValue(record.diffCard))}</div></div>
       <div class="communication-mobile-field communication-mobile-field-full"><small>Justification</small><div class="communication-mobile-message">${escape(record.justification || "-")}</div></div>
     </div>
     <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost" data-cash-action="items-existing" data-id="${escape(record.id)}">${escape(cashItemDiffLabel(record))}</button><button type="button" data-cash-action="edit" data-id="${escape(record.id)}">Edit</button></div></div>`;
