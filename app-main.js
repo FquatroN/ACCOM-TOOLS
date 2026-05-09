@@ -9962,7 +9962,6 @@ function buildCashInlineRow() {
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || cashShiftById(draft.shiftId)?.name || ""))}</td>
     <td><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
     <td><button type="button" class="ghost" data-cash-action="cash" data-scope="new">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td>${escape(formatCashMoney(computed.cashTotal))}</td>
     <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cardPos ?? 0))}" /></td>
     <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
     <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
@@ -9982,7 +9981,6 @@ function buildCashReadOnlyRow(record) {
     <td>${escape(cashShiftDisplayLabel(record.shiftName || ""))}</td>
     <td>${escape(record.name || "-")}</td>
     <td><button type="button" class="ghost" data-cash-action="cash-existing" data-id="${escape(record.id)}">${escape(cashSummaryButtonLabel(record))}</button></td>
-    <td>${escape(formatCashMoney(record.cashTotal))}</td>
     <td>${escape(formatCashMoney(record.cardPos))}</td>
     <td>${escape(formatCashMoney(record.cashFdm))}</td>
     <td>${escape(formatCashMoney(record.cardFdm))}</td>
@@ -10004,7 +10002,6 @@ function buildCashEditableRow(record) {
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || ""))}</td>
     <td><input data-cash-field="name" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
     <td><button type="button" class="ghost" data-cash-action="cash" data-id="${escape(record.id)}" data-scope="edit">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td>${escape(formatCashMoney(computed.cashTotal))}</td>
     <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cardPos ?? 0))}" /></td>
     <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
     <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
@@ -10026,7 +10023,6 @@ function buildCashReadOnlyCard(record) {
         <div class="service-mobile-request">${escape(formatCashDateCompact(record.day))} · ${escape(cashShiftDisplayLabel(record.shiftName || ""))}</div>
         <div class="communication-mobile-meta">${escape(record.name || "-")}</div>
       </div>
-      <div class="group-mobile-total"><strong>${escape(formatCashMoney(record.cashTotal))}</strong><small>€ Caixa</small></div>
     </div>
     <div class="communication-mobile-grid">
       <div class="communication-mobile-field"><small>Cash</small><div class="communication-mobile-message"><button type="button" class="ghost" data-cash-action="cash-existing" data-id="${escape(record.id)}">${escape(cashSummaryButtonLabel(record))}</button></div></div>
@@ -10060,7 +10056,7 @@ function renderCashWarning() {
 function renderCash() {
   if (!canApp("cash")) {
     if (els.cashCount) els.cashCount.textContent = "0 records";
-    if (els.cashRows) els.cashRows.innerHTML = '<tr><td colspan="14" class="empty">Your profile has no access to Cash Control.</td></tr>';
+    if (els.cashRows) els.cashRows.innerHTML = '<tr><td colspan="13" class="empty">Your profile has no access to Cash Control.</td></tr>';
     return;
   }
   const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
@@ -15535,3 +15531,4 @@ function escape(value) {
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
+
