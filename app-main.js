@@ -9978,9 +9978,9 @@ function buildCashInlineRow() {
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || cashShiftById(draft.shiftId)?.name || ""))}</td>
     <td><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
     <td><button type="button" class="ghost" data-cash-action="cash" data-scope="new">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cardPos ?? 0))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
     <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
@@ -10018,9 +10018,9 @@ function buildCashEditableRow(record) {
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || ""))}</td>
     <td><input data-cash-field="name" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
     <td><button type="button" class="ghost" data-cash-action="cash" data-id="${escape(record.id)}" data-scope="edit">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cardPos ?? 0))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
     <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
@@ -10101,8 +10101,10 @@ function renderCash() {
   if (restoreTarget) {
     restoreTarget.focus();
     if (typeof caretStart === "number" && typeof restoreTarget.setSelectionRange === "function") {
-      const nextStart = Math.min(caretStart, String(restoreTarget.value || "").length);
-      const nextEnd = Math.min(caretEnd ?? caretStart, String(restoreTarget.value || "").length);
+      const forceEnd = ["cardPos", "cashFdm", "cardFdm"].includes(focusField);
+      const valueLength = String(restoreTarget.value || "").length;
+      const nextStart = forceEnd ? valueLength : Math.min(caretStart, valueLength);
+      const nextEnd = forceEnd ? valueLength : Math.min(caretEnd ?? caretStart, valueLength);
       restoreTarget.setSelectionRange(nextStart, nextEnd);
     }
   }
