@@ -9872,13 +9872,21 @@ function cashItemDiffLabel(record) {
   return record.hasItemDiffs ? "Items *" : "Items";
 }
 
+function cashShiftDisplayLabel(value) {
+  const raw = clean(value).toLowerCase();
+  if (raw === "night" || raw === "n") return "N";
+  if (raw === "morning" || raw === "m") return "M";
+  if (raw === "afternoon" || raw === "t") return "T";
+  return clean(value);
+}
+
 function buildCashInlineRow() {
   const draft = state.cashDraft || emptyCashDraft();
   const computed = cashDraftComputed(draft);
   const tr = document.createElement("tr");
   tr.className = "cash-inline-row";
   tr.innerHTML = `<td>${escape(draft.day)}</td>
-    <td>${escape(draft.shiftName || cashShiftById(draft.shiftId)?.name || "")}</td>
+    <td>${escape(cashShiftDisplayLabel(draft.shiftName || cashShiftById(draft.shiftId)?.name || ""))}</td>
     <td><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
     ${CASH_DENOMINATIONS.map((denom) => `<td><input class="cash-count-input" data-cash-field="denom:${escape(denom.key)}" data-scope="new" type="number" min="0" step="1" value="${escape(String(draft.denominations?.[denom.key] || 0))}" /></td>`).join("")}
     <td>${escape(formatCashMoney(computed.cashTotal))}</td>
@@ -9898,7 +9906,7 @@ function buildCashReadOnlyRow(record) {
   const tr = document.createElement("tr");
   if ((record.diffCash != null && record.diffCash !== 0) || record.diffCard !== 0) tr.classList.add("cash-diff-row");
   tr.innerHTML = `<td>${escape(record.day)}</td>
-    <td>${escape(record.shiftName || "")}</td>
+    <td>${escape(cashShiftDisplayLabel(record.shiftName || ""))}</td>
     <td>${escape(record.name || "-")}</td>
     ${CASH_DENOMINATIONS.map((denom) => `<td>${escape(String(record.denominations?.[denom.key] || 0))}</td>`).join("")}
     <td>${escape(formatCashMoney(record.cashTotal))}</td>
@@ -9920,7 +9928,7 @@ function buildCashEditableRow(record) {
   const tr = document.createElement("tr");
   tr.className = "cash-inline-row";
   tr.innerHTML = `<td>${escape(draft.day)}</td>
-    <td>${escape(draft.shiftName || "")}</td>
+    <td>${escape(cashShiftDisplayLabel(draft.shiftName || ""))}</td>
     <td><input data-cash-field="name" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
     ${CASH_DENOMINATIONS.map((denom) => `<td><input class="cash-count-input" data-cash-field="denom:${escape(denom.key)}" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="1" value="${escape(String(draft.denominations?.[denom.key] || 0))}" /></td>`).join("")}
     <td>${escape(formatCashMoney(computed.cashTotal))}</td>
