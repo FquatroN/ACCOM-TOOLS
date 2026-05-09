@@ -28,6 +28,7 @@
         </div>
         <aside class="left-nav">
           <button id="nav-communications" type="button" class="nav-link active">Communications</button>
+          <button id="nav-cash" type="button" class="nav-link">Cash Control</button>
           <button id="nav-laundry" type="button" class="nav-link">Laundry Control</button>
           <button id="nav-bakery" type="button" class="nav-link">Bakery order</button>
           <button id="nav-lost-found" type="button" class="nav-link">Lost&amp;Found</button>
@@ -1108,6 +1109,96 @@
           </section>
         </section>
 
+        <section id="view-cash" class="view" hidden>
+          <section class="feature-title">
+            <h2>Cash Control</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Cash Control</h2>
+              <div class="actions">
+                <p id="cash-count">0 records</p>
+              </div>
+            </div>
+            <div class="bar services-subbar">
+              <div>
+                <h3>Records</h3>
+                <p id="cash-warning" class="warning-text" hidden></p>
+              </div>
+            </div>
+            <div id="cash-mobile-cards" class="cash-mobile-cards"></div>
+            <div class="table-wrap cash-table-wrap">
+              <table class="shopping-history-table cash-table">
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    <th>Shift</th>
+                    <th>Name</th>
+                    <th>500</th>
+                    <th>200</th>
+                    <th>100</th>
+                    <th>50</th>
+                    <th>20</th>
+                    <th>10</th>
+                    <th>5</th>
+                    <th>2</th>
+                    <th>1</th>
+                    <th>0,5</th>
+                    <th>0,2</th>
+                    <th>0,1</th>
+                    <th>0,05</th>
+                    <th>0,02</th>
+                    <th>0,01</th>
+                    <th>€ Caixa</th>
+                    <th>Card POS</th>
+                    <th>Cash FDM</th>
+                    <th>Card FDM</th>
+                    <th>Cash (Calculado)</th>
+                    <th>Dif. Cash</th>
+                    <th>Dif. Card</th>
+                    <th>Justification</th>
+                    <th>Items</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="cash-rows"></tbody>
+              </table>
+            </div>
+            <p id="cash-status" class="auth-status"></p>
+          </section>
+        </section>
+
+        <section id="cash-items-modal" class="modal-backdrop" hidden>
+          <section class="card modal-card cash-items-modal-card">
+            <div class="bar">
+              <h2>Item Control</h2>
+              <div class="actions">
+                <button id="cash-items-close" type="button" class="ghost">Close</button>
+              </div>
+            </div>
+            <div id="cash-items-meta" class="review-detail empty"></div>
+            <div class="table-wrap">
+              <table class="settings-table cash-items-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Default</th>
+                    <th>Count</th>
+                    <th>Difference</th>
+                    <th>Justification</th>
+                  </tr>
+                </thead>
+                <tbody id="cash-items-body"></tbody>
+              </table>
+            </div>
+            <p id="cash-items-status" class="auth-status"></p>
+            <div class="actions">
+              <button id="cash-items-save" type="button">Save Items</button>
+            </div>
+          </section>
+        </section>
+
         <section id="view-hours" class="view" hidden>
           <section class="feature-title">
             <h2>Hours Register</h2>
@@ -1547,6 +1638,9 @@
               <button id="settings-menu-communications" type="button" class="nav-link">
                 Communications
               </button>
+              <button id="settings-menu-cash" type="button" class="nav-link">
+                Cash Control
+              </button>
               <button id="settings-menu-laundry" type="button" class="nav-link">
                 Laundry Control
               </button>
@@ -1881,6 +1975,46 @@
                     <small class="field-hint">Placeholders: {{customer_name}}, {{customer_email}}, {{customer_phone}}, {{service_type}}, {{request_number}}, {{date}}, {{time}}, {{pax}}, {{pickup_location}}, {{dropoff_location}}, {{flight_number}}, {{return_date}}, {{return_time}}, {{return_pickup}}, {{return_dropoff}}, {{return_flight}}, {{price}}, {{status}}, {{service_provider}}, {{service_table}}</small>
                   </label>
                   <div id="services-confirmation-template-preview" class="template-preview"></div>
+                </section>
+              </div>
+
+              <div id="settings-view-cash" hidden>
+                <div class="actions">
+                  <button id="close-settings-cash" type="button" class="ghost">Back To App</button>
+                  <button id="cash-save-settings" type="button" class="ghost">Save Configuration</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Shifts</h3>
+                    <button id="cash-add-shift" type="button" class="ghost">Add Shift</button>
+                  </div>
+                  <table class="settings-table">
+                    <thead>
+                      <tr>
+                        <th>Shift</th>
+                        <th>Start Time</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="cash-settings-shifts-body"></tbody>
+                  </table>
+                </section>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Items</h3>
+                    <button id="cash-add-item" type="button" class="ghost">Add Item</button>
+                  </div>
+                  <table class="settings-table">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Default Qt</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="cash-settings-items-body"></tbody>
+                  </table>
+                  <p id="cash-settings-status" class="auth-status"></p>
                 </section>
               </div>
 

@@ -1855,8 +1855,62 @@ select:disabled {
   display: none;
 }
 
+.cash-mobile-cards {
+  display: none;
+}
+
 .laundry-mobile-cards {
   display: none;
+}
+
+.cash-table-wrap {
+  overflow-x: auto;
+}
+
+.cash-table th,
+.cash-table td {
+  white-space: nowrap;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.4rem;
+}
+
+.cash-table input {
+  width: 4.6rem;
+  min-width: 4.6rem;
+  padding: 0.28rem 0.35rem;
+  font-size: 0.8rem;
+}
+
+.cash-table .cash-count-input {
+  width: 3.4rem;
+  min-width: 3.4rem;
+  text-align: center;
+}
+
+.cash-table .cash-money-input {
+  width: 5.5rem;
+  min-width: 5.5rem;
+}
+
+.cash-inline-row td {
+  background: #fffaf5;
+}
+
+.cash-diff-row td {
+  background: rgba(180, 35, 24, 0.25);
+}
+
+.cash-items-modal-card {
+  width: min(960px, 96vw);
+}
+
+.cash-items-table input {
+  width: 100%;
+}
+
+.danger-text {
+  color: #b42318;
+  font-weight: 700;
 }
 
 .service-mobile-card {
@@ -3173,6 +3227,10 @@ select:disabled {
     display: none;
   }
 
+  #view-cash .cash-table-wrap {
+    display: none;
+  }
+
   #laundry-panel-list .table-wrap {
     display: none;
   }
@@ -3215,6 +3273,12 @@ select:disabled {
   }
 
   .hours-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
+  .cash-mobile-cards {
     display: grid;
     gap: 0.75rem;
     margin-top: 0.85rem;

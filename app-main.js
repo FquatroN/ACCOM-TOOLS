@@ -17,8 +17,8 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "lost-found", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry"];
-const SETTINGS_FEATURE_OPTIONS = ["communications", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "cash", "lost-found", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry"];
+const SETTINGS_FEATURE_OPTIONS = ["communications", "cash", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -319,6 +319,53 @@ const DEFAULT_SHOPPING_SETTINGS = {
   items: [],
 };
 
+const CASH_DENOMINATIONS = [
+  { key: "500", value: 500 },
+  { key: "200", value: 200 },
+  { key: "100", value: 100 },
+  { key: "50", value: 50 },
+  { key: "20", value: 20 },
+  { key: "10", value: 10 },
+  { key: "5", value: 5 },
+  { key: "2", value: 2 },
+  { key: "1", value: 1 },
+  { key: "0.5", value: 0.5 },
+  { key: "0.2", value: 0.2 },
+  { key: "0.1", value: 0.1 },
+  { key: "0.05", value: 0.05 },
+  { key: "0.02", value: 0.02 },
+  { key: "0.01", value: 0.01 },
+];
+
+const DEFAULT_CASH_SETTINGS = {
+  shifts: [
+    { id: "night", name: "Night", startTime: "00:00" },
+    { id: "morning", name: "Morning", startTime: "08:00" },
+    { id: "afternoon", name: "Afternoon", startTime: "16:00" },
+  ],
+  items: [
+    { id: "chaves-2d", name: "Chaves 2D", defaultQuantity: 6 },
+    { id: "chaves-2e", name: "Chaves 2E", defaultQuantity: 6 },
+    { id: "chaves-3e", name: "Chaves 3E", defaultQuantity: 6 },
+    { id: "chaves-4d", name: "Chaves 4D", defaultQuantity: 6 },
+    { id: "chaves-4e", name: "Chaves 4E", defaultQuantity: 6 },
+    { id: "chaves-5e", name: "Chaves 5E", defaultQuantity: 6 },
+    { id: "chaves-5d", name: "Chaves 5D", defaultQuantity: 6 },
+    { id: "arrecadacao-2d", name: "Arrecadacao 2D", defaultQuantity: 6 },
+    { id: "arrecadacao-exterior", name: "Arrecadacao Exterior", defaultQuantity: 3 },
+    { id: "camas-extras-2e", name: "Camas Extras 2E", defaultQuantity: 2 },
+    { id: "arrecadacao-2-5", name: "Arrecadacao 2º (5)", defaultQuantity: 5 },
+    { id: "arrecadacao-3-e-1", name: "Arrecadacao 3ºE (1)", defaultQuantity: 1 },
+    { id: "camas-extra-4-e-3", name: "Camas Extra 4ºE (3)", defaultQuantity: 3 },
+    { id: "arrecadacao-4-d-2", name: "Arrecadacao 4ºD (2)", defaultQuantity: 2 },
+    { id: "armario-5-d-1", name: "Armario 5ºD (1)", defaultQuantity: 1 },
+    { id: "armario-5-e-1", name: "Armario 5ºE (1)", defaultQuantity: 1 },
+    { id: "secadores", name: "Secadores", defaultQuantity: 3 },
+    { id: "comandos", name: "Comandos", defaultQuantity: 7 },
+    { id: "chaves-staff", name: "Chaves Staff", defaultQuantity: 8 },
+  ],
+};
+
 const DEFAULT_BAKERY_SETTINGS = {
   selectedBase: "base-media",
   hostelCapacity: 83,
@@ -363,6 +410,7 @@ const DEFAULT_HOURS_SETTINGS = {
 const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
   { label: "App: Communications", kind: "app", key: "communications" },
+  { label: "App: Cash Control", kind: "app", key: "cash" },
   { label: "App: Lost&Found", kind: "app", key: "lost-found" },
   { label: "App: Reviews", kind: "app", key: "reviews" },
   { label: "App: Groups", kind: "app", key: "groups" },
@@ -372,6 +420,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Bakery", kind: "app", key: "bakery" },
   { label: "App: Laundry Control", kind: "app", key: "laundry" },
   { label: "Settings: Communications", kind: "settings", key: "communications" },
+  { label: "Settings: Cash Control", kind: "settings", key: "cash" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
   { label: "Settings: Groups", kind: "settings", key: "groups" },
   { label: "Settings: Services", kind: "settings", key: "services" },
@@ -611,6 +660,16 @@ const state = {
   shoppingSubmitNotes: "",
   shoppingSubmitPromptOpen: false,
   shoppingSelectedHistoryId: "",
+  cashRecords: [],
+  cashLoaded: false,
+  cashSettings: clone(DEFAULT_CASH_SETTINGS),
+  cashSettingsLoaded: false,
+  cashDraft: null,
+  cashEditDraft: null,
+  cashEditingId: "",
+  cashItemsModalOpen: false,
+  cashItemsDraft: {},
+  cashItemsJustificationsDraft: {},
   hoursRecords: [],
   hoursLoaded: false,
   hoursSettings: clone(DEFAULT_HOURS_SETTINGS),
@@ -710,6 +769,7 @@ const els = {
   topbar: document.querySelector(".topbar"),
   mobileMenuToggle: document.getElementById("mobile-menu-toggle"),
   navCommunications: document.getElementById("nav-communications"),
+  navCash: document.getElementById("nav-cash"),
   navLostFound: document.getElementById("nav-lost-found"),
   navReviews: document.getElementById("nav-reviews"),
   navGroups: document.getElementById("nav-groups"),
@@ -721,6 +781,7 @@ const els = {
   openSettings: document.getElementById("open-settings"),
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
+  viewCash: document.getElementById("view-cash"),
   viewLostFound: document.getElementById("view-lost-found"),
   viewReviews: document.getElementById("view-reviews"),
   viewServices: document.getElementById("view-services"),
@@ -731,6 +792,7 @@ const els = {
   viewSettings: document.getElementById("view-settings"),
   settingsMenuGeneral: document.getElementById("settings-menu-general"),
   settingsMenuCommunications: document.getElementById("settings-menu-communications"),
+  settingsMenuCash: document.getElementById("settings-menu-cash"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
   settingsMenuGroups: document.getElementById("settings-menu-groups"),
   settingsMenuServices: document.getElementById("settings-menu-services"),
@@ -739,8 +801,27 @@ const els = {
   settingsMenuBakery: document.getElementById("settings-menu-bakery"),
   settingsMenuLaundry: document.getElementById("settings-menu-laundry"),
   settingsMenuAdminUsers: document.getElementById("settings-menu-admin-users"),
+  closeSettingsCash: document.getElementById("close-settings-cash"),
+  cashSaveSettings: document.getElementById("cash-save-settings"),
+  cashAddShift: document.getElementById("cash-add-shift"),
+  cashAddItem: document.getElementById("cash-add-item"),
+  cashSettingsShiftsBody: document.getElementById("cash-settings-shifts-body"),
+  cashSettingsItemsBody: document.getElementById("cash-settings-items-body"),
+  cashSettingsStatus: document.getElementById("cash-settings-status"),
+  cashCount: document.getElementById("cash-count"),
+  cashWarning: document.getElementById("cash-warning"),
+  cashRows: document.getElementById("cash-rows"),
+  cashMobileCards: document.getElementById("cash-mobile-cards"),
+  cashStatus: document.getElementById("cash-status"),
+  cashItemsModal: document.getElementById("cash-items-modal"),
+  cashItemsClose: document.getElementById("cash-items-close"),
+  cashItemsMeta: document.getElementById("cash-items-meta"),
+  cashItemsBody: document.getElementById("cash-items-body"),
+  cashItemsStatus: document.getElementById("cash-items-status"),
+  cashItemsSave: document.getElementById("cash-items-save"),
   settingsViewGeneral: document.getElementById("settings-view-general"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
+  settingsViewCash: document.getElementById("settings-view-cash"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
   settingsViewGroups: document.getElementById("settings-view-groups"),
   settingsViewServices: document.getElementById("settings-view-services"),
@@ -1236,24 +1317,26 @@ async function init() {
   bindEvents();
   await initAuth();
   await loadAccess();
-  if (!canApp("communications") && canApp("lost-found")) state.currentView = "lost-found";
-  else if (!canApp("communications") && !canApp("lost-found") && canApp("groups")) state.currentView = "groups";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("shopping")) state.currentView = "shopping";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("hours")) state.currentView = "hours";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && canApp("bakery")) state.currentView = "bakery";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
-  else if (!canApp("communications") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
+  if (!canApp("communications") && canApp("cash")) state.currentView = "cash";
+  else if (!canApp("communications") && !canApp("cash") && canApp("lost-found")) state.currentView = "lost-found";
+  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && canApp("groups")) state.currentView = "groups";
+  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
+  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("shopping")) state.currentView = "shopping";
+  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("hours")) state.currentView = "hours";
+  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && canApp("bakery")) state.currentView = "bakery";
+  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
+  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
-  if (!canSettings("communications") && canSettings("reviews")) state.settingsSection = "reviews";
-  else if (!canSettings("communications") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
-  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
-  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
-  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
-  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
-  else if (!canSettings("communications") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
-  else if (!canSettings("communications") && canSettings("admin-users")) state.settingsSection = "admin-users";
+  if (!canSettings("communications") && canSettings("cash")) state.settingsSection = "cash";
+  else if (!canSettings("communications") && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
+  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
+  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
+  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
+  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
+  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
+  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
+  else if (!canSettings("communications") && !canSettings("cash") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
   renderCategoryFilterOptions();
@@ -1261,6 +1344,7 @@ async function init() {
   render();
   if (canApp("communications")) loadSidebarReviewSummary({ silent: true }).catch(() => {});
   await ensureCurrentViewData();
+  if (canApp("cash")) loadCashData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("hours")) loadHoursData({ silent: true }).catch(() => {});
   if (canApp("bakery")) loadBakeryData({ silent: true }).then(() => renderLayout()).catch(() => {});
@@ -1270,6 +1354,7 @@ async function init() {
 
 function bindEvents() {
   els.navCommunications.addEventListener("click", () => setView("communications"));
+  els.navCash?.addEventListener("click", () => setView("cash"));
   els.navLostFound.addEventListener("click", () => setView("lost-found"));
   els.navReviews.addEventListener("click", () => setView("reviews"));
   els.navGroups.addEventListener("click", () => setView("groups"));
@@ -1287,6 +1372,7 @@ function bindEvents() {
   els.openSettings.addEventListener("click", () => setView("settings"));
   els.closeSettingsGeneral?.addEventListener("click", () => setView("communications"));
   els.closeSettings.addEventListener("click", () => setView("communications"));
+  els.closeSettingsCash?.addEventListener("click", () => setView("cash"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
   els.closeSettingsReviews.addEventListener("click", () => setView("reviews"));
   els.closeSettingsGroups.addEventListener("click", () => setView("groups"));
@@ -1297,6 +1383,7 @@ function bindEvents() {
   els.closeSettingsLaundry?.addEventListener("click", () => setView("laundry"));
   els.settingsMenuGeneral?.addEventListener("click", () => setSettingsSection("general"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
+  els.settingsMenuCash?.addEventListener("click", () => setSettingsSection("cash"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuGroups.addEventListener("click", () => setSettingsSection("groups"));
   els.settingsMenuServices.addEventListener("click", () => setSettingsSection("services"));
@@ -1337,6 +1424,20 @@ function bindEvents() {
   els.shoppingSettingsCategoryColors?.addEventListener("input", onShoppingSettingsInput);
   els.shoppingSettingsCategoryColors?.addEventListener("change", onShoppingSettingsInput);
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
+  els.cashRows?.addEventListener("click", onCashTableAction);
+  els.cashRows?.addEventListener("input", onCashTableInput);
+  els.cashMobileCards?.addEventListener("click", onCashTableAction);
+  els.cashMobileCards?.addEventListener("input", onCashTableInput);
+  els.cashSaveSettings?.addEventListener("click", saveCashSettings);
+  els.cashAddShift?.addEventListener("click", addCashShiftSetting);
+  els.cashAddItem?.addEventListener("click", addCashItemSetting);
+  els.cashSettingsShiftsBody?.addEventListener("input", onCashSettingsInput);
+  els.cashSettingsItemsBody?.addEventListener("input", onCashSettingsInput);
+  els.cashSettingsShiftsBody?.addEventListener("click", onCashSettingsAction);
+  els.cashSettingsItemsBody?.addEventListener("click", onCashSettingsAction);
+  els.cashItemsClose?.addEventListener("click", closeCashItemsModal);
+  els.cashItemsBody?.addEventListener("input", onCashItemsModalInput);
+  els.cashItemsSave?.addEventListener("click", saveCashItemsModal);
   els.hoursExportExcel?.addEventListener("click", exportHoursToExcel);
   els.hoursTabList?.addEventListener("click", () => setHoursScreen("list"));
   els.hoursTabResume?.addEventListener("click", () => setHoursScreen("resume"));
@@ -1733,6 +1834,9 @@ function applyInitialRouteFromUrl() {
     if (view === "shopping" && canApp("shopping")) {
       state.currentView = "shopping";
     }
+    if (view === "cash" && canApp("cash")) {
+      state.currentView = "cash";
+    }
     if (view === "hours" && canApp("hours")) {
       state.currentView = "hours";
     }
@@ -1753,6 +1857,9 @@ function syncAppRoute() {
       url.searchParams.set("view", "services");
       if (clean(state.serviceSelectedId)) url.searchParams.set("service", clean(state.serviceSelectedId));
       else url.searchParams.delete("service");
+    } else if (state.currentView === "cash") {
+      url.searchParams.set("view", "cash");
+      url.searchParams.delete("service");
     } else if (state.currentView === "hours") {
       url.searchParams.set("view", "hours");
       url.searchParams.delete("service");
@@ -1771,6 +1878,7 @@ async function setView(view) {
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
   if (view === "groups" && !canApp("groups")) return showToast("No groups access.", "error");
   if (view === "services" && !canApp("services")) return showToast("No services access.", "error");
+  if (view === "cash" && !canApp("cash")) return showToast("No cash control access.", "error");
   if (view === "shopping" && !canApp("shopping")) return showToast("No shopping access.", "error");
   if (view === "hours" && !canApp("hours")) return showToast("No hours register access.", "error");
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
@@ -1779,6 +1887,7 @@ async function setView(view) {
   state.currentView = view;
   if (view === "settings") {
     if (canSettings("communications")) state.settingsSection = "general";
+    else if (canSettings("cash")) state.settingsSection = "cash";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
     else if (canSettings("groups")) state.settingsSection = "groups";
     else if (canSettings("services")) state.settingsSection = "services";
@@ -1797,6 +1906,9 @@ async function setView(view) {
   }
   if (view !== "bakery" && els.bakeryDetailModal && !els.bakeryDetailModal.hidden) {
     closeBakeryDetailModal();
+  }
+  if (view !== "cash" && state.cashItemsModalOpen) {
+    closeCashItemsModal();
   }
   syncAppRoute();
   renderLayout();
@@ -1832,6 +1944,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "services") {
     await ensureServicesData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "cash") {
+    await ensureCashData();
     renderSettingsSection();
     render();
     return;
@@ -1921,6 +2039,14 @@ async function refreshCurrentViewData(reason = "timer") {
       state.lastAutoRefreshAt = now;
       return;
     }
+    if (state.currentView === "cash" && canApp("cash")) {
+      await loadCashData({ silent: true });
+      state.cashLoaded = true;
+      renderCash();
+      renderLayout();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
     if (state.currentView === "shopping" && canApp("shopping")) {
       await loadShoppingData({ silent: true });
       state.shoppingLoaded = true;
@@ -1958,6 +2084,7 @@ async function refreshCurrentViewData(reason = "timer") {
 function shouldSkipAutoRefresh() {
   if (state.currentView === "settings") return true;
   if (state.currentView === "communications" && (state.editingId || hasCommunicationDraft())) return true;
+  if (state.currentView === "cash" && (state.cashEditingId || hasCashDraft() || state.cashItemsModalOpen)) return true;
   if (state.currentView === "lost-found" && (state.lostFoundEditingId || hasLostFoundDraft())) return true;
   if (state.currentView === "groups" && els.groupEditorModal && !els.groupEditorModal.hidden) return true;
   if (state.currentView === "services" && els.serviceEditorModal && !els.serviceEditorModal.hidden) return true;
@@ -2077,6 +2204,20 @@ async function ensureShoppingData() {
   renderShoppingSettings();
 }
 
+async function ensureCashData() {
+  if (!canApp("cash") && !canSettings("cash")) return;
+  if (canSettings("cash") && !state.cashSettingsLoaded) {
+    await loadCashSettings();
+    state.cashSettingsLoaded = true;
+  }
+  if (canApp("cash") && !state.cashLoaded) {
+    await loadCashData();
+    state.cashLoaded = true;
+  }
+  renderCash();
+  renderCashSettings();
+}
+
 async function ensureHoursData() {
   if (!canApp("hours") && !canSettings("hours")) return;
   if (canSettings("hours") && !state.hoursSettingsLoaded) {
@@ -2140,6 +2281,10 @@ async function ensureSettingsSectionData() {
     await ensureServicesData();
     return;
   }
+  if (state.settingsSection === "cash") {
+    await ensureCashData();
+    return;
+  }
   if (state.settingsSection === "shopping") {
     await ensureShoppingData();
     return;
@@ -2161,6 +2306,7 @@ async function ensureSettingsSectionData() {
 
 function renderLayout() {
   const comm = state.currentView === "communications";
+  const cash = state.currentView === "cash";
   const lostFound = state.currentView === "lost-found";
   const reviews = state.currentView === "reviews";
   const groups = state.currentView === "groups";
@@ -2171,6 +2317,7 @@ function renderLayout() {
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
   const canComm = canApp("communications");
+  const canCash = canApp("cash");
   const canLostFound = canApp("lost-found");
   const canReviews = canApp("reviews");
   const canGroups = canApp("groups");
@@ -2183,6 +2330,7 @@ function renderLayout() {
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
   els.navCommunications.classList.toggle("active", comm);
+  els.navCash?.classList.toggle("active", cash);
   els.navLostFound.classList.toggle("active", lostFound);
   els.navReviews.classList.toggle("active", reviews);
   els.navGroups.classList.toggle("active", groups);
@@ -2192,6 +2340,7 @@ function renderLayout() {
   els.navBakery.classList.toggle("active", bakery);
   els.navLaundry.classList.toggle("active", laundry);
   els.navCommunications.hidden = !canComm;
+  if (els.navCash) els.navCash.hidden = !canCash;
   els.navLostFound.hidden = !canLostFound;
   els.navReviews.hidden = !canReviews;
   els.navGroups.hidden = !canGroups;
@@ -2200,6 +2349,7 @@ function renderLayout() {
   els.navHours.hidden = !canHours;
   els.navBakery.hidden = !canBakery;
   els.navLaundry.hidden = !canLaundry;
+  els.navCash?.classList.toggle("has-alert", shouldShowCashAlert());
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
   els.navHours.classList.toggle("has-alert", shouldShowHoursAlert());
   els.navBakery.classList.toggle("has-alert", shouldShowBakeryAlert());
@@ -2209,6 +2359,7 @@ function renderLayout() {
   els.topbar.hidden = false;
   if (els.mobileMenuToggle) els.mobileMenuToggle.hidden = settingsMode || !isMobileNavLayout();
   els.viewCommunications.hidden = !comm;
+  if (els.viewCash) els.viewCash.hidden = !cash;
   els.viewLostFound.hidden = !lostFound;
   els.viewReviews.hidden = !reviews;
   els.viewGroups.hidden = !groups;
@@ -2220,6 +2371,7 @@ function renderLayout() {
   els.viewSettings.hidden = !settingsMode;
   els.settingsMenuGeneral.hidden = !canSettings("communications");
   els.settingsMenuCommunications.hidden = !canSettings("communications");
+  if (els.settingsMenuCash) els.settingsMenuCash.hidden = !canSettings("cash");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
   els.settingsMenuGroups.hidden = !canSettings("groups");
   els.settingsMenuServices.hidden = !canSettings("services");
@@ -2230,6 +2382,7 @@ function renderLayout() {
   els.settingsMenuAdminUsers.hidden = !canSettings("admin-users");
   els.settingsMenuGeneral.classList.toggle("active", state.settingsSection === "general");
   els.settingsMenuCommunications.classList.toggle("active", state.settingsSection === "communications");
+  els.settingsMenuCash?.classList.toggle("active", state.settingsSection === "cash");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
   els.settingsMenuGroups.classList.toggle("active", state.settingsSection === "groups");
   els.settingsMenuServices.classList.toggle("active", state.settingsSection === "services");
@@ -2245,6 +2398,7 @@ function renderLayout() {
 async function setSettingsSection(section) {
   if (section === "general" && !canSettings("communications")) return;
   if (section === "communications" && !canSettings("communications")) return;
+  if (section === "cash" && !canSettings("cash")) return;
   if (section === "reviews" && !canSettings("reviews")) return;
   if (section === "groups" && !canSettings("groups")) return;
   if (section === "services" && !canSettings("services")) return;
@@ -2256,6 +2410,8 @@ async function setSettingsSection(section) {
   setMobileNavOpen(false);
   state.settingsSection = section === "admin-users"
     ? "admin-users"
+    : section === "cash"
+      ? "cash"
     : section === "shopping"
       ? "shopping"
     : section === "hours"
@@ -2299,6 +2455,7 @@ async function ensureAdminUsersData() {
 function renderSettingsSection() {
   const isGeneral = state.settingsSection === "general" && canSettings("communications");
   const isComm = state.settingsSection === "communications" && canSettings("communications");
+  const isCash = state.settingsSection === "cash" && canSettings("cash");
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
   const isGroups = state.settingsSection === "groups" && canSettings("groups");
   const isServices = state.settingsSection === "services" && canSettings("services");
@@ -2309,6 +2466,7 @@ function renderSettingsSection() {
   const isAdmin = state.settingsSection === "admin-users" && canSettings("admin-users");
   els.settingsViewGeneral.hidden = !isGeneral;
   els.settingsViewCommunications.hidden = !isComm;
+  if (els.settingsViewCash) els.settingsViewCash.hidden = !isCash;
   els.settingsViewReviews.hidden = !isReviews;
   els.settingsViewGroups.hidden = !isGroups;
   els.settingsViewServices.hidden = !isServices;
@@ -9461,6 +9619,708 @@ function setHoursSettingsStatus(text) {
   if (els.hoursSettingsStatus) els.hoursSettingsStatus.textContent = text;
 }
 
+function slugifyCashText(value) {
+  return clean(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeCashSettingsClient(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const shifts = (Array.isArray(source.shifts) ? source.shifts : [])
+    .map((shift, index) => ({
+      id: clean(shift?.id) || slugifyCashText(`${shift?.name || "shift"}-${index + 1}`),
+      name: clean(shift?.name) || `Shift ${index + 1}`,
+      startTime: normalizeTimeInput(shift?.startTime ?? shift?.start_time) || "00:00",
+    }))
+    .filter((shift, index, items) => shift.id && items.findIndex((item) => item.id === shift.id) === index);
+  const items = (Array.isArray(source.items) ? source.items : [])
+    .map((item, index) => ({
+      id: clean(item?.id) || slugifyCashText(`${item?.name || "item"}-${index + 1}`),
+      name: clean(item?.name) || `Item ${index + 1}`,
+      defaultQuantity: Math.max(0, Math.round(Number(normalizeNumber(item?.defaultQuantity ?? item?.default_quantity) || 0))),
+    }))
+    .filter((item, index, rows) => item.id && rows.findIndex((row) => row.id === item.id) === index);
+  return {
+    shifts: shifts.length ? shifts : clone(DEFAULT_CASH_SETTINGS.shifts),
+    items: items.length ? items : clone(DEFAULT_CASH_SETTINGS.items),
+  };
+}
+
+function cashShiftById(id, settings = state.cashSettings) {
+  return (settings?.shifts || []).find((shift) => clean(shift.id) === clean(id)) || null;
+}
+
+function cashShiftOrder(settings = state.cashSettings) {
+  return (settings?.shifts || DEFAULT_CASH_SETTINGS.shifts).map((shift) => clean(shift.id));
+}
+
+function normalizeCashCountsClient(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  return CASH_DENOMINATIONS.reduce((acc, denom) => {
+    const numeric = normalizeNumber(source[denom.key]);
+    acc[denom.key] = numeric == null ? 0 : Math.max(0, Math.round(Number(numeric || 0)));
+    return acc;
+  }, {});
+}
+
+function normalizeCashItemCountsClient(value = {}, settings = state.cashSettings) {
+  const source = value && typeof value === "object" ? value : {};
+  return (settings?.items || []).reduce((acc, item) => {
+    const sourceKey = Object.keys(source).find((key) => slugifyCashText(key) === slugifyCashText(item.name));
+    const raw = source[item.id] ?? source[item.name] ?? (sourceKey ? source[sourceKey] : undefined);
+    const numeric = normalizeNumber(raw);
+    acc[item.id] = numeric == null ? null : Math.max(0, Math.round(Number(numeric || 0)));
+    return acc;
+  }, {});
+}
+
+function normalizeCashItemJustificationsClient(value = {}, settings = state.cashSettings) {
+  const source = value && typeof value === "object" ? value : {};
+  return (settings?.items || []).reduce((acc, item) => {
+    const sourceKey = Object.keys(source).find((key) => slugifyCashText(key) === slugifyCashText(item.name));
+    acc[item.id] = clean(source[item.id] ?? source[item.name] ?? (sourceKey ? source[sourceKey] : ""));
+    return acc;
+  }, {});
+}
+
+function normalizeCashRecordClient(input = {}, settings = state.cashSettings) {
+  const safeSettings = normalizeCashSettingsClient(settings);
+  const shiftNameRaw = clean(input.shiftName ?? input.shift ?? input.shift_name);
+  const shiftId = clean(input.shiftId ?? input.shift_id)
+    || clean(safeSettings.shifts.find((item) => clean(item.name).toLowerCase() === shiftNameRaw.toLowerCase())?.id);
+  const shift = cashShiftById(shiftId, safeSettings);
+  return {
+    id: clean(input.id),
+    day: clean(input.day ?? input.date),
+    shiftId: clean(shift?.id || shiftId),
+    shiftName: clean(shift?.name || shiftNameRaw),
+    name: clean(input.name),
+    denominations: normalizeCashCountsClient(input.denominations),
+    cardPos: Number(normalizeNumber(input.cardPos ?? input.card_pos) || 0),
+    cashFdm: Number(normalizeNumber(input.cashFdm ?? input.cash_fdm) || 0),
+    cardFdm: Number(normalizeNumber(input.cardFdm ?? input.card_fdm) || 0),
+    justification: clean(input.justification),
+    itemCounts: normalizeCashItemCountsClient(input.itemCounts ?? input.item_counts, safeSettings),
+    itemJustifications: normalizeCashItemJustificationsClient(input.itemJustifications ?? input.item_justifications, safeSettings),
+    createdAt: clean(input.createdAt ?? input.created_at),
+    updatedAt: clean(input.updatedAt ?? input.updated_at),
+  };
+}
+
+function cashSortRecordsClient(records = state.cashRecords, settings = state.cashSettings) {
+  const order = cashShiftOrder(settings);
+  return [...records].sort((a, b) => {
+    const dayCompare = clean(a.day).localeCompare(clean(b.day));
+    if (dayCompare !== 0) return dayCompare;
+    return order.indexOf(clean(a.shiftId)) - order.indexOf(clean(b.shiftId));
+  });
+}
+
+function cashRecordKey(record) {
+  return `${clean(record?.day)}::${clean(record?.shiftId)}`;
+}
+
+function calculateCashTotalClient(denominations = {}) {
+  const total = CASH_DENOMINATIONS.reduce((sum, denom) => sum + Number(denominations?.[denom.key] || 0) * denom.value, 0);
+  return Number(total.toFixed(2));
+}
+
+function shiftCashDay(value, days) {
+  const raw = clean(value);
+  if (!raw) return "";
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return raw;
+  date.setDate(date.getDate() + days);
+  return formatDate(date);
+}
+
+function getPreviousCashDescriptor(day, shiftId, settings = state.cashSettings) {
+  const shifts = settings?.shifts || DEFAULT_CASH_SETTINGS.shifts;
+  const index = shifts.findIndex((item) => clean(item.id) === clean(shiftId));
+  if (index === -1) return null;
+  if (index > 0) return { day, shiftId: shifts[index - 1].id };
+  return { day: shiftCashDay(day, -1), shiftId: shifts[shifts.length - 1].id };
+}
+
+function getNextCashDescriptor(day, shiftId, settings = state.cashSettings) {
+  const shifts = settings?.shifts || DEFAULT_CASH_SETTINGS.shifts;
+  const index = shifts.findIndex((item) => clean(item.id) === clean(shiftId));
+  if (index === -1) return null;
+  if (index < shifts.length - 1) return { day, shiftId: shifts[index + 1].id };
+  return { day: shiftCashDay(day, 1), shiftId: shifts[0].id };
+}
+
+function buildComputedCashRowsClient(records = state.cashRecords, settings = state.cashSettings) {
+  const sorted = cashSortRecordsClient(records, settings);
+  const byKey = new Map(sorted.map((row) => [cashRecordKey(row), row]));
+  return sorted.map((row) => {
+    const previousRef = getPreviousCashDescriptor(row.day, row.shiftId, settings);
+    const previous = previousRef ? byKey.get(`${previousRef.day}::${previousRef.shiftId}`) : null;
+    const cashTotal = calculateCashTotalClient(row.denominations);
+    const calculatedCash = previous ? Number((calculateCashTotalClient(previous.denominations) + Number(row.cashFdm || 0)).toFixed(2)) : null;
+    const diffCash = calculatedCash == null ? null : Number((cashTotal - calculatedCash).toFixed(2));
+    const diffCard = Number((Number(row.cardPos || 0) - Number(row.cardFdm || 0)).toFixed(2));
+    const itemDiffs = (settings?.items || []).map((item) => {
+      const counted = row.itemCounts?.[item.id];
+      const diff = counted == null ? null : counted - Number(item.defaultQuantity || 0);
+      return { itemId: item.id, counted, diff, defaultQuantity: Number(item.defaultQuantity || 0) };
+    });
+    return {
+      ...row,
+      cashTotal,
+      calculatedCash,
+      diffCash,
+      diffCard,
+      itemDiffs,
+      hasItemDiffs: itemDiffs.some((item) => item.diff != null && item.diff !== 0),
+    };
+  });
+}
+
+function getNextExpectedCashRecordClient(records = state.cashRecords, settings = state.cashSettings) {
+  const shifts = settings?.shifts || DEFAULT_CASH_SETTINGS.shifts;
+  const sorted = cashSortRecordsClient(records, settings);
+  const last = sorted.at(-1);
+  if (!last) {
+    return { day: lisbonTodayIsoClient(), shiftId: shifts[0].id, shiftName: shifts[0].name };
+  }
+  const nextRef = getNextCashDescriptor(last.day, last.shiftId, settings);
+  const shift = cashShiftById(nextRef?.shiftId, settings) || shifts[0];
+  return { day: nextRef?.day || last.day, shiftId: shift.id, shiftName: shift.name };
+}
+
+function emptyCashDraft() {
+  const next = getNextExpectedCashRecordClient(state.cashRecords, state.cashSettings);
+  return normalizeCashRecordClient({
+    id: "",
+    day: next.day,
+    shiftId: next.shiftId,
+    shiftName: next.shiftName,
+    name: "",
+    denominations: {},
+    cardPos: 0,
+    cashFdm: 0,
+    cardFdm: 0,
+    justification: "",
+    itemCounts: (state.cashSettings?.items || DEFAULT_CASH_SETTINGS.items).reduce((acc, item) => {
+      acc[item.id] = item.defaultQuantity;
+      return acc;
+    }, {}),
+    itemJustifications: {},
+  }, state.cashSettings);
+}
+
+function hasCashDraft() {
+  const draft = state.cashEditingId ? state.cashEditDraft : state.cashDraft;
+  return !!(
+    clean(draft?.name) ||
+    clean(draft?.day) ||
+    Object.values(draft?.denominations || {}).some((value) => Number(value || 0) !== 0) ||
+    Number(draft?.cardPos || 0) !== 0 ||
+    Number(draft?.cashFdm || 0) !== 0 ||
+    Number(draft?.cardFdm || 0) !== 0
+  );
+}
+
+function cashDraftComputed(draft) {
+  const rows = [...state.cashRecords.filter((row) => clean(row.id) !== clean(draft.id)), draft];
+  return buildComputedCashRowsClient(rows, state.cashSettings).find((row) => clean(row.id) === clean(draft.id)) || {
+    ...draft,
+    cashTotal: calculateCashTotalClient(draft.denominations),
+    calculatedCash: null,
+    diffCash: null,
+    diffCard: Number((Number(draft.cardPos || 0) - Number(draft.cardFdm || 0)).toFixed(2)),
+    itemDiffs: [],
+    hasItemDiffs: false,
+  };
+}
+
+function validateCashDraftClient(draft, { isCreate = false } = {}) {
+  if (!clean(draft?.name)) return "Name is required.";
+  const duplicate = state.cashRecords.find((row) => cashRecordKey(row) === cashRecordKey(draft) && clean(row.id) !== clean(draft.id));
+  if (duplicate) return `A cash control record for ${draft.day} ${draft.shiftName || draft.shiftId} already exists.`;
+  if (isCreate) {
+    const next = getNextExpectedCashRecordClient();
+    if (clean(draft.day) !== clean(next.day) || clean(draft.shiftId) !== clean(next.shiftId)) {
+      return `The next record must be ${next.day} ${next.shiftName}.`;
+    }
+  }
+  for (const item of state.cashSettings?.items || []) {
+    const counted = draft.itemCounts?.[item.id];
+    if (counted == null || counted === "") return `Count is required for item ${item.name}.`;
+    if (Number(counted) !== Number(item.defaultQuantity || 0) && !clean(draft.itemJustifications?.[item.id])) {
+      return `Justification is required for item ${item.name}.`;
+    }
+  }
+  const computed = cashDraftComputed(draft);
+  if ((computed.diffCash != null && computed.diffCash !== 0) || computed.diffCard !== 0) {
+    if (!clean(draft.justification)) return "Justification is required when Dif. Cash or Dif. Card is not zero.";
+  }
+  return "";
+}
+
+function formatCashMoney(value) {
+  if (value == null || value === "") return "-";
+  return formatMoney(Number(value || 0));
+}
+
+function cashItemDiffLabel(record) {
+  return record.hasItemDiffs ? "Items *" : "Items";
+}
+
+function buildCashInlineRow() {
+  const draft = state.cashDraft || emptyCashDraft();
+  const computed = cashDraftComputed(draft);
+  const tr = document.createElement("tr");
+  tr.className = "cash-inline-row";
+  tr.innerHTML = `<td>${escape(draft.day)}</td>
+    <td>${escape(draft.shiftName || cashShiftById(draft.shiftId)?.name || "")}</td>
+    <td><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
+    ${CASH_DENOMINATIONS.map((denom) => `<td><input class="cash-count-input" data-cash-field="denom:${escape(denom.key)}" data-scope="new" type="number" min="0" step="1" value="${escape(String(draft.denominations?.[denom.key] || 0))}" /></td>`).join("")}
+    <td>${escape(formatCashMoney(computed.cashTotal))}</td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cardPos ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="new" type="number" min="0" step="0.01" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
+    <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
+    <td>${escape(formatCashMoney(computed.diffCash))}</td>
+    <td>${escape(formatCashMoney(computed.diffCard))}</td>
+    <td><input data-cash-field="justification" data-scope="new" type="text" value="${escape(draft.justification)}" /></td>
+    <td><button type="button" class="${computed.hasItemDiffs ? "danger-text" : "ghost"}" data-cash-action="items" data-scope="new">${escape(cashItemDiffLabel(computed))}</button></td>
+    <td><button type="button" data-cash-action="save-new">Add</button></td>`;
+  return tr;
+}
+
+function buildCashReadOnlyRow(record) {
+  const tr = document.createElement("tr");
+  if ((record.diffCash != null && record.diffCash !== 0) || record.diffCard !== 0) tr.classList.add("cash-diff-row");
+  tr.innerHTML = `<td>${escape(record.day)}</td>
+    <td>${escape(record.shiftName || "")}</td>
+    <td>${escape(record.name || "-")}</td>
+    ${CASH_DENOMINATIONS.map((denom) => `<td>${escape(String(record.denominations?.[denom.key] || 0))}</td>`).join("")}
+    <td>${escape(formatCashMoney(record.cashTotal))}</td>
+    <td>${escape(formatCashMoney(record.cardPos))}</td>
+    <td>${escape(formatCashMoney(record.cashFdm))}</td>
+    <td>${escape(formatCashMoney(record.cardFdm))}</td>
+    <td>${escape(formatCashMoney(record.calculatedCash))}</td>
+    <td>${escape(formatCashMoney(record.diffCash))}</td>
+    <td>${escape(formatCashMoney(record.diffCard))}</td>
+    <td>${escape(record.justification || "-")}</td>
+    <td><button type="button" class="${record.hasItemDiffs ? "danger-text" : "ghost"}" data-cash-action="items-existing" data-id="${escape(record.id)}">${escape(cashItemDiffLabel(record))}</button></td>
+    <td><button type="button" class="ghost" data-cash-action="edit" data-id="${escape(record.id)}">Edit</button></td>`;
+  return tr;
+}
+
+function buildCashEditableRow(record) {
+  const draft = state.cashEditDraft || record;
+  const computed = cashDraftComputed(draft);
+  const tr = document.createElement("tr");
+  tr.className = "cash-inline-row";
+  tr.innerHTML = `<td>${escape(draft.day)}</td>
+    <td>${escape(draft.shiftName || "")}</td>
+    <td><input data-cash-field="name" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
+    ${CASH_DENOMINATIONS.map((denom) => `<td><input class="cash-count-input" data-cash-field="denom:${escape(denom.key)}" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="1" value="${escape(String(draft.denominations?.[denom.key] || 0))}" /></td>`).join("")}
+    <td>${escape(formatCashMoney(computed.cashTotal))}</td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cardPos ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cashFdm ?? 0))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="0.01" value="${escape(String(draft.cardFdm ?? 0))}" /></td>
+    <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
+    <td>${escape(formatCashMoney(computed.diffCash))}</td>
+    <td>${escape(formatCashMoney(computed.diffCard))}</td>
+    <td><input data-cash-field="justification" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
+    <td><button type="button" class="${computed.hasItemDiffs ? "danger-text" : "ghost"}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="edit">${escape(cashItemDiffLabel(computed))}</button></td>
+    <td><button type="button" data-cash-action="save-edit" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
+  return tr;
+}
+
+function buildCashReadOnlyCard(record) {
+  const card = document.createElement("article");
+  card.className = "shopping-history-card";
+  if ((record.diffCash != null && record.diffCash !== 0) || record.diffCard !== 0) card.classList.add("cash-diff-row");
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(record.day)} · ${escape(record.shiftName || "")}</div>
+        <div class="communication-mobile-meta">${escape(record.name || "-")}</div>
+      </div>
+      <div class="group-mobile-total"><strong>${escape(formatCashMoney(record.cashTotal))}</strong><small>€ Caixa</small></div>
+    </div>
+    <div class="communication-mobile-grid">
+      <div class="communication-mobile-field"><small>Dif. Cash</small><div class="communication-mobile-message">${escape(formatCashMoney(record.diffCash))}</div></div>
+      <div class="communication-mobile-field"><small>Dif. Card</small><div class="communication-mobile-message">${escape(formatCashMoney(record.diffCard))}</div></div>
+      <div class="communication-mobile-field communication-mobile-field-full"><small>Justification</small><div class="communication-mobile-message">${escape(record.justification || "-")}</div></div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost" data-cash-action="items-existing" data-id="${escape(record.id)}">${escape(cashItemDiffLabel(record))}</button><button type="button" data-cash-action="edit" data-id="${escape(record.id)}">Edit</button></div></div>`;
+  return card;
+}
+
+function renderCashMobileCards(rows) {
+  if (!els.cashMobileCards) return;
+  els.cashMobileCards.innerHTML = "";
+  rows.forEach((record) => {
+    els.cashMobileCards.appendChild(buildCashReadOnlyCard(record));
+  });
+}
+
+function renderCashWarning() {
+  if (!els.cashWarning) return;
+  const messages = [];
+  const next = getNextExpectedCashRecordClient();
+  const shift = cashShiftById(next.shiftId) || { startTime: "00:00", name: next.shiftName };
+  const overdue = isCashShiftOverdue(next.day, shift.startTime);
+  if (overdue) messages.push(`Missing shift: ${next.day} ${shift.name}`);
+  els.cashWarning.hidden = !messages.length;
+  els.cashWarning.textContent = messages.join(" | ");
+}
+
+function renderCash() {
+  if (!canApp("cash")) {
+    if (els.cashCount) els.cashCount.textContent = "0 records";
+    if (els.cashRows) els.cashRows.innerHTML = '<tr><td colspan="28" class="empty">Your profile has no access to Cash Control.</td></tr>';
+    return;
+  }
+  const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
+  const focusTarget = document.activeElement?.matches?.("[data-cash-field]") ? document.activeElement : null;
+  const focusField = clean(focusTarget?.dataset?.cashField);
+  const focusScope = clean(focusTarget?.dataset?.scope);
+  const focusId = clean(focusTarget?.dataset?.id);
+  const caretStart = focusTarget && typeof focusTarget.selectionStart === "number" ? focusTarget.selectionStart : null;
+  const caretEnd = focusTarget && typeof focusTarget.selectionEnd === "number" ? focusTarget.selectionEnd : null;
+  if (els.cashCount) els.cashCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  renderCashWarning();
+  renderCashMobileCards(rows);
+  if (els.cashRows) {
+    els.cashRows.innerHTML = "";
+    els.cashRows.appendChild(buildCashInlineRow());
+    rows.forEach((record) => {
+      els.cashRows.appendChild(state.cashEditingId === record.id ? buildCashEditableRow(record) : buildCashReadOnlyRow(record));
+    });
+  }
+  const restoreTarget = focusField
+    ? document.querySelector(`[data-cash-field="${CSS.escape(focusField)}"][data-scope="${CSS.escape(focusScope || "new")}"]${focusId ? `[data-id="${CSS.escape(focusId)}"]` : ""}`)
+    : null;
+  if (restoreTarget) {
+    restoreTarget.focus();
+    if (typeof caretStart === "number" && typeof restoreTarget.setSelectionRange === "function") {
+      const nextStart = Math.min(caretStart, String(restoreTarget.value || "").length);
+      const nextEnd = Math.min(caretEnd ?? caretStart, String(restoreTarget.value || "").length);
+      restoreTarget.setSelectionRange(nextStart, nextEnd);
+    }
+  }
+}
+
+function setCashStatus(text) {
+  if (els.cashStatus) els.cashStatus.textContent = text;
+}
+
+function setCashSettingsStatus(text) {
+  if (els.cashSettingsStatus) els.cashSettingsStatus.textContent = text;
+}
+
+async function loadCashSettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/cash-control-settings");
+    state.cashSettings = normalizeCashSettingsClient(result?.settings);
+    state.cashSettingsLoaded = true;
+    renderCashSettings();
+    if (!silent) setCashSettingsStatus("Cash configuration loaded.");
+  } catch (e) {
+    state.cashSettings = clone(DEFAULT_CASH_SETTINGS);
+    renderCashSettings();
+    if (!silent) setCashSettingsStatus(`Using default cash configuration (${e.message}).`);
+  }
+}
+
+async function loadCashData({ silent = false } = {}) {
+  try {
+    const result = await api("/api/cash-control");
+    if (result?.settings) {
+      state.cashSettings = normalizeCashSettingsClient(result.settings);
+      state.cashSettingsLoaded = true;
+    }
+    state.cashRecords = (Array.isArray(result?.rows) ? result.rows : []).map((row) => normalizeCashRecordClient(row, state.cashSettings));
+    state.cashLoaded = true;
+    if (!state.cashDraft || !clean(state.cashDraft.id)) state.cashDraft = emptyCashDraft();
+    renderCash();
+    renderCashSettings();
+    if (!silent) setCashStatus(`Loaded ${state.cashRecords.length} cash record${state.cashRecords.length === 1 ? "" : "s"}.`);
+  } catch (e) {
+    state.cashRecords = [];
+    renderCash();
+    if (!silent) setCashStatus(`Failed to load cash records: ${e.message}`);
+  }
+}
+
+function renderCashSettings() {
+  if (els.cashSettingsShiftsBody) {
+    els.cashSettingsShiftsBody.innerHTML = (state.cashSettings?.shifts || []).map((shift) => `<tr>
+      <td><input data-cash-settings-scope="shift" data-cash-settings-id="${escape(shift.id)}" data-cash-settings-field="name" type="text" value="${escape(shift.name)}" /></td>
+      <td><input data-cash-settings-scope="shift" data-cash-settings-id="${escape(shift.id)}" data-cash-settings-field="startTime" type="time" value="${escape(shift.startTime)}" /></td>
+      <td><button type="button" class="ghost" data-cash-settings-action="remove-shift" data-id="${escape(shift.id)}">Delete</button></td>
+    </tr>`).join("");
+  }
+  if (els.cashSettingsItemsBody) {
+    els.cashSettingsItemsBody.innerHTML = (state.cashSettings?.items || []).map((item) => `<tr>
+      <td><input data-cash-settings-scope="item" data-cash-settings-id="${escape(item.id)}" data-cash-settings-field="name" type="text" value="${escape(item.name)}" /></td>
+      <td><input data-cash-settings-scope="item" data-cash-settings-id="${escape(item.id)}" data-cash-settings-field="defaultQuantity" type="number" min="0" step="1" value="${escape(String(item.defaultQuantity || 0))}" /></td>
+      <td><button type="button" class="ghost" data-cash-settings-action="remove-item" data-id="${escape(item.id)}">Delete</button></td>
+    </tr>`).join("");
+  }
+}
+
+function onCashSettingsInput(event) {
+  const target = event.target;
+  const scope = clean(target?.dataset?.cashSettingsScope);
+  const id = clean(target?.dataset?.cashSettingsId);
+  const field = clean(target?.dataset?.cashSettingsField);
+  if (!scope || !id || !field) return;
+  const list = scope === "shift" ? state.cashSettings.shifts : state.cashSettings.items;
+  const row = list.find((item) => clean(item.id) === id);
+  if (!row) return;
+  row[field] = field === "defaultQuantity" ? Math.max(0, Math.round(Number(normalizeNumber(target.value) || 0))) : target.value;
+}
+
+function onCashSettingsAction(event) {
+  const button = event.target.closest("[data-cash-settings-action]");
+  if (!button) return;
+  const action = clean(button.dataset.cashSettingsAction);
+  const id = clean(button.dataset.id);
+  if (action === "remove-shift") {
+    state.cashSettings.shifts = state.cashSettings.shifts.filter((shift) => clean(shift.id) !== id);
+  }
+  if (action === "remove-item") {
+    state.cashSettings.items = state.cashSettings.items.filter((item) => clean(item.id) !== id);
+  }
+  renderCashSettings();
+}
+
+function addCashShiftSetting() {
+  const index = (state.cashSettings?.shifts || []).length + 1;
+  state.cashSettings.shifts.push({ id: `shift-${index}`, name: `Shift ${index}`, startTime: "00:00" });
+  renderCashSettings();
+}
+
+function addCashItemSetting() {
+  const index = (state.cashSettings?.items || []).length + 1;
+  state.cashSettings.items.push({ id: `cash-item-${index}`, name: `Item ${index}`, defaultQuantity: 0 });
+  renderCashSettings();
+}
+
+async function saveCashSettings() {
+  try {
+    const result = await api("/api/cash-control-settings", {
+      method: "PUT",
+      body: { settings: state.cashSettings },
+    });
+    state.cashSettings = normalizeCashSettingsClient(result?.settings);
+    state.cashSettingsLoaded = true;
+    state.cashRecords = state.cashRecords.map((record) => normalizeCashRecordClient(record, state.cashSettings));
+    renderCashSettings();
+    renderCash();
+    renderLayout();
+    setCashSettingsStatus("Cash configuration saved.");
+  } catch (e) {
+    setCashSettingsStatus(`Save failed: ${e.message}`);
+  }
+}
+
+function currentCashDraft(scope = "new", id = "") {
+  if (scope === "edit") return state.cashEditDraft;
+  return state.cashDraft;
+}
+
+function setCurrentCashDraft(nextDraft, scope = "new") {
+  if (scope === "edit") state.cashEditDraft = nextDraft;
+  else state.cashDraft = nextDraft;
+}
+
+function onCashTableInput(event) {
+  const target = event.target;
+  const scope = clean(target?.dataset?.scope || target?.dataset?.cashScope);
+  const field = clean(target?.dataset?.cashField);
+  const id = clean(target?.dataset?.id);
+  if (!field) return;
+  const draft = clone(currentCashDraft(scope || "new", id) || emptyCashDraft());
+  if (field.startsWith("denom:")) {
+    draft.denominations[field.split(":")[1]] = Math.max(0, Math.round(Number(normalizeNumber(target.value) || 0)));
+  } else if (field === "cardPos" || field === "cashFdm" || field === "cardFdm") {
+    draft[field] = Number(normalizeNumber(target.value) || 0);
+  } else {
+    draft[field] = target.value;
+  }
+  setCurrentCashDraft(normalizeCashRecordClient(draft, state.cashSettings), scope || "new");
+  renderCash();
+}
+
+function startCashEdit(id) {
+  const record = state.cashRecords.find((row) => clean(row.id) === clean(id));
+  if (!record) return;
+  state.cashEditingId = record.id;
+  state.cashEditDraft = clone(record);
+  renderCash();
+}
+
+function cancelCashEdit() {
+  state.cashEditingId = "";
+  state.cashEditDraft = null;
+  renderCash();
+}
+
+async function saveCashDraft(scope = "new", id = "") {
+  const draft = normalizeCashRecordClient(currentCashDraft(scope, id) || {}, state.cashSettings);
+  const error = validateCashDraftClient(draft, { isCreate: scope !== "edit" });
+  if (error) {
+    setCashStatus(error);
+    showToast(error, "error");
+    return;
+  }
+  try {
+    const result = await api(scope === "edit" ? `/api/cash-control?id=${encodeURIComponent(id)}` : "/api/cash-control", {
+      method: scope === "edit" ? "PUT" : "POST",
+      body: draft,
+    });
+    if (result?.settings) {
+      state.cashSettings = normalizeCashSettingsClient(result.settings);
+      state.cashSettingsLoaded = true;
+    }
+    state.cashRecords = (Array.isArray(result?.rows) ? result.rows : []).map((row) => normalizeCashRecordClient(row, state.cashSettings));
+    state.cashLoaded = true;
+    state.cashEditingId = "";
+    state.cashEditDraft = null;
+    state.cashDraft = emptyCashDraft();
+    renderCash();
+    renderLayout();
+    setCashStatus(scope === "edit" ? "Cash record saved." : "Cash record added.");
+  } catch (e) {
+    setCashStatus(`Save failed: ${e.message}`);
+    showToast(`Save failed: ${e.message}`, "error");
+  }
+}
+
+function ensureCashItemsDraft(scope = "new", id = "") {
+  const draft = currentCashDraft(scope, id) || emptyCashDraft();
+  state.cashItemsDraft = clone(draft.itemCounts || {});
+  state.cashItemsJustificationsDraft = clone(draft.itemJustifications || {});
+}
+
+function renderCashItemsModal(scope = "new", id = "") {
+  const draft = currentCashDraft(scope, id) || emptyCashDraft();
+  const computed = cashDraftComputed(draft);
+  const focusTarget = document.activeElement?.matches?.("[data-cash-item-field]") ? document.activeElement : null;
+  const focusItemId = clean(focusTarget?.dataset?.cashItemId);
+  const focusField = clean(focusTarget?.dataset?.cashItemField);
+  const caretStart = focusTarget && typeof focusTarget.selectionStart === "number" ? focusTarget.selectionStart : null;
+  const caretEnd = focusTarget && typeof focusTarget.selectionEnd === "number" ? focusTarget.selectionEnd : null;
+  if (els.cashItemsMeta) {
+    els.cashItemsMeta.classList.remove("empty");
+    els.cashItemsMeta.textContent = `${draft.day} · ${draft.shiftName || cashShiftById(draft.shiftId)?.name || ""} · ${draft.name || "-"}`;
+  }
+  if (els.cashItemsBody) {
+    els.cashItemsBody.innerHTML = (state.cashSettings?.items || []).map((item) => {
+      const counted = state.cashItemsDraft[item.id];
+      const diff = counted == null ? null : Number(counted) - Number(item.defaultQuantity || 0);
+      const needsJustification = diff != null && diff !== 0;
+      return `<tr>
+        <td>${escape(item.name)}</td>
+        <td>${escape(String(item.defaultQuantity || 0))}</td>
+        <td><input data-cash-item-field="count" data-cash-item-id="${escape(item.id)}" type="number" min="0" step="1" value="${counted == null ? "" : escape(String(counted))}" /></td>
+        <td>${escape(diff == null ? "-" : `${diff > 0 ? "+" : ""}${diff}`)}</td>
+        <td><input data-cash-item-field="justification" data-cash-item-id="${escape(item.id)}" type="text" value="${escape(state.cashItemsJustificationsDraft[item.id] || "")}" ${needsJustification ? "" : "disabled"} /></td>
+      </tr>`;
+    }).join("");
+  }
+  if (els.cashItemsStatus) els.cashItemsStatus.textContent = "";
+  if (els.cashItemsModal) els.cashItemsModal.hidden = false;
+  document.body.classList.add("modal-open");
+  const restoreTarget = focusItemId && focusField
+    ? document.querySelector(`[data-cash-item-id="${CSS.escape(focusItemId)}"][data-cash-item-field="${CSS.escape(focusField)}"]`)
+    : null;
+  if (restoreTarget) {
+    restoreTarget.focus();
+    if (typeof caretStart === "number" && typeof restoreTarget.setSelectionRange === "function") {
+      const nextStart = Math.min(caretStart, String(restoreTarget.value || "").length);
+      const nextEnd = Math.min(caretEnd ?? caretStart, String(restoreTarget.value || "").length);
+      restoreTarget.setSelectionRange(nextStart, nextEnd);
+    }
+  }
+}
+
+function openCashItemsModal(scope = "new", id = "") {
+  if (scope === "edit" && id && clean(state.cashEditingId) !== clean(id)) startCashEdit(id);
+  ensureCashItemsDraft(scope, id);
+  state.cashItemsModalOpen = true;
+  renderCashItemsModal(scope, id);
+}
+
+function closeCashItemsModal() {
+  state.cashItemsModalOpen = false;
+  if (els.cashItemsModal) els.cashItemsModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function onCashItemsModalInput(event) {
+  const target = event.target;
+  const itemId = clean(target?.dataset?.cashItemId);
+  const field = clean(target?.dataset?.cashItemField);
+  if (!itemId || !field) return;
+  if (field === "count") {
+    const numeric = normalizeNumber(target.value);
+    state.cashItemsDraft[itemId] = numeric == null ? null : Math.max(0, Math.round(Number(numeric || 0)));
+  } else {
+    state.cashItemsJustificationsDraft[itemId] = target.value;
+  }
+  renderCashItemsModal(state.cashEditingId ? "edit" : "new", state.cashEditingId);
+}
+
+function saveCashItemsModal() {
+  const scope = state.cashEditingId ? "edit" : "new";
+  const draft = clone(currentCashDraft(scope, state.cashEditingId) || emptyCashDraft());
+  draft.itemCounts = clone(state.cashItemsDraft);
+  draft.itemJustifications = clone(state.cashItemsJustificationsDraft);
+  setCurrentCashDraft(normalizeCashRecordClient(draft, state.cashSettings), scope);
+  closeCashItemsModal();
+  renderCash();
+}
+
+function onCashTableAction(event) {
+  const button = event.target.closest("[data-cash-action]");
+  if (!button) return;
+  const action = clean(button.dataset.cashAction);
+  const id = clean(button.dataset.id);
+  const scope = clean(button.dataset.scope) || (action === "save-edit" || action === "cancel-edit" ? "edit" : "new");
+  if (action === "edit" && id) startCashEdit(id);
+  if (action === "cancel-edit") cancelCashEdit();
+  if (action === "save-new") saveCashDraft("new");
+  if (action === "save-edit" && id) saveCashDraft("edit", id);
+  if (action === "items" || action === "items-existing") openCashItemsModal(action === "items-existing" ? "edit" : scope, id);
+}
+
+function lisbonCurrentTimeClient() {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+}
+
+function isCashShiftOverdue(day, startTime) {
+  const today = lisbonTodayIsoClient();
+  if (!clean(day) || !clean(startTime)) return false;
+  if (day < today) return true;
+  if (day > today) return false;
+  return clean(startTime) <= clean(lisbonCurrentTimeClient());
+}
+
+function shouldShowCashAlert() {
+  if (!canApp("cash")) return false;
+  const next = getNextExpectedCashRecordClient();
+  const shift = cashShiftById(next.shiftId) || { startTime: "00:00" };
+  return isCashShiftOverdue(next.day, shift.startTime);
+}
+
 async function loadHoursSettings({ silent = false } = {}) {
   try {
     const result = await api("/api/hours-register-settings");
@@ -11225,6 +12085,10 @@ function render() {
   }
   if (state.currentView === "services") {
     renderServices();
+    return;
+  }
+  if (state.currentView === "cash") {
+    renderCash();
     return;
   }
   if (state.currentView === "shopping") {
