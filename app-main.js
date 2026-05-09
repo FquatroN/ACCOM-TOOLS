@@ -664,6 +664,7 @@ const state = {
   cashLoaded: false,
   cashSettings: clone(DEFAULT_CASH_SETTINGS),
   cashSettingsLoaded: false,
+  cashFilters: { dateFrom: cashDefaultDateFrom(), dateTo: "" },
   cashDraft: null,
   cashEditDraft: null,
   cashEditingId: "",
@@ -810,6 +811,8 @@ const els = {
   cashSettingsStatus: document.getElementById("cash-settings-status"),
   cashCount: document.getElementById("cash-count"),
   cashWarning: document.getElementById("cash-warning"),
+  cashFilterDateFrom: document.getElementById("cash-filter-date-from"),
+  cashFilterDateTo: document.getElementById("cash-filter-date-to"),
   cashRows: document.getElementById("cash-rows"),
   cashMobileCards: document.getElementById("cash-mobile-cards"),
   cashStatus: document.getElementById("cash-status"),
@@ -1428,6 +1431,8 @@ function bindEvents() {
   els.cashRows?.addEventListener("input", onCashTableInput);
   els.cashMobileCards?.addEventListener("click", onCashTableAction);
   els.cashMobileCards?.addEventListener("input", onCashTableInput);
+  els.cashFilterDateFrom?.addEventListener("input", onCashFilterInput);
+  els.cashFilterDateTo?.addEventListener("input", onCashFilterInput);
   els.cashSaveSettings?.addEventListener("click", saveCashSettings);
   els.cashAddShift?.addEventListener("click", addCashShiftSetting);
   els.cashAddItem?.addEventListener("click", addCashItemSetting);
@@ -9872,6 +9877,14 @@ function cashItemDiffLabel(record) {
   return record.hasItemDiffs ? "Items *" : "Items";
 }
 
+function cashDefaultDateFrom() {
+  const today = lisbonTodayIsoClient();
+  const [year, month] = today.split("-").map(Number);
+  const date = new Date(Date.UTC(year, (month || 1) - 1, 1));
+  date.setUTCMonth(date.getUTCMonth() - 3);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
+
 function cashShiftDisplayLabel(value) {
   const raw = clean(value).toLowerCase();
   if (raw === "night" || raw === "n") return "N";
@@ -9880,12 +9893,33 @@ function cashShiftDisplayLabel(value) {
   return clean(value);
 }
 
+function formatCashDateCompact(value) {
+  const raw = clean(value);
+  if (!raw) return "-";
+  const dt = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return raw;
+  const day = String(dt.getDate()).padStart(2, "0");
+  const month = new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "Europe/Lisbon" }).format(dt);
+  return `${day}${month}`;
+}
+
+function filteredCashRows(rows) {
+  const dateFrom = clean(state.cashFilters.dateFrom);
+  const dateTo = clean(state.cashFilters.dateTo);
+  return rows.filter((row) => {
+    const day = clean(row.day);
+    if (dateFrom && day && day < dateFrom) return false;
+    if (dateTo && day && day > dateTo) return false;
+    return true;
+  });
+}
+
 function buildCashInlineRow() {
   const draft = state.cashDraft || emptyCashDraft();
   const computed = cashDraftComputed(draft);
   const tr = document.createElement("tr");
   tr.className = "cash-inline-row";
-  tr.innerHTML = `<td>${escape(draft.day)}</td>
+  tr.innerHTML = `<td>${escape(formatCashDateCompact(draft.day))}</td>
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || cashShiftById(draft.shiftId)?.name || ""))}</td>
     <td><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
     ${CASH_DENOMINATIONS.map((denom) => `<td><input class="cash-count-input" data-cash-field="denom:${escape(denom.key)}" data-scope="new" type="number" min="0" step="1" value="${escape(String(draft.denominations?.[denom.key] || 0))}" /></td>`).join("")}
@@ -9905,7 +9939,7 @@ function buildCashInlineRow() {
 function buildCashReadOnlyRow(record) {
   const tr = document.createElement("tr");
   if ((record.diffCash != null && record.diffCash !== 0) || record.diffCard !== 0) tr.classList.add("cash-diff-row");
-  tr.innerHTML = `<td>${escape(record.day)}</td>
+  tr.innerHTML = `<td>${escape(formatCashDateCompact(record.day))}</td>
     <td>${escape(cashShiftDisplayLabel(record.shiftName || ""))}</td>
     <td>${escape(record.name || "-")}</td>
     ${CASH_DENOMINATIONS.map((denom) => `<td>${escape(String(record.denominations?.[denom.key] || 0))}</td>`).join("")}
@@ -9927,7 +9961,7 @@ function buildCashEditableRow(record) {
   const computed = cashDraftComputed(draft);
   const tr = document.createElement("tr");
   tr.className = "cash-inline-row";
-  tr.innerHTML = `<td>${escape(draft.day)}</td>
+  tr.innerHTML = `<td>${escape(formatCashDateCompact(draft.day))}</td>
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || ""))}</td>
     <td><input data-cash-field="name" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
     ${CASH_DENOMINATIONS.map((denom) => `<td><input class="cash-count-input" data-cash-field="denom:${escape(denom.key)}" data-scope="edit" data-id="${escape(record.id)}" type="number" min="0" step="1" value="${escape(String(draft.denominations?.[denom.key] || 0))}" /></td>`).join("")}
@@ -9950,7 +9984,7 @@ function buildCashReadOnlyCard(record) {
   if ((record.diffCash != null && record.diffCash !== 0) || record.diffCard !== 0) card.classList.add("cash-diff-row");
   card.innerHTML = `<div class="communication-mobile-header">
       <div>
-        <div class="service-mobile-request">${escape(record.day)} · ${escape(record.shiftName || "")}</div>
+        <div class="service-mobile-request">${escape(formatCashDateCompact(record.day))} · ${escape(cashShiftDisplayLabel(record.shiftName || ""))}</div>
         <div class="communication-mobile-meta">${escape(record.name || "-")}</div>
       </div>
       <div class="group-mobile-total"><strong>${escape(formatCashMoney(record.cashTotal))}</strong><small>€ Caixa</small></div>
@@ -9990,19 +10024,22 @@ function renderCash() {
     return;
   }
   const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
+  const visibleRows = filteredCashRows(rows);
   const focusTarget = document.activeElement?.matches?.("[data-cash-field]") ? document.activeElement : null;
   const focusField = clean(focusTarget?.dataset?.cashField);
   const focusScope = clean(focusTarget?.dataset?.scope);
   const focusId = clean(focusTarget?.dataset?.id);
   const caretStart = focusTarget && typeof focusTarget.selectionStart === "number" ? focusTarget.selectionStart : null;
   const caretEnd = focusTarget && typeof focusTarget.selectionEnd === "number" ? focusTarget.selectionEnd : null;
-  if (els.cashCount) els.cashCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.cashFilterDateFrom) els.cashFilterDateFrom.value = clean(state.cashFilters.dateFrom);
+  if (els.cashFilterDateTo) els.cashFilterDateTo.value = clean(state.cashFilters.dateTo);
+  if (els.cashCount) els.cashCount.textContent = `${visibleRows.length} record${visibleRows.length === 1 ? "" : "s"}`;
   renderCashWarning();
-  renderCashMobileCards(rows);
+  renderCashMobileCards(visibleRows);
   if (els.cashRows) {
     els.cashRows.innerHTML = "";
     els.cashRows.appendChild(buildCashInlineRow());
-    rows.forEach((record) => {
+    visibleRows.forEach((record) => {
       els.cashRows.appendChild(state.cashEditingId === record.id ? buildCashEditableRow(record) : buildCashReadOnlyRow(record));
     });
   }
@@ -10159,6 +10196,12 @@ function onCashTableInput(event) {
     draft[field] = target.value;
   }
   setCurrentCashDraft(normalizeCashRecordClient(draft, state.cashSettings), scope || "new");
+  renderCash();
+}
+
+function onCashFilterInput() {
+  state.cashFilters.dateFrom = clean(els.cashFilterDateFrom?.value) || cashDefaultDateFrom();
+  state.cashFilters.dateTo = clean(els.cashFilterDateTo?.value);
   renderCash();
 }
 
