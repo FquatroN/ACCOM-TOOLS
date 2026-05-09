@@ -1968,13 +1968,14 @@ select:disabled {
 
 .cash-table th:nth-child(1),
 .cash-table td:nth-child(1) {
-  min-width: 46px;
-  width: 46px;
+  min-width: 40px;
+  width: 40px;
 }
 
 .cash-table th:nth-child(2),
 .cash-table td:nth-child(2) {
-  min-width: 42px;
+  min-width: 36px;
+  width: 36px;
   text-align: center;
 }
 
@@ -2000,7 +2001,7 @@ select:disabled {
 .cash-table td:nth-child(9),
 .cash-table th:nth-child(10),
 .cash-table td:nth-child(10) {
-  min-width: 74px;
+  min-width: 68px;
 }
 
 .cash-table td:nth-child(5),
@@ -2037,6 +2038,10 @@ select:disabled {
 
 .cash-diff-row td {
   background: rgba(180, 35, 24, 0.25);
+}
+
+.cash-diff-value {
+  color: #8f1d18;
 }
 
 .cash-items-alert {
