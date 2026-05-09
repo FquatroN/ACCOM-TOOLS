@@ -5,6 +5,7 @@ const {
   cleanText,
   formatLisbonIso,
   generateTargetDates,
+  isWorkingDayLisbon,
   orderDatesLabel,
   sanitizeBakeryDays,
   sanitizeBakeryOrderRow,
@@ -189,6 +190,11 @@ module.exports = async function handler(req, res) {
         throw error;
       }
       const orderDate = formatLisbonIso(new Date());
+      if (!isWorkingDayLisbon(orderDate)) {
+        const error = new Error("New bakery orders can only be created on working days.");
+        error.statusCode = 400;
+        throw error;
+      }
       const targetDates = generateTargetDates(orderDate);
       const days = sanitizeBakeryDays([], settings, targetDates);
       const generatedText = buildBakeryGeneratedText({ days }, settings, "");

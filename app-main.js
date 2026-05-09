@@ -9242,11 +9242,12 @@ function renderBakery() {
   }
   setBakeryTab(state.bakeryTab);
   const order = state.bakeryOpenOrder;
+  const canCreateNewBakeryOrder = !order && isWorkingDayLisbonClient(lisbonTodayIsoClient());
   if (els.bakeryOpenSummary) els.bakeryOpenSummary.textContent = order ? `Open order #${order.orderNumber} · ${bakeryOrderDatesLabel(order)}` : "No open order";
   if (els.bakeryOpenEmpty) els.bakeryOpenEmpty.hidden = !!order;
   if (els.bakeryOpenContent) els.bakeryOpenContent.hidden = !order;
   if (els.bakerySaveOrder) els.bakerySaveOrder.hidden = !order;
-  if (els.bakeryNewOrder) els.bakeryNewOrder.hidden = !!order;
+  if (els.bakeryNewOrder) els.bakeryNewOrder.hidden = !canCreateNewBakeryOrder;
   if (els.bakerySubmitName) els.bakerySubmitName.value = state.bakerySubmitName;
   if (order) {
     refreshBakeryOpenOrderDerivedState();
@@ -9256,6 +9257,11 @@ function renderBakery() {
     if (els.bakeryOpenRows) els.bakeryOpenRows.innerHTML = "";
     if (els.bakeryMobileCards) els.bakeryMobileCards.innerHTML = "";
     if (els.bakeryGeneratedText) els.bakeryGeneratedText.innerHTML = "";
+    if (els.bakeryOpenEmpty) {
+      els.bakeryOpenEmpty.textContent = canCreateNewBakeryOrder
+        ? "No open bakery order. Start a new order to prepare the next bakery email."
+        : "New bakery orders can only be created on working days.";
+    }
   }
   renderBakeryHistoryRows();
   renderBakeryResumeRows();
@@ -9386,6 +9392,12 @@ async function saveBakerySettings() {
 }
 
 async function createBakeryOrder() {
+  if (!isWorkingDayLisbonClient(lisbonTodayIsoClient())) {
+    const message = "New bakery orders can only be created on working days.";
+    setBakeryCurrentStatus(message);
+    showToast(message, "error");
+    return;
+  }
   try {
     const result = await api("/api/bakery", { method: "POST", body: {} });
     state.bakeryOpenOrder = normalizeBakeryOrderClient(result.order, state.bakerySettings);
