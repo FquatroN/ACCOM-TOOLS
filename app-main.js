@@ -667,10 +667,15 @@ const state = {
   cashScreen: "list",
   cashFilters: { dateFrom: cashDefaultDateFrom(), dateTo: "", shift: "", name: "" },
   cashDraft: null,
+  cashOpenDraft: null,
   cashEditDraft: null,
   cashEditingId: "",
   cashMoneyModalOpen: false,
+  cashMoneyModalScope: "new",
+  cashMoneyModalId: "",
   cashItemsModalOpen: false,
+  cashItemsModalScope: "new",
+  cashItemsModalId: "",
   cashItemsDraft: {},
   cashItemsJustificationsDraft: {},
   hoursRecords: [],
@@ -9917,7 +9922,7 @@ function emptyCashDraft() {
 }
 
 function hasCashDraft() {
-  const draft = state.cashEditingId ? state.cashEditDraft : state.cashDraft;
+  const draft = state.cashEditingId ? state.cashEditDraft : (state.cashOpenDraft || state.cashDraft);
   return !!(
     clean(draft?.name) ||
     clean(draft?.day) ||
@@ -10153,25 +10158,26 @@ function buildCashReadOnlyRow(record) {
 }
 
 function buildCashEditableRow(record, { openMode = false } = {}) {
-  const draft = state.cashEditDraft || record;
+  const scope = openMode ? "open" : "edit";
+  const draft = currentCashDraft(scope, record.id) || record;
   const computed = cashDraftComputed(draft);
   const tr = document.createElement("tr");
   tr.className = "cash-inline-row";
   tr.innerHTML = `<td>${escape(formatCashDateCompact(draft.day))}</td>
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || ""))}</td>
-    <td><input data-cash-field="name" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
-    <td><button type="button" class="ghost" data-cash-action="cash" data-id="${escape(record.id)}" data-scope="edit">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
+    <td><input data-cash-field="name" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
+    <td><button type="button" class="ghost" data-cash-action="cash" data-id="${escape(record.id)}" data-scope="${escape(scope)}">${escape(cashSummaryButtonLabel(computed))}</button></td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
     <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
     <td class="${cashDiffValueClass(computed.diffCash)}">${escape(formatCashDiffValue(computed.diffCash))}</td>
     <td class="${cashDiffValueClass(computed.diffCard)}">${escape(formatCashDiffValue(computed.diffCard))}</td>
-    <td><input data-cash-field="justification" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
-    <td><button type="button" class="ghost${computed.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="edit">${escape(cashItemDiffLabel(computed))}</button></td>
+    <td><input data-cash-field="justification" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
+    <td><button type="button" class="ghost${computed.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="${escape(scope)}">${escape(cashItemDiffLabel(computed))}</button></td>
     <td>${openMode
-      ? `<button type="button" data-cash-action="save-edit" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="close-open" data-id="${escape(record.id)}">Close</button>`
-      : `<button type="button" data-cash-action="save-edit" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button>`}</td>`;
+      ? `<button type="button" data-cash-action="save-edit" data-scope="${escape(scope)}" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="close-open" data-id="${escape(record.id)}">Close</button>`
+      : `<button type="button" data-cash-action="save-edit" data-scope="${escape(scope)}" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button>`}</td>`;
   return tr;
 }
 
@@ -10225,15 +10231,19 @@ function renderCash() {
   const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
   const openRecord = getOpenCashRecordClient(rows);
   if (openRecord) {
-    state.cashEditingId = openRecord.id;
-    if (clean(state.cashEditDraft?.id) !== clean(openRecord.id)) {
-      state.cashEditDraft = clone(openRecord);
+    if (clean(state.cashOpenDraft?.id) !== clean(openRecord.id)) {
+      state.cashOpenDraft = clone(openRecord);
     }
-  } else if (state.cashEditingId) {
+  } else {
+    state.cashOpenDraft = null;
+  }
+  if (state.cashEditingId) {
     const editingRecord = rows.find((record) => clean(record.id) === clean(state.cashEditingId));
     if (!editingRecord || isCashOpenStatusClient(editingRecord.status)) {
       state.cashEditingId = "";
       state.cashEditDraft = null;
+    } else if (clean(state.cashEditDraft?.id) !== clean(editingRecord.id)) {
+      state.cashEditDraft = clone(editingRecord);
     }
   }
   const visibleRows = visibleCashRows(rows, state.cashSettings);
@@ -10316,6 +10326,8 @@ async function loadCashData({ silent = false } = {}) {
     }
     state.cashRecords = (Array.isArray(result?.rows) ? result.rows : []).map((row) => normalizeCashRecordClient(row, state.cashSettings));
     state.cashLoaded = true;
+    const openRecord = getOpenCashRecordClient(state.cashRecords);
+    state.cashOpenDraft = openRecord ? clone(openRecord) : null;
     if (!state.cashDraft || !clean(state.cashDraft.id)) state.cashDraft = emptyCashDraft();
     renderCash();
     renderCashSettings();
@@ -10401,12 +10413,14 @@ async function saveCashSettings() {
 }
 
 function currentCashDraft(scope = "new", id = "") {
+  if (scope === "open") return state.cashOpenDraft;
   if (scope === "edit") return state.cashEditDraft;
   return state.cashDraft;
 }
 
 function setCurrentCashDraft(nextDraft, scope = "new") {
-  if (scope === "edit") state.cashEditDraft = nextDraft;
+  if (scope === "open") state.cashOpenDraft = nextDraft;
+  else if (scope === "edit") state.cashEditDraft = nextDraft;
   else state.cashDraft = nextDraft;
 }
 
@@ -10437,13 +10451,6 @@ function onCashFilterInput() {
 }
 
 function startCashEdit(id) {
-  const openRecord = getOpenCashRecordClient();
-  if (openRecord && clean(openRecord.id) !== clean(id)) {
-    const message = "Close the current open shift before editing a closed record.";
-    setCashStatus(message);
-    showToast(message, "error");
-    return;
-  }
   const record = state.cashRecords.find((row) => clean(row.id) === clean(id));
   if (!record) return;
   state.cashEditingId = record.id;
@@ -10462,16 +10469,18 @@ function cancelCashEdit() {
 async function saveCashDraft(scope = "new", id = "", { closeRecord = false } = {}) {
   const draft = normalizeCashRecordClient(currentCashDraft(scope, id) || {}, state.cashSettings);
   if (scope === "new") draft.status = "O";
+  if (scope === "open") draft.status = "O";
   if (closeRecord) draft.status = "C";
-  const error = validateCashDraftClient(draft, { isCreate: scope !== "edit" });
+  const error = validateCashDraftClient(draft, { isCreate: scope === "new" });
   if (error) {
     setCashStatus(error);
     showToast(error, "error");
     return;
   }
   try {
-    const result = await api(scope === "edit" ? `/api/cash-control?id=${encodeURIComponent(id)}` : "/api/cash-control", {
-      method: scope === "edit" ? "PUT" : "POST",
+    const isUpdate = scope === "edit" || scope === "open";
+    const result = await api(isUpdate ? `/api/cash-control?id=${encodeURIComponent(id)}` : "/api/cash-control", {
+      method: isUpdate ? "PUT" : "POST",
       body: draft,
     });
     if (result?.settings) {
@@ -10481,8 +10490,11 @@ async function saveCashDraft(scope = "new", id = "", { closeRecord = false } = {
     state.cashRecords = (Array.isArray(result?.rows) ? result.rows : []).map((row) => normalizeCashRecordClient(row, state.cashSettings));
     state.cashLoaded = true;
     const openRecord = getOpenCashRecordClient(state.cashRecords);
-    state.cashEditingId = openRecord ? openRecord.id : "";
-    state.cashEditDraft = openRecord ? clone(openRecord) : null;
+    state.cashOpenDraft = openRecord ? clone(openRecord) : null;
+    if (scope === "edit") {
+      state.cashEditingId = "";
+      state.cashEditDraft = null;
+    }
     state.cashDraft = emptyCashDraft();
     renderCash();
     renderLayout();
@@ -10534,12 +10546,16 @@ function renderCashMoneyModal(scope = "new", id = "") {
 
 function openCashMoneyModal(scope = "new", id = "") {
   if (scope === "edit" && id && clean(state.cashEditingId) !== clean(id)) startCashEdit(id);
+  state.cashMoneyModalScope = scope || "new";
+  state.cashMoneyModalId = id || "";
   state.cashMoneyModalOpen = true;
   renderCashMoneyModal(scope, id);
 }
 
 function closeCashMoneyModal() {
   state.cashMoneyModalOpen = false;
+  state.cashMoneyModalScope = "new";
+  state.cashMoneyModalId = "";
   if (els.cashMoneyModal) els.cashMoneyModal.hidden = true;
   document.body.classList.remove("modal-open");
 }
@@ -10548,11 +10564,12 @@ function onCashMoneyModalInput(event) {
   const target = event.target;
   const key = clean(target?.dataset?.cashMoneyKey);
   if (!key) return;
-  const scope = state.cashEditingId ? "edit" : "new";
-  const draft = clone(currentCashDraft(scope, state.cashEditingId) || emptyCashDraft());
+  const scope = clean(state.cashMoneyModalScope) || "new";
+  const targetId = clean(state.cashMoneyModalId);
+  const draft = clone(currentCashDraft(scope, targetId) || emptyCashDraft());
   draft.denominations[key] = Math.max(0, Math.round(Number(normalizeNumber(target.value) || 0)));
   setCurrentCashDraft(normalizeCashRecordClient(draft, state.cashSettings), scope);
-  renderCashMoneyModal(scope, state.cashEditingId);
+  renderCashMoneyModal(scope, targetId);
 }
 
 function saveCashMoneyModal() {
@@ -10612,6 +10629,8 @@ function renderCashItemsModal(scope = "new", id = "") {
 
 function openCashItemsModal(scope = "new", id = "") {
   if (scope === "edit" && id && clean(state.cashEditingId) !== clean(id)) startCashEdit(id);
+  state.cashItemsModalScope = scope || "new";
+  state.cashItemsModalId = id || "";
   ensureCashItemsDraft(scope, id);
   state.cashItemsModalOpen = true;
   renderCashItemsModal(scope, id);
@@ -10619,6 +10638,8 @@ function openCashItemsModal(scope = "new", id = "") {
 
 function closeCashItemsModal() {
   state.cashItemsModalOpen = false;
+  state.cashItemsModalScope = "new";
+  state.cashItemsModalId = "";
   if (els.cashItemsModal) els.cashItemsModal.hidden = true;
   document.body.classList.remove("modal-open");
 }
@@ -10634,12 +10655,13 @@ function onCashItemsModalInput(event) {
   } else {
     state.cashItemsJustificationsDraft[itemId] = target.value;
   }
-  renderCashItemsModal(state.cashEditingId ? "edit" : "new", state.cashEditingId);
+  renderCashItemsModal(clean(state.cashItemsModalScope) || "new", clean(state.cashItemsModalId));
 }
 
 function saveCashItemsModal() {
-  const scope = state.cashEditingId ? "edit" : "new";
-  const draft = clone(currentCashDraft(scope, state.cashEditingId) || emptyCashDraft());
+  const scope = clean(state.cashItemsModalScope) || "new";
+  const targetId = clean(state.cashItemsModalId);
+  const draft = clone(currentCashDraft(scope, targetId) || emptyCashDraft());
   draft.itemCounts = clone(state.cashItemsDraft);
   draft.itemJustifications = clone(state.cashItemsJustificationsDraft);
   setCurrentCashDraft(normalizeCashRecordClient(draft, state.cashSettings), scope);
@@ -10656,8 +10678,8 @@ function onCashTableAction(event) {
   if (action === "edit" && id) startCashEdit(id);
   if (action === "cancel-edit") cancelCashEdit();
   if (action === "save-new") saveCashDraft("new");
-  if (action === "save-edit" && id) saveCashDraft("edit", id);
-  if (action === "close-open" && id) saveCashDraft("edit", id, { closeRecord: true });
+  if (action === "save-edit" && id) saveCashDraft(scope === "open" ? "open" : "edit", id);
+  if (action === "close-open" && id) saveCashDraft("open", id, { closeRecord: true });
   if (action === "cash" || action === "cash-existing") openCashMoneyModal(action === "cash-existing" ? "edit" : scope, id);
   if (action === "items" || action === "items-existing") openCashItemsModal(action === "items-existing" ? "edit" : scope, id);
 }
