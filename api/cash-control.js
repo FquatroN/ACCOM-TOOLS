@@ -36,6 +36,23 @@ function formatCashDenominationLabel(value) {
   return `${String(amount).replace(".", ",")}€`;
 }
 
+function formatCashAlertDay(value) {
+  const raw = cleanText(value);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return raw;
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthLabel = monthNames[Math.max(0, Number(match[2]) - 1)] || "";
+  return `${match[3]}${monthLabel}`;
+}
+
+function formatCashAlertShift(record) {
+  const raw = cleanText(record?.shiftName || record?.shiftId).toLowerCase();
+  if (raw === "night" || raw.startsWith("night")) return "N";
+  if (raw === "morning" || raw.startsWith("morning")) return "M";
+  if (raw === "afternoon" || raw.startsWith("afternoon")) return "T";
+  return cleanText(record?.shiftName || record?.shiftId);
+}
+
 async function loadGeneralEmailConfig() {
   const rows = await restQuery("app_settings?select=payload&setting_key=eq.communications&limit=1", { method: "GET" });
   const payload = Array.isArray(rows) && rows[0]?.payload ? rows[0].payload : {};
@@ -149,7 +166,9 @@ function buildHighCashAlertContent(record, items = []) {
     .filter((item) => item.quantity > 0)
     .map((item) => `${item.label}: ${item.quantity}`)
     .join(", ");
-  const subject = "Deposito Necessario, valor em caixa elevado";
+  const dayLabel = formatCashAlertDay(record?.day);
+  const shiftLabel = formatCashAlertShift(record);
+  const subject = `Deposito Necessario - ${dayLabel}${shiftLabel ? ` ${shiftLabel}` : ""}`;
   const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
     <p>O valor em caixa e ${escapeHtml(cashTotal)}€, existindo as seguintes notas: ${escapeHtml(noteList || "-")}.</p>
   </body></html>`;
