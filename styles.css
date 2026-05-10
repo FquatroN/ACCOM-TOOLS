@@ -1900,7 +1900,7 @@ select:disabled {
 .cash-table td {
   white-space: nowrap;
   font-size: 0.74rem;
-  padding: 0.26rem 0.3rem;
+  padding: 0.26rem 0.25rem;
 }
 
 .cash-detail-table th,
