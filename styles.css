@@ -2354,6 +2354,24 @@ select:disabled {
   background: #fffdfa;
 }
 
+.cash-mobile-card {
+  display: grid;
+  gap: 0.48rem;
+  padding: 0.72rem 0.82rem;
+  border: 1px solid #e2d8cf;
+  border-radius: 14px;
+  background: #fffdfa;
+}
+
+.cash-mobile-card.cash-diff-card {
+  background: rgba(180, 35, 24, 0.12);
+}
+
+.cash-mobile-card .cash-money-input {
+  width: 100%;
+  min-width: 0;
+}
+
 .hours-table th,
 .hours-table td {
   padding-top: 0.28rem;
