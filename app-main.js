@@ -819,6 +819,7 @@ const els = {
   cashTabList: document.getElementById("cash-tab-list"),
   cashTabDetail: document.getElementById("cash-tab-detail"),
   cashTabItems: document.getElementById("cash-tab-items"),
+  cashTabResume: document.getElementById("cash-tab-resume"),
   cashCount: document.getElementById("cash-count"),
   cashWarning: document.getElementById("cash-warning"),
   cashFilterDateFrom: document.getElementById("cash-filter-date-from"),
@@ -828,10 +829,12 @@ const els = {
   cashPanelList: document.getElementById("cash-panel-list"),
   cashPanelDetail: document.getElementById("cash-panel-detail"),
   cashPanelItems: document.getElementById("cash-panel-items"),
+  cashPanelResume: document.getElementById("cash-panel-resume"),
   cashRows: document.getElementById("cash-rows"),
   cashDetailRows: document.getElementById("cash-detail-rows"),
   cashItemDetailHead: document.getElementById("cash-item-detail-head"),
   cashItemDetailRows: document.getElementById("cash-item-detail-rows"),
+  cashResumeRows: document.getElementById("cash-resume-rows"),
   cashMobileCards: document.getElementById("cash-mobile-cards"),
   cashStatus: document.getElementById("cash-status"),
   cashMoneyModal: document.getElementById("cash-money-modal"),
@@ -1469,6 +1472,10 @@ function bindEvents() {
   });
   els.cashTabItems?.addEventListener("click", () => {
     state.cashScreen = "items";
+    renderCash();
+  });
+  els.cashTabResume?.addEventListener("click", () => {
+    state.cashScreen = "resume";
     renderCash();
   });
   els.cashSaveSettings?.addEventListener("click", saveCashSettings);
@@ -10061,6 +10068,10 @@ function visibleCashRows(rows, settings = state.cashSettings) {
 }
 
 function renderCashScreenTabs() {
+  const canSeeResume = isAdministratorProfile();
+  if (!canSeeResume && state.cashScreen === "resume") {
+    state.cashScreen = "list";
+  }
   if (els.cashTabList) {
     els.cashTabList.classList.toggle("active-tab", state.cashScreen === "list");
     els.cashTabList.classList.toggle("ghost", state.cashScreen !== "list");
@@ -10073,9 +10084,15 @@ function renderCashScreenTabs() {
     els.cashTabItems.classList.toggle("active-tab", state.cashScreen === "items");
     els.cashTabItems.classList.toggle("ghost", state.cashScreen !== "items");
   }
+  if (els.cashTabResume) {
+    els.cashTabResume.hidden = !canSeeResume;
+    els.cashTabResume.classList.toggle("active-tab", state.cashScreen === "resume");
+    els.cashTabResume.classList.toggle("ghost", state.cashScreen !== "resume");
+  }
   if (els.cashPanelList) els.cashPanelList.hidden = state.cashScreen !== "list";
   if (els.cashPanelDetail) els.cashPanelDetail.hidden = state.cashScreen !== "detail";
   if (els.cashPanelItems) els.cashPanelItems.hidden = state.cashScreen !== "items";
+  if (els.cashPanelResume) els.cashPanelResume.hidden = state.cashScreen !== "resume" || !canSeeResume;
 }
 
 function renderCashDetailRows(rows) {
@@ -10121,6 +10138,48 @@ function renderCashItemDetailRows(rows) {
       els.cashItemDetailRows.appendChild(tr);
     });
   }
+}
+
+function renderCashResumeRows(rows) {
+  if (!els.cashResumeRows) return;
+  els.cashResumeRows.innerHTML = "";
+  const buckets = new Map();
+  rows.forEach((row) => {
+    const month = clean(row.day).slice(0, 7);
+    if (!month) return;
+    const current = buckets.get(month) || {
+      month,
+      cashFdm: 0,
+      cardFdm: 0,
+      diffCash: 0,
+      diffCard: 0,
+      absDiffCash: 0,
+      absDiffCard: 0,
+    };
+    current.cashFdm = Number((current.cashFdm + cashMoneyNumber(row.cashFdm)).toFixed(2));
+    current.cardFdm = Number((current.cardFdm + cashMoneyNumber(row.cardFdm)).toFixed(2));
+    current.diffCash = Number((current.diffCash + cashMoneyNumber(row.diffCash)).toFixed(2));
+    current.diffCard = Number((current.diffCard + cashMoneyNumber(row.diffCard)).toFixed(2));
+    current.absDiffCash = Number((current.absDiffCash + Math.abs(cashMoneyNumber(row.diffCash))).toFixed(2));
+    current.absDiffCard = Number((current.absDiffCard + Math.abs(cashMoneyNumber(row.diffCard))).toFixed(2));
+    buckets.set(month, current);
+  });
+  const summaryRows = [...buckets.values()].sort((a, b) => clean(b.month).localeCompare(clean(a.month)));
+  if (!summaryRows.length) {
+    els.cashResumeRows.innerHTML = '<tr><td colspan="7" class="empty">No cash records found.</td></tr>';
+    return;
+  }
+  summaryRows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escape(row.month)}</td>
+      <td>${escape(formatCashMoney(row.cashFdm))}</td>
+      <td>${escape(formatCashMoney(row.cardFdm))}</td>
+      <td class="${cashDiffValueClass(row.diffCash)}">${escape(formatCashDiffValue(row.diffCash))}</td>
+      <td class="${cashDiffValueClass(row.diffCard)}">${escape(formatCashDiffValue(row.diffCard))}</td>
+      <td>${escape(formatCashMoney(row.absDiffCash))}</td>
+      <td>${escape(formatCashMoney(row.absDiffCard))}</td>`;
+    els.cashResumeRows.appendChild(tr);
+  });
 }
 
 function cashSummaryButtonLabel(record) {
@@ -10244,6 +10303,7 @@ function renderCash() {
     if (els.cashRows) els.cashRows.innerHTML = '<tr><td colspan="13" class="empty">Your profile has no access to Cash Control.</td></tr>';
     if (els.cashDetailRows) els.cashDetailRows.innerHTML = '<tr><td colspan="19" class="empty">Your profile has no access to Cash Control.</td></tr>';
     if (els.cashItemDetailRows) els.cashItemDetailRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Cash Control.</td></tr>';
+    if (els.cashResumeRows) els.cashResumeRows.innerHTML = '<tr><td colspan="7" class="empty">Your profile has no access to Cash Control.</td></tr>';
     return;
   }
   const rows = buildComputedCashRowsClient(state.cashRecords, state.cashSettings);
@@ -10285,6 +10345,7 @@ function renderCash() {
   renderCashWarning();
   renderCashDetailRows(visibleRows);
   renderCashItemDetailRows(visibleRows);
+  renderCashResumeRows(visibleRows);
   renderCashMobileCards(visibleRows);
   if (els.cashRows) {
     els.cashRows.innerHTML = "";

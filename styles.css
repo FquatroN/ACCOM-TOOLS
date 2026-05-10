@@ -1892,6 +1892,10 @@ select:disabled {
   min-width: 980px;
 }
 
+.cash-resume-table {
+  min-width: 860px;
+}
+
 .cash-table th,
 .cash-table td {
   white-space: nowrap;
@@ -1913,6 +1917,18 @@ select:disabled {
   font-size: 0.68rem;
   padding: 0.22rem 0.28rem;
   text-align: center;
+}
+
+.cash-resume-table th,
+.cash-resume-table td {
+  white-space: nowrap;
+  font-size: 0.72rem;
+  padding: 0.26rem 0.32rem;
+}
+
+.cash-resume-table th:nth-child(n+2),
+.cash-resume-table td:nth-child(n+2) {
+  text-align: right;
 }
 
 .cash-item-detail-table th {
