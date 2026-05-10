@@ -2111,6 +2111,10 @@ select:disabled {
   font-weight: 400;
 }
 
+.cash-table td:nth-child(12) button {
+  font-size: 0.68rem;
+}
+
 .cash-items-modal-card {
   width: min(960px, 96vw);
 }
