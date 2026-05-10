@@ -2050,16 +2050,16 @@ select:disabled {
 .cash-table th:nth-child(5),
 .cash-table td:nth-child(5),
 .cash-table th:nth-child(6),
-.cash-table td:nth-child(6),
-.cash-table th:nth-child(7),
-.cash-table td:nth-child(7) {
+.cash-table td:nth-child(6) {
   min-width: 60px;
 }
 
+.cash-table th:nth-child(7),
+.cash-table td:nth-child(7),
 .cash-table th:nth-child(8),
 .cash-table td:nth-child(8) {
-  min-width: 65px;
-  width: 65px;
+  min-width: 70px;
+  width: 70px;
 }
 
 .cash-table th:nth-child(9),
