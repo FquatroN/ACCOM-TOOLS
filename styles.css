@@ -2048,14 +2048,18 @@ select:disabled {
 }
 
 .cash-table th:nth-child(5),
-.cash-table td:nth-child(5),
-.cash-table th:nth-child(6),
-.cash-table td:nth-child(6) {
+.cash-table td:nth-child(5) {
   min-width: 60px;
 }
 
+.cash-table th:nth-child(6),
+.cash-table td:nth-child(6),
 .cash-table th:nth-child(7),
-.cash-table td:nth-child(7),
+.cash-table td:nth-child(7) {
+  min-width: 75px;
+  width: 75px;
+}
+
 .cash-table th:nth-child(8),
 .cash-table td:nth-child(8) {
   min-width: 70px;
