@@ -1921,13 +1921,6 @@ select:disabled {
   line-height: 1.15;
 }
 
-.cash-item-detail-table .cash-item-head-defaults th {
-  top: var(--cash-item-head-height, 40px);
-  background: #f8f1e8;
-  font-size: 0.64rem;
-  line-height: 1.05;
-}
-
 .cash-detail-table th:nth-child(1),
 .cash-detail-table td:nth-child(1) {
   width: 46px;

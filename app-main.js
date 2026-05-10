@@ -10076,19 +10076,12 @@ function renderCashDetailRows(rows) {
 function renderCashItemDetailRows(rows) {
   if (!els.cashItemDetailHead || !els.cashItemDetailRows) return;
   const items = state.cashSettings?.items || DEFAULT_CASH_SETTINGS.items;
-  els.cashItemDetailHead.innerHTML = `
-    <tr class="cash-item-head-main">
-      <th>Day</th>
-      <th>Shift</th>
-      <th>Name</th>
-      ${items.map((item) => `<th>${escape(item.name)}</th>`).join("")}
-    </tr>
-    <tr class="cash-item-head-defaults">
-      <th></th>
-      <th></th>
-      <th></th>
-      ${items.map((item) => `<th>${escape(String(item.defaultQuantity ?? 0))}</th>`).join("")}
-    </tr>`;
+  els.cashItemDetailHead.innerHTML = `<tr>
+    <th>Day</th>
+    <th>Shift</th>
+    <th>Name</th>
+    ${items.map((item) => `<th>${escape(`${item.name} (${item.defaultQuantity ?? 0})`)}</th>`).join("")}
+  </tr>`;
   els.cashItemDetailRows.innerHTML = "";
   if (!rows.length) {
     els.cashItemDetailRows.innerHTML = `<tr><td colspan="${3 + items.length}" class="empty">No cash records found.</td></tr>`;
@@ -10101,14 +10094,9 @@ function renderCashItemDetailRows(rows) {
         ${items.map((item) => {
           const value = row.itemCounts?.[item.id];
           return `<td>${value == null ? "" : escape(String(value))}</td>`;
-        }).join("")}`;
+      }).join("")}`;
       els.cashItemDetailRows.appendChild(tr);
     });
-  }
-  const mainHeaderRow = els.cashItemDetailHead.querySelector(".cash-item-head-main");
-  const wrap = els.cashItemDetailHead.closest(".table-wrap");
-  if (mainHeaderRow && wrap) {
-    wrap.style.setProperty("--cash-item-head-height", `${mainHeaderRow.getBoundingClientRect().height}px`);
   }
 }
 
