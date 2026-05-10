@@ -1888,6 +1888,10 @@ select:disabled {
   min-width: 1300px;
 }
 
+.cash-item-detail-table {
+  min-width: 980px;
+}
+
 .cash-table th,
 .cash-table td {
   white-space: nowrap;
@@ -1897,6 +1901,14 @@ select:disabled {
 
 .cash-detail-table th,
 .cash-detail-table td {
+  white-space: nowrap;
+  font-size: 0.68rem;
+  padding: 0.22rem 0.28rem;
+  text-align: center;
+}
+
+.cash-item-detail-table th,
+.cash-item-detail-table td {
   white-space: nowrap;
   font-size: 0.68rem;
   padding: 0.22rem 0.28rem;
@@ -1925,6 +1937,29 @@ select:disabled {
 .cash-detail-table td:last-child {
   min-width: 88px;
   text-align: right;
+}
+
+.cash-item-detail-table th:nth-child(1),
+.cash-item-detail-table td:nth-child(1) {
+  width: 46px;
+  min-width: 46px;
+}
+
+.cash-item-detail-table th:nth-child(2),
+.cash-item-detail-table td:nth-child(2) {
+  width: 42px;
+  min-width: 42px;
+}
+
+.cash-item-detail-table th:nth-child(3),
+.cash-item-detail-table td:nth-child(3) {
+  min-width: 120px;
+  text-align: left;
+}
+
+.cash-item-detail-table th:nth-child(n+4),
+.cash-item-detail-table td:nth-child(n+4) {
+  min-width: 72px;
 }
 
 .cash-table th {
