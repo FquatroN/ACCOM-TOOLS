@@ -9816,6 +9816,14 @@ function getOpenCashRecordClient(records = state.cashRecords) {
   return (records || []).find((record) => isCashOpenStatusClient(record?.status)) || null;
 }
 
+function getLastClosedCashRecordClient(records = state.cashRecords, settings = state.cashSettings) {
+  const closed = cashSortRecordsClient(
+    (records || []).filter((record) => !isCashOpenStatusClient(record?.status)),
+    settings
+  );
+  return closed.at(-1) || null;
+}
+
 function cashSortRecordsClient(records = state.cashRecords, settings = state.cashSettings) {
   return [...records].sort((a, b) => {
     const dayCompare = clean(a.day).localeCompare(clean(b.day));
@@ -9919,6 +9927,35 @@ function emptyCashDraft() {
     }, {}),
     itemJustifications: {},
   }, state.cashSettings);
+}
+
+function isEmptyCashDenominations(value = {}) {
+  return CASH_DENOMINATIONS.every((denom) => Number(value?.[denom.key] || 0) === 0);
+}
+
+function isEmptyCashItemCounts(value = {}, settings = state.cashSettings) {
+  return (settings?.items || []).every((item) => value?.[item.id] == null || value?.[item.id] === "");
+}
+
+function preloadCashDraftFromLastClosed(kind = "all", scope = "new", id = "") {
+  if (scope !== "new") return;
+  const draft = clone(currentCashDraft(scope, id) || emptyCashDraft());
+  if (clean(draft.id)) return;
+  const source = getLastClosedCashRecordClient();
+  if (!source) return;
+  let changed = false;
+  if ((kind === "all" || kind === "money") && isEmptyCashDenominations(draft.denominations)) {
+    draft.denominations = clone(source.denominations || {});
+    changed = true;
+  }
+  if ((kind === "all" || kind === "items") && isEmptyCashItemCounts(draft.itemCounts, state.cashSettings)) {
+    draft.itemCounts = normalizeCashItemCountsClient(source.itemCounts || {}, state.cashSettings);
+    draft.itemJustifications = {};
+    changed = true;
+  }
+  if (changed) {
+    setCurrentCashDraft(normalizeCashRecordClient(draft, state.cashSettings), scope);
+  }
 }
 
 function hasCashDraft() {
@@ -10547,6 +10584,7 @@ function renderCashMoneyModal(scope = "new", id = "") {
 
 function openCashMoneyModal(scope = "new", id = "") {
   if (scope === "edit" && id && clean(state.cashEditingId) !== clean(id)) startCashEdit(id);
+  preloadCashDraftFromLastClosed("money", scope, id);
   state.cashMoneyModalScope = scope || "new";
   state.cashMoneyModalId = id || "";
   state.cashMoneyModalOpen = true;
@@ -10579,6 +10617,7 @@ function saveCashMoneyModal() {
 }
 
 function ensureCashItemsDraft(scope = "new", id = "") {
+  preloadCashDraftFromLastClosed("items", scope, id);
   const draft = currentCashDraft(scope, id) || emptyCashDraft();
   state.cashItemsDraft = clone(draft.itemCounts || {});
   state.cashItemsJustificationsDraft = clone(draft.itemJustifications || {});
