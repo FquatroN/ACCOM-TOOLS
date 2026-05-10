@@ -2076,8 +2076,8 @@ select:disabled {
 
 .cash-table th:nth-child(11),
 .cash-table td:nth-child(11) {
-  min-width: 240px;
-  width: 240px;
+  min-width: 220px;
+  width: 220px;
   white-space: normal;
   overflow-wrap: anywhere;
   vertical-align: top;
