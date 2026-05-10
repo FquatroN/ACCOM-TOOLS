@@ -9963,6 +9963,7 @@ function validateCashDraftClient(draft, { isCreate = false } = {}) {
       return `The next record must be ${next.day} ${next.shiftName}.`;
     }
   }
+  if (isCashOpenStatusClient(draft.status)) return "";
   for (const item of state.cashSettings?.items || []) {
     const counted = draft.itemCounts?.[item.id];
     if (counted == null || counted === "") return `Count is required for item ${item.name}.`;

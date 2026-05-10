@@ -304,6 +304,17 @@ function validateCashControlRecord(record, records, settings, { excludeId = "", 
     error.statusCode = 400;
     throw error;
   }
+  if (isCreate) {
+    const next = getNextExpectedCashRecord(records, settings);
+    if (next.day && next.shiftId) {
+      if (cleanText(record.day) !== cleanText(next.day) || cleanText(record.shiftId) !== cleanText(next.shiftId)) {
+        const error = new Error(`The next record must be ${next.day} ${next.shiftName}.`);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+  }
+  if (isOpenCashStatus(record.status)) return;
   const computedRows = buildComputedCashRows(
     sortCashControlRecords(
       [...records.filter((row) => cleanText(row.id) !== cleanText(excludeId)), record],
@@ -336,16 +347,6 @@ function validateCashControlRecord(record, records, settings, { excludeId = "", 
       throw error;
     }
   });
-  if (isCreate) {
-    const next = getNextExpectedCashRecord(records, settings);
-    if (next.day && next.shiftId) {
-      if (cleanText(record.day) !== cleanText(next.day) || cleanText(record.shiftId) !== cleanText(next.shiftId)) {
-        const error = new Error(`The next record must be ${next.day} ${next.shiftName}.`);
-        error.statusCode = 400;
-        throw error;
-      }
-    }
-  }
 }
 
 function sanitizeCashControlRecords(input = [], settings = cashDefaults) {
