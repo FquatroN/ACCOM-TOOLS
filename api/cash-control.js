@@ -1,7 +1,9 @@
 const { parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
 const {
   CASH_CONTROL_SETTING_KEY,
+  CASH_DENOMINATIONS,
   CASH_MIN_ALERT_DENOMINATIONS,
+  calculateCashTotal,
   sanitizeCashControlPayload,
   sanitizeCashControlRecord,
   sanitizeCashControlRecords,
@@ -9,7 +11,6 @@ const {
   normalizeCashStatus,
 } = require("./_cash-control");
 const { sanitizeBakerySettings } = require("./_bakery");
-const { sendWithSmtp } = require("./_smtp");
 
 function cleanId(value) {
   return String(value || "").trim();
@@ -79,13 +80,6 @@ async function sendWithResend({ to, subject, html, text }, emailConfig = {}) {
   return payload;
 }
 
-async function sendConfiguredEmail(emailConfig, mail) {
-  if (cleanText(emailConfig?.provider).toLowerCase() === "smtp") {
-    return sendWithSmtp(emailConfig, mail);
-  }
-  return sendWithResend(mail, emailConfig);
-}
-
 function findLowCashDenominations(record, settings) {
   const minCash = settings?.minCash || {};
   return CASH_MIN_ALERT_DENOMINATIONS
@@ -95,6 +89,17 @@ function findLowCashDenominations(record, settings) {
       return { key, label: formatCashDenominationLabel(key), minimum, quantity };
     })
     .filter((item) => item.quantity < item.minimum);
+}
+
+function findHighCashDenominations(record, settings) {
+  const maxCashByDenomination = settings?.maxCashByDenomination || {};
+  return CASH_MIN_ALERT_DENOMINATIONS
+    .map((key) => {
+      const maximum = Math.max(0, Number(maxCashByDenomination?.[key] || 0));
+      const quantity = Math.max(0, Number(record?.denominations?.[key] || 0));
+      return { key, label: formatCashDenominationLabel(key), maximum, quantity };
+    })
+    .filter((item) => item.maximum > 0 && item.quantity >= item.maximum);
 }
 
 function buildLowCashAlertContent(items = []) {
@@ -128,12 +133,41 @@ function buildLowCashAlertContent(items = []) {
 
 async function maybeSendLowCashAlert(record, settings) {
   const recipients = Array.isArray(settings?.managerAlertEmails) ? settings.managerAlertEmails.filter(Boolean) : [];
-  if (!recipients.length) return null;
+  if (!recipients.length || !settings?.minimumCashEmailEnabled) return null;
   const lowItems = findLowCashDenominations(record, settings);
   if (!lowItems.length) return null;
   const emailConfig = await loadGeneralEmailConfig();
   const mail = buildLowCashAlertContent(lowItems);
-  return sendConfiguredEmail(emailConfig, { to: recipients, ...mail });
+  return sendWithResend({ to: recipients, ...mail }, emailConfig);
+}
+
+function buildHighCashAlertContent(record, items = []) {
+  const cashTotalValue = calculateCashTotal(record?.denominations || {});
+  const cashTotal = Number(cashTotalValue || 0).toFixed(2).replace(".", ",");
+  const noteList = CASH_DENOMINATIONS
+    .map((item) => ({ label: formatCashDenominationLabel(item.key), quantity: Math.max(0, Number(record?.denominations?.[item.key] || 0)) }))
+    .filter((item) => item.quantity > 0)
+    .map((item) => `${item.label}: ${item.quantity}`)
+    .join(", ");
+  const subject = "Deposito Necessario, valor em caixa elevado";
+  const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
+    <p>O valor em caixa e ${escapeHtml(cashTotal)}€, existindo as seguintes notas: ${escapeHtml(noteList || "-")}.</p>
+  </body></html>`;
+  const text = `O valor em caixa e ${cashTotal}€, existindo as seguintes notas: ${noteList || "-"}.`;
+  return { subject, html, text };
+}
+
+async function maybeSendHighCashAlert(record, settings) {
+  const recipients = Array.isArray(settings?.managerAlertEmails) ? settings.managerAlertEmails.filter(Boolean) : [];
+  if (!recipients.length || !settings?.maximumCashEmailEnabled) return null;
+  const highItems = findHighCashDenominations(record, settings);
+  const maximumCash = Math.max(0, Number(settings?.maximumCash || 0));
+  const cashTotal = calculateCashTotal(record?.denominations || {});
+  const exceedsCashLimit = maximumCash > 0 && cashTotal > maximumCash;
+  if (!highItems.length && !exceedsCashLimit) return null;
+  const emailConfig = await loadGeneralEmailConfig();
+  const mail = buildHighCashAlertContent(record, highItems);
+  return sendWithResend({ to: recipients, ...mail }, emailConfig);
 }
 
 function isMissingCashTableError(error) {
@@ -257,6 +291,22 @@ function mergeCashRecord(records, input, settings, id = "") {
   return sanitizeCashControlRecords(nextRows, settings);
 }
 
+async function maybeSendCashAlertEmails(record, settings) {
+  const errors = [];
+  try {
+    await maybeSendLowCashAlert(record, settings);
+  } catch (emailError) {
+    errors.push(emailError.message || "Could not send minimum cash alert email.");
+  }
+  try {
+    await maybeSendHighCashAlert(record, settings);
+  } catch (emailError) {
+    errors.push(emailError.message || "Could not send maximum cash alert email.");
+  }
+  if (!errors.length) return null;
+  return { error: errors.join(" | ") };
+}
+
 async function loadRecordsAndSettings() {
   const { payload } = await loadCashPayloadRow();
   const settings = payload.settings;
@@ -321,11 +371,7 @@ module.exports = async function handler(req, res) {
         const updatedRecord = saved.records.find((row) => cleanId(row.id) === id) || null;
         let alertEmailResult = null;
         if (updatedRecord && normalizeCashStatus(existing.status) !== "C" && normalizeCashStatus(updatedRecord.status) === "C") {
-          try {
-            alertEmailResult = await maybeSendLowCashAlert(updatedRecord, saved.settings);
-          } catch (emailError) {
-            alertEmailResult = { error: emailError.message || "Could not send manager alert email." };
-          }
+          alertEmailResult = await maybeSendCashAlertEmails(updatedRecord, saved.settings);
         }
         res.status(200).json({ rows: saved.records, settings: saved.settings, alertEmailResult });
         return;
@@ -342,11 +388,7 @@ module.exports = async function handler(req, res) {
       const persisted = rows.find((row) => cleanId(row.id) === id) || updated;
       let alertEmailResult = null;
       if (normalizeCashStatus(existing.status) !== "C" && normalizeCashStatus(persisted.status) === "C") {
-        try {
-          alertEmailResult = await maybeSendLowCashAlert(persisted, current.settings);
-        } catch (emailError) {
-          alertEmailResult = { error: emailError.message || "Could not send manager alert email." };
-        }
+        alertEmailResult = await maybeSendCashAlertEmails(persisted, current.settings);
       }
       res.status(200).json({ rows, settings: current.settings, alertEmailResult });
       return;

@@ -20,7 +20,7 @@ const CASH_DENOMINATIONS = Object.freeze([
   { key: "0.02", value: 0.02 },
   { key: "0.01", value: 0.01 },
 ]);
-const CASH_MIN_ALERT_DENOMINATIONS = Object.freeze(["20", "10", "5", "2", "1", "0.5", "0.2", "0.1"]);
+const CASH_MIN_ALERT_DENOMINATIONS = Object.freeze(["500", "200", "50", "20", "10", "5", "2", "1", "0.5", "0.2", "0.1"]);
 
 function normalizeCashStatus(value, fallback = "C") {
   const raw = cleanText(value).toUpperCase();
@@ -110,6 +110,12 @@ function sanitizeCashMinSettings(input = {}) {
   }, {});
 }
 
+function parseBool(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  return ["true", "1", "yes", "sim", "on"].includes(cleanText(value).toLowerCase());
+}
+
 function buildItemMaps(settings) {
   const byId = new Map();
   const byName = new Map();
@@ -148,6 +154,10 @@ function sanitizeCashControlSettings(input = {}) {
     shifts: shifts.length ? shifts : cashDefaults.shifts.map(normalizeShift),
     items: items.length ? items : cashDefaults.items.map(normalizeItem),
     minCash: sanitizeCashMinSettings(source.minCash || source.min_cash),
+    maxCashByDenomination: sanitizeCashMinSettings(source.maxCashByDenomination || source.max_cash_by_denomination || source.maxCash || source.max_cash),
+    minimumCashEmailEnabled: parseBool(source.minimumCashEmailEnabled ?? source.minimum_cash_email_enabled),
+    maximumCashEmailEnabled: parseBool(source.maximumCashEmailEnabled ?? source.maximum_cash_email_enabled),
+    maximumCash: normalizeMoney(source.maximumCash ?? source.maximum_cash),
     managerAlertEmails: normalizeRecipients(source.managerAlertEmails || source.manager_alert_emails || source.managerAlertEmail || source.manager_alert_email),
   };
 }

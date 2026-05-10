@@ -2118,8 +2118,20 @@
                   </div>
                   <div class="grid settings-grid">
                     <label class="settings-email-recipients">
-                      Manager alerts email
+                      Manager alerts emails
                       <textarea id="cash-settings-manager-alert-email" rows="3" placeholder="manager1@example.com, manager2@example.com"></textarea>
+                    </label>
+                    <label class="checkbox-inline">
+                      <input id="cash-settings-minimum-email-enabled" type="checkbox" />
+                      Minimum Cash Email
+                    </label>
+                    <label class="checkbox-inline">
+                      <input id="cash-settings-maximum-email-enabled" type="checkbox" />
+                      Maximum Cash Email
+                    </label>
+                    <label>
+                      Maximum Cash
+                      <input id="cash-settings-maximum-cash" type="number" step="0.01" />
                     </label>
                   </div>
                   <div class="table-wrap">
@@ -2128,6 +2140,7 @@
                         <tr>
                           <th>Denomination</th>
                           <th>Minimum Qt</th>
+                          <th>Maximum Qt</th>
                         </tr>
                       </thead>
                       <tbody id="cash-settings-min-body"></tbody>

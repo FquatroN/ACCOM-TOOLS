@@ -336,7 +336,7 @@ const CASH_DENOMINATIONS = [
   { key: "0.02", value: 0.02 },
   { key: "0.01", value: 0.01 },
 ];
-const CASH_MIN_ALERT_DENOMINATIONS = ["20", "10", "5", "2", "1", "0.5", "0.2", "0.1"];
+const CASH_MIN_ALERT_DENOMINATIONS = ["500", "200", "50", "20", "10", "5", "2", "1", "0.5", "0.2", "0.1"];
 
 const DEFAULT_CASH_SETTINGS = {
   shifts: [
@@ -366,6 +366,9 @@ const DEFAULT_CASH_SETTINGS = {
     { id: "chaves-staff", name: "Chaves Staff", defaultQuantity: 8 },
   ],
   minCash: {
+    "500": 0,
+    "200": 0,
+    "50": 0,
     "20": 0,
     "10": 0,
     "5": 0,
@@ -375,6 +378,22 @@ const DEFAULT_CASH_SETTINGS = {
     "0.2": 0,
     "0.1": 0,
   },
+  maxCashByDenomination: {
+    "500": 0,
+    "200": 0,
+    "50": 0,
+    "20": 0,
+    "10": 0,
+    "5": 0,
+    "2": 0,
+    "1": 0,
+    "0.5": 0,
+    "0.2": 0,
+    "0.1": 0,
+  },
+  minimumCashEmailEnabled: false,
+  maximumCashEmailEnabled: false,
+  maximumCash: 0,
   managerAlertEmails: [],
 };
 
@@ -835,6 +854,9 @@ const els = {
   cashSettingsItemsBody: document.getElementById("cash-settings-items-body"),
   cashSettingsMinBody: document.getElementById("cash-settings-min-body"),
   cashSettingsManagerAlertEmail: document.getElementById("cash-settings-manager-alert-email"),
+  cashSettingsMinimumEmailEnabled: document.getElementById("cash-settings-minimum-email-enabled"),
+  cashSettingsMaximumEmailEnabled: document.getElementById("cash-settings-maximum-email-enabled"),
+  cashSettingsMaximumCash: document.getElementById("cash-settings-maximum-cash"),
   cashSettingsStatus: document.getElementById("cash-settings-status"),
   cashTabList: document.getElementById("cash-tab-list"),
   cashTabDetail: document.getElementById("cash-tab-detail"),
@@ -1510,6 +1532,9 @@ function bindEvents() {
   els.cashSettingsItemsBody?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsMinBody?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsManagerAlertEmail?.addEventListener("input", onCashSettingsInput);
+  els.cashSettingsMinimumEmailEnabled?.addEventListener("change", onCashSettingsInput);
+  els.cashSettingsMaximumEmailEnabled?.addEventListener("change", onCashSettingsInput);
+  els.cashSettingsMaximumCash?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsShiftsBody?.addEventListener("click", onCashSettingsAction);
   els.cashSettingsItemsBody?.addEventListener("click", onCashSettingsAction);
   els.cashItemsClose?.addEventListener("click", closeCashItemsModal);
@@ -9737,6 +9762,12 @@ function normalizeCashMinThresholdsClient(value = {}) {
   }, {});
 }
 
+function normalizeCashBoolean(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  return ["true", "1", "yes", "sim", "on"].includes(clean(value).toLowerCase());
+}
+
 function normalizeCashSettingsClient(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const shifts = (Array.isArray(source.shifts) ? source.shifts : [])
@@ -9757,6 +9788,10 @@ function normalizeCashSettingsClient(input = {}) {
     shifts: shifts.length ? shifts : clone(DEFAULT_CASH_SETTINGS.shifts),
     items: items.length ? items : clone(DEFAULT_CASH_SETTINGS.items),
     minCash: normalizeCashMinThresholdsClient(source.minCash || source.min_cash || DEFAULT_CASH_SETTINGS.minCash),
+    maxCashByDenomination: normalizeCashMinThresholdsClient(source.maxCashByDenomination || source.max_cash_by_denomination || source.maxCash || source.max_cash || DEFAULT_CASH_SETTINGS.maxCashByDenomination),
+    minimumCashEmailEnabled: normalizeCashBoolean(source.minimumCashEmailEnabled ?? source.minimum_cash_email_enabled),
+    maximumCashEmailEnabled: normalizeCashBoolean(source.maximumCashEmailEnabled ?? source.maximum_cash_email_enabled),
+    maximumCash: Number((normalizeNumber(source.maximumCash ?? source.maximum_cash) || 0).toFixed(2)),
     managerAlertEmails: parseEmailList(source.managerAlertEmails || source.manager_alert_emails || source.managerAlertEmail || source.manager_alert_email),
   };
 }
@@ -10505,13 +10540,24 @@ function renderCashSettings() {
   }
   if (els.cashSettingsMinBody) {
     const minCash = state.cashSettings?.minCash || DEFAULT_CASH_SETTINGS.minCash;
+    const maxCashByDenomination = state.cashSettings?.maxCashByDenomination || DEFAULT_CASH_SETTINGS.maxCashByDenomination;
     els.cashSettingsMinBody.innerHTML = CASH_MIN_ALERT_DENOMINATIONS.map((key) => `<tr>
       <td>${escape(formatCashDenominationLabel(key))}</td>
       <td><input data-cash-settings-scope="min" data-cash-settings-field="${escape(key)}" type="number" min="0" step="1" value="${escape(String(minCash?.[key] || 0))}" /></td>
+      <td><input data-cash-settings-scope="max" data-cash-settings-field="${escape(key)}" type="number" min="0" step="1" value="${escape(String(maxCashByDenomination?.[key] || 0))}" /></td>
     </tr>`).join("");
   }
   if (els.cashSettingsManagerAlertEmail) {
     els.cashSettingsManagerAlertEmail.value = (state.cashSettings?.managerAlertEmails || []).join("\n");
+  }
+  if (els.cashSettingsMinimumEmailEnabled) {
+    els.cashSettingsMinimumEmailEnabled.checked = !!state.cashSettings?.minimumCashEmailEnabled;
+  }
+  if (els.cashSettingsMaximumEmailEnabled) {
+    els.cashSettingsMaximumEmailEnabled.checked = !!state.cashSettings?.maximumCashEmailEnabled;
+  }
+  if (els.cashSettingsMaximumCash) {
+    els.cashSettingsMaximumCash.value = state.cashSettings?.maximumCash ? String(state.cashSettings.maximumCash) : "";
   }
 }
 
@@ -10521,11 +10567,27 @@ function onCashSettingsInput(event) {
     state.cashSettings.managerAlertEmails = parseEmailList(target.value);
     return;
   }
+  if (target === els.cashSettingsMinimumEmailEnabled) {
+    state.cashSettings.minimumCashEmailEnabled = !!target.checked;
+    return;
+  }
+  if (target === els.cashSettingsMaximumEmailEnabled) {
+    state.cashSettings.maximumCashEmailEnabled = !!target.checked;
+    return;
+  }
+  if (target === els.cashSettingsMaximumCash) {
+    state.cashSettings.maximumCash = Number((normalizeNumber(target.value) || 0).toFixed(2));
+    return;
+  }
   const scope = clean(target?.dataset?.cashSettingsScope);
   const id = clean(target?.dataset?.cashSettingsId);
   const field = clean(target?.dataset?.cashSettingsField);
   if (scope === "min" && field) {
     state.cashSettings.minCash[field] = Math.max(0, Math.round(Number(normalizeNumber(target.value) || 0)));
+    return;
+  }
+  if (scope === "max" && field) {
+    state.cashSettings.maxCashByDenomination[field] = Math.max(0, Math.round(Number(normalizeNumber(target.value) || 0)));
     return;
   }
   if (!scope || !id || !field) return;
