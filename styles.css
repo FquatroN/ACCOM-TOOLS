@@ -2037,12 +2037,15 @@ select:disabled {
 .cash-table th:nth-child(7),
 .cash-table td:nth-child(7),
 .cash-table th:nth-child(8),
-.cash-table td:nth-child(8),
+.cash-table td:nth-child(8) {
+  min-width: 60px;
+}
+
 .cash-table th:nth-child(9),
 .cash-table td:nth-child(9),
 .cash-table th:nth-child(10),
 .cash-table td:nth-child(10) {
-  min-width: 60px;
+  min-width: 54px;
 }
 
 .cash-table td:nth-child(5),
