@@ -2068,7 +2068,7 @@ select:disabled {
 
 .cash-table th:nth-child(12),
 .cash-table td:nth-child(12) {
-  min-width: 68px;
+  min-width: 60px;
 }
 
 .cash-table th:nth-child(13),

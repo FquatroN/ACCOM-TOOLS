@@ -9891,6 +9891,7 @@ function buildComputedCashRowsClient(records = state.cashRecords, settings = sta
       diffCard,
       itemDiffs,
       hasItemDiffs: itemDiffs.some((item) => item.diff != null && item.diff !== 0),
+      hasIncompleteItemData: itemDiffs.some((item) => item.counted == null),
     };
   });
 }
@@ -9954,6 +9955,7 @@ function cashDraftComputed(draft) {
     diffCard: Number((cashMoneyNumber(draft.cardPos) - cashMoneyNumber(draft.cardFdm)).toFixed(2)),
     itemDiffs: [],
     hasItemDiffs: false,
+    hasIncompleteItemData: (state.cashSettings?.items || []).some((item) => draft.itemCounts?.[item.id] == null),
   };
 }
 
@@ -9995,7 +9997,11 @@ function formatCashMoney(value) {
 }
 
 function cashItemDiffLabel(record) {
-  return record.hasItemDiffs ? "Items *" : "Items";
+  return "Items";
+}
+
+function cashItemsAlertClass(record) {
+  return record.hasItemDiffs || record.hasIncompleteItemData ? " cash-items-alert" : "";
 }
 
 function cashDefaultDateFrom() {
@@ -10145,7 +10151,7 @@ function buildCashInlineRow() {
     <td>${escape(formatCashMoney(computed.diffCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
     <td><input data-cash-field="justification" data-scope="new" type="text" value="${escape(draft.justification)}" /></td>
-    <td><button type="button" class="ghost${computed.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items" data-scope="new">${escape(cashItemDiffLabel(computed))}</button></td>
+    <td><button type="button" class="ghost${cashItemsAlertClass(computed)}" data-cash-action="items" data-scope="new">${escape(cashItemDiffLabel(computed))}</button></td>
     <td><button type="button" data-cash-action="save-new">Add</button></td>`;
   return tr;
 }
@@ -10164,7 +10170,7 @@ function buildCashReadOnlyRow(record) {
     <td class="${cashDiffValueClass(record.diffCash)}">${escape(formatCashDiffValue(record.diffCash))}</td>
     <td class="${cashDiffValueClass(record.diffCard)}">${escape(formatCashDiffValue(record.diffCard))}</td>
     <td>${escape(record.justification || "-")}</td>
-    <td><button type="button" class="ghost${record.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items-existing" data-id="${escape(record.id)}">${escape(cashItemDiffLabel(record))}</button></td>
+    <td><button type="button" class="ghost${cashItemsAlertClass(record)}" data-cash-action="items-existing" data-id="${escape(record.id)}">${escape(cashItemDiffLabel(record))}</button></td>
     <td><button type="button" class="ghost" data-cash-action="edit" data-id="${escape(record.id)}">Edit</button></td>`;
   return tr;
 }
@@ -10186,7 +10192,7 @@ function buildCashEditableRow(record, { openMode = false } = {}) {
     <td class="${cashDiffValueClass(computed.diffCash)}">${escape(formatCashDiffValue(computed.diffCash))}</td>
     <td class="${cashDiffValueClass(computed.diffCard)}">${escape(formatCashDiffValue(computed.diffCard))}</td>
     <td><input data-cash-field="justification" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
-    <td><button type="button" class="ghost${computed.hasItemDiffs ? " cash-items-alert" : ""}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="${escape(scope)}">${escape(cashItemDiffLabel(computed))}</button></td>
+    <td><button type="button" class="ghost${cashItemsAlertClass(computed)}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="${escape(scope)}">${escape(cashItemDiffLabel(computed))}</button></td>
     <td>${openMode
       ? `<button type="button" data-cash-action="save-edit" data-scope="${escape(scope)}" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="close-open" data-id="${escape(record.id)}">Close</button>`
       : `<button type="button" data-cash-action="save-edit" data-scope="${escape(scope)}" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button>`}</td>`;
