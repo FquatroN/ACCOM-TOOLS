@@ -2112,6 +2112,17 @@ select:disabled {
   min-height: 1.85rem;
 }
 
+#cash-money-modal .cash-items-table th:nth-child(2),
+#cash-money-modal .cash-items-table td:nth-child(2) {
+  width: 72px;
+  min-width: 72px;
+}
+
+#cash-money-modal .cash-items-table input[data-cash-money-key] {
+  width: 3rem;
+  min-width: 3rem;
+}
+
 .danger-text {
   color: #b42318;
   font-weight: 700;
