@@ -1876,7 +1876,7 @@ select:disabled {
 }
 
 .cash-table {
-  min-width: 1210px;
+  min-width: 1160px;
 }
 
 .cash-detail-table-wrap {
@@ -2039,12 +2039,12 @@ select:disabled {
 
 .cash-table th:nth-child(3),
 .cash-table td:nth-child(3) {
-  min-width: 118px;
+  min-width: 108px;
 }
 
 .cash-table th:nth-child(4),
 .cash-table td:nth-child(4) {
-  min-width: 108px;
+  min-width: 100px;
 }
 
 .cash-table th:nth-child(5),
@@ -2076,8 +2076,8 @@ select:disabled {
 
 .cash-table th:nth-child(11),
 .cash-table td:nth-child(11) {
-  min-width: 220px;
-  width: 220px;
+  min-width: 208px;
+  width: 208px;
   white-space: normal;
   overflow-wrap: anywhere;
   vertical-align: top;
@@ -2091,7 +2091,7 @@ select:disabled {
 
 .cash-table th:nth-child(13),
 .cash-table td:nth-child(13) {
-  min-width: 88px;
+  min-width: 82px;
 }
 
 .cash-inline-row td {
