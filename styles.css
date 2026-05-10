@@ -2114,13 +2114,13 @@ select:disabled {
 
 #cash-money-modal .cash-items-table th:nth-child(2),
 #cash-money-modal .cash-items-table td:nth-child(2) {
-  width: 92px;
-  min-width: 92px;
+  width: 128px;
+  min-width: 128px;
 }
 
 #cash-money-modal .cash-items-table input[data-cash-money-key] {
-  width: 3.8rem;
-  min-width: 3.8rem;
+  width: 5.1rem;
+  min-width: 5.1rem;
 }
 
 .danger-text {
