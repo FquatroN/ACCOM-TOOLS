@@ -2162,6 +2162,11 @@ select:disabled {
   min-width: 5.1rem;
 }
 
+#cash-money-total {
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
 .danger-text {
   color: #b42318;
   font-weight: 700;
