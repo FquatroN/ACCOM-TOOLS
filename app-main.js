@@ -375,7 +375,7 @@ const DEFAULT_CASH_SETTINGS = {
     "0.2": 0,
     "0.1": 0,
   },
-  managerAlertEmail: "",
+  managerAlertEmails: [],
 };
 
 const DEFAULT_BAKERY_SETTINGS = {
@@ -9757,7 +9757,7 @@ function normalizeCashSettingsClient(input = {}) {
     shifts: shifts.length ? shifts : clone(DEFAULT_CASH_SETTINGS.shifts),
     items: items.length ? items : clone(DEFAULT_CASH_SETTINGS.items),
     minCash: normalizeCashMinThresholdsClient(source.minCash || source.min_cash || DEFAULT_CASH_SETTINGS.minCash),
-    managerAlertEmail: clean(source.managerAlertEmail || source.manager_alert_email || ""),
+    managerAlertEmails: parseEmailList(source.managerAlertEmails || source.manager_alert_emails || source.managerAlertEmail || source.manager_alert_email),
   };
 }
 
@@ -10423,17 +10423,28 @@ function setCashStatus(text) {
 
 function setCashSettingsTab(tab) {
   state.cashSettingsTab = tab === "min" ? "min" : "config";
+  const showConfig = state.cashSettingsTab === "config";
+  const showMin = state.cashSettingsTab === "min";
   if (els.cashSettingsConfigTab) {
-    els.cashSettingsConfigTab.classList.toggle("active-tab", state.cashSettingsTab === "config");
-    els.cashSettingsConfigTab.classList.toggle("ghost", state.cashSettingsTab !== "config");
+    els.cashSettingsConfigTab.classList.toggle("active-tab", showConfig);
+    els.cashSettingsConfigTab.classList.toggle("ghost", !showConfig);
   }
   if (els.cashSettingsMinTab) {
-    els.cashSettingsMinTab.classList.toggle("active-tab", state.cashSettingsTab === "min");
-    els.cashSettingsMinTab.classList.toggle("ghost", state.cashSettingsTab !== "min");
+    els.cashSettingsMinTab.classList.toggle("active-tab", showMin);
+    els.cashSettingsMinTab.classList.toggle("ghost", !showMin);
   }
-  if (els.cashSettingsConfigPanel) els.cashSettingsConfigPanel.hidden = state.cashSettingsTab !== "config";
-  if (els.cashSettingsConfigItemsPanel) els.cashSettingsConfigItemsPanel.hidden = state.cashSettingsTab !== "config";
-  if (els.cashSettingsMinPanel) els.cashSettingsMinPanel.hidden = state.cashSettingsTab !== "min";
+  if (els.cashSettingsConfigPanel) {
+    els.cashSettingsConfigPanel.hidden = !showConfig;
+    els.cashSettingsConfigPanel.style.display = showConfig ? "" : "none";
+  }
+  if (els.cashSettingsConfigItemsPanel) {
+    els.cashSettingsConfigItemsPanel.hidden = !showConfig;
+    els.cashSettingsConfigItemsPanel.style.display = showConfig ? "" : "none";
+  }
+  if (els.cashSettingsMinPanel) {
+    els.cashSettingsMinPanel.hidden = !showMin;
+    els.cashSettingsMinPanel.style.display = showMin ? "" : "none";
+  }
 }
 
 function setCashSettingsStatus(text) {
@@ -10500,14 +10511,14 @@ function renderCashSettings() {
     </tr>`).join("");
   }
   if (els.cashSettingsManagerAlertEmail) {
-    els.cashSettingsManagerAlertEmail.value = state.cashSettings?.managerAlertEmail || "";
+    els.cashSettingsManagerAlertEmail.value = (state.cashSettings?.managerAlertEmails || []).join("\n");
   }
 }
 
 function onCashSettingsInput(event) {
   const target = event.target;
   if (target === els.cashSettingsManagerAlertEmail) {
-    state.cashSettings.managerAlertEmail = clean(target.value).toLowerCase();
+    state.cashSettings.managerAlertEmails = parseEmailList(target.value);
     return;
   }
   const scope = clean(target?.dataset?.cashSettingsScope);

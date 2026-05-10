@@ -33,6 +33,20 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanText(value));
 }
 
+function normalizeRecipients(value) {
+  const source = Array.isArray(value) ? value.join(",") : String(value || "");
+  const seen = new Set();
+  return source
+    .split(/[\n,;]/)
+    .map((item) => cleanText(item).toLowerCase())
+    .filter((item) => isValidEmail(item))
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
 function isOpenCashStatus(value) {
   return normalizeCashStatus(value) === "O";
 }
@@ -134,9 +148,7 @@ function sanitizeCashControlSettings(input = {}) {
     shifts: shifts.length ? shifts : cashDefaults.shifts.map(normalizeShift),
     items: items.length ? items : cashDefaults.items.map(normalizeItem),
     minCash: sanitizeCashMinSettings(source.minCash || source.min_cash),
-    managerAlertEmail: isValidEmail(source.managerAlertEmail || source.manager_alert_email)
-      ? cleanText(source.managerAlertEmail || source.manager_alert_email).toLowerCase()
-      : "",
+    managerAlertEmails: normalizeRecipients(source.managerAlertEmails || source.manager_alert_emails || source.managerAlertEmail || source.manager_alert_email),
   };
 }
 

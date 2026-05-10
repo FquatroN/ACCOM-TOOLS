@@ -127,13 +127,13 @@ function buildLowCashAlertContent(items = []) {
 }
 
 async function maybeSendLowCashAlert(record, settings) {
-  const recipient = cleanText(settings?.managerAlertEmail).toLowerCase();
-  if (!recipient) return null;
+  const recipients = Array.isArray(settings?.managerAlertEmails) ? settings.managerAlertEmails.filter(Boolean) : [];
+  if (!recipients.length) return null;
   const lowItems = findLowCashDenominations(record, settings);
   if (!lowItems.length) return null;
   const emailConfig = await loadGeneralEmailConfig();
   const mail = buildLowCashAlertContent(lowItems);
-  return sendConfiguredEmail(emailConfig, { to: [recipient], ...mail });
+  return sendConfiguredEmail(emailConfig, { to: recipients, ...mail });
 }
 
 function isMissingCashTableError(error) {
