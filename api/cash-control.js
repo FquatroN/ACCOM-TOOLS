@@ -1,14 +1,139 @@
 const { parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
 const {
   CASH_CONTROL_SETTING_KEY,
+  CASH_MIN_ALERT_DENOMINATIONS,
   sanitizeCashControlPayload,
   sanitizeCashControlRecord,
   sanitizeCashControlRecords,
   validateCashControlRecord,
+  normalizeCashStatus,
 } = require("./_cash-control");
+const { sanitizeBakerySettings } = require("./_bakery");
+const { sendWithSmtp } = require("./_smtp");
 
 function cleanId(value) {
   return String(value || "").trim();
+}
+
+function cleanText(value) {
+  return String(value || "").trim();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatCashDenominationLabel(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return `${value}€`;
+  if (Math.abs(amount - Math.round(amount)) < 0.000001) return `${Math.round(amount)}€`;
+  return `${String(amount).replace(".", ",")}€`;
+}
+
+async function loadGeneralEmailConfig() {
+  const rows = await restQuery("app_settings?select=payload&setting_key=eq.communications&limit=1", { method: "GET" });
+  const payload = Array.isArray(rows) && rows[0]?.payload ? rows[0].payload : {};
+  const generalEmailConfig = payload?.general?.emailConfig || payload?.general?.email_config || payload?.general?.bakeryEmailConfig || payload?.general?.bakery_email_config;
+  return sanitizeBakerySettings({ emailConfig: generalEmailConfig || {} }).emailConfig;
+}
+
+async function sendWithResend({ to, subject, html, text }, emailConfig = {}) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const rawFrom = process.env.EMAIL_FROM;
+  const configuredFromEmail = cleanText(emailConfig.fromEmail || "").toLowerCase();
+  const configuredFromName = cleanText(emailConfig.fromName || "");
+  const replyTo = configuredFromEmail || "global@lisboacentralhostel.com";
+  if (!apiKey) {
+    const error = new Error("Missing server environment variable: RESEND_API_KEY");
+    error.statusCode = 500;
+    throw error;
+  }
+  if (!rawFrom) {
+    const error = new Error("Missing server environment variable: EMAIL_FROM");
+    error.statusCode = 500;
+    throw error;
+  }
+  const envFromEmail = cleanText(rawFrom.replace(/^.*<([^>]+)>.*$/, "$1") || rawFrom).toLowerCase();
+  const effectiveFromEmail = configuredFromEmail || envFromEmail;
+  const effectiveFromName = configuredFromName || "ACCOM Tools - LCH";
+  const from = `${effectiveFromName} <${effectiveFromEmail}>`;
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from, reply_to: replyTo, to, subject, html, text }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload?.message || payload?.error || `Email provider failed (${response.status})`);
+    error.statusCode = 502;
+    throw error;
+  }
+  return payload;
+}
+
+async function sendConfiguredEmail(emailConfig, mail) {
+  if (cleanText(emailConfig?.provider).toLowerCase() === "smtp") {
+    return sendWithSmtp(emailConfig, mail);
+  }
+  return sendWithResend(mail, emailConfig);
+}
+
+function findLowCashDenominations(record, settings) {
+  const minCash = settings?.minCash || {};
+  return CASH_MIN_ALERT_DENOMINATIONS
+    .map((key) => {
+      const minimum = Math.max(0, Number(minCash?.[key] || 0));
+      const quantity = Math.max(0, Number(record?.denominations?.[key] || 0));
+      return { key, label: formatCashDenominationLabel(key), minimum, quantity };
+    })
+    .filter((item) => item.quantity < item.minimum);
+}
+
+function buildLowCashAlertContent(items = []) {
+  const subject = items.length === 1
+    ? `Notas/Moedas de ${items[0].label} abaixo de ${items[0].minimum}`
+    : "Notas/Moedas abaixo do minimo configurado";
+  const bodyRows = items.map((item) => `<tr>
+      <td style="border:1px solid #d8d0c7;padding:6px;">${escapeHtml(item.label)}</td>
+      <td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${escapeHtml(String(item.quantity))}</td>
+    </tr>`).join("");
+  const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
+    <p>A quantidade das seguintes notas moedas precisa de ser reforcadas:</p>
+    <table style="border-collapse:collapse;min-width:280px;">
+      <thead>
+        <tr>
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Nota/Moeda</th>
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">Quantidade existente</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  </body></html>`;
+  const text = [
+    "A quantidade das seguintes notas moedas precisa de ser reforcadas:",
+    "",
+    "Nota/Moeda | Quantidade existente",
+    ...items.map((item) => `${item.label} | ${item.quantity}`),
+  ].join("\n");
+  return { subject, html, text };
+}
+
+async function maybeSendLowCashAlert(record, settings) {
+  const recipient = cleanText(settings?.managerAlertEmail).toLowerCase();
+  if (!recipient) return null;
+  const lowItems = findLowCashDenominations(record, settings);
+  if (!lowItems.length) return null;
+  const emailConfig = await loadGeneralEmailConfig();
+  const mail = buildLowCashAlertContent(lowItems);
+  return sendConfiguredEmail(emailConfig, { to: [recipient], ...mail });
 }
 
 function isMissingCashTableError(error) {
@@ -193,7 +318,16 @@ module.exports = async function handler(req, res) {
         }
         const nextRows = mergeCashRecord(payload.records, body, payload.settings, id);
         const saved = await saveCashPayload(rowId, { settings: payload.settings, records: nextRows });
-        res.status(200).json({ rows: saved.records, settings: saved.settings });
+        const updatedRecord = saved.records.find((row) => cleanId(row.id) === id) || null;
+        let alertEmailResult = null;
+        if (updatedRecord && normalizeCashStatus(existing.status) !== "C" && normalizeCashStatus(updatedRecord.status) === "C") {
+          try {
+            alertEmailResult = await maybeSendLowCashAlert(updatedRecord, saved.settings);
+          } catch (emailError) {
+            alertEmailResult = { error: emailError.message || "Could not send manager alert email." };
+          }
+        }
+        res.status(200).json({ rows: saved.records, settings: saved.settings, alertEmailResult });
         return;
       }
       const existing = current.rows.find((row) => cleanId(row.id) === id);
@@ -205,7 +339,16 @@ module.exports = async function handler(req, res) {
       validateCashControlRecord(updated, current.rows, current.settings, { excludeId: existing.id, isCreate: false });
       await updateCashTableRow(existing.id, updated, existing);
       const rows = await loadCashTableRows(current.settings);
-      res.status(200).json({ rows, settings: current.settings });
+      const persisted = rows.find((row) => cleanId(row.id) === id) || updated;
+      let alertEmailResult = null;
+      if (normalizeCashStatus(existing.status) !== "C" && normalizeCashStatus(persisted.status) === "C") {
+        try {
+          alertEmailResult = await maybeSendLowCashAlert(persisted, current.settings);
+        } catch (emailError) {
+          alertEmailResult = { error: emailError.message || "Could not send manager alert email." };
+        }
+      }
+      res.status(200).json({ rows, settings: current.settings, alertEmailResult });
       return;
     }
 

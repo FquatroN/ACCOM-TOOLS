@@ -20,12 +20,17 @@ const CASH_DENOMINATIONS = Object.freeze([
   { key: "0.02", value: 0.02 },
   { key: "0.01", value: 0.01 },
 ]);
+const CASH_MIN_ALERT_DENOMINATIONS = Object.freeze(["20", "10", "5", "2", "1", "0.5", "0.2", "0.1"]);
 
 function normalizeCashStatus(value, fallback = "C") {
   const raw = cleanText(value).toUpperCase();
   if (raw === "O") return "O";
   if (raw === "C") return "C";
   return fallback === "O" ? "O" : "C";
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanText(value));
 }
 
 function isOpenCashStatus(value) {
@@ -83,6 +88,14 @@ function normalizeItem(input = {}, fallbackIndex = 0) {
   };
 }
 
+function sanitizeCashMinSettings(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  return CASH_MIN_ALERT_DENOMINATIONS.reduce((acc, key) => {
+    acc[key] = normalizeCashInteger(source[key], 0) || 0;
+    return acc;
+  }, {});
+}
+
 function buildItemMaps(settings) {
   const byId = new Map();
   const byName = new Map();
@@ -120,6 +133,10 @@ function sanitizeCashControlSettings(input = {}) {
   return {
     shifts: shifts.length ? shifts : cashDefaults.shifts.map(normalizeShift),
     items: items.length ? items : cashDefaults.items.map(normalizeItem),
+    minCash: sanitizeCashMinSettings(source.minCash || source.min_cash),
+    managerAlertEmail: isValidEmail(source.managerAlertEmail || source.manager_alert_email)
+      ? cleanText(source.managerAlertEmail || source.manager_alert_email).toLowerCase()
+      : "",
   };
 }
 
@@ -397,6 +414,7 @@ function sanitizeCashControlPayload(input = {}) {
 module.exports = {
   CASH_CONTROL_SETTING_KEY,
   CASH_DENOMINATIONS,
+  CASH_MIN_ALERT_DENOMINATIONS,
   calculateCashTotal,
   buildComputedCashRows,
   getNextExpectedCashRecord,

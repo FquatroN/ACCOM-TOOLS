@@ -1770,7 +1770,7 @@
                   <button id="close-settings-general" type="button" class="ghost">Back To App</button>
                   <button id="general-save-settings" type="button" class="ghost">Save Configuration</button>
                 </div>
-                <section class="settings-block">
+                <section id="cash-settings-config-items-panel" class="settings-block">
                   <div class="bar">
                     <h3>Email Configuration</h3>
                   </div>
@@ -2076,9 +2076,11 @@
               <div id="settings-view-cash" hidden>
                 <div class="actions">
                   <button id="close-settings-cash" type="button" class="ghost">Back To App</button>
+                  <button id="cash-settings-config-tab" type="button" class="active-tab">Configuration</button>
+                  <button id="cash-settings-min-tab" type="button" class="ghost">Min Cash</button>
                   <button id="cash-save-settings" type="button" class="ghost">Save Configuration</button>
                 </div>
-                <section class="settings-block">
+                <section id="cash-settings-config-panel" class="settings-block">
                   <div class="bar">
                     <h3>Shifts</h3>
                     <button id="cash-add-shift" type="button" class="ghost">Add Shift</button>
@@ -2109,8 +2111,30 @@
                     </thead>
                     <tbody id="cash-settings-items-body"></tbody>
                   </table>
-                  <p id="cash-settings-status" class="auth-status"></p>
                 </section>
+                <section id="cash-settings-min-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Minimum Cash Alerts</h3>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Manager alerts email
+                      <input id="cash-settings-manager-alert-email" type="email" placeholder="manager@example.com" />
+                    </label>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="settings-table compact-table">
+                      <thead>
+                        <tr>
+                          <th>Denomination</th>
+                          <th>Minimum Qt</th>
+                        </tr>
+                      </thead>
+                      <tbody id="cash-settings-min-body"></tbody>
+                    </table>
+                  </div>
+                </section>
+                <p id="cash-settings-status" class="auth-status"></p>
               </div>
 
               <div id="settings-view-shopping" hidden>

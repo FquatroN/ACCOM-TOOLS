@@ -336,6 +336,7 @@ const CASH_DENOMINATIONS = [
   { key: "0.02", value: 0.02 },
   { key: "0.01", value: 0.01 },
 ];
+const CASH_MIN_ALERT_DENOMINATIONS = ["20", "10", "5", "2", "1", "0.5", "0.2", "0.1"];
 
 const DEFAULT_CASH_SETTINGS = {
   shifts: [
@@ -364,6 +365,17 @@ const DEFAULT_CASH_SETTINGS = {
     { id: "comandos", name: "Comandos", defaultQuantity: 7 },
     { id: "chaves-staff", name: "Chaves Staff", defaultQuantity: 8 },
   ],
+  minCash: {
+    "20": 0,
+    "10": 0,
+    "5": 0,
+    "2": 0,
+    "1": 0,
+    "0.5": 0,
+    "0.2": 0,
+    "0.1": 0,
+  },
+  managerAlertEmail: "",
 };
 
 const DEFAULT_BAKERY_SETTINGS = {
@@ -664,6 +676,7 @@ const state = {
   cashLoaded: false,
   cashSettings: clone(DEFAULT_CASH_SETTINGS),
   cashSettingsLoaded: false,
+  cashSettingsTab: "config",
   cashScreen: "list",
   cashFilters: { dateFrom: cashDefaultDateFrom(), dateTo: "", shift: "", name: "" },
   cashDraft: null,
@@ -810,11 +823,18 @@ const els = {
   settingsMenuLaundry: document.getElementById("settings-menu-laundry"),
   settingsMenuAdminUsers: document.getElementById("settings-menu-admin-users"),
   closeSettingsCash: document.getElementById("close-settings-cash"),
+  cashSettingsConfigTab: document.getElementById("cash-settings-config-tab"),
+  cashSettingsMinTab: document.getElementById("cash-settings-min-tab"),
   cashSaveSettings: document.getElementById("cash-save-settings"),
   cashAddShift: document.getElementById("cash-add-shift"),
   cashAddItem: document.getElementById("cash-add-item"),
+  cashSettingsConfigPanel: document.getElementById("cash-settings-config-panel"),
+  cashSettingsConfigItemsPanel: document.getElementById("cash-settings-config-items-panel"),
+  cashSettingsMinPanel: document.getElementById("cash-settings-min-panel"),
   cashSettingsShiftsBody: document.getElementById("cash-settings-shifts-body"),
   cashSettingsItemsBody: document.getElementById("cash-settings-items-body"),
+  cashSettingsMinBody: document.getElementById("cash-settings-min-body"),
+  cashSettingsManagerAlertEmail: document.getElementById("cash-settings-manager-alert-email"),
   cashSettingsStatus: document.getElementById("cash-settings-status"),
   cashTabList: document.getElementById("cash-tab-list"),
   cashTabDetail: document.getElementById("cash-tab-detail"),
@@ -1478,6 +1498,8 @@ function bindEvents() {
     state.cashScreen = "resume";
     renderCash();
   });
+  els.cashSettingsConfigTab?.addEventListener("click", () => setCashSettingsTab("config"));
+  els.cashSettingsMinTab?.addEventListener("click", () => setCashSettingsTab("min"));
   els.cashSaveSettings?.addEventListener("click", saveCashSettings);
   els.cashAddShift?.addEventListener("click", addCashShiftSetting);
   els.cashAddItem?.addEventListener("click", addCashItemSetting);
@@ -1486,6 +1508,8 @@ function bindEvents() {
   els.cashMoneySave?.addEventListener("click", saveCashMoneyModal);
   els.cashSettingsShiftsBody?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsItemsBody?.addEventListener("input", onCashSettingsInput);
+  els.cashSettingsMinBody?.addEventListener("input", onCashSettingsInput);
+  els.cashSettingsManagerAlertEmail?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsShiftsBody?.addEventListener("click", onCashSettingsAction);
   els.cashSettingsItemsBody?.addEventListener("click", onCashSettingsAction);
   els.cashItemsClose?.addEventListener("click", closeCashItemsModal);
@@ -9698,6 +9722,21 @@ function slugifyCashText(value) {
     .replace(/^-|-$/g, "");
 }
 
+function formatCashDenominationLabel(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return `${value}€`;
+  if (Math.abs(amount - Math.round(amount)) < 0.000001) return `${Math.round(amount)}€`;
+  return `${String(amount).replace(".", ",")}€`;
+}
+
+function normalizeCashMinThresholdsClient(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  return CASH_MIN_ALERT_DENOMINATIONS.reduce((acc, key) => {
+    acc[key] = Math.max(0, Math.round(Number(normalizeNumber(source[key]) || 0)));
+    return acc;
+  }, {});
+}
+
 function normalizeCashSettingsClient(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const shifts = (Array.isArray(source.shifts) ? source.shifts : [])
@@ -9717,6 +9756,8 @@ function normalizeCashSettingsClient(input = {}) {
   return {
     shifts: shifts.length ? shifts : clone(DEFAULT_CASH_SETTINGS.shifts),
     items: items.length ? items : clone(DEFAULT_CASH_SETTINGS.items),
+    minCash: normalizeCashMinThresholdsClient(source.minCash || source.min_cash || DEFAULT_CASH_SETTINGS.minCash),
+    managerAlertEmail: clean(source.managerAlertEmail || source.manager_alert_email || ""),
   };
 }
 
@@ -10380,6 +10421,21 @@ function setCashStatus(text) {
   if (els.cashStatus) els.cashStatus.textContent = text;
 }
 
+function setCashSettingsTab(tab) {
+  state.cashSettingsTab = tab === "min" ? "min" : "config";
+  if (els.cashSettingsConfigTab) {
+    els.cashSettingsConfigTab.classList.toggle("active-tab", state.cashSettingsTab === "config");
+    els.cashSettingsConfigTab.classList.toggle("ghost", state.cashSettingsTab !== "config");
+  }
+  if (els.cashSettingsMinTab) {
+    els.cashSettingsMinTab.classList.toggle("active-tab", state.cashSettingsTab === "min");
+    els.cashSettingsMinTab.classList.toggle("ghost", state.cashSettingsTab !== "min");
+  }
+  if (els.cashSettingsConfigPanel) els.cashSettingsConfigPanel.hidden = state.cashSettingsTab !== "config";
+  if (els.cashSettingsConfigItemsPanel) els.cashSettingsConfigItemsPanel.hidden = state.cashSettingsTab !== "config";
+  if (els.cashSettingsMinPanel) els.cashSettingsMinPanel.hidden = state.cashSettingsTab !== "min";
+}
+
 function setCashSettingsStatus(text) {
   if (els.cashSettingsStatus) els.cashSettingsStatus.textContent = text;
 }
@@ -10421,6 +10477,7 @@ async function loadCashData({ silent = false } = {}) {
 }
 
 function renderCashSettings() {
+  setCashSettingsTab(state.cashSettingsTab);
   if (els.cashSettingsShiftsBody) {
     els.cashSettingsShiftsBody.innerHTML = (state.cashSettings?.shifts || []).map((shift) => `<tr>
       <td><input data-cash-settings-scope="shift" data-cash-settings-id="${escape(shift.id)}" data-cash-settings-field="name" type="text" value="${escape(shift.name)}" /></td>
@@ -10435,13 +10492,31 @@ function renderCashSettings() {
       <td><button type="button" class="ghost" data-cash-settings-action="remove-item" data-id="${escape(item.id)}">Delete</button></td>
     </tr>`).join("");
   }
+  if (els.cashSettingsMinBody) {
+    const minCash = state.cashSettings?.minCash || DEFAULT_CASH_SETTINGS.minCash;
+    els.cashSettingsMinBody.innerHTML = CASH_MIN_ALERT_DENOMINATIONS.map((key) => `<tr>
+      <td>${escape(formatCashDenominationLabel(key))}</td>
+      <td><input data-cash-settings-scope="min" data-cash-settings-field="${escape(key)}" type="number" min="0" step="1" value="${escape(String(minCash?.[key] || 0))}" /></td>
+    </tr>`).join("");
+  }
+  if (els.cashSettingsManagerAlertEmail) {
+    els.cashSettingsManagerAlertEmail.value = state.cashSettings?.managerAlertEmail || "";
+  }
 }
 
 function onCashSettingsInput(event) {
   const target = event.target;
+  if (target === els.cashSettingsManagerAlertEmail) {
+    state.cashSettings.managerAlertEmail = clean(target.value).toLowerCase();
+    return;
+  }
   const scope = clean(target?.dataset?.cashSettingsScope);
   const id = clean(target?.dataset?.cashSettingsId);
   const field = clean(target?.dataset?.cashSettingsField);
+  if (scope === "min" && field) {
+    state.cashSettings.minCash[field] = Math.max(0, Math.round(Number(normalizeNumber(target.value) || 0)));
+    return;
+  }
   if (!scope || !id || !field) return;
   const list = scope === "shift" ? state.cashSettings.shifts : state.cashSettings.items;
   const row = list.find((item) => clean(item.id) === id);
@@ -10579,6 +10654,12 @@ async function saveCashDraft(scope = "new", id = "", { closeRecord = false } = {
     state.cashDraft = emptyCashDraft();
     renderCash();
     renderLayout();
+    const alertEmailError = clean(result?.alertEmailResult?.error);
+    if (alertEmailError) {
+      setCashStatus(`Saved, but manager alert email failed: ${alertEmailError}`);
+      showToast(`Manager alert email failed: ${alertEmailError}`, "error");
+      return;
+    }
     setCashStatus(closeRecord ? "Cash shift closed." : scope === "edit" ? "Cash record saved." : "Cash record added.");
   } catch (e) {
     setCashStatus(`Save failed: ${e.message}`);
