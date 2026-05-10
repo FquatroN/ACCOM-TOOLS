@@ -10080,7 +10080,7 @@ function renderCashItemDetailRows(rows) {
     <th>Day</th>
     <th>Shift</th>
     <th>Name</th>
-    ${items.map((item) => `<th>${escape(`${item.name} (${item.defaultQuantity ?? 0})`)}</th>`).join("")}
+    ${items.map((item) => `<th>${escape(item.name)}<br />(${escape(String(item.defaultQuantity ?? 0))})</th>`).join("")}
   </tr>`;
   els.cashItemDetailRows.innerHTML = "";
   if (!rows.length) {
