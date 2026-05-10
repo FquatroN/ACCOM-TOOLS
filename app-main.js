@@ -9909,6 +9909,7 @@ function getNextExpectedCashRecordClient(records = state.cashRecords, settings =
 
 function emptyCashDraft() {
   const next = getNextExpectedCashRecordClient(state.cashRecords, state.cashSettings);
+  const source = getLastClosedCashRecordClient(state.cashRecords, state.cashSettings);
   return normalizeCashRecordClient({
     id: "",
     day: next.day,
@@ -9916,46 +9917,19 @@ function emptyCashDraft() {
     shiftName: next.shiftName,
     status: "O",
     name: "",
-    denominations: {},
+    denominations: clone(source?.denominations || {}),
     cardPos: "",
     cashFdm: "",
     cardFdm: "",
     justification: "",
     itemCounts: (state.cashSettings?.items || DEFAULT_CASH_SETTINGS.items).reduce((acc, item) => {
-      acc[item.id] = null;
+      const sourceCounts = source?.itemCounts || {};
+      const sourceValue = sourceCounts[item.id];
+      acc[item.id] = sourceValue == null ? null : sourceValue;
       return acc;
     }, {}),
     itemJustifications: {},
   }, state.cashSettings);
-}
-
-function isEmptyCashDenominations(value = {}) {
-  return CASH_DENOMINATIONS.every((denom) => Number(value?.[denom.key] || 0) === 0);
-}
-
-function isEmptyCashItemCounts(value = {}, settings = state.cashSettings) {
-  return (settings?.items || []).every((item) => value?.[item.id] == null || value?.[item.id] === "");
-}
-
-function preloadCashDraftFromLastClosed(kind = "all", scope = "new", id = "") {
-  if (scope !== "new") return;
-  const draft = clone(currentCashDraft(scope, id) || emptyCashDraft());
-  if (clean(draft.id)) return;
-  const source = getLastClosedCashRecordClient();
-  if (!source) return;
-  let changed = false;
-  if ((kind === "all" || kind === "money") && isEmptyCashDenominations(draft.denominations)) {
-    draft.denominations = clone(source.denominations || {});
-    changed = true;
-  }
-  if ((kind === "all" || kind === "items") && isEmptyCashItemCounts(draft.itemCounts, state.cashSettings)) {
-    draft.itemCounts = normalizeCashItemCountsClient(source.itemCounts || {}, state.cashSettings);
-    draft.itemJustifications = {};
-    changed = true;
-  }
-  if (changed) {
-    setCurrentCashDraft(normalizeCashRecordClient(draft, state.cashSettings), scope);
-  }
 }
 
 function hasCashDraft() {
@@ -10584,7 +10558,6 @@ function renderCashMoneyModal(scope = "new", id = "") {
 
 function openCashMoneyModal(scope = "new", id = "") {
   if (scope === "edit" && id && clean(state.cashEditingId) !== clean(id)) startCashEdit(id);
-  preloadCashDraftFromLastClosed("money", scope, id);
   state.cashMoneyModalScope = scope || "new";
   state.cashMoneyModalId = id || "";
   state.cashMoneyModalOpen = true;
@@ -10617,7 +10590,6 @@ function saveCashMoneyModal() {
 }
 
 function ensureCashItemsDraft(scope = "new", id = "") {
-  preloadCashDraftFromLastClosed("items", scope, id);
   const draft = currentCashDraft(scope, id) || emptyCashDraft();
   state.cashItemsDraft = clone(draft.itemCounts || {});
   state.cashItemsJustificationsDraft = clone(draft.itemJustifications || {});
