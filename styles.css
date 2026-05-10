@@ -2118,6 +2118,12 @@ select:disabled {
   min-width: 128px;
 }
 
+#cash-money-modal .cash-items-table th:nth-child(1),
+#cash-money-modal .cash-items-table td:nth-child(1) {
+  width: 86px;
+  min-width: 86px;
+}
+
 #cash-money-modal .cash-items-table input[data-cash-money-key] {
   width: 5.1rem;
   min-width: 5.1rem;
