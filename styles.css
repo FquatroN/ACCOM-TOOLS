@@ -2091,7 +2091,7 @@ select:disabled {
 
 .cash-table th:nth-child(13),
 .cash-table td:nth-child(13) {
-  min-width: 82px;
+  min-width: 92px;
 }
 
 .cash-inline-row td {
