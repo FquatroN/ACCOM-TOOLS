@@ -1915,6 +1915,12 @@ select:disabled {
   text-align: center;
 }
 
+.cash-item-detail-table th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+}
+
 .cash-detail-table th:nth-child(1),
 .cash-detail-table td:nth-child(1) {
   width: 46px;
