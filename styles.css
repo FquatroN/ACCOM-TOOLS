@@ -1876,7 +1876,7 @@ select:disabled {
 }
 
 .cash-table {
-  min-width: 1280px;
+  min-width: 1210px;
 }
 
 .cash-detail-table-wrap {
@@ -2046,7 +2046,7 @@ select:disabled {
 .cash-table td:nth-child(9),
 .cash-table th:nth-child(10),
 .cash-table td:nth-child(10) {
-  min-width: 48px;
+  min-width: 42px;
 }
 
 .cash-table td:nth-child(5),
