@@ -10,7 +10,6 @@ const {
   validateCashControlRecord,
   normalizeCashStatus,
 } = require("./_cash-control");
-const { sanitizeBakerySettings } = require("./_bakery");
 
 function cleanId(value) {
   return String(value || "").trim();
@@ -53,19 +52,10 @@ function formatCashAlertShift(record) {
   return cleanText(record?.shiftName || record?.shiftId);
 }
 
-async function loadGeneralEmailConfig() {
-  const rows = await restQuery("app_settings?select=payload&setting_key=eq.communications&limit=1", { method: "GET" });
-  const payload = Array.isArray(rows) && rows[0]?.payload ? rows[0].payload : {};
-  const generalEmailConfig = payload?.general?.emailConfig || payload?.general?.email_config || payload?.general?.bakeryEmailConfig || payload?.general?.bakery_email_config;
-  return sanitizeBakerySettings({ emailConfig: generalEmailConfig || {} }).emailConfig;
-}
-
-async function sendWithResend({ to, subject, html, text }, emailConfig = {}) {
+async function sendWithResend({ to, subject, html, text }) {
   const apiKey = process.env.RESEND_API_KEY;
   const rawFrom = process.env.EMAIL_FROM;
-  const configuredFromEmail = cleanText(emailConfig.fromEmail || "").toLowerCase();
-  const configuredFromName = cleanText(emailConfig.fromName || "");
-  const replyTo = configuredFromEmail || "global@lisboacentralhostel.com";
+  const replyTo = "global@lisboacentralhostel.com";
   if (!apiKey) {
     const error = new Error("Missing server environment variable: RESEND_API_KEY");
     error.statusCode = 500;
@@ -76,10 +66,7 @@ async function sendWithResend({ to, subject, html, text }, emailConfig = {}) {
     error.statusCode = 500;
     throw error;
   }
-  const envFromEmail = cleanText(rawFrom.replace(/^.*<([^>]+)>.*$/, "$1") || rawFrom).toLowerCase();
-  const effectiveFromEmail = configuredFromEmail || envFromEmail;
-  const effectiveFromName = configuredFromName || "ACCOM Tools - LCH";
-  const from = `${effectiveFromName} <${effectiveFromEmail}>`;
+  const from = /<[^>]+>/.test(rawFrom) ? rawFrom : `ACCOM Tools - LCH <${rawFrom}>`;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -153,9 +140,8 @@ async function maybeSendLowCashAlert(record, settings) {
   if (!recipients.length || !settings?.minimumCashEmailEnabled) return null;
   const lowItems = findLowCashDenominations(record, settings);
   if (!lowItems.length) return null;
-  const emailConfig = await loadGeneralEmailConfig();
   const mail = buildLowCashAlertContent(lowItems);
-  return sendWithResend({ to: recipients, ...mail }, emailConfig);
+  return sendWithResend({ to: recipients, ...mail });
 }
 
 function buildHighCashAlertContent(record, items = []) {
@@ -184,9 +170,8 @@ async function maybeSendHighCashAlert(record, settings) {
   const cashTotal = calculateCashTotal(record?.denominations || {});
   const exceedsCashLimit = maximumCash > 0 && cashTotal > maximumCash;
   if (!highItems.length && !exceedsCashLimit) return null;
-  const emailConfig = await loadGeneralEmailConfig();
   const mail = buildHighCashAlertContent(record, highItems);
-  return sendWithResend({ to: recipients, ...mail }, emailConfig);
+  return sendWithResend({ to: recipients, ...mail });
 }
 
 function isMissingCashTableError(error) {
