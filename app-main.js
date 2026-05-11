@@ -66,7 +66,7 @@ const DEFAULT_SETTINGS = {
       { name: "Warning", color: "#ffd89b" },
       { name: "Maintenance", color: "#a9f0df" },
       { name: "Information", color: "#add4ff" },
-      { name: "very important", color: "#ffb3c2" },
+      { name: "Task", color: "#ffb3c2" },
     ],
     emailAutomation: {
       enabled: false,
@@ -13391,8 +13391,14 @@ function sanitizeSettings(settings) {
   const input = settings?.communications || {};
   const categories = Array.isArray(input.categories) ? input.categories : [];
   const seen = new Set();
+  const hasTaskCategory = categories.some((c) => clean(c?.name).toLowerCase() === "task");
   output.communications.categories = categories
-    .map((c) => ({ name: clean(c?.name), color: normalizeHex(c?.color), autoCloseDays: normalizeAutoCloseDays(c?.autoCloseDays) }))
+    .map((c) => {
+      const rawName = clean(c?.name);
+      const lowered = rawName.toLowerCase();
+      const name = lowered === "very important" && !hasTaskCategory ? "Task" : rawName;
+      return { name, color: normalizeHex(c?.color), autoCloseDays: normalizeAutoCloseDays(c?.autoCloseDays) };
+    })
     .filter((c) => c.name)
     .filter((c) => (seen.has(c.name.toLowerCase()) ? false : (seen.add(c.name.toLowerCase()), true)));
   if (output.communications.categories.length === 0) output.communications.categories = clone(DEFAULT_SETTINGS).communications.categories;

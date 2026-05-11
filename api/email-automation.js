@@ -7,7 +7,7 @@ const DEFAULT_CATEGORIES = [
   { name: "Warning", color: "#ffd89b" },
   { name: "Maintenance", color: "#a9f0df" },
   { name: "Information", color: "#add4ff" },
-  { name: "very important", color: "#ffb3c2" },
+  { name: "Task", color: "#ffb3c2" },
 ];
 
 function normalizeFrequency(value) {

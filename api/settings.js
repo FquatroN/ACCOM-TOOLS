@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS = {
       { name: "Warning", color: "#ffd89b" },
       { name: "Maintenance", color: "#a9f0df" },
       { name: "Information", color: "#add4ff" },
-      { name: "very important", color: "#ffb3c2" },
+      { name: "Task", color: "#ffb3c2" },
     ],
     emailAutomation: {
       enabled: false,
@@ -102,13 +102,18 @@ function sanitizeSettings(input) {
   const comm = source.communications || {};
   const categories = Array.isArray(comm.categories) ? comm.categories : [];
   const seen = new Set();
+  const hasTaskCategory = categories.some((cat) => String(cat?.name || "").trim().toLowerCase() === "task");
 
   const cleanCategories = categories
-    .map((cat) => ({
-      name: String(cat?.name || "").trim(),
+    .map((cat) => {
+      const rawName = String(cat?.name || "").trim();
+      const lowered = rawName.toLowerCase();
+      const name = lowered === "very important" && !hasTaskCategory ? "Task" : rawName;
+      return {
+      name,
       color: normalizeHex(cat?.color),
       autoCloseDays: normalizeAutoCloseDays(cat?.autoCloseDays),
-    }))
+    };})
     .filter((cat) => cat.name)
     .filter((cat) => {
       const key = cat.name.toLowerCase();
