@@ -10279,15 +10279,15 @@ function buildCashInlineRow() {
   tr.className = "cash-inline-row";
   tr.innerHTML = `<td>${escape(formatCashDateCompact(draft.day))}</td>
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || cashShiftById(draft.shiftId)?.name || ""))}</td>
-    <td><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
+    <td><input data-cash-field="name" data-cash-surface="table" data-scope="new" type="text" value="${escape(draft.name)}" /></td>
     <td><button type="button" class="ghost" data-cash-action="cash" data-scope="new">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-cash-surface="table" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-cash-surface="table" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-cash-surface="table" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
     <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCash))}</td>
     <td>${escape(formatCashMoney(computed.diffCard))}</td>
-    <td><input data-cash-field="justification" data-scope="new" type="text" value="${escape(draft.justification)}" /></td>
+    <td><input data-cash-field="justification" data-cash-surface="table" data-scope="new" type="text" value="${escape(draft.justification)}" /></td>
     <td><button type="button" class="ghost${cashItemsAlertClass(computed)}" data-cash-action="items" data-scope="new">${escape(cashItemDiffLabel(computed))}</button></td>
     <td><button type="button" data-cash-action="save-new">Add</button></td>`;
   return tr;
@@ -10320,15 +10320,15 @@ function buildCashEditableRow(record, { openMode = false } = {}) {
   tr.className = "cash-inline-row";
   tr.innerHTML = `<td>${escape(formatCashDateCompact(draft.day))}</td>
     <td>${escape(cashShiftDisplayLabel(draft.shiftName || ""))}</td>
-    <td><input data-cash-field="name" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
+    <td><input data-cash-field="name" data-cash-surface="table" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></td>
     <td><button type="button" class="ghost" data-cash-action="cash" data-id="${escape(record.id)}" data-scope="${escape(scope)}">${escape(cashSummaryButtonLabel(computed))}</button></td>
-    <td><input class="cash-money-input" data-cash-field="cardPos" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cashFdm" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
-    <td><input class="cash-money-input" data-cash-field="cardFdm" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardPos" data-cash-surface="table" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cashFdm" data-cash-surface="table" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></td>
+    <td><input class="cash-money-input" data-cash-field="cardFdm" data-cash-surface="table" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></td>
     <td>${escape(formatCashMoney(computed.calculatedCash))}</td>
     <td class="${cashDiffValueClass(computed.diffCash)}">${escape(formatCashDiffValue(computed.diffCash))}</td>
     <td class="${cashDiffValueClass(computed.diffCard)}">${escape(formatCashDiffValue(computed.diffCard))}</td>
-    <td><input data-cash-field="justification" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
+    <td><input data-cash-field="justification" data-cash-surface="table" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></td>
     <td><button type="button" class="ghost${cashItemsAlertClass(computed)}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="${escape(scope)}">${escape(cashItemDiffLabel(computed))}</button></td>
     <td>${openMode
       ? `<button type="button" data-cash-action="save-edit" data-scope="${escape(scope)}" data-id="${escape(record.id)}">Save</button> <button type="button" class="ghost" data-cash-action="close-open" data-id="${escape(record.id)}">Close</button>`
@@ -10372,15 +10372,15 @@ function buildCashInlineCard() {
       </div>
     </div>
     <div class="communication-mobile-grid">
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-cash-field="name" data-scope="new" type="text" value="${escape(draft.name)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-cash-field="name" data-cash-surface="card" data-scope="new" type="text" value="${escape(draft.name)}" /></label>
       <div class="communication-mobile-field"><small>Cash</small><div class="communication-mobile-message"><button type="button" class="ghost" data-cash-action="cash" data-scope="new">${escape(cashSummaryButtonLabel(computed))}</button></div></div>
-      <label class="communication-mobile-field"><small>Card POS</small><input class="cash-money-input" data-cash-field="cardPos" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></label>
-      <label class="communication-mobile-field"><small>Cash FDM</small><input class="cash-money-input" data-cash-field="cashFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></label>
-      <label class="communication-mobile-field"><small>Card FDM</small><input class="cash-money-input" data-cash-field="cardFdm" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></label>
+      <label class="communication-mobile-field"><small>Card POS</small><input class="cash-money-input" data-cash-field="cardPos" data-cash-surface="card" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></label>
+      <label class="communication-mobile-field"><small>Cash FDM</small><input class="cash-money-input" data-cash-field="cashFdm" data-cash-surface="card" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></label>
+      <label class="communication-mobile-field"><small>Card FDM</small><input class="cash-money-input" data-cash-field="cardFdm" data-cash-surface="card" data-scope="new" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></label>
       <div class="communication-mobile-field"><small>Cash (Calc)</small><div class="communication-mobile-message">${escape(formatCashMoney(computed.calculatedCash))}</div></div>
       <div class="communication-mobile-field"><small>Dif. Cash</small><div class="communication-mobile-message ${cashDiffValueClass(computed.diffCash)}">${escape(formatCashDiffValue(computed.diffCash))}</div></div>
       <div class="communication-mobile-field"><small>Dif. Card</small><div class="communication-mobile-message ${cashDiffValueClass(computed.diffCard)}">${escape(formatCashDiffValue(computed.diffCard))}</div></div>
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Justification</small><input data-cash-field="justification" data-scope="new" type="text" value="${escape(draft.justification)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Justification</small><input data-cash-field="justification" data-cash-surface="card" data-scope="new" type="text" value="${escape(draft.justification)}" /></label>
     </div>
     <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost${cashItemsAlertClass(computed)}" data-cash-action="items" data-scope="new">${escape(cashItemDiffLabel(computed))}</button><button type="button" data-cash-action="save-new">Add</button></div></div>`;
   return card;
@@ -10400,15 +10400,15 @@ function buildCashEditableCard(record, { openMode = false } = {}) {
       </div>
     </div>
     <div class="communication-mobile-grid">
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-cash-field="name" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-cash-field="name" data-cash-surface="card" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.name)}" /></label>
       <div class="communication-mobile-field"><small>Cash</small><div class="communication-mobile-message"><button type="button" class="ghost" data-cash-action="cash" data-id="${escape(record.id)}" data-scope="${escape(scope)}">${escape(cashSummaryButtonLabel(computed))}</button></div></div>
-      <label class="communication-mobile-field"><small>Card POS</small><input class="cash-money-input" data-cash-field="cardPos" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></label>
-      <label class="communication-mobile-field"><small>Cash FDM</small><input class="cash-money-input" data-cash-field="cashFdm" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></label>
-      <label class="communication-mobile-field"><small>Card FDM</small><input class="cash-money-input" data-cash-field="cardFdm" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></label>
+      <label class="communication-mobile-field"><small>Card POS</small><input class="cash-money-input" data-cash-field="cardPos" data-cash-surface="card" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardPos ?? ""))}" /></label>
+      <label class="communication-mobile-field"><small>Cash FDM</small><input class="cash-money-input" data-cash-field="cashFdm" data-cash-surface="card" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cashFdm ?? ""))}" /></label>
+      <label class="communication-mobile-field"><small>Card FDM</small><input class="cash-money-input" data-cash-field="cardFdm" data-cash-surface="card" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" inputmode="decimal" value="${escape(String(draft.cardFdm ?? ""))}" /></label>
       <div class="communication-mobile-field"><small>Cash (Calc)</small><div class="communication-mobile-message">${escape(formatCashMoney(computed.calculatedCash))}</div></div>
       <div class="communication-mobile-field"><small>Dif. Cash</small><div class="communication-mobile-message ${cashDiffValueClass(computed.diffCash)}">${escape(formatCashDiffValue(computed.diffCash))}</div></div>
       <div class="communication-mobile-field"><small>Dif. Card</small><div class="communication-mobile-message ${cashDiffValueClass(computed.diffCard)}">${escape(formatCashDiffValue(computed.diffCard))}</div></div>
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Justification</small><input data-cash-field="justification" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Justification</small><input data-cash-field="justification" data-cash-surface="card" data-scope="${escape(scope)}" data-id="${escape(record.id)}" type="text" value="${escape(draft.justification)}" /></label>
     </div>
     <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost${cashItemsAlertClass(computed)}" data-cash-action="items" data-id="${escape(record.id)}" data-scope="${escape(scope)}">${escape(cashItemDiffLabel(computed))}</button>${openMode
       ? `<button type="button" data-cash-action="save-edit" data-scope="${escape(scope)}" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-cash-action="close-open" data-id="${escape(record.id)}">Close</button>`
@@ -10480,6 +10480,7 @@ function renderCash() {
   renderCashScreenTabs();
   const focusTarget = document.activeElement?.matches?.("[data-cash-field]") ? document.activeElement : null;
   const focusField = clean(focusTarget?.dataset?.cashField);
+  const focusSurface = clean(focusTarget?.dataset?.cashSurface);
   const focusScope = clean(focusTarget?.dataset?.scope);
   const focusId = clean(focusTarget?.dataset?.id);
   const caretStart = focusTarget && typeof focusTarget.selectionStart === "number" ? focusTarget.selectionStart : null;
@@ -10512,7 +10513,7 @@ function renderCash() {
     });
   }
   const restoreTarget = focusField
-    ? document.querySelector(`[data-cash-field="${CSS.escape(focusField)}"][data-scope="${CSS.escape(focusScope || "new")}"]${focusId ? `[data-id="${CSS.escape(focusId)}"]` : ""}`)
+    ? document.querySelector(`[data-cash-field="${CSS.escape(focusField)}"]${focusSurface ? `[data-cash-surface="${CSS.escape(focusSurface)}"]` : ""}[data-scope="${CSS.escape(focusScope || "new")}"]${focusId ? `[data-id="${CSS.escape(focusId)}"]` : ""}`)
     : null;
   if (restoreTarget) {
     restoreTarget.focus();
