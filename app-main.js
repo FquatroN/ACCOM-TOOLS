@@ -482,6 +482,7 @@ const DEFAULT_GUESTS_SETTINGS = {
     unitCode: "508459893",
     establishment: "00",
     accessKey: "102907025181",
+    caCertificate: "",
   },
 };
 
@@ -1089,6 +1090,7 @@ const els = {
   guestsSettingsSefUnit: document.getElementById("guests-settings-sef-unit"),
   guestsSettingsSefEstablishment: document.getElementById("guests-settings-sef-establishment"),
   guestsSettingsSefAccessKey: document.getElementById("guests-settings-sef-access-key"),
+  guestsSettingsSefCa: document.getElementById("guests-settings-sef-ca"),
   guestsSettingsStatus: document.getElementById("guests-settings-status"),
   viewGroups: document.getElementById("view-groups"),
   groupsNew: document.getElementById("groups-new"),
@@ -11293,6 +11295,7 @@ function normalizeGuestsSettingsClient(input = {}) {
       unitCode: clean(sefSource.unitCode ?? sefSource.unit_code) || DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode,
       establishment: clean(sefSource.establishment) || DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment,
       accessKey: clean(sefSource.accessKey ?? sefSource.access_key) || DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey,
+      caCertificate: String(sefSource.caCertificate ?? sefSource.ca_certificate ?? "").trim(),
     },
   };
 }
@@ -11540,6 +11543,7 @@ function onGuestsSettingsInput() {
       unitCode: els.guestsSettingsSefUnit?.value,
       establishment: els.guestsSettingsSefEstablishment?.value,
       accessKey: els.guestsSettingsSefAccessKey?.value,
+      caCertificate: els.guestsSettingsSefCa?.value,
     },
   });
 }
@@ -11575,6 +11579,7 @@ function renderGuestsSettings() {
   if (els.guestsSettingsSefUnit) els.guestsSettingsSefUnit.value = clean(state.guestsSettings?.sefCredentials?.unitCode) || DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode;
   if (els.guestsSettingsSefEstablishment) els.guestsSettingsSefEstablishment.value = clean(state.guestsSettings?.sefCredentials?.establishment) || DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment;
   if (els.guestsSettingsSefAccessKey) els.guestsSettingsSefAccessKey.value = clean(state.guestsSettings?.sefCredentials?.accessKey) || DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey;
+  if (els.guestsSettingsSefCa) els.guestsSettingsSefCa.value = String(state.guestsSettings?.sefCredentials?.caCertificate || "");
 }
 
 function renderGuestsSettingsTabs() {

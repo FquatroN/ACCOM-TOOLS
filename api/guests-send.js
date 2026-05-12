@@ -1,4 +1,5 @@
 const { requireFeature, restQuery, sendError } = require("./_supabase");
+const { Agent } = require("undici");
 const {
   DEFAULT_GUESTS_INTEGRATION_MAPPING,
   DEFAULT_GUESTS_SETTINGS,
@@ -172,8 +173,10 @@ function parseSefResult(resultText) {
   };
 }
 
-async function postToSef(soap) {
+async function postToSef(soap, settings) {
   const endpoints = Array.isArray(SEF_ENDPOINTS) && SEF_ENDPOINTS.length ? SEF_ENDPOINTS : [SEF_ENDPOINT];
+  const sefConfig = resolveSefConfig(settings);
+  const dispatcher = sefConfig.caCertificate ? new Agent({ connect: { ca: sefConfig.caCertificate } }) : undefined;
   const failures = [];
   for (const endpoint of endpoints) {
     try {
@@ -184,13 +187,18 @@ async function postToSef(soap) {
           SOAPAction: "http://sef.pt/EntregaBoletinsAlojamento",
         },
         body: soap,
+        ...(dispatcher ? { dispatcher } : {}),
       });
       return { response, endpoint };
     } catch (error) {
       failures.push(`${endpoint}: ${cleanText(error?.cause?.message || error?.message || "fetch failed")}`);
     }
   }
-  const err = new Error(`Could not reach SEF endpoint. ${failures.join(" | ") || "fetch failed"}`);
+  const joined = failures.join(" | ") || "fetch failed";
+  const hint = joined.toLowerCase().includes("certificate") && !sefConfig.caCertificate
+    ? " Configure the SEF Root CA certificate in Guests Settings -> SEF Credentials."
+    : "";
+  const err = new Error(`Could not reach SEF endpoint. ${joined}.${hint}`.replace(/\.\s*\./g, "."));
   err.statusCode = 502;
   throw err;
 }
@@ -232,7 +240,7 @@ module.exports = async function handler(req, res) {
     const xml = buildBalXml(sendableMapped, nextFileNumber, current.settings);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
     const soap = buildSoapEnvelope(base64Payload, current.settings);
-    const { response } = await postToSef(soap);
+    const { response } = await postToSef(soap, current.settings);
     const body = await response.text();
     const resultMatch = body.match(/<EntregaBoletinsAlojamentoResult>([\s\S]*?)<\/EntregaBoletinsAlojamentoResult>/i);
     const resultText = resultMatch ? resultMatch[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : body;

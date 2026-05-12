@@ -2090,6 +2090,11 @@
                       <input id="guests-settings-sef-access-key" type="text" />
                     </label>
                   </div>
+                  <label class="settings-email-recipients">
+                    SEF Root CA certificate (PEM)
+                    <textarea id="guests-settings-sef-ca" rows="6" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"></textarea>
+                    <small class="field-hint">Paste the SEF root/intermediate certificate chain here if the send fails with certificate verification errors.</small>
+                  </label>
                 </section>
                 <p id="guests-settings-status" class="auth-status"></p>
               </div>

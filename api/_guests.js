@@ -22,6 +22,7 @@ const DEFAULT_GUESTS_SETTINGS = {
     unitCode: "508459893",
     establishment: "00",
     accessKey: "102907025181",
+    caCertificate: "",
   },
 };
 
@@ -153,6 +154,7 @@ function normalizeGuestSettings(input = {}) {
       unitCode: normalizeGuestMappingValue(sefSource.unitCode ?? sefSource.unit_code, DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode),
       establishment: normalizeGuestMappingValue(sefSource.establishment, DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment),
       accessKey: normalizeGuestMappingValue(sefSource.accessKey ?? sefSource.access_key, DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey),
+      caCertificate: String(sefSource.caCertificate ?? sefSource.ca_certificate ?? "").trim(),
     },
   };
 }
@@ -391,6 +393,7 @@ function resolveSefConfig(settings = {}) {
     unitCode: cleanText(credentials.unitCode) || DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode,
     establishment: cleanText(credentials.establishment) || DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment,
     accessKey: cleanText(credentials.accessKey) || DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey,
+    caCertificate: String(credentials.caCertificate || "").trim(),
     hotel: {
       ...SEF_HOTEL_PROFILE,
       code: cleanText(credentials.unitCode) || DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode,
