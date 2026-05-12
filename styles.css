@@ -2455,12 +2455,41 @@ select:disabled {
 }
 
 .guests-table th,
-.guests-table td,
+.guests-table td {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.32rem;
+  vertical-align: top;
+}
+
 .guests-blacklist-table th,
 .guests-blacklist-table td {
   font-size: 0.74rem;
   padding: 0.28rem 0.35rem;
   vertical-align: top;
+}
+
+.guests-table th:nth-child(1),
+.guests-table td:nth-child(1) {
+  min-width: 28px;
+  width: 28px;
+}
+
+.guests-table th:nth-child(6),
+.guests-table td:nth-child(6) {
+  min-width: 42px;
+  width: 42px;
+}
+
+.guests-table th:nth-child(10),
+.guests-table td:nth-child(10) {
+  min-width: 38px;
+  width: 38px;
+}
+
+.guests-table th:nth-child(11),
+.guests-table td:nth-child(11) {
+  min-width: 94px;
+  width: 94px;
 }
 
 .guests-table td:nth-child(11),
