@@ -11616,8 +11616,6 @@ function guestStatusText(record, meta) {
   lines.push(sentStatus === "sent" ? "Sent" : sentStatus === "error" ? "Error" : "Pending");
   if (clean(record.sentAt)) lines.push(`Sent: ${formatDateTimeShort(record.sentAt)}`);
   if (clean(record.sendError)) lines.push(clean(record.sendError));
-  if (meta?.blacklistMatch) lines.push(`Blacklist: ${meta.blacklistMatch.reason}`);
-  if (meta?.birthdayAlert) lines.push(meta.birthdayAlert);
   return lines;
 }
 
@@ -11626,6 +11624,13 @@ function guestStatusClass(record) {
   if (sentStatus === "sent") return "guest-status-sent";
   if (sentStatus === "error") return "guest-status-error";
   return "guest-status-pending";
+}
+
+function guestAlertsMarkup(meta) {
+  const alerts = [];
+  if (meta?.blacklistMatch) alerts.push('<span class="guest-alert-chip guest-alert-blacklist" title="Blacklist">\u26d4</span>');
+  if (meta?.birthdayAlert) alerts.push(`<span class="guest-alert-chip guest-alert-birthday" title="${escape(meta.birthdayAlert)}">\ud83c\udf82</span>`);
+  return alerts.length ? `<div class="guest-alerts">${alerts.join("")}</div>` : "";
 }
 
 function guestNationalityMatchesFilter(record, filterValue) {
@@ -11941,6 +11946,7 @@ function buildGuestsInlineRow() {
     <td><input data-field="checkIn" data-scope="new" type="date" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="new" type="date" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate))}</td>
+    <td class="guest-alerts-cell"></td>
     <td>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</td>
     <td class="row-actions"><button type="button" data-guests-action="save-inline">Add</button></td>`;
   tr.style.backgroundColor = "#ffffff";
@@ -11960,6 +11966,7 @@ function buildGuestsReadOnlyRow(record) {
     <td>${escape(record.checkIn || "-")}</td>
     <td>${escape(record.checkOut || "-")}</td>
     <td>${escape(meta.age || "-")}</td>
+    <td class="guest-alerts-cell">${guestAlertsMarkup(meta)}</td>
     <td>${guestStatusMarkup(record, meta)}</td>
     <td class="row-actions"><button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button></td>`;
   tr.style.backgroundColor = guestRowBackground(record, meta);
@@ -11981,6 +11988,7 @@ function buildGuestsEditableRow(record) {
     <td><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate) || "-")}</td>
+    <td class="guest-alerts-cell">${guestAlertsMarkup(meta)}</td>
     <td>${guestStatusMarkup(draft, meta)}</td>
     <td class="row-actions"><button type="button" data-guests-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
   tr.style.backgroundColor = guestRowBackground(draft, meta);
@@ -12211,7 +12219,7 @@ function renderGuests() {
   renderGuestsCountryOptions();
   if (!canApp("guests")) {
     if (els.guestsCount) els.guestsCount.textContent = "0 records";
-    if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="12" class="empty">Your profile has no access to Guests.</td></tr>';
+    if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="13" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsMobileCards) els.guestsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
     if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsBlacklistMobileCards) els.guestsBlacklistMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
@@ -12251,7 +12259,7 @@ function renderGuests() {
   els.guestsRows.appendChild(buildGuestsInlineRow());
   if (!rows.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="12" class="empty">No guest records found.</td>';
+    tr.innerHTML = '<td colspan="13" class="empty">No guest records found.</td>';
     els.guestsRows.appendChild(tr);
     return;
   }
