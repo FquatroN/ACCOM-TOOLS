@@ -2470,38 +2470,44 @@ select:disabled {
 
 .guests-blacklist-table th:nth-child(2),
 .guests-blacklist-table td:nth-child(2) {
-  min-width: 82px;
-  width: 82px;
+  min-width: 90px;
+  width: 90px;
 }
 
 .guests-blacklist-table th:nth-child(3),
 .guests-blacklist-table td:nth-child(3) {
-  min-width: 84px;
-  width: 84px;
+  min-width: 100px;
+  width: 100px;
 }
 
 .guests-blacklist-table th:nth-child(4),
 .guests-blacklist-table td:nth-child(4) {
-  min-width: 88px;
-  width: 88px;
+  min-width: 90px;
+  width: 90px;
 }
 
 .guests-blacklist-table th:nth-child(5),
 .guests-blacklist-table td:nth-child(5) {
-  min-width: 240px;
-  width: 240px;
+  min-width: 260px;
+  width: 260px;
 }
 
 .guests-blacklist-table th:nth-child(6),
 .guests-blacklist-table td:nth-child(6) {
-  min-width: 92px;
-  width: 92px;
+  min-width: 100px;
+  width: 100px;
 }
 
 .guests-blacklist-table th:nth-child(7),
 .guests-blacklist-table td:nth-child(7) {
-  min-width: 92px;
-  width: 92px;
+  min-width: 110px;
+  width: 110px;
+}
+
+.guests-blacklist-table th:nth-child(1),
+.guests-blacklist-table td:nth-child(1) {
+  min-width: 130px;
+  width: 130px;
 }
 
 .guests-table th:nth-child(1),
@@ -2546,9 +2552,8 @@ select:disabled {
 }
 
 .guests-blacklist-table td:nth-child(5) {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .guests-table .row-actions {
