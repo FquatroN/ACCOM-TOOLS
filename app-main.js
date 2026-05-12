@@ -764,6 +764,8 @@ const state = {
   guestsRows: [],
   guestsBlacklist: [],
   guestsCountries: [],
+  guestsApiCalls: [],
+  guestsApiCallsEnabled: true,
   guestsLoaded: false,
   guestsSettings: clone(DEFAULT_GUESTS_SETTINGS),
   guestsSettingsLoaded: false,
@@ -1083,14 +1085,18 @@ const els = {
   guestsSaveSettings: document.getElementById("guests-save-settings"),
   guestsSettingsConfigTab: document.getElementById("guests-settings-config-tab"),
   guestsSettingsSefTab: document.getElementById("guests-settings-sef-tab"),
+  guestsSettingsApiTab: document.getElementById("guests-settings-api-tab"),
   guestsSettingsConfigPanel: document.getElementById("guests-settings-config-panel"),
   guestsSettingsSefPanel: document.getElementById("guests-settings-sef-panel"),
+  guestsSettingsApiPanel: document.getElementById("guests-settings-api-panel"),
   guestsSettingsSendTime: document.getElementById("guests-settings-send-time"),
   guestsSettingsMappingBody: document.getElementById("guests-settings-mapping-body"),
   guestsSettingsSefUnit: document.getElementById("guests-settings-sef-unit"),
   guestsSettingsSefEstablishment: document.getElementById("guests-settings-sef-establishment"),
   guestsSettingsSefAccessKey: document.getElementById("guests-settings-sef-access-key"),
   guestsSettingsSefCa: document.getElementById("guests-settings-sef-ca"),
+  guestsSettingsApiNote: document.getElementById("guests-settings-api-note"),
+  guestsSettingsApiBody: document.getElementById("guests-settings-api-body"),
   guestsSettingsStatus: document.getElementById("guests-settings-status"),
   viewGroups: document.getElementById("view-groups"),
   groupsNew: document.getElementById("groups-new"),
@@ -1615,6 +1621,7 @@ function bindEvents() {
   els.guestsTabBlacklist?.addEventListener("click", () => setGuestsScreen("blacklist"));
   els.guestsSettingsConfigTab?.addEventListener("click", () => setGuestsSettingsTab("config"));
   els.guestsSettingsSefTab?.addEventListener("click", () => setGuestsSettingsTab("sef"));
+  els.guestsSettingsApiTab?.addEventListener("click", () => setGuestsSettingsTab("api"));
   els.guestsShowActive?.addEventListener("change", onGuestsFilterInput);
   els.guestsFilterHa?.addEventListener("change", onGuestsFilterInput);
   [els.guestsFilterSearch, els.guestsFilterNationality, els.guestsFilterCheckin, els.guestsFilterCheckout].forEach((el) => el?.addEventListener("input", onGuestsFilterInput));
@@ -11300,6 +11307,26 @@ function normalizeGuestsSettingsClient(input = {}) {
   };
 }
 
+function normalizeGuestApiCallClient(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    id: clean(source.id),
+    createdAt: clean(source.createdAt ?? source.created_at),
+    endpoint: clean(source.endpoint),
+    requestMethod: clean(source.requestMethod ?? source.request_method) || "POST",
+    soapAction: clean(source.soapAction ?? source.soap_action),
+    httpStatus: Number.parseInt(source.httpStatus ?? source.http_status, 10) || 0,
+    fileNumber: Number.parseInt(source.fileNumber ?? source.file_number, 10) || 0,
+    guestCount: Number.parseInt(source.guestCount ?? source.guest_count, 10) || 0,
+    success: !!source.success,
+    responseMessage: clean(source.responseMessage ?? source.response_message),
+    errorMessage: clean(source.errorMessage ?? source.error_message),
+    requestDetails: source.requestDetails ?? source.request_details ?? {},
+    requestBody: String(source.requestBody ?? source.request_body ?? ""),
+    responseBody: String(source.responseBody ?? source.response_body ?? ""),
+  };
+}
+
 function emptyGuestDraft() {
   const today = lisbonTodayIsoClient();
   return {
@@ -11482,12 +11509,16 @@ async function loadGuestsSettings({ silent = false } = {}) {
     const result = await api("/api/guests-settings");
     state.guestsSettings = normalizeGuestsSettingsClient(result?.settings);
     state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
+    state.guestsApiCalls = (Array.isArray(result?.apiCalls) ? result.apiCalls : []).map(normalizeGuestApiCallClient);
+    state.guestsApiCallsEnabled = result?.apiCallsEnabled !== false;
     state.guestsSettingsLoaded = true;
     renderGuestsCountryOptions();
     renderGuestsSettings();
     if (!silent) setGuestsSettingsStatus("Guests configuration loaded.");
   } catch (e) {
     state.guestsSettings = clone(DEFAULT_GUESTS_SETTINGS);
+    state.guestsApiCalls = [];
+    state.guestsApiCallsEnabled = false;
     renderGuestsSettings();
     if (!silent) setGuestsSettingsStatus(`Using default guests configuration (${e.message}).`);
   }
@@ -11501,6 +11532,8 @@ async function loadGuestsData({ silent = false } = {}) {
     ]);
     state.guestsSettings = normalizeGuestsSettingsClient(recordsResult?.settings || state.guestsSettings);
     state.guestsCountries = Array.isArray(recordsResult?.countries) ? recordsResult.countries : Array.isArray(blacklistResult?.countries) ? blacklistResult.countries : state.guestsCountries;
+    if (Array.isArray(recordsResult?.apiCalls)) state.guestsApiCalls = recordsResult.apiCalls.map(normalizeGuestApiCallClient);
+    if (typeof recordsResult?.apiCallsEnabled === "boolean") state.guestsApiCallsEnabled = recordsResult.apiCallsEnabled;
     state.guestsRows = sortGuestsRowsClient((Array.isArray(recordsResult?.rows) ? recordsResult.rows : []).map(normalizeGuestRecordClient));
     state.guestsBlacklist = sortGuestsBlacklistRowsClient((Array.isArray(blacklistResult?.rows) ? blacklistResult.rows : []).map(normalizeGuestsBlacklistRecordClient));
     state.guestsLoaded = true;
@@ -11518,6 +11551,7 @@ async function loadGuestsData({ silent = false } = {}) {
     state.guestsRows = [];
     state.guestsBlacklist = [];
     state.guestsSettings = clone(DEFAULT_GUESTS_SETTINGS);
+    state.guestsApiCalls = [];
     state.guestsDraft = emptyGuestDraft();
     state.guestsBlacklistDraft = emptyGuestsBlacklistDraft();
     renderGuestsCountryOptions();
@@ -11554,6 +11588,8 @@ async function saveGuestsSettings() {
     const result = await api("/api/guests-settings", { method: "PUT", body: { settings: state.guestsSettings } });
     state.guestsSettings = normalizeGuestsSettingsClient(result?.settings);
     state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
+    state.guestsApiCalls = (Array.isArray(result?.apiCalls) ? result.apiCalls : state.guestsApiCalls).map(normalizeGuestApiCallClient);
+    if (typeof result?.apiCallsEnabled === "boolean") state.guestsApiCallsEnabled = result.apiCallsEnabled;
     state.guestsSettingsLoaded = true;
     renderGuestsCountryOptions();
     renderGuestsSettings();
@@ -11580,25 +11616,79 @@ function renderGuestsSettings() {
   if (els.guestsSettingsSefEstablishment) els.guestsSettingsSefEstablishment.value = clean(state.guestsSettings?.sefCredentials?.establishment) || DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment;
   if (els.guestsSettingsSefAccessKey) els.guestsSettingsSefAccessKey.value = clean(state.guestsSettings?.sefCredentials?.accessKey) || DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey;
   if (els.guestsSettingsSefCa) els.guestsSettingsSefCa.value = String(state.guestsSettings?.sefCredentials?.caCertificate || "");
+  renderGuestsApiCallsTable();
 }
 
 function renderGuestsSettingsTabs() {
+  const isConfig = state.guestsSettingsTab === "config";
   const isSef = state.guestsSettingsTab === "sef";
+  const isApi = state.guestsSettingsTab === "api";
   if (els.guestsSettingsConfigTab) {
-    els.guestsSettingsConfigTab.classList.toggle("active-tab", !isSef);
-    els.guestsSettingsConfigTab.classList.toggle("ghost", isSef);
+    els.guestsSettingsConfigTab.classList.toggle("active-tab", isConfig);
+    els.guestsSettingsConfigTab.classList.toggle("ghost", !isConfig);
   }
   if (els.guestsSettingsSefTab) {
     els.guestsSettingsSefTab.classList.toggle("active-tab", isSef);
     els.guestsSettingsSefTab.classList.toggle("ghost", !isSef);
   }
-  if (els.guestsSettingsConfigPanel) els.guestsSettingsConfigPanel.hidden = isSef;
+  if (els.guestsSettingsApiTab) {
+    els.guestsSettingsApiTab.classList.toggle("active-tab", isApi);
+    els.guestsSettingsApiTab.classList.toggle("ghost", !isApi);
+  }
+  if (els.guestsSettingsConfigPanel) els.guestsSettingsConfigPanel.hidden = !isConfig;
   if (els.guestsSettingsSefPanel) els.guestsSettingsSefPanel.hidden = !isSef;
+  if (els.guestsSettingsApiPanel) els.guestsSettingsApiPanel.hidden = !isApi;
 }
 
 function setGuestsSettingsTab(tab) {
-  state.guestsSettingsTab = tab === "sef" ? "sef" : "config";
+  state.guestsSettingsTab = tab === "sef" || tab === "api" ? tab : "config";
   renderGuestsSettingsTabs();
+}
+
+function renderGuestsApiCallsTable() {
+  if (els.guestsSettingsApiNote) {
+    els.guestsSettingsApiNote.textContent = state.guestsApiCallsEnabled
+      ? "Latest SEF calls saved from the Guests send flow. The request body keeps the activation key masked."
+      : "Run the Guest API calls migration in Supabase to enable this technical log table.";
+  }
+  if (!els.guestsSettingsApiBody) return;
+  if (!state.guestsApiCallsEnabled) {
+    els.guestsSettingsApiBody.innerHTML = `<tr><td colspan="8" class="muted">API call logging table is not available yet.</td></tr>`;
+    return;
+  }
+  if (!state.guestsApiCalls.length) {
+    els.guestsSettingsApiBody.innerHTML = `<tr><td colspan="8" class="muted">No guest API calls recorded yet.</td></tr>`;
+    return;
+  }
+  els.guestsSettingsApiBody.innerHTML = state.guestsApiCalls.map((item) => {
+    const message = clean(item.success ? item.responseMessage : (item.errorMessage || item.responseMessage)) || "-";
+    const requestText = (() => {
+      const details = item.requestDetails && typeof item.requestDetails === "object" ? item.requestDetails : {};
+      const detailsText = Object.keys(details).length ? JSON.stringify(details, null, 2) : "";
+      return [detailsText, clean(item.requestBody)].filter(Boolean).join("\n\n");
+    })();
+    const responseText = clean(item.responseBody) || clean(item.errorMessage) || "-";
+    return `<tr>
+      <td>${escape(formatDateTimeShort(item.createdAt) || "-")}</td>
+      <td>${escape(item.success ? "OK" : "Error")}</td>
+      <td>${escape(item.httpStatus ? String(item.httpStatus) : "-")}</td>
+      <td>${escape(item.guestCount ? String(item.guestCount) : "-")}</td>
+      <td class="guest-api-endpoint">${escape(item.endpoint || "-")}</td>
+      <td>${escape(message)}</td>
+      <td>
+        <details class="guest-api-details">
+          <summary>View</summary>
+          <pre class="guest-api-pre">${escape(requestText || "-")}</pre>
+        </details>
+      </td>
+      <td>
+        <details class="guest-api-details">
+          <summary>View</summary>
+          <pre class="guest-api-pre">${escape(responseText)}</pre>
+        </details>
+      </td>
+    </tr>`;
+  }).join("");
 }
 
 function renderGuestsCountryOptions() {

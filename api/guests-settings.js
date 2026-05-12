@@ -28,18 +28,66 @@ async function saveGuestsPayload(rowId, payload) {
   return sanitizeGuestsPayload(Array.isArray(created) && created[0]?.payload ? created[0].payload : safe);
 }
 
+function isMissingGuestApiCallsTableError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("guest_api_calls") && (
+    message.includes("could not find") ||
+    message.includes("schema cache") ||
+    message.includes("relation") ||
+    message.includes("does not exist")
+  );
+}
+
+function mapGuestApiCallRow(row) {
+  return {
+    id: String(row?.id || "").trim(),
+    createdAt: String(row?.created_at || "").trim(),
+    endpoint: String(row?.endpoint || "").trim(),
+    requestMethod: String(row?.request_method || "").trim(),
+    soapAction: String(row?.soap_action || "").trim(),
+    httpStatus: Number.parseInt(row?.http_status, 10) || 0,
+    fileNumber: Number.parseInt(row?.file_number, 10) || 0,
+    guestCount: Number.parseInt(row?.guest_count, 10) || 0,
+    success: !!row?.success,
+    responseMessage: String(row?.response_message || "").trim(),
+    errorMessage: String(row?.error_message || "").trim(),
+    requestDetails: row?.request_details && typeof row.request_details === "object" ? row.request_details : {},
+    requestBody: String(row?.request_body || ""),
+    responseBody: String(row?.response_body || ""),
+  };
+}
+
+async function loadGuestApiCalls() {
+  const rows = await restQuery("guest_api_calls?select=*&order=created_at.desc&limit=100", {
+    method: "GET",
+  });
+  return (Array.isArray(rows) ? rows : []).map(mapGuestApiCallRow);
+}
+
 module.exports = async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const user = await verifyUser(req);
       const access = await loadAccessForUser(user.id);
-      if (!hasFeature(access, "settings", "guests") && !hasFeature(access, "app", "guests")) {
+      const canSettings = hasFeature(access, "settings", "guests");
+      const canApp = hasFeature(access, "app", "guests");
+      if (!canSettings && !canApp) {
         const err = new Error("You do not have permission for this feature.");
         err.statusCode = 403;
         throw err;
       }
       const { payload } = await loadGuestsPayloadRow();
-      res.status(200).json({ settings: payload.settings, countries: COUNTRIES });
+      let apiCalls = [];
+      let apiCallsEnabled = false;
+      if (canSettings) {
+        try {
+          apiCalls = await loadGuestApiCalls();
+          apiCallsEnabled = true;
+        } catch (error) {
+          if (!isMissingGuestApiCallsTableError(error)) throw error;
+        }
+      }
+      res.status(200).json({ settings: payload.settings, countries: COUNTRIES, apiCalls, apiCallsEnabled });
       return;
     }
 
@@ -52,7 +100,15 @@ module.exports = async function handler(req, res) {
         settings: normalizeGuestSettings(body?.settings),
       };
       const saved = await saveGuestsPayload(rowId, next);
-      res.status(200).json({ settings: saved.settings, countries: COUNTRIES });
+      let apiCalls = [];
+      let apiCallsEnabled = false;
+      try {
+        apiCalls = await loadGuestApiCalls();
+        apiCallsEnabled = true;
+      } catch (error) {
+        if (!isMissingGuestApiCallsTableError(error)) throw error;
+      }
+      res.status(200).json({ settings: saved.settings, countries: COUNTRIES, apiCalls, apiCallsEnabled });
       return;
     }
 

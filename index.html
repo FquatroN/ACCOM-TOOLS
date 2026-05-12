@@ -2046,6 +2046,7 @@
                   <button id="close-settings-guests" type="button" class="ghost">Back To App</button>
                   <button id="guests-settings-config-tab" type="button" class="active-tab">Configuration</button>
                   <button id="guests-settings-sef-tab" type="button" class="ghost">SEF Credentials</button>
+                  <button id="guests-settings-api-tab" type="button" class="ghost">API calls</button>
                   <button id="guests-save-settings" type="button" class="ghost">Save Configuration</button>
                 </div>
                 <section id="guests-settings-config-panel" class="settings-block">
@@ -2095,6 +2096,29 @@
                     <textarea id="guests-settings-sef-ca" rows="6" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"></textarea>
                     <small class="field-hint">Paste the SEF root/intermediate certificate chain here if the send fails with certificate verification errors.</small>
                   </label>
+                </section>
+                <section id="guests-settings-api-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Guests API Calls</h3>
+                  </div>
+                  <p id="guests-settings-api-note" class="field-hint"></p>
+                  <div class="table-wrap">
+                    <table class="settings-table guest-api-calls-table">
+                      <thead>
+                        <tr>
+                          <th>Timestamp</th>
+                          <th>Status</th>
+                          <th>HTTP</th>
+                          <th>Guests</th>
+                          <th>Endpoint</th>
+                          <th>Message</th>
+                          <th>Request</th>
+                          <th>Response</th>
+                        </tr>
+                      </thead>
+                      <tbody id="guests-settings-api-body"></tbody>
+                    </table>
+                  </div>
                 </section>
                 <p id="guests-settings-status" class="auth-status"></p>
               </div>

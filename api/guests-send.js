@@ -29,6 +29,45 @@ function decodeXmlEntities(value) {
     .replace(/&apos;/gi, "'");
 }
 
+function isMissingGuestApiCallsTableError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("guest_api_calls") && (
+    message.includes("could not find") ||
+    message.includes("schema cache") ||
+    message.includes("relation") ||
+    message.includes("does not exist")
+  );
+}
+
+function maskSefSoap(soap) {
+  return String(soap || "").replace(/(<ChaveAcesso>)([\s\S]*?)(<\/ChaveAcesso>)/i, "$1***$3");
+}
+
+async function saveGuestApiCallLog(entry) {
+  const payload = {
+    endpoint: cleanText(entry?.endpoint),
+    request_method: cleanText(entry?.requestMethod) || "POST",
+    soap_action: cleanText(entry?.soapAction) || "http://sef.pt/EntregaBoletinsAlojamento",
+    http_status: Math.max(0, Number.parseInt(entry?.httpStatus, 10) || 0),
+    file_number: Math.max(0, Number.parseInt(entry?.fileNumber, 10) || 0),
+    guest_count: Math.max(0, Number.parseInt(entry?.guestCount, 10) || 0),
+    success: !!entry?.success,
+    response_message: cleanText(entry?.responseMessage),
+    error_message: cleanText(entry?.errorMessage),
+    request_details: entry?.requestDetails && typeof entry.requestDetails === "object" ? entry.requestDetails : {},
+    request_body: String(entry?.requestBody || "").slice(0, 200000),
+    response_body: String(entry?.responseBody || "").slice(0, 200000),
+  };
+  try {
+    await restQuery("guest_api_calls", {
+      method: "POST",
+      body: [payload],
+    });
+  } catch (error) {
+    if (!isMissingGuestApiCallsTableError(error)) throw error;
+  }
+}
+
 async function loadGuestsPayloadRow() {
   const rows = await restQuery(`app_settings?select=id,payload&setting_key=eq.${encodeURIComponent(GUESTS_SETTING_KEY)}&limit=1`, {
     method: "GET",
@@ -275,10 +314,60 @@ module.exports = async function handler(req, res) {
     const xml = buildBalXml(sendableMapped, nextFileNumber, current.settings);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
     const soap = buildSoapEnvelope(base64Payload, current.settings);
-    const { body, statusCode, endpoint } = await postToSef(soap, current.settings);
-    const resultMatch = body.match(/<(?:[\w-]+:)?EntregaBoletinsAlojamentoResult(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w-]+:)?EntregaBoletinsAlojamentoResult>/i);
-    const resultText = resultMatch ? decodeXmlEntities(resultMatch[1]) : body;
-    const result = parseSefResult(resultText);
+    const maskedSoap = maskSefSoap(soap);
+    const requestDetails = {
+      endpoints: Array.isArray(SEF_ENDPOINTS) ? SEF_ENDPOINTS : [SEF_ENDPOINT],
+      requestMethod: "POST",
+      soapAction: "http://sef.pt/EntregaBoletinsAlojamento",
+      fileNumber: nextFileNumber,
+      guestCount: sendableMapped.length,
+      guestNames: sendableMapped.map((row) => cleanText(row.name)).filter(Boolean),
+      unitCode: cleanText(sefConfig.unitCode),
+      establishment: cleanText(sefConfig.establishment),
+    };
+    let body = "";
+    let statusCode = 0;
+    let endpoint = "";
+    let result;
+    try {
+      const postResult = await postToSef(soap, current.settings);
+      body = String(postResult?.body || "");
+      statusCode = Number.parseInt(postResult?.statusCode, 10) || 0;
+      endpoint = cleanText(postResult?.endpoint);
+      const resultMatch = body.match(/<(?:[\w-]+:)?EntregaBoletinsAlojamentoResult(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w-]+:)?EntregaBoletinsAlojamentoResult>/i);
+      const resultText = resultMatch ? decodeXmlEntities(resultMatch[1]) : body;
+      result = parseSefResult(resultText);
+      await saveGuestApiCallLog({
+        endpoint,
+        requestMethod: "POST",
+        soapAction: "http://sef.pt/EntregaBoletinsAlojamento",
+        httpStatus: statusCode,
+        fileNumber: nextFileNumber,
+        guestCount: sendableMapped.length,
+        success: result.ok,
+        responseMessage: result.message,
+        errorMessage: result.ok ? "" : result.message,
+        requestDetails,
+        requestBody: maskedSoap,
+        responseBody: body,
+      });
+    } catch (error) {
+      await saveGuestApiCallLog({
+        endpoint,
+        requestMethod: "POST",
+        soapAction: "http://sef.pt/EntregaBoletinsAlojamento",
+        httpStatus: statusCode || Number.parseInt(error?.statusCode, 10) || 0,
+        fileNumber: nextFileNumber,
+        guestCount: sendableMapped.length,
+        success: false,
+        responseMessage: "",
+        errorMessage: cleanText(error?.message || "Unknown SEF transport error."),
+        requestDetails,
+        requestBody: maskedSoap,
+        responseBody: body,
+      });
+      throw error;
+    }
     if (!result.ok && result.message.startsWith("Unknown SEF response:")) {
       result.message = `${result.message} [HTTP ${statusCode || 0} via ${endpoint}]`;
     }
