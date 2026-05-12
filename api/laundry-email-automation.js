@@ -251,10 +251,12 @@ async function sendConfiguredEmail(emailConfig, mail) {
   return sendWithResend(mail, emailConfig);
 }
 
-function buildLaundrySupplierEmailContent(records, settings, sentDate) {
+function buildLaundrySupplierEmailContent(records, allRecords, settings, sentDate) {
   const itemTypes = Array.isArray(settings?.itemTypes) ? settings.itemTypes : [];
   const byProperty = new Map(records.map((record) => [record.property, record]));
   const subject = `ROUPA ENVIADA DIA ${formatDatePt(sentDate)}`;
+  const summaryRecords = getLaundryManagementWindowRecords(allRecords, settings, sentDate);
+  const differencesSection = buildLaundryDifferencesSection(summaryRecords, settings);
   const headerCells = itemTypes
     .map((item) => `<th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${escapeHtml(item.name)}</th>`)
     .join("");
@@ -277,6 +279,7 @@ function buildLaundrySupplierEmailContent(records, settings, sentDate) {
       </thead>
       <tbody>${bodyRows}</tbody>
     </table>
+    ${differencesSection.html}
     <p>Cumprimentos,<br />
     Lisboa Central Hostel<br /><br />
     +351 309 881 038<br />
@@ -296,6 +299,8 @@ function buildLaundrySupplierEmailContent(records, settings, sentDate) {
       return [property, ...itemTypes.map((item) => String(loadCounts(record?.sentItems, item.id)))].join(" | ");
     }),
     "",
+    differencesSection.text,
+    "",
     "Cumprimentos,",
     "Lisboa Central Hostel",
     "",
@@ -306,6 +311,84 @@ function buildLaundrySupplierEmailContent(records, settings, sentDate) {
     "Rua Rodrigues Sampaio 160, 1150-282 Lisboa",
   ];
   return { subject, html, text: lines.join("\n") };
+}
+
+function getLaundryManagementWindowRecords(records, settings, currentDate) {
+  const fromDate = shiftIsoDate(currentDate, -2);
+  return records
+    .filter((record) => {
+      const receivedDate = cleanText(record.receivedDate || "");
+      if (!receivedDate || receivedDate < fromDate || receivedDate > currentDate) return false;
+      return itemCountsFilled(record.receivedItems, settings.itemTypes);
+    })
+    .sort((a, b) => {
+      const receivedCompare = cleanText(b.receivedDate).localeCompare(cleanText(a.receivedDate));
+      if (receivedCompare !== 0) return receivedCompare;
+      const sentCompare = cleanText(b.date).localeCompare(cleanText(a.date));
+      if (sentCompare !== 0) return sentCompare;
+      return cleanText(a.property).localeCompare(cleanText(b.property));
+    });
+}
+
+function buildLaundryDifferencesSection(records, settings) {
+  const rowsHtml = records.length
+    ? records.map((record) => {
+      const diff = buildLaundryDifference(record, settings);
+      const rowColor = laundryRowColor(diff.totalDiff);
+      const tdStyle = `border:1px solid #d8d0c7;padding:4px 5px;vertical-align:top;background:${rowColor};background-color:${rowColor};font-size:13px;line-height:1.25;`;
+      const dateCellStyle = `${tdStyle}white-space:nowrap;width:86px;`;
+      const propertyCellStyle = `${tdStyle}width:70px;`;
+      const sentCellStyle = `${tdStyle}width:170px;`;
+      const receivedCellStyle = `${tdStyle}width:170px;`;
+      const diffCellStyle = `${tdStyle}width:180px;`;
+      const notesCellStyle = `${tdStyle}font-size:12px;`;
+      return `<tr>
+        <td bgcolor="${rowColor}" style="${dateCellStyle}">${escapeHtml(record.date)}</td>
+        <td bgcolor="${rowColor}" style="${propertyCellStyle}">${escapeHtml(record.property)}</td>
+        <td bgcolor="${rowColor}" style="${sentCellStyle}">${escapeHtml(formatLaundryItemsSummary(record.sentItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${dateCellStyle}">${escapeHtml(record.receivedDate || "")}</td>
+        <td bgcolor="${rowColor}" style="${receivedCellStyle}">${escapeHtml(formatLaundryItemsSummary(record.receivedItems, settings.itemTypes)).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${diffCellStyle}">${escapeHtml(diff.lines.join("\n")).replace(/\n/g, "<br />")}</td>
+        <td bgcolor="${rowColor}" style="${notesCellStyle}">${escapeHtml(record.notes || "-")}</td>
+      </tr>`;
+    }).join("")
+    : '<tr><td colspan="7" style="border:1px solid #d8d0c7;padding:4px 5px;font-size:13px;">No laundry records received in the last 3 days.</td></tr>';
+  const html = `
+    <p>Segue o resumo das diferenças de lavandaria dos últimos 3 dias.</p>
+    <table style="border-collapse:collapse;width:100%;max-width:980px;table-layout:fixed;">
+      <thead>
+        <tr>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:13px;line-height:1.15;white-space:nowrap;width:86px;">Sent Date</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:13px;line-height:1.15;width:70px;">Property</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:13px;line-height:1.15;width:170px;">Sent</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:13px;line-height:1.15;white-space:nowrap;width:86px;">Received Date</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:13px;line-height:1.15;width:170px;">Received</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:13px;line-height:1.15;width:180px;">Difference</th>
+          <th style="border:1px solid #d8d0c7;padding:4px 5px;text-align:left;font-size:13px;line-height:1.15;">Notes</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+  const text = [
+    "Segue o resumo das diferenças de lavandaria dos últimos 3 dias.",
+    "",
+    ...(
+      records.length
+        ? records.flatMap((record) => {
+          const diff = buildLaundryDifference(record, settings);
+          return [
+            `${record.date} | ${record.property} | ${record.receivedDate || "-"}`,
+            `Sent: ${formatLaundryItemsSummary(record.sentItems, settings.itemTypes).replace(/\n/g, " ; ")}`,
+            `Received: ${formatLaundryItemsSummary(record.receivedItems, settings.itemTypes).replace(/\n/g, " ; ")}`,
+            `Difference: ${diff.lines.join(" ; ")}`,
+            `Notes: ${record.notes || "-"}`,
+            "",
+          ];
+        })
+        : ["No laundry records received in the last 3 days."]
+    ),
+  ].join("\n");
+  return { html, text };
 }
 
 function buildLaundryManagementEmailContent(records, settings, currentDate) {
@@ -404,7 +487,7 @@ async function processSupplierEmail({ settings, records, now, force, testRecipie
     return { ok: true, status: "skipped", reason: "incomplete_counts", incompleteProperties, sentDate, mode: "supplier" };
   }
   const generalEmailConfig = await loadGeneralEmailConfig();
-  const content = buildLaundrySupplierEmailContent(todayRecords, settings, sentDate);
+  const content = buildLaundrySupplierEmailContent(todayRecords, records, settings, sentDate);
   const sent = await sendConfiguredEmail(generalEmailConfig, {
     to: recipients,
     subject: content.subject,
