@@ -2735,6 +2735,7 @@ async function setSettingsSection(section) {
   if (section === "laundry" && !canSettings("laundry")) return;
   if (section === "admin-users" && !canSettings("admin-users")) return;
   setMobileNavOpen(false);
+  if (section === "guests") state.guestsSettingsLoaded = false;
   state.settingsSection = section === "admin-users"
     ? "admin-users"
     : section === "guests"
@@ -11643,6 +11644,9 @@ function renderGuestsSettingsTabs() {
 function setGuestsSettingsTab(tab) {
   state.guestsSettingsTab = tab === "sef" || tab === "api" ? tab : "config";
   renderGuestsSettingsTabs();
+  if (state.guestsSettingsTab === "api" && canSettings("guests")) {
+    loadGuestsSettings({ silent: true }).catch(() => {});
+  }
 }
 
 function renderGuestsApiCallsTable() {
@@ -12028,12 +12032,14 @@ async function sendPendingGuests() {
     const result = await api("/api/guests-send", { method: "POST" });
     state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
     state.guestsSettings = normalizeGuestsSettingsClient(result?.settings || state.guestsSettings);
+    await loadGuestsSettings({ silent: true });
     renderGuests();
     renderLayout();
     setGuestsStatus(result?.message || "Guests sent successfully.");
     showToast(result?.message || `Sent ${Number(result?.sent || 0)} guest record${Number(result?.sent || 0) === 1 ? "" : "s"}.`, "success");
   } catch (e) {
     await loadGuestsData({ silent: true });
+    await loadGuestsSettings({ silent: true });
     renderLayout();
     setGuestsStatus(`Send failed: ${e.message}`);
     showToast(`Guest send failed: ${e.message}`, "error");
