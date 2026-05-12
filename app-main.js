@@ -766,6 +766,8 @@ const state = {
   guestsDraft: null,
   guestsEditDraft: null,
   guestsEditingId: "",
+  guestsQuickEditId: "",
+  guestsQuickEditField: "",
   guestsBlacklistDraft: null,
   guestsBlacklistEditDraft: null,
   guestsBlacklistEditingId: "",
@@ -1598,11 +1600,13 @@ function bindEvents() {
   els.guestsRows?.addEventListener("click", onGuestsAction);
   els.guestsRows?.addEventListener("input", onGuestsDraftInput);
   els.guestsRows?.addEventListener("change", onGuestsDraftInput);
+  els.guestsRows?.addEventListener("click", onGuestsQuickEditClick);
   els.guestsRows?.addEventListener("change", onGuestsQuickEditChange);
   els.guestsRows?.addEventListener("keydown", onGuestsKeydown);
   els.guestsMobileCards?.addEventListener("click", onGuestsAction);
   els.guestsMobileCards?.addEventListener("input", onGuestsDraftInput);
   els.guestsMobileCards?.addEventListener("change", onGuestsDraftInput);
+  els.guestsMobileCards?.addEventListener("click", onGuestsQuickEditClick);
   els.guestsMobileCards?.addEventListener("change", onGuestsQuickEditChange);
   els.guestsMobileCards?.addEventListener("keydown", onGuestsKeydown);
   els.guestsBlacklistRows?.addEventListener("click", onGuestsBlacklistAction);
@@ -11625,10 +11629,12 @@ function guestRowMetaClient(record) {
     .find((match) => match.reason);
   const birthdayAlert = guestBirthdayAlertClient(record);
   const age = guestAgeClient(record.birthDate);
+  const missingCheckout = !clean(record?.checkOut);
   return {
     blacklistMatch,
     birthdayAlert,
     age,
+    missingCheckout,
     isBlacklisted: !!blacklistMatch,
   };
 }
@@ -11653,6 +11659,7 @@ function guestAlertsMarkup(meta) {
   const alerts = [];
   if (meta?.blacklistMatch) alerts.push('<span class="guest-alert-chip guest-alert-blacklist" title="Blacklist"><span class="guest-alert-icon">\u26d4</span><span class="guest-alert-text">Blacklist</span></span>');
   if (meta?.birthdayAlert) alerts.push(`<span class="guest-alert-chip guest-alert-birthday" title="${escape(meta.birthdayAlert)}"><span class="guest-alert-icon">\ud83c\udf82</span><span class="guest-alert-text">${escape(meta.birthdayAlert)}</span></span>`);
+  if (meta?.missingCheckout) alerts.push('<span class="guest-alert-chip guest-alert-missing-co" title="Missing check-out date"><span class="guest-alert-text">missing CO date</span></span>');
   return alerts.length ? `<div class="guest-alerts">${alerts.join("")}</div>` : "";
 }
 
@@ -11756,6 +11763,7 @@ async function saveGuestRecord(mode = "new", id = "", options = {}) {
     state.guestsSettingsLoaded = true;
     state.guestsEditingId = "";
     state.guestsEditDraft = null;
+    clearGuestsQuickEdit();
     state.guestsDraft = emptyGuestDraft();
     renderGuestsCountryOptions();
     renderGuests();
@@ -11782,6 +11790,7 @@ async function deleteGuestRecord(id) {
     state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
     state.guestsEditingId = "";
     state.guestsEditDraft = null;
+    clearGuestsQuickEdit();
     renderGuests();
     renderLayout();
     setGuestsStatus("Guest record deleted.");
@@ -11877,10 +11886,49 @@ function guestQuickFieldMarkup(record, field) {
   if (guestIsLocked(record)) {
     return escape(record[field] || "-");
   }
-  if (field === "ha") {
-    return `<select data-guests-quick-field="ha" data-id="${escape(record.id)}"><option value="H" ${normalizeGuestHAClient(record.ha) === "H" ? "selected" : ""}>H</option><option value="A" ${normalizeGuestHAClient(record.ha) === "A" ? "selected" : ""}>A</option></select>`;
+  const isEditing = clean(state.guestsQuickEditId) === clean(record.id) && clean(state.guestsQuickEditField) === clean(field);
+  if (!isEditing) {
+    const display = field === "ha" ? normalizeGuestHAClient(record.ha) : clean(record[field]) || "-";
+    return `<button type="button" class="ghost guest-quick-trigger" data-guests-quick-start="${escape(field)}" data-id="${escape(record.id)}">${escape(display)}</button>`;
   }
-  return `<input data-guests-quick-field="${escape(field)}" data-id="${escape(record.id)}" type="date" value="${escape(record[field])}" />`;
+  if (field === "ha") {
+    return `<select data-guests-quick-input="ha" data-id="${escape(record.id)}"><option value="H" ${normalizeGuestHAClient(record.ha) === "H" ? "selected" : ""}>H</option><option value="A" ${normalizeGuestHAClient(record.ha) === "A" ? "selected" : ""}>A</option></select>`;
+  }
+  return `<input data-guests-quick-input="${escape(field)}" data-id="${escape(record.id)}" type="date" value="${escape(record[field])}" />`;
+}
+
+function startGuestsQuickEdit(id, field) {
+  const row = state.guestsRows.find((item) => item.id === id);
+  if (!row || guestIsLocked(row)) return;
+  state.guestsQuickEditId = id;
+  state.guestsQuickEditField = field;
+  renderGuests();
+  requestAnimationFrame(() => {
+    const selector = `[data-guests-quick-input="${CSS.escape(field)}"][data-id="${CSS.escape(id)}"]`;
+    const input = document.querySelector(selector);
+    if (!(input instanceof HTMLElement)) return;
+    input.focus();
+    if (typeof input.select === "function" && input.tagName === "INPUT") input.select();
+    if (input.tagName === "SELECT" && typeof input.showPicker === "function") {
+      try {
+        input.showPicker();
+      } catch {}
+    }
+  });
+}
+
+function clearGuestsQuickEdit() {
+  state.guestsQuickEditId = "";
+  state.guestsQuickEditField = "";
+}
+
+function onGuestsQuickEditClick(event) {
+  const trigger = event.target.closest("[data-guests-quick-start]");
+  if (!trigger) return;
+  const field = clean(trigger.dataset.guestsQuickStart);
+  const id = clean(trigger.dataset.id);
+  if (!field || !id) return;
+  startGuestsQuickEdit(id, field);
 }
 
 async function saveGuestQuickEdit(id, field, rawValue) {
@@ -11920,16 +11968,20 @@ async function saveGuestQuickEdit(id, field, rawValue) {
 }
 
 async function onGuestsQuickEditChange(event) {
-  const field = clean(event.target?.dataset?.guestsQuickField);
+  const field = clean(event.target?.dataset?.guestsQuickInput);
   const id = clean(event.target?.dataset?.id);
   if (!field || !id) return;
   try {
     const value = await saveGuestQuickEdit(id, field, event.target.value);
+    clearGuestsQuickEdit();
+    renderGuests();
     setGuestsStatus("Guest record saved.");
     event.target.value = value;
   } catch (e) {
     const current = state.guestsRows.find((item) => item.id === id);
     event.target.value = field === "ha" ? normalizeGuestHAClient(current?.[field]) : clean(current?.[field]);
+    clearGuestsQuickEdit();
+    renderGuests();
     setGuestsStatus(`Save failed: ${e.message}`);
     showToast(`Guest save failed: ${e.message}`, "error");
   }
@@ -11962,6 +12014,7 @@ async function onGuestsAction(event) {
       return;
     }
     state.guestsEditingId = id;
+    clearGuestsQuickEdit();
     state.guestsEditDraft = { ...row };
     renderGuests();
     return;
@@ -11973,6 +12026,7 @@ async function onGuestsAction(event) {
   if (action === "cancel-edit") {
     state.guestsEditingId = "";
     state.guestsEditDraft = null;
+    clearGuestsQuickEdit();
     renderGuests();
     return;
   }

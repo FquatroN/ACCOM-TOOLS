@@ -2525,11 +2525,20 @@ select:disabled {
   font-size: 0.76rem;
 }
 
-.guests-table [data-guests-quick-field],
-.guests-mobile-card [data-guests-quick-field] {
+.guests-table [data-guests-quick-input],
+.guests-mobile-card [data-guests-quick-input] {
   width: 100%;
   min-width: 0;
   font-size: 0.76rem;
+}
+
+.guest-quick-trigger {
+  min-width: 0;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.18rem 0.3rem;
+  font-size: 0.76rem;
+  text-align: left;
 }
 
 .guests-blacklist-table.inline-editor input,
@@ -2566,6 +2575,10 @@ select:disabled {
 
 .guest-alert-text {
   display: inline-block;
+}
+
+.guest-alert-missing-co {
+  color: var(--danger);
 }
 
 .guest-status-stack {
