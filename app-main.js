@@ -11325,6 +11325,7 @@ function normalizeGuestApiCallClient(input = {}) {
     requestDetails: source.requestDetails ?? source.request_details ?? {},
     requestBody: String(source.requestBody ?? source.request_body ?? ""),
     responseBody: String(source.responseBody ?? source.response_body ?? ""),
+    responseHeaders: source.responseHeaders ?? source.response_headers ?? {},
   };
 }
 
@@ -11671,7 +11672,10 @@ function renderGuestsApiCallsTable() {
       const detailsText = Object.keys(details).length ? JSON.stringify(details, null, 2) : "";
       return [detailsText, clean(item.requestBody)].filter(Boolean).join("\n\n");
     })();
-    const responseText = clean(item.responseBody) || clean(item.errorMessage) || "-";
+    const responseHeadersText = item.responseHeaders && typeof item.responseHeaders === "object" && Object.keys(item.responseHeaders).length
+      ? JSON.stringify(item.responseHeaders, null, 2)
+      : "";
+    const responseText = [responseHeadersText, clean(item.responseBody) || clean(item.errorMessage) || "-"].filter(Boolean).join("\n\n");
     return `<tr>
       <td>${escape(formatDateTimeShort(item.createdAt) || "-")}</td>
       <td>${escape(item.success ? "OK" : "Error")}</td>

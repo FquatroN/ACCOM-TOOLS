@@ -39,8 +39,22 @@ function isMissingGuestApiCallsTableError(error) {
   );
 }
 
+function isMissingGuestApiCallsColumnError(error, columnName) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes(columnName.toLowerCase()) && message.includes("guest_api_calls") && message.includes("schema cache");
+}
+
 function maskSefSoap(soap) {
   return String(soap || "").replace(/(<ChaveAcesso>)([\s\S]*?)(<\/ChaveAcesso>)/i, "$1***$3");
+}
+
+function normalizeResponseHeaders(headers) {
+  const source = headers && typeof headers === "object" ? headers : {};
+  return Object.fromEntries(
+    Object.entries(source)
+      .map(([key, value]) => [cleanText(key).toLowerCase(), Array.isArray(value) ? value.join(", ") : cleanText(value)])
+      .filter(([key, value]) => key && value)
+  );
 }
 
 async function saveGuestApiCallLog(entry) {
@@ -57,6 +71,7 @@ async function saveGuestApiCallLog(entry) {
     request_details: entry?.requestDetails && typeof entry.requestDetails === "object" ? entry.requestDetails : {},
     request_body: String(entry?.requestBody || "").slice(0, 200000),
     response_body: String(entry?.responseBody || "").slice(0, 200000),
+    response_headers: normalizeResponseHeaders(entry?.responseHeaders),
   };
   try {
     await restQuery("guest_api_calls", {
@@ -64,6 +79,15 @@ async function saveGuestApiCallLog(entry) {
       body: [payload],
     });
   } catch (error) {
+    if (isMissingGuestApiCallsColumnError(error, "response_headers")) {
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.response_headers;
+      await restQuery("guest_api_calls", {
+        method: "POST",
+        body: [fallbackPayload],
+      });
+      return;
+    }
     if (!isMissingGuestApiCallsTableError(error)) throw error;
   }
 }
@@ -257,12 +281,21 @@ async function postToSef(soap, settings) {
           response.on("data", (chunk) => {
             body += chunk;
           });
-          response.on("end", () => resolve({ statusCode: response.statusCode || 0, body }));
+          response.on("end", () => resolve({
+            statusCode: response.statusCode || 0,
+            body,
+            headers: normalizeResponseHeaders(response.headers),
+          }));
         });
         request.on("error", reject);
         request.write(soap);
         request.end();
       });
+      if ([301, 302, 307, 308].includes(result.statusCode)) {
+        const location = cleanText(result.headers?.location);
+        failures.push(`${endpoint}: HTTP ${result.statusCode}${location ? ` redirect to ${location}` : " redirect with no location header"}`);
+        continue;
+      }
       return { ...result, endpoint };
     } catch (error) {
       failures.push(`${endpoint}: ${cleanText(error?.cause?.message || error?.message || "fetch failed")}`);
@@ -328,12 +361,14 @@ module.exports = async function handler(req, res) {
     let body = "";
     let statusCode = 0;
     let endpoint = "";
+    let responseHeaders = {};
     let result;
     try {
       const postResult = await postToSef(soap, current.settings);
       body = String(postResult?.body || "");
       statusCode = Number.parseInt(postResult?.statusCode, 10) || 0;
       endpoint = cleanText(postResult?.endpoint);
+      responseHeaders = normalizeResponseHeaders(postResult?.headers);
       const resultMatch = body.match(/<(?:[\w-]+:)?EntregaBoletinsAlojamentoResult(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w-]+:)?EntregaBoletinsAlojamentoResult>/i);
       const resultText = resultMatch ? decodeXmlEntities(resultMatch[1]) : body;
       result = parseSefResult(resultText);
@@ -350,6 +385,7 @@ module.exports = async function handler(req, res) {
         requestDetails,
         requestBody: maskedSoap,
         responseBody: body,
+        responseHeaders,
       });
     } catch (error) {
       await saveGuestApiCallLog({
@@ -365,6 +401,7 @@ module.exports = async function handler(req, res) {
         requestDetails,
         requestBody: maskedSoap,
         responseBody: body,
+        responseHeaders,
       });
       throw error;
     }

@@ -54,6 +54,7 @@ function mapGuestApiCallRow(row) {
     requestDetails: row?.request_details && typeof row.request_details === "object" ? row.request_details : {},
     requestBody: String(row?.request_body || ""),
     responseBody: String(row?.response_body || ""),
+    responseHeaders: row?.response_headers && typeof row.response_headers === "object" ? row.response_headers : {},
   };
 }
 
