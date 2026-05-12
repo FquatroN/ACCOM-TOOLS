@@ -142,7 +142,11 @@ module.exports = async function handler(req, res) {
     if (req.method === "GET") {
       const user = await verifyUser(req);
       const access = await loadAccessForUser(user.id);
-      if (!hasFeature(access, "settings", "communications") && !hasFeature(access, "app", "communications")) {
+      if (
+        !hasFeature(access, "settings", "general")
+        && !hasFeature(access, "settings", "communications")
+        && !hasFeature(access, "app", "communications")
+      ) {
         const err = new Error("You do not have permission for this feature.");
         err.statusCode = 403;
         throw err;
@@ -156,7 +160,13 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === "PUT") {
-      await requireFeature(req, "settings", "communications");
+      const user = await verifyUser(req);
+      const access = await loadAccessForUser(user.id);
+      if (!hasFeature(access, "settings", "general") && !hasFeature(access, "settings", "communications")) {
+        const err = new Error("You do not have permission for this feature.");
+        err.statusCode = 403;
+        throw err;
+      }
       const body = await parseBody(req);
       const safe = sanitizeSettings(body?.settings);
       const existing = await restQuery(

@@ -18,7 +18,7 @@ const DEFAULT_REVIEW_SOURCES = [
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
 const APP_FEATURE_OPTIONS = ["communications", "cash", "lost-found", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry"];
-const SETTINGS_FEATURE_OPTIONS = ["communications", "cash", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "cash", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -450,6 +450,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Hours Register", kind: "app", key: "hours" },
   { label: "App: Bakery", kind: "app", key: "bakery" },
   { label: "App: Laundry Control", kind: "app", key: "laundry" },
+  { label: "Settings: General", kind: "settings", key: "general" },
   { label: "Settings: Communications", kind: "settings", key: "communications" },
   { label: "Settings: Cash Control", kind: "settings", key: "cash" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
@@ -1400,15 +1401,15 @@ async function init() {
   else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
-  if (!canSettings("communications") && canSettings("cash")) state.settingsSection = "cash";
-  else if (!canSettings("communications") && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
-  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
-  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
-  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
-  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
-  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
-  else if (!canSettings("communications") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
-  else if (!canSettings("communications") && !canSettings("cash") && canSettings("admin-users")) state.settingsSection = "admin-users";
+  if (!canAccessGeneralSettings() && canSettings("cash")) state.settingsSection = "cash";
+  else if (!canAccessGeneralSettings() && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
+  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
+  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
+  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
+  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
+  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
+  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
+  else if (!canAccessGeneralSettings() && !canSettings("cash") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
   renderCategoryFilterOptions();
@@ -1899,6 +1900,10 @@ function canSettings(feature) {
   return state.access.settingsFeatures.includes(clean(feature).toLowerCase());
 }
 
+function canAccessGeneralSettings() {
+  return canSettings("general") || canSettings("communications");
+}
+
 function isMobileNavLayout() {
   return typeof window !== "undefined" && window.innerWidth <= 768;
 }
@@ -1996,7 +2001,7 @@ async function setView(view) {
   setMobileNavOpen(false);
   state.currentView = view;
   if (view === "settings") {
-    if (canSettings("communications")) state.settingsSection = "general";
+    if (canAccessGeneralSettings()) state.settingsSection = "general";
     else if (canSettings("cash")) state.settingsSection = "cash";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
     else if (canSettings("groups")) state.settingsSection = "groups";
@@ -2482,7 +2487,7 @@ function renderLayout() {
   els.viewBakery.hidden = !bakery;
   els.viewLaundry.hidden = !laundry;
   els.viewSettings.hidden = !settingsMode;
-  els.settingsMenuGeneral.hidden = !canSettings("communications");
+  els.settingsMenuGeneral.hidden = !canAccessGeneralSettings();
   els.settingsMenuCommunications.hidden = !canSettings("communications");
   if (els.settingsMenuCash) els.settingsMenuCash.hidden = !canSettings("cash");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
@@ -2509,7 +2514,7 @@ function renderLayout() {
 }
 
 async function setSettingsSection(section) {
-  if (section === "general" && !canSettings("communications")) return;
+  if (section === "general" && !canAccessGeneralSettings()) return;
   if (section === "communications" && !canSettings("communications")) return;
   if (section === "cash" && !canSettings("cash")) return;
   if (section === "reviews" && !canSettings("reviews")) return;
@@ -2566,7 +2571,7 @@ async function ensureAdminUsersData() {
 }
 
 function renderSettingsSection() {
-  const isGeneral = state.settingsSection === "general" && canSettings("communications");
+  const isGeneral = state.settingsSection === "general" && canAccessGeneralSettings();
   const isComm = state.settingsSection === "communications" && canSettings("communications");
   const isCash = state.settingsSection === "cash" && canSettings("cash");
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
@@ -2849,6 +2854,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-bakery="${id}"]`)?.checked) appFeatures.push("bakery");
   if (els.profilesBody.querySelector(`[data-profile-app-laundry="${id}"]`)?.checked) appFeatures.push("laundry");
   const settingsFeatures = [];
+  if (els.profilesBody.querySelector(`[data-profile-settings-general="${id}"]`)?.checked) settingsFeatures.push("general");
   if (els.profilesBody.querySelector(`[data-profile-settings-communications="${id}"]`)?.checked) settingsFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-settings-cash="${id}"]`)?.checked) settingsFeatures.push("cash");
   if (els.profilesBody.querySelector(`[data-profile-settings-reviews="${id}"]`)?.checked) settingsFeatures.push("reviews");
