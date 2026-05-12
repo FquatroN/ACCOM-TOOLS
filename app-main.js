@@ -11257,6 +11257,7 @@ function normalizeGuestsSettingsClient(input = {}) {
 }
 
 function emptyGuestDraft() {
+  const today = lisbonTodayIsoClient();
   return {
     ha: "H",
     name: "",
@@ -11271,7 +11272,7 @@ function emptyGuestDraft() {
     residenceCountry: "",
     residenceCountryCode: "",
     residenceCity: "",
-    checkIn: "",
+    checkIn: today,
     checkOut: "",
     sentStatus: "pending",
     sentAt: "",
