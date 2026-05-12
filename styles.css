@@ -2463,7 +2463,7 @@ select:disabled {
 
 .guests-blacklist-table th,
 .guests-blacklist-table td {
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   padding: 0.28rem 0.35rem;
   vertical-align: top;
 }
@@ -2530,6 +2530,15 @@ select:disabled {
   width: 100%;
   min-width: 0;
   font-size: 0.76rem;
+}
+
+.guests-blacklist-table.inline-editor input,
+.guests-blacklist-table.inline-editor select,
+.guests-blacklist-table.inline-editor textarea,
+.guests-blacklist-table .inline-editor input,
+.guests-blacklist-table .inline-editor select,
+.guests-blacklist-table .inline-editor textarea {
+  font-size: 0.72rem;
 }
 
 .guest-alerts-cell {
