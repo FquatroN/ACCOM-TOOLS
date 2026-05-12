@@ -1,11 +1,13 @@
 const { requireFeature, restQuery, sendError } = require("./_supabase");
 const {
+  DEFAULT_GUESTS_INTEGRATION_MAPPING,
   DEFAULT_GUESTS_SETTINGS,
   GUESTS_SETTING_KEY,
   SEF_ENDPOINT,
   buildBalXml,
   buildSoapEnvelope,
   lisbonTodayIso,
+  resolveCountry,
   sanitizeGuestRecord,
   sanitizeGuestsPayload,
 } = require("./_guests");
@@ -122,9 +124,39 @@ function validateSendableGuest(record) {
   if (!record.nationalityCode) return "Nationality must match a valid ICAO country.";
   if (!record.issuerCountryCode) return "Issuer Country must match a valid ICAO country.";
   if (!record.residenceCountryCode) return "Residence Country must match a valid ICAO country.";
-  if (!cleanText(record.birthPlace)) return "Birth Place is required for SEF send.";
   if (!cleanText(record.residenceCity)) return "Residence City is required for SEF send.";
   return "";
+}
+
+function getMappedGuestValue(record, settings, key) {
+  const sourceKey = cleanText(settings?.integrationMapping?.[key]) || DEFAULT_GUESTS_INTEGRATION_MAPPING[key] || "";
+  return sourceKey ? record?.[sourceKey] : "";
+}
+
+function buildGuestForSend(record, settings) {
+  const nationality = resolveCountry(getMappedGuestValue(record, settings, "nationality"));
+  const issuerCountry = resolveCountry(getMappedGuestValue(record, settings, "issuerCountry"));
+  const residenceCountrySource = getMappedGuestValue(record, settings, "residenceCountry");
+  const residenceCountry = resolveCountry(residenceCountrySource);
+  const residenceCitySource = getMappedGuestValue(record, settings, "residenceCity");
+  const residenceCityCountry = resolveCountry(residenceCitySource);
+  return {
+    ...record,
+    name: cleanText(getMappedGuestValue(record, settings, "name")) || record.name,
+    nationality: nationality.input,
+    nationalityCode: nationality.code,
+    birthDate: cleanText(getMappedGuestValue(record, settings, "birthDate")) || record.birthDate,
+    birthPlace: "",
+    docNumber: cleanText(getMappedGuestValue(record, settings, "docNumber")) || record.docNumber,
+    docType: cleanText(getMappedGuestValue(record, settings, "docType")) || record.docType,
+    issuerCountry: issuerCountry.input,
+    issuerCountryCode: issuerCountry.code,
+    residenceCountry: residenceCountry.input,
+    residenceCountryCode: residenceCountry.code,
+    residenceCity: residenceCityCountry.name || cleanText(residenceCitySource),
+    checkIn: cleanText(getMappedGuestValue(record, settings, "checkIn")) || record.checkIn,
+    checkOut: cleanText(getMappedGuestValue(record, settings, "checkOut")) || record.checkOut,
+  };
 }
 
 function parseSefResult(resultText) {
@@ -154,7 +186,9 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const validationErrors = sendable
+    const sendableMapped = sendable.map((row) => buildGuestForSend(row, current.settings));
+
+    const validationErrors = sendableMapped
       .map((row) => ({ row, error: validateSendableGuest(row) }))
       .filter((item) => item.error);
     if (validationErrors.length) {
@@ -164,7 +198,7 @@ module.exports = async function handler(req, res) {
     }
 
     const nextFileNumber = Math.max(1, Number(current.payload.lastFileNumber || 0) + 1);
-    const xml = buildBalXml(sendable, nextFileNumber);
+    const xml = buildBalXml(sendableMapped, nextFileNumber);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
     const soap = buildSoapEnvelope(base64Payload);
     const response = await fetch(SEF_ENDPOINT, {
@@ -229,7 +263,7 @@ module.exports = async function handler(req, res) {
       res.status(502).json({ error: result.message, rows: savedRows, settings: savedSettings, sent: 0 });
       return;
     }
-    res.status(200).json({ rows: savedRows, settings: savedSettings, sent: sendable.length, message: "Guests sent successfully." });
+    res.status(200).json({ rows: savedRows, settings: savedSettings, sent: sendableMapped.length, message: "Guests sent successfully." });
   } catch (error) {
     sendError(res, error);
   }

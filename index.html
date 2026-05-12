@@ -250,12 +250,9 @@
                       <th>Name</th>
                       <th>Nationality</th>
                       <th>Birth Date</th>
-                      <th>Birth Place</th>
                       <th>Doc. Number</th>
                       <th>Doc Type</th>
                       <th>Issuer Country</th>
-                      <th>Residence Country</th>
-                      <th>Residence City</th>
                       <th>Check-in</th>
                       <th>Check-out</th>
                       <th>Age</th>
@@ -2045,6 +2042,18 @@
                       <small class="field-hint">After this time, the menu shows a red dot if there are unsent guests with check-in before today.</small>
                     </label>
                   </div>
+                  <div class="table-wrap">
+                    <table class="settings-table">
+                      <thead>
+                        <tr>
+                          <th>Integration field</th>
+                          <th>Screen field</th>
+                        </tr>
+                      </thead>
+                      <tbody id="guests-settings-mapping-body"></tbody>
+                    </table>
+                  </div>
+                  <small class="field-hint">Country-based mappings use the selected screen field to derive the ICAO code or designa&ccedil;&atilde;o automatically during the API send.</small>
                   <p id="guests-settings-status" class="auth-status"></p>
                 </section>
               </div>

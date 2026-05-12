@@ -438,8 +438,46 @@ const DEFAULT_HOURS_SETTINGS = {
   people: ["Fernanda Pereira"],
 };
 
+const GUESTS_SCREEN_FIELD_OPTIONS = [
+  { key: "name", label: "Name" },
+  { key: "nationality", label: "Nationality" },
+  { key: "birthDate", label: "Birth Date" },
+  { key: "docNumber", label: "Doc. Number" },
+  { key: "docType", label: "Doc Type" },
+  { key: "issuerCountry", label: "Issuer Country" },
+  { key: "checkIn", label: "Check-in" },
+  { key: "checkOut", label: "Check-out" },
+];
+
+const GUESTS_INTEGRATION_MAPPING_ROWS = [
+  { key: "name", label: "Name" },
+  { key: "nationality", label: "Nationality ICAO" },
+  { key: "birthDate", label: "Birth Day" },
+  { key: "docNumber", label: "Doc Number" },
+  { key: "docType", label: "Doc Type" },
+  { key: "issuerCountry", label: "Issuer Country ICAO" },
+  { key: "residenceCountry", label: "Residence Country" },
+  { key: "residenceCity", label: "Residence City" },
+  { key: "checkIn", label: "Check-in date" },
+  { key: "checkOut", label: "Check-out date" },
+];
+
+const DEFAULT_GUESTS_INTEGRATION_MAPPING = {
+  name: "name",
+  nationality: "nationality",
+  birthDate: "birthDate",
+  docNumber: "docNumber",
+  docType: "docType",
+  issuerCountry: "issuerCountry",
+  residenceCountry: "issuerCountry",
+  residenceCity: "issuerCountry",
+  checkIn: "checkIn",
+  checkOut: "checkOut",
+};
+
 const DEFAULT_GUESTS_SETTINGS = {
   sendTime: "18:00",
+  integrationMapping: { ...DEFAULT_GUESTS_INTEGRATION_MAPPING },
 };
 
 const PROFILE_MATRIX_ROWS = [
@@ -1031,6 +1069,7 @@ const els = {
   guestsBlacklistStatus: document.getElementById("guests-blacklist-status"),
   guestsSaveSettings: document.getElementById("guests-save-settings"),
   guestsSettingsSendTime: document.getElementById("guests-settings-send-time"),
+  guestsSettingsMappingBody: document.getElementById("guests-settings-mapping-body"),
   guestsSettingsStatus: document.getElementById("guests-settings-status"),
   viewGroups: document.getElementById("view-groups"),
   groupsNew: document.getElementById("groups-new"),
@@ -1573,6 +1612,7 @@ function bindEvents() {
   els.guestsSendPending?.addEventListener("click", sendPendingGuests);
   els.guestsSaveSettings?.addEventListener("click", saveGuestsSettings);
   els.guestsSettingsSendTime?.addEventListener("input", onGuestsSettingsInput);
+  els.guestsSettingsMappingBody?.addEventListener("change", onGuestsSettingsInput);
   els.cashRows?.addEventListener("click", onCashTableAction);
   els.cashRows?.addEventListener("input", onCashTableInput);
   els.cashMobileCards?.addEventListener("click", onCashTableAction);
@@ -11198,8 +11238,21 @@ function shouldShowCashAlert() {
 
 function normalizeGuestsSettingsClient(input = {}) {
   const source = input && typeof input === "object" ? input : {};
+  const mappingSource = source.integrationMapping && typeof source.integrationMapping === "object" ? source.integrationMapping : {};
   return {
     sendTime: /^\d{2}:\d{2}$/.test(clean(source.sendTime ?? source.send_time)) ? clean(source.sendTime ?? source.send_time) : DEFAULT_GUESTS_SETTINGS.sendTime,
+    integrationMapping: {
+      name: clean(mappingSource.name) || DEFAULT_GUESTS_INTEGRATION_MAPPING.name,
+      nationality: clean(mappingSource.nationality) || DEFAULT_GUESTS_INTEGRATION_MAPPING.nationality,
+      birthDate: clean(mappingSource.birthDate ?? mappingSource.birth_date) || DEFAULT_GUESTS_INTEGRATION_MAPPING.birthDate,
+      docNumber: clean(mappingSource.docNumber ?? mappingSource.doc_number) || DEFAULT_GUESTS_INTEGRATION_MAPPING.docNumber,
+      docType: clean(mappingSource.docType ?? mappingSource.doc_type) || DEFAULT_GUESTS_INTEGRATION_MAPPING.docType,
+      issuerCountry: clean(mappingSource.issuerCountry ?? mappingSource.issuer_country) || DEFAULT_GUESTS_INTEGRATION_MAPPING.issuerCountry,
+      residenceCountry: clean(mappingSource.residenceCountry ?? mappingSource.residence_country) || DEFAULT_GUESTS_INTEGRATION_MAPPING.residenceCountry,
+      residenceCity: clean(mappingSource.residenceCity ?? mappingSource.residence_city) || DEFAULT_GUESTS_INTEGRATION_MAPPING.residenceCity,
+      checkIn: clean(mappingSource.checkIn ?? mappingSource.check_in) || DEFAULT_GUESTS_INTEGRATION_MAPPING.checkIn,
+      checkOut: clean(mappingSource.checkOut ?? mappingSource.check_out) || DEFAULT_GUESTS_INTEGRATION_MAPPING.checkOut,
+    },
   };
 }
 
@@ -11408,7 +11461,15 @@ async function loadGuestsData({ silent = false } = {}) {
 }
 
 function onGuestsSettingsInput() {
-  state.guestsSettings = normalizeGuestsSettingsClient({ sendTime: els.guestsSettingsSendTime?.value });
+  const integrationMapping = {};
+  GUESTS_INTEGRATION_MAPPING_ROWS.forEach((row) => {
+    const select = els.guestsSettingsMappingBody?.querySelector(`[data-guests-mapping-key="${row.key}"]`);
+    integrationMapping[row.key] = clean(select?.value) || DEFAULT_GUESTS_INTEGRATION_MAPPING[row.key];
+  });
+  state.guestsSettings = normalizeGuestsSettingsClient({
+    sendTime: els.guestsSettingsSendTime?.value,
+    integrationMapping,
+  });
 }
 
 async function saveGuestsSettings() {
@@ -11431,6 +11492,13 @@ async function saveGuestsSettings() {
 
 function renderGuestsSettings() {
   if (els.guestsSettingsSendTime) els.guestsSettingsSendTime.value = clean(state.guestsSettings?.sendTime) || DEFAULT_GUESTS_SETTINGS.sendTime;
+  if (els.guestsSettingsMappingBody) {
+    els.guestsSettingsMappingBody.innerHTML = GUESTS_INTEGRATION_MAPPING_ROWS.map((row) => {
+      const currentValue = clean(state.guestsSettings?.integrationMapping?.[row.key]) || DEFAULT_GUESTS_INTEGRATION_MAPPING[row.key];
+      const options = GUESTS_SCREEN_FIELD_OPTIONS.map((option) => `<option value="${escape(option.key)}"${option.key === currentValue ? " selected" : ""}>${escape(option.label)}</option>`).join("");
+      return `<tr><td>${escape(row.label)}</td><td><select data-guests-mapping-key="${escape(row.key)}">${options}</select></td></tr>`;
+    }).join("");
+  }
 }
 
 function renderGuestsCountryOptions() {
@@ -11867,12 +11935,9 @@ function buildGuestsInlineRow() {
     <td><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></td>
     <td><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
     <td><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></td>
-    <td><input data-field="birthPlace" data-scope="new" value="${escape(draft.birthPlace)}" /></td>
     <td><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></td>
     <td><select data-field="docType" data-scope="new"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></td>
     <td><input data-field="issuerCountry" data-scope="new" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></td>
-    <td><input data-field="residenceCountry" data-scope="new" list="guests-country-list" value="${escape(draft.residenceCountry)}" /></td>
-    <td><input data-field="residenceCity" data-scope="new" value="${escape(draft.residenceCity)}" /></td>
     <td><input data-field="checkIn" data-scope="new" type="date" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="new" type="date" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate))}</td>
@@ -11889,12 +11954,9 @@ function buildGuestsReadOnlyRow(record) {
     <td>${escape(record.name)}</td>
     <td>${escape(record.nationality || record.nationalityCode || "-")}</td>
     <td>${escape(record.birthDate || "-")}</td>
-    <td>${escape(record.birthPlace || "-")}</td>
     <td>${escape(record.docNumber || "-")}</td>
     <td>${escape(record.docType || "-")}</td>
     <td>${escape(record.issuerCountry || record.issuerCountryCode || "-")}</td>
-    <td>${escape(record.residenceCountry || record.residenceCountryCode || "-")}</td>
-    <td>${escape(record.residenceCity || "-")}</td>
     <td>${escape(record.checkIn || "-")}</td>
     <td>${escape(record.checkOut || "-")}</td>
     <td>${escape(meta.age || "-")}</td>
@@ -11913,12 +11975,9 @@ function buildGuestsEditableRow(record) {
     <td><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></td>
     <td><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
     <td><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></td>
-    <td><input data-field="birthPlace" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.birthPlace)}" /></td>
     <td><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></td>
     <td><select data-field="docType" data-scope="edit" data-id="${escape(record.id)}"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></td>
     <td><input data-field="issuerCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></td>
-    <td><input data-field="residenceCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.residenceCountry)}" /></td>
-    <td><input data-field="residenceCity" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.residenceCity)}" /></td>
     <td><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate) || "-")}</td>
@@ -11937,12 +11996,9 @@ function buildGuestsInlineCard() {
       <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></label>
       <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
       <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></label>
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Birth Place</small><input data-field="birthPlace" data-scope="new" value="${escape(draft.birthPlace)}" /></label>
       <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></label>
       <label class="communication-mobile-field"><small>Doc Type</small><select data-field="docType" data-scope="new"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></label>
       <label class="communication-mobile-field"><small>Issuer Country</small><input data-field="issuerCountry" data-scope="new" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></label>
-      <label class="communication-mobile-field"><small>Residence Country</small><input data-field="residenceCountry" data-scope="new" list="guests-country-list" value="${escape(draft.residenceCountry)}" /></label>
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Residence City</small><input data-field="residenceCity" data-scope="new" value="${escape(draft.residenceCity)}" /></label>
       <label class="communication-mobile-field"><small>Check-in</small><input data-field="checkIn" data-scope="new" type="date" value="${escape(draft.checkIn)}" /></label>
       <label class="communication-mobile-field"><small>Check-out</small><input data-field="checkOut" data-scope="new" type="date" value="${escape(draft.checkOut)}" /></label>
       <div class="communication-mobile-field"><small>Age</small><div class="communication-mobile-message">${escape(guestAgeClient(draft.birthDate) || "-")}</div></div>
@@ -11969,8 +12025,6 @@ function buildGuestsReadOnlyCard(record) {
       <div class="communication-mobile-field"><small>Birth Date</small><div class="communication-mobile-message">${escape(record.birthDate || "-")}</div></div>
       <div class="communication-mobile-field"><small>Doc Type</small><div class="communication-mobile-message">${escape(record.docType || "-")}</div></div>
       <div class="communication-mobile-field"><small>Issuer</small><div class="communication-mobile-message">${escape(record.issuerCountry || "-")}</div></div>
-      <div class="communication-mobile-field"><small>Residence Country</small><div class="communication-mobile-message">${escape(record.residenceCountry || "-")}</div></div>
-      <div class="communication-mobile-field communication-mobile-field-full"><small>Residence City</small><div class="communication-mobile-message">${escape(record.residenceCity || "-")}</div></div>
       <div class="communication-mobile-field"><small>Check-in</small><div class="communication-mobile-message">${escape(record.checkIn || "-")}</div></div>
       <div class="communication-mobile-field"><small>Check-out</small><div class="communication-mobile-message">${escape(record.checkOut || "-")}</div></div>
       <div class="communication-mobile-field communication-mobile-field-full"><small>Status</small>${guestStatusMarkup(record, meta)}</div>
@@ -11990,12 +12044,9 @@ function buildGuestsEditableCard(record) {
       <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></label>
       <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
       <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></label>
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Birth Place</small><input data-field="birthPlace" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.birthPlace)}" /></label>
       <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></label>
       <label class="communication-mobile-field"><small>Doc Type</small><select data-field="docType" data-scope="edit" data-id="${escape(record.id)}"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></label>
       <label class="communication-mobile-field"><small>Issuer Country</small><input data-field="issuerCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></label>
-      <label class="communication-mobile-field"><small>Residence Country</small><input data-field="residenceCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.residenceCountry)}" /></label>
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Residence City</small><input data-field="residenceCity" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.residenceCity)}" /></label>
       <label class="communication-mobile-field"><small>Check-in</small><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></label>
       <label class="communication-mobile-field"><small>Check-out</small><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></label>
       <div class="communication-mobile-field"><small>Age</small><div class="communication-mobile-message">${escape(guestAgeClient(draft.birthDate) || "-")}</div></div>
@@ -12160,7 +12211,7 @@ function renderGuests() {
   renderGuestsCountryOptions();
   if (!canApp("guests")) {
     if (els.guestsCount) els.guestsCount.textContent = "0 records";
-    if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="15" class="empty">Your profile has no access to Guests.</td></tr>';
+    if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="12" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsMobileCards) els.guestsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
     if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsBlacklistMobileCards) els.guestsBlacklistMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
@@ -12200,7 +12251,7 @@ function renderGuests() {
   els.guestsRows.appendChild(buildGuestsInlineRow());
   if (!rows.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="15" class="empty">No guest records found.</td>';
+    tr.innerHTML = '<td colspan="12" class="empty">No guest records found.</td>';
     els.guestsRows.appendChild(tr);
     return;
   }

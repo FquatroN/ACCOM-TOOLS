@@ -3,8 +3,21 @@ const countries = require("./_guests-countries.json");
 const { cleanText, normalizeDate } = require("./_supabase");
 
 const GUESTS_SETTING_KEY = "guests";
+const DEFAULT_GUESTS_INTEGRATION_MAPPING = {
+  name: "name",
+  nationality: "nationality",
+  birthDate: "birthDate",
+  docNumber: "docNumber",
+  docType: "docType",
+  issuerCountry: "issuerCountry",
+  residenceCountry: "issuerCountry",
+  residenceCity: "issuerCountry",
+  checkIn: "checkIn",
+  checkOut: "checkOut",
+};
 const DEFAULT_GUESTS_SETTINGS = {
   sendTime: "18:00",
+  integrationMapping: { ...DEFAULT_GUESTS_INTEGRATION_MAPPING },
 };
 
 const SEF_ENDPOINT = "https://siba.sef.pt/baws/boletinsalojamento.asmx";
@@ -112,10 +125,28 @@ function resolveCountry(value) {
   };
 }
 
+function normalizeGuestMappingValue(value, fallback) {
+  const raw = cleanText(value);
+  return raw || fallback;
+}
+
 function normalizeGuestSettings(input = {}) {
   const source = input && typeof input === "object" ? input : {};
+  const mappingSource = source.integrationMapping && typeof source.integrationMapping === "object" ? source.integrationMapping : {};
   return {
     sendTime: normalizeTime(source.sendTime ?? source.send_time, DEFAULT_GUESTS_SETTINGS.sendTime),
+    integrationMapping: {
+      name: normalizeGuestMappingValue(mappingSource.name, DEFAULT_GUESTS_INTEGRATION_MAPPING.name),
+      nationality: normalizeGuestMappingValue(mappingSource.nationality, DEFAULT_GUESTS_INTEGRATION_MAPPING.nationality),
+      birthDate: normalizeGuestMappingValue(mappingSource.birthDate ?? mappingSource.birth_date, DEFAULT_GUESTS_INTEGRATION_MAPPING.birthDate),
+      docNumber: normalizeGuestMappingValue(mappingSource.docNumber ?? mappingSource.doc_number, DEFAULT_GUESTS_INTEGRATION_MAPPING.docNumber),
+      docType: normalizeGuestMappingValue(mappingSource.docType ?? mappingSource.doc_type, DEFAULT_GUESTS_INTEGRATION_MAPPING.docType),
+      issuerCountry: normalizeGuestMappingValue(mappingSource.issuerCountry ?? mappingSource.issuer_country, DEFAULT_GUESTS_INTEGRATION_MAPPING.issuerCountry),
+      residenceCountry: normalizeGuestMappingValue(mappingSource.residenceCountry ?? mappingSource.residence_country, DEFAULT_GUESTS_INTEGRATION_MAPPING.residenceCountry),
+      residenceCity: normalizeGuestMappingValue(mappingSource.residenceCity ?? mappingSource.residence_city, DEFAULT_GUESTS_INTEGRATION_MAPPING.residenceCity),
+      checkIn: normalizeGuestMappingValue(mappingSource.checkIn ?? mappingSource.check_in, DEFAULT_GUESTS_INTEGRATION_MAPPING.checkIn),
+      checkOut: normalizeGuestMappingValue(mappingSource.checkOut ?? mappingSource.check_out, DEFAULT_GUESTS_INTEGRATION_MAPPING.checkOut),
+    },
   };
 }
 
@@ -392,6 +423,7 @@ function buildSoapEnvelope(base64Payload) {
 
 module.exports = {
   COUNTRIES: countries,
+  DEFAULT_GUESTS_INTEGRATION_MAPPING,
   DEFAULT_GUESTS_SETTINGS,
   GUESTS_SETTING_KEY,
   SEF_CONFIG,

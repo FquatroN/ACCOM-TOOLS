@@ -2451,7 +2451,7 @@ select:disabled {
 
 .guests-table,
 .guests-blacklist-table {
-  min-width: 1680px;
+  min-width: 1320px;
 }
 
 .guests-table th,
@@ -2463,7 +2463,7 @@ select:disabled {
   vertical-align: top;
 }
 
-.guests-table td:nth-child(14),
+.guests-table td:nth-child(11),
 .guests-blacklist-table td:nth-child(5) {
   white-space: normal;
 }
