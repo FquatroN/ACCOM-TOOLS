@@ -1,5 +1,6 @@
 const { requireFeature, restQuery, sendError } = require("./_supabase");
-const { Agent } = require("undici");
+const http = require("node:http");
+const https = require("node:https");
 const {
   DEFAULT_GUESTS_INTEGRATION_MAPPING,
   DEFAULT_GUESTS_SETTINGS,
@@ -176,20 +177,33 @@ function parseSefResult(resultText) {
 async function postToSef(soap, settings) {
   const endpoints = Array.isArray(SEF_ENDPOINTS) && SEF_ENDPOINTS.length ? SEF_ENDPOINTS : [SEF_ENDPOINT];
   const sefConfig = resolveSefConfig(settings);
-  const dispatcher = sefConfig.caCertificate ? new Agent({ connect: { ca: sefConfig.caCertificate } }) : undefined;
   const failures = [];
   for (const endpoint of endpoints) {
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/xml; charset=utf-8",
-          SOAPAction: "http://sef.pt/EntregaBoletinsAlojamento",
-        },
-        body: soap,
-        ...(dispatcher ? { dispatcher } : {}),
+      const result = await new Promise((resolve, reject) => {
+        const url = new URL(endpoint);
+        const client = url.protocol === "https:" ? https : http;
+        const request = client.request(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "text/xml; charset=utf-8",
+            SOAPAction: "http://sef.pt/EntregaBoletinsAlojamento",
+            "Content-Length": Buffer.byteLength(soap, "utf8"),
+          },
+          ...(url.protocol === "https:" && sefConfig.caCertificate ? { ca: sefConfig.caCertificate } : {}),
+        }, (response) => {
+          let body = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk) => {
+            body += chunk;
+          });
+          response.on("end", () => resolve({ statusCode: response.statusCode || 0, body }));
+        });
+        request.on("error", reject);
+        request.write(soap);
+        request.end();
       });
-      return { response, endpoint };
+      return { ...result, endpoint };
     } catch (error) {
       failures.push(`${endpoint}: ${cleanText(error?.cause?.message || error?.message || "fetch failed")}`);
     }
@@ -240,8 +254,7 @@ module.exports = async function handler(req, res) {
     const xml = buildBalXml(sendableMapped, nextFileNumber, current.settings);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
     const soap = buildSoapEnvelope(base64Payload, current.settings);
-    const { response } = await postToSef(soap, current.settings);
-    const body = await response.text();
+    const { body } = await postToSef(soap, current.settings);
     const resultMatch = body.match(/<EntregaBoletinsAlojamentoResult>([\s\S]*?)<\/EntregaBoletinsAlojamentoResult>/i);
     const resultText = resultMatch ? resultMatch[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : body;
     const result = parseSefResult(resultText);
