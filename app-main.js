@@ -11405,7 +11405,11 @@ function normalizeGuestsBlacklistRecordClient(input = {}) {
 }
 
 function sortGuestsRowsClient(rows) {
-  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => clean(b.checkIn).localeCompare(clean(a.checkIn)) || clean(b.checkOut).localeCompare(clean(a.checkOut)) || clean(a.name).localeCompare(clean(b.name)));
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+    const at = new Date(clean(a.createdAt)).getTime() || 0;
+    const bt = new Date(clean(b.createdAt)).getTime() || 0;
+    return bt - at || clean(a.name).localeCompare(clean(b.name));
+  });
 }
 
 function sortGuestsBlacklistRowsClient(rows) {

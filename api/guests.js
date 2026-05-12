@@ -89,7 +89,7 @@ function mapGuestTableRow(row) {
 }
 
 async function loadGuestTableRows() {
-  const rows = await restQuery("guest_records?select=*&order=check_in.desc,check_out.desc,name.asc", {
+  const rows = await restQuery("guest_records?select=*&order=created_at.desc,name.asc", {
     method: "GET",
   });
   return (Array.isArray(rows) ? rows : []).map(mapGuestTableRow);
