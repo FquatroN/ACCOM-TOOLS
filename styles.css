@@ -2417,6 +2417,11 @@ select:disabled {
   top: auto;
 }
 
+.guests-blacklist-table .inline-editor.sticky-new-row td {
+  position: static;
+  top: auto;
+}
+
 .laundry-mobile-card {
   display: grid;
   gap: 0.72rem;
