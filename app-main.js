@@ -10925,7 +10925,7 @@ function renderCashItemsModal(scope = "new", id = "") {
         <td><input data-cash-item-field="count" data-cash-item-id="${escape(item.id)}" type="text" inputmode="numeric" value="${counted == null ? "" : escape(String(counted))}" /></td>
         <td>${escape(diff == null ? "-" : `${diff > 0 ? "+" : ""}${diff}`)}</td>
         <td><input data-cash-item-field="justification" data-cash-item-id="${escape(item.id)}" type="text" value="${escape(state.cashItemsJustificationsDraft[item.id] || "")}" ${needsJustification ? "" : "disabled"} /></td>
-        <td>${previousJustification ? `<div class="cash-previous-justification">${escape(previousJustification)}</div><button type="button" class="ghost" data-cash-item-action="copy-previous" data-cash-item-id="${escape(item.id)}">Copy</button>` : "-"}</td>
+        <td>${previousJustification ? `<div class="cash-previous-justification-row"><button type="button" class="ghost cash-copy-previous-button" data-cash-item-action="copy-previous" data-cash-item-id="${escape(item.id)}">Copy</button><div class="cash-previous-justification">${escape(previousJustification)}</div></div>` : "-"}</td>
       </tr>`;
     }).join("");
   }

@@ -2160,6 +2160,20 @@ select:disabled {
   line-height: 1.2;
 }
 
+#cash-items-modal .cash-items-table .cash-previous-justification-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+#cash-items-modal .cash-items-table .cash-copy-previous-button {
+  flex: 0 0 auto;
+  padding: 0.14rem 0.38rem;
+  min-height: 1.35rem;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
 #cash-money-modal .cash-items-table th:nth-child(2),
 #cash-money-modal .cash-items-table td:nth-child(2) {
   width: 140px;
