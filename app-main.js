@@ -2230,7 +2230,7 @@ function hasLostFoundDraft() {
 }
 
 async function ensureCommunicationsData() {
-  if (canSettings("communications") && !state.communicationsSettingsLoaded) {
+  if (canApp("communications") && !state.communicationsSettingsLoaded) {
     await loadSettings();
     state.communicationsSettingsLoaded = true;
     renderSettings();
