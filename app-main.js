@@ -11628,8 +11628,8 @@ function guestStatusClass(record) {
 
 function guestAlertsMarkup(meta) {
   const alerts = [];
-  if (meta?.blacklistMatch) alerts.push('<span class="guest-alert-chip guest-alert-blacklist" title="Blacklist">\u26d4</span>');
-  if (meta?.birthdayAlert) alerts.push(`<span class="guest-alert-chip guest-alert-birthday" title="${escape(meta.birthdayAlert)}">\ud83c\udf82</span>`);
+  if (meta?.blacklistMatch) alerts.push('<span class="guest-alert-chip guest-alert-blacklist" title="Blacklist"><span class="guest-alert-icon">\u26d4</span><span class="guest-alert-text">Blacklist</span></span>');
+  if (meta?.birthdayAlert) alerts.push(`<span class="guest-alert-chip guest-alert-birthday" title="${escape(meta.birthdayAlert)}"><span class="guest-alert-icon">\ud83c\udf82</span><span class="guest-alert-text">${escape(meta.birthdayAlert)}</span></span>`);
   return alerts.length ? `<div class="guest-alerts">${alerts.join("")}</div>` : "";
 }
 

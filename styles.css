@@ -2488,8 +2488,8 @@ select:disabled {
 
 .guests-table th:nth-child(11),
 .guests-table td:nth-child(11) {
-  min-width: 46px;
-  width: 46px;
+  min-width: 118px;
+  width: 118px;
 }
 
 .guests-table th:nth-child(12),
@@ -2517,23 +2517,30 @@ select:disabled {
 }
 
 .guest-alerts-cell {
-  text-align: center;
+  text-align: left;
 }
 
 .guest-alerts {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.16rem;
-  white-space: nowrap;
+  display: inline-grid;
+  gap: 0.12rem;
 }
 
 .guest-alert-chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-size: 0.85rem;
+  gap: 0.18rem;
+  font-size: 0.66rem;
+  line-height: 1.1;
+  white-space: normal;
+}
+
+.guest-alert-icon {
+  font-size: 0.82rem;
   line-height: 1;
+}
+
+.guest-alert-text {
+  display: inline-block;
 }
 
 .guest-status-stack {
