@@ -2470,8 +2470,8 @@ select:disabled {
 
 .guests-table th:nth-child(1),
 .guests-table td:nth-child(1) {
-  min-width: 38px;
-  width: 38px;
+  min-width: 44px;
+  width: 44px;
 }
 
 .guests-table th:nth-child(6),
