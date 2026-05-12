@@ -956,7 +956,7 @@ const els = {
   tableHead: document.getElementById("communications-head"),
   resetSort: document.getElementById("reset-sort"),
   count: document.getElementById("count"),
-  search: document.getElementById("search"),
+  search: document.getElementById("communications-search"),
   showActive: document.getElementById("show-active"),
   groupCommunications: document.getElementById("communications-group"),
   statusFilter: document.getElementById("status-filter"),
@@ -1657,6 +1657,9 @@ function bindEvents() {
   [els.search, els.showActive, els.groupCommunications, els.statusFilter, els.categoryFilter, els.fromDate, els.toDate].forEach((el) =>
     el.addEventListener("input", render)
   );
+  ["focus", "pointerdown", "touchstart"].forEach((eventName) => {
+    els.search?.addEventListener(eventName, releaseCommunicationsSearchGuard, { passive: true });
+  });
   els.showActive.addEventListener("change", render);
   els.groupCommunications.addEventListener("change", render);
   [
@@ -1912,6 +1915,10 @@ function setMobileNavOpen(nextOpen) {
 
 function toggleMobileNav() {
   setMobileNavOpen(!state.mobileNavOpen);
+}
+
+function releaseCommunicationsSearchGuard() {
+  if (els.search?.hasAttribute("readonly")) els.search.removeAttribute("readonly");
 }
 
 function syncMobileNavLayout() {
