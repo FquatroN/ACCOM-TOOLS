@@ -2470,8 +2470,8 @@ select:disabled {
 
 .guests-table th:nth-child(1),
 .guests-table td:nth-child(1) {
-  min-width: 32px;
-  width: 32px;
+  min-width: 38px;
+  width: 38px;
 }
 
 .guests-table th:nth-child(6),
@@ -2522,6 +2522,13 @@ select:disabled {
 .guests-table .inline-editor input,
 .guests-table .inline-editor select,
 .guests-table .inline-editor textarea {
+  font-size: 0.76rem;
+}
+
+.guests-table [data-guests-quick-field],
+.guests-mobile-card [data-guests-quick-field] {
+  width: 100%;
+  min-width: 0;
   font-size: 0.76rem;
 }
 

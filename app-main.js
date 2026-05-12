@@ -1598,10 +1598,12 @@ function bindEvents() {
   els.guestsRows?.addEventListener("click", onGuestsAction);
   els.guestsRows?.addEventListener("input", onGuestsDraftInput);
   els.guestsRows?.addEventListener("change", onGuestsDraftInput);
+  els.guestsRows?.addEventListener("change", onGuestsQuickEditChange);
   els.guestsRows?.addEventListener("keydown", onGuestsKeydown);
   els.guestsMobileCards?.addEventListener("click", onGuestsAction);
   els.guestsMobileCards?.addEventListener("input", onGuestsDraftInput);
   els.guestsMobileCards?.addEventListener("change", onGuestsDraftInput);
+  els.guestsMobileCards?.addEventListener("change", onGuestsQuickEditChange);
   els.guestsMobileCards?.addEventListener("keydown", onGuestsKeydown);
   els.guestsBlacklistRows?.addEventListener("click", onGuestsBlacklistAction);
   els.guestsBlacklistRows?.addEventListener("input", onGuestsBlacklistDraftInput);
@@ -11871,6 +11873,68 @@ function onGuestsDraftInput(event) {
   if (event.type === "change") renderGuests();
 }
 
+function guestQuickFieldMarkup(record, field) {
+  if (guestIsLocked(record)) {
+    return escape(record[field] || "-");
+  }
+  if (field === "ha") {
+    return `<select data-guests-quick-field="ha" data-id="${escape(record.id)}"><option value="H" ${normalizeGuestHAClient(record.ha) === "H" ? "selected" : ""}>H</option><option value="A" ${normalizeGuestHAClient(record.ha) === "A" ? "selected" : ""}>A</option></select>`;
+  }
+  return `<input data-guests-quick-field="${escape(field)}" data-id="${escape(record.id)}" type="date" value="${escape(record[field])}" />`;
+}
+
+async function saveGuestQuickEdit(id, field, rawValue) {
+  const row = state.guestsRows.find((item) => item.id === id);
+  if (!row) return "";
+  if (guestIsLocked(row)) {
+    throw new Error("Sent guest records cannot be modified.");
+  }
+  let value = rawValue;
+  if (field === "ha") value = normalizeGuestHAClient(rawValue);
+  if (field === "checkIn" || field === "checkOut") {
+    value = clean(rawValue) ? normalizeGuestDateClient(rawValue) : "";
+    if (clean(rawValue) && !value) {
+      throw new Error(`${field === "checkIn" ? "Check-in" : "Check-out"} must be a valid date.`);
+    }
+  }
+  const draft = {
+    ...row,
+    [field]: value,
+  };
+  const validationError = validateGuestDraftClient(draft);
+  if (validationError) throw new Error(validationError);
+  const result = await api(`/api/guests?id=${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: buildGuestPayload(draft),
+  });
+  state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
+  state.guestsSettings = normalizeGuestsSettingsClient(result?.settings || state.guestsSettings);
+  state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
+  state.guestsLoaded = true;
+  state.guestsSettingsLoaded = true;
+  renderGuestsCountryOptions();
+  renderGuests();
+  renderGuestsSettings();
+  renderLayout();
+  return field === "ha" ? value : value || "";
+}
+
+async function onGuestsQuickEditChange(event) {
+  const field = clean(event.target?.dataset?.guestsQuickField);
+  const id = clean(event.target?.dataset?.id);
+  if (!field || !id) return;
+  try {
+    const value = await saveGuestQuickEdit(id, field, event.target.value);
+    setGuestsStatus("Guest record saved.");
+    event.target.value = value;
+  } catch (e) {
+    const current = state.guestsRows.find((item) => item.id === id);
+    event.target.value = field === "ha" ? normalizeGuestHAClient(current?.[field]) : clean(current?.[field]);
+    setGuestsStatus(`Save failed: ${e.message}`);
+    showToast(`Guest save failed: ${e.message}`, "error");
+  }
+}
+
 function onGuestsBlacklistDraftInput(event) {
   const field = clean(event.target.dataset.field);
   const scope = clean(event.target.dataset.scope || "new");
@@ -11996,15 +12060,15 @@ function buildGuestsReadOnlyRow(record) {
   const meta = guestRowMetaClient(record);
   const locked = guestIsLocked(record);
   const tr = document.createElement("tr");
-  tr.innerHTML = `<td>${escape(record.ha)}</td>
+  tr.innerHTML = `<td>${guestQuickFieldMarkup(record, "ha")}</td>
     <td>${escape(record.name)}</td>
     <td>${escape(record.nationality || record.nationalityCode || "-")}</td>
     <td>${escape(record.birthDate || "-")}</td>
     <td>${escape(record.docNumber || "-")}</td>
     <td>${escape(record.docType || "-")}</td>
     <td>${escape(record.issuerCountry || record.issuerCountryCode || "-")}</td>
-    <td>${escape(record.checkIn || "-")}</td>
-    <td>${escape(record.checkOut || "-")}</td>
+    <td>${guestQuickFieldMarkup(record, "checkIn")}</td>
+    <td>${guestQuickFieldMarkup(record, "checkOut")}</td>
     <td>${escape(meta.age || "-")}</td>
     <td class="guest-alerts-cell">${guestAlertsMarkup(meta)}</td>
     <td>${guestStatusMarkup(record, meta)}</td>
@@ -12070,12 +12134,13 @@ function buildGuestsReadOnlyCard(record) {
     </div>
     <div class="communication-mobile-grid">
       <div class="communication-mobile-field"><small>Doc</small><div class="communication-mobile-message">${escape(record.docNumber || "-")}</div></div>
+      <div class="communication-mobile-field"><small>HA</small><div class="communication-mobile-message">${guestQuickFieldMarkup(record, "ha")}</div></div>
       <div class="communication-mobile-field"><small>Nationality</small><div class="communication-mobile-message">${escape(record.nationality || "-")}</div></div>
       <div class="communication-mobile-field"><small>Birth Date</small><div class="communication-mobile-message">${escape(record.birthDate || "-")}</div></div>
       <div class="communication-mobile-field"><small>Doc Type</small><div class="communication-mobile-message">${escape(record.docType || "-")}</div></div>
       <div class="communication-mobile-field"><small>Issuer</small><div class="communication-mobile-message">${escape(record.issuerCountry || "-")}</div></div>
-      <div class="communication-mobile-field"><small>Check-in</small><div class="communication-mobile-message">${escape(record.checkIn || "-")}</div></div>
-      <div class="communication-mobile-field"><small>Check-out</small><div class="communication-mobile-message">${escape(record.checkOut || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Check-in</small><div class="communication-mobile-message">${guestQuickFieldMarkup(record, "checkIn")}</div></div>
+      <div class="communication-mobile-field"><small>Check-out</small><div class="communication-mobile-message">${guestQuickFieldMarkup(record, "checkOut")}</div></div>
       <div class="communication-mobile-field communication-mobile-field-full"><small>Status</small>${guestStatusMarkup(record, meta)}</div>
     </div>
     <div class="communication-mobile-footer">${locked ? "" : `<div class="row-actions"><button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button></div>`}</div>`;
