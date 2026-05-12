@@ -20,6 +20,15 @@ function cleanText(value) {
   return String(value || "").trim();
 }
 
+function decodeXmlEntities(value) {
+  return String(value || "")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'");
+}
+
 async function loadGuestsPayloadRow() {
   const rows = await restQuery(`app_settings?select=id,payload&setting_key=eq.${encodeURIComponent(GUESTS_SETTING_KEY)}&limit=1`, {
     method: "GET",
@@ -164,13 +173,25 @@ function buildGuestForSend(record, settings) {
 }
 
 function parseSefResult(resultText) {
-  const safe = cleanText(resultText);
+  const safe = cleanText(decodeXmlEntities(resultText));
   if (safe === "0") return { ok: true, message: "0" };
+  if (!safe) {
+    return { ok: false, message: "SEF returned an empty response." };
+  }
+  const faultMatch = safe.match(/<(?:[\w-]+:)?faultstring(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w-]+:)?faultstring>/i);
+  if (faultMatch?.[1]) {
+    return { ok: false, message: cleanText(decodeXmlEntities(faultMatch[1])) || "SEF SOAP fault" };
+  }
   const codeMatch = safe.match(/<Codigo_Retorno>(.*?)<\/Codigo_Retorno>/i);
   const descMatch = safe.match(/<Descricao>(.*?)<\/Descricao>/i);
+  const statusTextMatch = safe.match(/<(?:[\w-]+:)?(?:EntregaBoletinsAlojamentoResult|Resultado)(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w-]+:)?(?:EntregaBoletinsAlojamentoResult|Resultado)>/i);
+  const statusText = cleanText(decodeXmlEntities(statusTextMatch?.[1] || ""));
+  if (statusText === "0") return { ok: true, message: "0" };
   return {
     ok: false,
-    message: [codeMatch?.[1], descMatch?.[1]].filter(Boolean).join(" - ") || safe || "Unknown SEF response",
+    message: [codeMatch?.[1], descMatch?.[1]].filter(Boolean).join(" - ")
+      || statusText
+      || `Unknown SEF response: ${safe.slice(0, 240)}`,
   };
 }
 
@@ -254,10 +275,13 @@ module.exports = async function handler(req, res) {
     const xml = buildBalXml(sendableMapped, nextFileNumber, current.settings);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
     const soap = buildSoapEnvelope(base64Payload, current.settings);
-    const { body } = await postToSef(soap, current.settings);
-    const resultMatch = body.match(/<EntregaBoletinsAlojamentoResult>([\s\S]*?)<\/EntregaBoletinsAlojamentoResult>/i);
-    const resultText = resultMatch ? resultMatch[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : body;
+    const { body, statusCode, endpoint } = await postToSef(soap, current.settings);
+    const resultMatch = body.match(/<(?:[\w-]+:)?EntregaBoletinsAlojamentoResult(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w-]+:)?EntregaBoletinsAlojamentoResult>/i);
+    const resultText = resultMatch ? decodeXmlEntities(resultMatch[1]) : body;
     const result = parseSefResult(resultText);
+    if (!result.ok && result.message.startsWith("Unknown SEF response:")) {
+      result.message = `${result.message} [HTTP ${statusCode || 0} via ${endpoint}]`;
+    }
     const timestamp = new Date().toISOString();
     let savedRows = current.rows;
     let savedSettings = current.settings;
