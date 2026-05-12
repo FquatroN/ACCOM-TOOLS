@@ -48,6 +48,19 @@ function isMissingGuestsTableError(error) {
   );
 }
 
+function mapGuestsSchemaError(error) {
+  const message = String(error?.message || "");
+  if (
+    message.includes('null value in column "check_out" of relation "guest_records" violates not-null constraint') ||
+    message.includes('null value in column "check_in" of relation "guest_records" violates not-null constraint')
+  ) {
+    const next = new Error("The Guests table still requires check-in/check-out. Please run the migration file 2026-05-12-guests-open-dates.sql in Supabase.");
+    next.statusCode = 400;
+    return next;
+  }
+  return error;
+}
+
 function mapGuestTableRow(row) {
   return sanitizeGuestRecord({
     id: row?.id,
@@ -285,6 +298,6 @@ module.exports = async function handler(req, res) {
 
     res.status(405).json({ error: "Method not allowed." });
   } catch (error) {
-    sendError(res, error);
+    sendError(res, mapGuestsSchemaError(error));
   }
 };
