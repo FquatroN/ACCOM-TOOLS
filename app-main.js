@@ -478,6 +478,11 @@ const DEFAULT_GUESTS_INTEGRATION_MAPPING = {
 const DEFAULT_GUESTS_SETTINGS = {
   sendTime: "18:00",
   integrationMapping: { ...DEFAULT_GUESTS_INTEGRATION_MAPPING },
+  sefCredentials: {
+    unitCode: "508459893",
+    establishment: "00",
+    accessKey: "102907025181",
+  },
 };
 
 const PROFILE_MATRIX_ROWS = [
@@ -761,6 +766,7 @@ const state = {
   guestsLoaded: false,
   guestsSettings: clone(DEFAULT_GUESTS_SETTINGS),
   guestsSettingsLoaded: false,
+  guestsSettingsTab: "config",
   guestsScreen: "list",
   guestsFilters: { showActive: true, ha: "", search: "", nationality: "", checkIn: "", checkOut: "" },
   guestsBlacklistFilters: { search: "", whoReported: "", nationality: "" },
@@ -1074,8 +1080,15 @@ const els = {
   guestsBlacklistMobileCards: document.getElementById("guests-blacklist-mobile-cards"),
   guestsBlacklistStatus: document.getElementById("guests-blacklist-status"),
   guestsSaveSettings: document.getElementById("guests-save-settings"),
+  guestsSettingsConfigTab: document.getElementById("guests-settings-config-tab"),
+  guestsSettingsSefTab: document.getElementById("guests-settings-sef-tab"),
+  guestsSettingsConfigPanel: document.getElementById("guests-settings-config-panel"),
+  guestsSettingsSefPanel: document.getElementById("guests-settings-sef-panel"),
   guestsSettingsSendTime: document.getElementById("guests-settings-send-time"),
   guestsSettingsMappingBody: document.getElementById("guests-settings-mapping-body"),
+  guestsSettingsSefUnit: document.getElementById("guests-settings-sef-unit"),
+  guestsSettingsSefEstablishment: document.getElementById("guests-settings-sef-establishment"),
+  guestsSettingsSefAccessKey: document.getElementById("guests-settings-sef-access-key"),
   guestsSettingsStatus: document.getElementById("guests-settings-status"),
   viewGroups: document.getElementById("view-groups"),
   groupsNew: document.getElementById("groups-new"),
@@ -1598,6 +1611,8 @@ function bindEvents() {
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
   els.guestsTabList?.addEventListener("click", () => setGuestsScreen("list"));
   els.guestsTabBlacklist?.addEventListener("click", () => setGuestsScreen("blacklist"));
+  els.guestsSettingsConfigTab?.addEventListener("click", () => setGuestsSettingsTab("config"));
+  els.guestsSettingsSefTab?.addEventListener("click", () => setGuestsSettingsTab("sef"));
   els.guestsShowActive?.addEventListener("change", onGuestsFilterInput);
   els.guestsFilterHa?.addEventListener("change", onGuestsFilterInput);
   [els.guestsFilterSearch, els.guestsFilterNationality, els.guestsFilterCheckin, els.guestsFilterCheckout].forEach((el) => el?.addEventListener("input", onGuestsFilterInput));
@@ -11259,6 +11274,7 @@ function shouldShowCashAlert() {
 function normalizeGuestsSettingsClient(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const mappingSource = source.integrationMapping && typeof source.integrationMapping === "object" ? source.integrationMapping : {};
+  const sefSource = source.sefCredentials && typeof source.sefCredentials === "object" ? source.sefCredentials : {};
   return {
     sendTime: /^\d{2}:\d{2}$/.test(clean(source.sendTime ?? source.send_time)) ? clean(source.sendTime ?? source.send_time) : DEFAULT_GUESTS_SETTINGS.sendTime,
     integrationMapping: {
@@ -11272,6 +11288,11 @@ function normalizeGuestsSettingsClient(input = {}) {
       residenceCity: clean(mappingSource.residenceCity ?? mappingSource.residence_city) || DEFAULT_GUESTS_INTEGRATION_MAPPING.residenceCity,
       checkIn: clean(mappingSource.checkIn ?? mappingSource.check_in) || DEFAULT_GUESTS_INTEGRATION_MAPPING.checkIn,
       checkOut: clean(mappingSource.checkOut ?? mappingSource.check_out) || DEFAULT_GUESTS_INTEGRATION_MAPPING.checkOut,
+    },
+    sefCredentials: {
+      unitCode: clean(sefSource.unitCode ?? sefSource.unit_code) || DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode,
+      establishment: clean(sefSource.establishment) || DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment,
+      accessKey: clean(sefSource.accessKey ?? sefSource.access_key) || DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey,
     },
   };
 }
@@ -11515,6 +11536,11 @@ function onGuestsSettingsInput() {
   state.guestsSettings = normalizeGuestsSettingsClient({
     sendTime: els.guestsSettingsSendTime?.value,
     integrationMapping,
+    sefCredentials: {
+      unitCode: els.guestsSettingsSefUnit?.value,
+      establishment: els.guestsSettingsSefEstablishment?.value,
+      accessKey: els.guestsSettingsSefAccessKey?.value,
+    },
   });
 }
 
@@ -11537,6 +11563,7 @@ async function saveGuestsSettings() {
 }
 
 function renderGuestsSettings() {
+  renderGuestsSettingsTabs();
   if (els.guestsSettingsSendTime) els.guestsSettingsSendTime.value = clean(state.guestsSettings?.sendTime) || DEFAULT_GUESTS_SETTINGS.sendTime;
   if (els.guestsSettingsMappingBody) {
     els.guestsSettingsMappingBody.innerHTML = GUESTS_INTEGRATION_MAPPING_ROWS.map((row) => {
@@ -11545,6 +11572,28 @@ function renderGuestsSettings() {
       return `<tr><td>${escape(row.label)}</td><td><select data-guests-mapping-key="${escape(row.key)}">${options}</select></td></tr>`;
     }).join("");
   }
+  if (els.guestsSettingsSefUnit) els.guestsSettingsSefUnit.value = clean(state.guestsSettings?.sefCredentials?.unitCode) || DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode;
+  if (els.guestsSettingsSefEstablishment) els.guestsSettingsSefEstablishment.value = clean(state.guestsSettings?.sefCredentials?.establishment) || DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment;
+  if (els.guestsSettingsSefAccessKey) els.guestsSettingsSefAccessKey.value = clean(state.guestsSettings?.sefCredentials?.accessKey) || DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey;
+}
+
+function renderGuestsSettingsTabs() {
+  const isSef = state.guestsSettingsTab === "sef";
+  if (els.guestsSettingsConfigTab) {
+    els.guestsSettingsConfigTab.classList.toggle("active-tab", !isSef);
+    els.guestsSettingsConfigTab.classList.toggle("ghost", isSef);
+  }
+  if (els.guestsSettingsSefTab) {
+    els.guestsSettingsSefTab.classList.toggle("active-tab", isSef);
+    els.guestsSettingsSefTab.classList.toggle("ghost", !isSef);
+  }
+  if (els.guestsSettingsConfigPanel) els.guestsSettingsConfigPanel.hidden = isSef;
+  if (els.guestsSettingsSefPanel) els.guestsSettingsSefPanel.hidden = !isSef;
+}
+
+function setGuestsSettingsTab(tab) {
+  state.guestsSettingsTab = tab === "sef" ? "sef" : "config";
+  renderGuestsSettingsTabs();
 }
 
 function renderGuestsCountryOptions() {

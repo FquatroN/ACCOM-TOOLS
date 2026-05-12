@@ -8,6 +8,7 @@ const {
   buildSoapEnvelope,
   lisbonTodayIso,
   resolveCountry,
+  resolveSefConfig,
   sanitizeGuestRecord,
   sanitizeGuestsPayload,
 } = require("./_guests");
@@ -197,10 +198,16 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    const sefConfig = resolveSefConfig(current.settings);
+    if (!cleanText(sefConfig.unitCode) || !cleanText(sefConfig.establishment) || !cleanText(sefConfig.accessKey)) {
+      res.status(400).json({ error: "SEF credentials are required in Guests Settings." });
+      return;
+    }
+
     const nextFileNumber = Math.max(1, Number(current.payload.lastFileNumber || 0) + 1);
-    const xml = buildBalXml(sendableMapped, nextFileNumber);
+    const xml = buildBalXml(sendableMapped, nextFileNumber, current.settings);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
-    const soap = buildSoapEnvelope(base64Payload);
+    const soap = buildSoapEnvelope(base64Payload, current.settings);
     const response = await fetch(SEF_ENDPOINT, {
       method: "POST",
       headers: {

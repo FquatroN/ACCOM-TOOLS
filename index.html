@@ -2044,9 +2044,11 @@
               <div id="settings-view-guests" hidden>
                 <div class="actions">
                   <button id="close-settings-guests" type="button" class="ghost">Back To App</button>
+                  <button id="guests-settings-config-tab" type="button" class="active-tab">Configuration</button>
+                  <button id="guests-settings-sef-tab" type="button" class="ghost">SEF Credentials</button>
                   <button id="guests-save-settings" type="button" class="ghost">Save Configuration</button>
                 </div>
-                <section class="settings-block">
+                <section id="guests-settings-config-panel" class="settings-block">
                   <div class="bar">
                     <h3>Guests Configuration</h3>
                   </div>
@@ -2069,8 +2071,27 @@
                     </table>
                   </div>
                   <small class="field-hint">Country-based mappings use the selected screen field to derive the ICAO code or designa&ccedil;&atilde;o automatically during the API send.</small>
-                  <p id="guests-settings-status" class="auth-status"></p>
                 </section>
+                <section id="guests-settings-sef-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>SEF Credentials</h3>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Unidade Hoteleira (NIF)
+                      <input id="guests-settings-sef-unit" type="text" />
+                    </label>
+                    <label>
+                      Estabelecimento
+                      <input id="guests-settings-sef-establishment" type="text" />
+                    </label>
+                    <label>
+                      Chave de Ativa&ccedil;&atilde;o
+                      <input id="guests-settings-sef-access-key" type="text" />
+                    </label>
+                  </div>
+                </section>
+                <p id="guests-settings-status" class="auth-status"></p>
               </div>
 
               <div id="settings-view-admin-users" hidden>

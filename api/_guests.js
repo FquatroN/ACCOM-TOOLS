@@ -18,28 +18,25 @@ const DEFAULT_GUESTS_INTEGRATION_MAPPING = {
 const DEFAULT_GUESTS_SETTINGS = {
   sendTime: "18:00",
   integrationMapping: { ...DEFAULT_GUESTS_INTEGRATION_MAPPING },
+  sefCredentials: {
+    unitCode: "508459893",
+    establishment: "00",
+    accessKey: "102907025181",
+  },
 };
 
 const SEF_ENDPOINT = "https://siba.sef.pt/baws/boletinsalojamento.asmx";
-const SEF_CONFIG = {
-  unitCode: "508459893",
-  establishment: 0,
-  establishmentLabel: "00",
-  accessKey: "102907025181",
-  hotel: {
-    code: "508459893",
-    establishment: "00",
-    name: "Lisboa Central Hostel",
-    abbreviation: "LCH",
-    address: "Rua Rodrigues Sampaio 160",
-    city: "Lisboa",
-    postalCode: "1150",
-    postalZone: "282",
-    phone: "309881038",
-    fax: "309881038",
-    contactName: "Lisboa Central Hostel",
-    contactEmail: "global@lisboacentralhostel.com",
-  },
+const SEF_HOTEL_PROFILE = {
+  name: "Lisboa Central Hostel",
+  abbreviation: "LCH",
+  address: "Rua Rodrigues Sampaio 160",
+  city: "Lisboa",
+  postalCode: "1150",
+  postalZone: "282",
+  phone: "309881038",
+  fax: "309881038",
+  contactName: "Lisboa Central Hostel",
+  contactEmail: "global@lisboacentralhostel.com",
 };
 
 function normalizeTime(value, fallback = "18:00") {
@@ -133,6 +130,7 @@ function normalizeGuestMappingValue(value, fallback) {
 function normalizeGuestSettings(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const mappingSource = source.integrationMapping && typeof source.integrationMapping === "object" ? source.integrationMapping : {};
+  const sefSource = source.sefCredentials && typeof source.sefCredentials === "object" ? source.sefCredentials : {};
   return {
     sendTime: normalizeTime(source.sendTime ?? source.send_time, DEFAULT_GUESTS_SETTINGS.sendTime),
     integrationMapping: {
@@ -146,6 +144,11 @@ function normalizeGuestSettings(input = {}) {
       residenceCity: normalizeGuestMappingValue(mappingSource.residenceCity ?? mappingSource.residence_city, DEFAULT_GUESTS_INTEGRATION_MAPPING.residenceCity),
       checkIn: normalizeGuestMappingValue(mappingSource.checkIn ?? mappingSource.check_in, DEFAULT_GUESTS_INTEGRATION_MAPPING.checkIn),
       checkOut: normalizeGuestMappingValue(mappingSource.checkOut ?? mappingSource.check_out, DEFAULT_GUESTS_INTEGRATION_MAPPING.checkOut),
+    },
+    sefCredentials: {
+      unitCode: normalizeGuestMappingValue(sefSource.unitCode ?? sefSource.unit_code, DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode),
+      establishment: normalizeGuestMappingValue(sefSource.establishment, DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment),
+      accessKey: normalizeGuestMappingValue(sefSource.accessKey ?? sefSource.access_key, DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey),
     },
   };
 }
@@ -377,8 +380,23 @@ function xmlDateTime(date) {
   return safe ? `${safe}T00:00:00` : "";
 }
 
-function buildBalXml(records, fileNumber) {
-  const hotel = SEF_CONFIG.hotel;
+function resolveSefConfig(settings = {}) {
+  const normalized = normalizeGuestSettings(settings);
+  const credentials = normalized.sefCredentials || DEFAULT_GUESTS_SETTINGS.sefCredentials;
+  return {
+    unitCode: cleanText(credentials.unitCode) || DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode,
+    establishment: cleanText(credentials.establishment) || DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment,
+    accessKey: cleanText(credentials.accessKey) || DEFAULT_GUESTS_SETTINGS.sefCredentials.accessKey,
+    hotel: {
+      ...SEF_HOTEL_PROFILE,
+      code: cleanText(credentials.unitCode) || DEFAULT_GUESTS_SETTINGS.sefCredentials.unitCode,
+      establishment: cleanText(credentials.establishment) || DEFAULT_GUESTS_SETTINGS.sefCredentials.establishment,
+    },
+  };
+}
+
+function buildBalXml(records, fileNumber, settings = {}) {
+  const hotel = resolveSefConfig(settings).hotel;
   const boletins = records.map((record) => {
     const names = splitGuestNameForApi(record.name);
     return `  <Boletim_Alojamento>
@@ -420,14 +438,15 @@ ${boletins}
 </MovimentoBAL>`;
 }
 
-function buildSoapEnvelope(base64Payload) {
+function buildSoapEnvelope(base64Payload, settings = {}) {
+  const sefConfig = resolveSefConfig(settings);
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
     <EntregaBoletinsAlojamento xmlns="http://sef.pt/">
-      <UnidadeHoteleira>${SEF_CONFIG.unitCode}</UnidadeHoteleira>
-      <Estabelecimento>${SEF_CONFIG.establishment}</Estabelecimento>
-      <ChaveAcesso>${SEF_CONFIG.accessKey}</ChaveAcesso>
+      <UnidadeHoteleira>${escapeXml(sefConfig.unitCode)}</UnidadeHoteleira>
+      <Estabelecimento>${escapeXml(sefConfig.establishment)}</Estabelecimento>
+      <ChaveAcesso>${escapeXml(sefConfig.accessKey)}</ChaveAcesso>
       <Boletins>${escapeXml(base64Payload)}</Boletins>
     </EntregaBoletinsAlojamento>
   </soap:Body>
@@ -439,7 +458,6 @@ module.exports = {
   DEFAULT_GUESTS_INTEGRATION_MAPPING,
   DEFAULT_GUESTS_SETTINGS,
   GUESTS_SETTING_KEY,
-  SEF_CONFIG,
   SEF_ENDPOINT,
   buildBalXml,
   buildSoapEnvelope,
@@ -448,6 +466,7 @@ module.exports = {
   lisbonTodayIso,
   normalizeCountryLookupKey,
   normalizeGuestSettings,
+  resolveSefConfig,
   resolveCountry,
   sanitizeBlacklistRecord,
   sanitizeGuestRecord,
