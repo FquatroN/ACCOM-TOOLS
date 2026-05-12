@@ -6,6 +6,7 @@ const {
   buildBalXml,
   buildSoapEnvelope,
   lisbonTodayIso,
+  sanitizeGuestRecord,
   sanitizeGuestsPayload,
 } = require("./_guests");
 
@@ -40,6 +41,83 @@ async function saveGuestsPayload(rowId, payload) {
   return sanitizeGuestsPayload(Array.isArray(created) && created[0]?.payload ? created[0].payload : safe);
 }
 
+function cleanId(value) {
+  return String(value || "").trim();
+}
+
+function isMissingGuestsTableError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("guest_records") && (
+    message.includes("could not find") ||
+    message.includes("schema cache") ||
+    message.includes("relation") ||
+    message.includes("does not exist")
+  );
+}
+
+function mapGuestTableRow(row) {
+  return sanitizeGuestRecord({
+    id: row?.id,
+    ha: row?.ha,
+    name: row?.name,
+    nationality: row?.nationality,
+    nationalityCode: row?.nationality_code,
+    birthDate: row?.birth_date,
+    birthPlace: row?.birth_place,
+    docNumber: row?.doc_number,
+    docType: row?.doc_type,
+    issuerCountry: row?.issuer_country,
+    issuerCountryCode: row?.issuer_country_code,
+    residenceCountry: row?.residence_country,
+    residenceCountryCode: row?.residence_country_code,
+    residenceCity: row?.residence_city,
+    checkIn: row?.check_in,
+    checkOut: row?.check_out,
+    sentStatus: row?.sent_status,
+    sentAt: row?.sent_at,
+    sendError: row?.send_error,
+    sendBatchNumber: row?.send_batch_number,
+    createdAt: row?.created_at,
+    updatedAt: row?.updated_at,
+  });
+}
+
+async function loadGuestTableRows() {
+  const rows = await restQuery("guest_records?select=*&order=check_in.desc,check_out.desc,name.asc", {
+    method: "GET",
+  });
+  return (Array.isArray(rows) ? rows : []).map(mapGuestTableRow);
+}
+
+async function updateGuestSendStatuses(rows, { ok, nextFileNumber, message, timestamp }) {
+  const updates = rows.map((row) => restQuery(`guest_records?id=eq.${encodeURIComponent(cleanId(row.id))}`, {
+    method: "PATCH",
+    body: ok ? {
+      sent_status: "sent",
+      sent_at: timestamp,
+      send_error: "",
+      send_batch_number: nextFileNumber,
+      updated_at: timestamp,
+    } : {
+      sent_status: "error",
+      send_error: message,
+      updated_at: timestamp,
+    },
+  }));
+  await Promise.all(updates);
+}
+
+async function loadRowsAndSettings() {
+  const { rowId, payload } = await loadGuestsPayloadRow();
+  try {
+    const rows = await loadGuestTableRows();
+    return { mode: "table", rowId, payload, settings: payload.settings, rows };
+  } catch (error) {
+    if (!isMissingGuestsTableError(error)) throw error;
+    return { mode: "legacy", rowId, payload, settings: payload.settings, rows: payload.rows };
+  }
+}
+
 function validateSendableGuest(record) {
   if (!record.nationalityCode) return "Nationality must match a valid ICAO country.";
   if (!record.issuerCountryCode) return "Issuer Country must match a valid ICAO country.";
@@ -68,11 +146,11 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const { rowId, payload } = await loadGuestsPayloadRow();
+    const current = await loadRowsAndSettings();
     const today = lisbonTodayIso();
-    const sendable = payload.rows.filter((row) => cleanText(row.sentStatus) !== "sent" && cleanText(row.checkIn) && cleanText(row.checkIn) <= today);
+    const sendable = current.rows.filter((row) => cleanText(row.sentStatus) !== "sent" && cleanText(row.checkIn) && cleanText(row.checkIn) <= today);
     if (!sendable.length) {
-      res.status(200).json({ rows: payload.rows, settings: payload.settings, sent: 0, message: "No pending guest records ready to send." });
+      res.status(200).json({ rows: current.rows, settings: current.settings, sent: 0, message: "No pending guest records ready to send." });
       return;
     }
 
@@ -85,7 +163,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const nextFileNumber = Math.max(1, Number(payload.lastFileNumber || 0) + 1);
+    const nextFileNumber = Math.max(1, Number(current.payload.lastFileNumber || 0) + 1);
     const xml = buildBalXml(sendable, nextFileNumber);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
     const soap = buildSoapEnvelope(base64Payload);
@@ -102,37 +180,56 @@ module.exports = async function handler(req, res) {
     const resultText = resultMatch ? resultMatch[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : body;
     const result = parseSefResult(resultText);
     const timestamp = new Date().toISOString();
-    const attemptedIds = new Set(sendable.map((row) => cleanText(row.id)));
-    const nextRows = payload.rows.map((row) => {
-      if (!attemptedIds.has(cleanText(row.id))) return row;
-      if (result.ok) {
+    let savedRows = current.rows;
+    let savedSettings = current.settings;
+    if (current.mode === "table") {
+      await updateGuestSendStatuses(sendable, {
+        ok: result.ok,
+        nextFileNumber,
+        message: result.message,
+        timestamp,
+      });
+      savedRows = await loadGuestTableRows();
+      const savedPayload = await saveGuestsPayload(current.rowId, {
+        ...current.payload,
+        lastFileNumber: result.ok ? nextFileNumber : current.payload.lastFileNumber,
+      });
+      savedSettings = savedPayload.settings;
+    } else {
+      const attemptedIds = new Set(sendable.map((row) => cleanId(row.id)));
+      const nextRows = current.payload.rows.map((row) => {
+        if (!attemptedIds.has(cleanId(row.id))) return row;
+        if (result.ok) {
+          return {
+            ...row,
+            sentStatus: "sent",
+            sentAt: timestamp,
+            sendError: "",
+            sendBatchNumber: nextFileNumber,
+            updatedAt: timestamp,
+          };
+        }
         return {
           ...row,
-          sentStatus: "sent",
-          sentAt: timestamp,
-          sendError: "",
-          sendBatchNumber: nextFileNumber,
+          sentStatus: "error",
+          sendError: result.message,
           updatedAt: timestamp,
         };
-      }
-      return {
-        ...row,
-        sentStatus: "error",
-        sendError: result.message,
-        updatedAt: timestamp,
-      };
-    });
-    const saved = await saveGuestsPayload(rowId, {
-      ...payload,
-      rows: nextRows,
-      lastFileNumber: result.ok ? nextFileNumber : payload.lastFileNumber,
-    });
+      });
+      const saved = await saveGuestsPayload(current.rowId, {
+        ...current.payload,
+        rows: nextRows,
+        lastFileNumber: result.ok ? nextFileNumber : current.payload.lastFileNumber,
+      });
+      savedRows = saved.rows;
+      savedSettings = saved.settings;
+    }
 
     if (!result.ok) {
-      res.status(502).json({ error: result.message, rows: saved.rows, settings: saved.settings, sent: 0 });
+      res.status(502).json({ error: result.message, rows: savedRows, settings: savedSettings, sent: 0 });
       return;
     }
-    res.status(200).json({ rows: saved.rows, settings: saved.settings, sent: sendable.length, message: "Guests sent successfully." });
+    res.status(200).json({ rows: savedRows, settings: savedSettings, sent: sendable.length, message: "Guests sent successfully." });
   } catch (error) {
     sendError(res, error);
   }
