@@ -763,6 +763,7 @@ const state = {
   guestsSettingsLoaded: false,
   guestsScreen: "list",
   guestsFilters: { showActive: true, ha: "", search: "", nationality: "", checkIn: "", checkOut: "" },
+  guestsBlacklistFilters: { search: "", whoReported: "", nationality: "" },
   guestsDraft: null,
   guestsEditDraft: null,
   guestsEditingId: "",
@@ -1066,6 +1067,9 @@ const els = {
   guestsMobileCards: document.getElementById("guests-mobile-cards"),
   guestsStatus: document.getElementById("guests-status"),
   guestsBlacklistCount: document.getElementById("guests-blacklist-count"),
+  guestsBlacklistFilterSearch: document.getElementById("guests-blacklist-filter-search"),
+  guestsBlacklistFilterReported: document.getElementById("guests-blacklist-filter-reported"),
+  guestsBlacklistFilterNationality: document.getElementById("guests-blacklist-filter-nationality"),
   guestsBlacklistRows: document.getElementById("guests-blacklist-rows"),
   guestsBlacklistMobileCards: document.getElementById("guests-blacklist-mobile-cards"),
   guestsBlacklistStatus: document.getElementById("guests-blacklist-status"),
@@ -1615,6 +1619,7 @@ function bindEvents() {
   els.guestsBlacklistMobileCards?.addEventListener("click", onGuestsBlacklistAction);
   els.guestsBlacklistMobileCards?.addEventListener("input", onGuestsBlacklistDraftInput);
   els.guestsBlacklistMobileCards?.addEventListener("change", onGuestsBlacklistDraftInput);
+  [els.guestsBlacklistFilterSearch, els.guestsBlacklistFilterReported, els.guestsBlacklistFilterNationality].forEach((el) => el?.addEventListener("input", onGuestsBlacklistFilterInput));
   els.guestsSendPending?.addEventListener("click", sendPendingGuests);
   els.guestsSaveSettings?.addEventListener("click", saveGuestsSettings);
   els.guestsSettingsSendTime?.addEventListener("input", onGuestsSettingsInput);
@@ -11685,7 +11690,13 @@ function getFilteredGuestsRows() {
 }
 
 function getFilteredGuestsBlacklistRows() {
-  return sortGuestsBlacklistRowsClient(state.guestsBlacklist);
+  const filters = state.guestsBlacklistFilters || {};
+  const search = clean(filters.search).toLowerCase();
+  const whoReported = clean(filters.whoReported).toLowerCase();
+  return sortGuestsBlacklistRowsClient(state.guestsBlacklist)
+    .filter((row) => !search || clean(row.name).toLowerCase().includes(search) || clean(row.docNumber).toLowerCase().includes(search) || clean(row.whatHappened).toLowerCase().includes(search))
+    .filter((row) => !whoReported || clean(row.whoReported).toLowerCase().includes(whoReported))
+    .filter((row) => guestNationalityMatchesFilter(row, filters.nationality));
 }
 
 function buildGuestPayload(draft, { isEdit = false } = {}) {
@@ -11997,6 +12008,13 @@ function onGuestsBlacklistDraftInput(event) {
   if (event.type === "change") renderGuests();
 }
 
+function onGuestsBlacklistFilterInput() {
+  state.guestsBlacklistFilters.search = clean(els.guestsBlacklistFilterSearch?.value);
+  state.guestsBlacklistFilters.whoReported = clean(els.guestsBlacklistFilterReported?.value);
+  state.guestsBlacklistFilters.nationality = clean(els.guestsBlacklistFilterNationality?.value);
+  renderGuests();
+}
+
 async function onGuestsAction(event) {
   const button = event.target.closest("button[data-guests-action]");
   if (!button) return;
@@ -12233,7 +12251,7 @@ function buildGuestsBlacklistInlineRow() {
     <td><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
     <td><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></td>
     <td><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></td>
-    <td><textarea data-field="whatHappened" data-scope="new" rows="2">${escape(draft.whatHappened)}</textarea></td>
+    <td><input data-field="whatHappened" data-scope="new" value="${escape(draft.whatHappened)}" /></td>
     <td><input data-field="occurrenceDate" data-scope="new" type="date" value="${escape(draft.occurrenceDate)}" /></td>
     <td><input data-field="whoReported" data-scope="new" value="${escape(draft.whoReported)}" /></td>
     <td class="row-actions"><button type="button" data-guests-blacklist-action="save-inline">Add</button></td>`;
@@ -12261,7 +12279,7 @@ function buildGuestsBlacklistEditableRow(record) {
     <td><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
     <td><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></td>
     <td><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></td>
-    <td><textarea data-field="whatHappened" data-scope="edit" data-id="${escape(record.id)}" rows="2">${escape(draft.whatHappened)}</textarea></td>
+    <td><input data-field="whatHappened" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whatHappened)}" /></td>
     <td><input data-field="occurrenceDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.occurrenceDate)}" /></td>
     <td><input data-field="whoReported" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoReported)}" /></td>
     <td class="row-actions"><button type="button" data-guests-blacklist-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-blacklist-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
@@ -12391,6 +12409,9 @@ function renderGuests() {
   if (els.guestsFilterNationality) els.guestsFilterNationality.value = state.guestsFilters.nationality;
   if (els.guestsFilterCheckin) els.guestsFilterCheckin.value = state.guestsFilters.checkIn;
   if (els.guestsFilterCheckout) els.guestsFilterCheckout.value = state.guestsFilters.checkOut;
+  if (els.guestsBlacklistFilterSearch) els.guestsBlacklistFilterSearch.value = state.guestsBlacklistFilters.search;
+  if (els.guestsBlacklistFilterReported) els.guestsBlacklistFilterReported.value = state.guestsBlacklistFilters.whoReported;
+  if (els.guestsBlacklistFilterNationality) els.guestsBlacklistFilterNationality.value = state.guestsBlacklistFilters.nationality;
   const rows = getFilteredGuestsRows();
   const blacklistRows = getFilteredGuestsBlacklistRows();
   const sendableCount = state.guestsRows.filter((row) => clean(row.sentStatus).toLowerCase() !== "sent" && clean(row.checkIn) && clean(row.checkIn) <= lisbonTodayIsoClient()).length;

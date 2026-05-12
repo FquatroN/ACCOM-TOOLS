@@ -2468,6 +2468,42 @@ select:disabled {
   vertical-align: top;
 }
 
+.guests-blacklist-table th:nth-child(2),
+.guests-blacklist-table td:nth-child(2) {
+  min-width: 82px;
+  width: 82px;
+}
+
+.guests-blacklist-table th:nth-child(3),
+.guests-blacklist-table td:nth-child(3) {
+  min-width: 84px;
+  width: 84px;
+}
+
+.guests-blacklist-table th:nth-child(4),
+.guests-blacklist-table td:nth-child(4) {
+  min-width: 88px;
+  width: 88px;
+}
+
+.guests-blacklist-table th:nth-child(5),
+.guests-blacklist-table td:nth-child(5) {
+  min-width: 240px;
+  width: 240px;
+}
+
+.guests-blacklist-table th:nth-child(6),
+.guests-blacklist-table td:nth-child(6) {
+  min-width: 92px;
+  width: 92px;
+}
+
+.guests-blacklist-table th:nth-child(7),
+.guests-blacklist-table td:nth-child(7) {
+  min-width: 92px;
+  width: 92px;
+}
+
 .guests-table th:nth-child(1),
 .guests-table td:nth-child(1) {
   min-width: 44px;
@@ -2509,6 +2545,12 @@ select:disabled {
   white-space: normal;
 }
 
+.guests-blacklist-table td:nth-child(5) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .guests-table .row-actions {
   display: flex;
   align-items: center;
@@ -2548,6 +2590,11 @@ select:disabled {
 .guests-blacklist-table .inline-editor select,
 .guests-blacklist-table .inline-editor textarea {
   font-size: 0.72rem;
+}
+
+.guests-blacklist-table.inline-editor input,
+.guests-blacklist-table .inline-editor input {
+  min-width: 0;
 }
 
 .guest-alerts-cell {
