@@ -11890,7 +11890,6 @@ function onGuestsDraftInput(event) {
   if (field === "docType") value = clean(value).toUpperCase();
   draft[field] = value;
   event.target.value = value;
-  if (event.type === "change") renderGuests();
 }
 
 function guestQuickFieldMarkup(record, field) {
@@ -12093,6 +12092,26 @@ async function onGuestsBlacklistAction(event) {
 async function onGuestsKeydown(event) {
   const field = clean(event.target?.dataset?.field);
   const scope = clean(event.target?.dataset?.scope || "new");
+  const orderedFields = ["name", "nationality", "birthDate", "docNumber", "docType", "issuerCountry"];
+  if (scope === "new" && field && orderedFields.includes(field) && event.key === "Tab") {
+    const index = orderedFields.indexOf(field);
+    if (event.shiftKey) {
+      if (index > 0) {
+        event.preventDefault();
+        const previous = Array.from(document.querySelectorAll(`[data-scope="new"][data-field="${orderedFields[index - 1]}"]`)).find((element) => element instanceof HTMLElement && element.offsetParent !== null);
+        previous?.focus();
+      }
+      return;
+    }
+    event.preventDefault();
+    if (field === "issuerCountry") {
+      await saveGuestRecord("new", "", { focusNewRow: true });
+      return;
+    }
+    const next = Array.from(document.querySelectorAll(`[data-scope="new"][data-field="${orderedFields[index + 1]}"]`)).find((element) => element instanceof HTMLElement && element.offsetParent !== null);
+    next?.focus();
+    return;
+  }
   if (field === "issuerCountry" && scope === "new" && event.key === "Tab" && !event.shiftKey) {
     event.preventDefault();
     await saveGuestRecord("new", "", { focusNewRow: true });
