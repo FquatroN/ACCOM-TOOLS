@@ -12140,7 +12140,7 @@ function buildGuestsInlineRow() {
     <td><input data-field="birthDate" data-scope="new" type="text" value="${escape(draft.birthDate)}" /></td>
     <td><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></td>
     <td><input data-field="docType" data-scope="new" type="text" value="${escape(draft.docType)}" /></td>
-    <td><input data-field="issuerCountry" data-scope="new" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></td>
+    <td><input data-field="issuerCountry" data-scope="new" list="guests-country-list" autocomplete="off" value="${escape(draft.issuerCountry)}" /></td>
     <td><input data-field="checkIn" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate))}</td>
@@ -12205,7 +12205,7 @@ function buildGuestsInlineCard() {
       <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="new" type="text" value="${escape(draft.birthDate)}" /></label>
       <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></label>
       <label class="communication-mobile-field"><small>Doc Type</small><input data-field="docType" data-scope="new" type="text" value="${escape(draft.docType)}" /></label>
-      <label class="communication-mobile-field"><small>Issuer Country</small><input data-field="issuerCountry" data-scope="new" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></label>
+      <label class="communication-mobile-field"><small>Issuer Country</small><input data-field="issuerCountry" data-scope="new" list="guests-country-list" autocomplete="off" value="${escape(draft.issuerCountry)}" /></label>
       <label class="communication-mobile-field"><small>Check-in</small><input data-field="checkIn" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkIn)}" /></label>
       <label class="communication-mobile-field"><small>Check-out</small><input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" /></label>
       <div class="communication-mobile-field"><small>Age</small><div class="communication-mobile-message">${escape(guestAgeClient(draft.birthDate) || "-")}</div></div>
