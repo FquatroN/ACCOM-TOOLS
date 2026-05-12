@@ -2481,26 +2481,26 @@ select:disabled {
 
 .guests-blacklist-table th:nth-child(3),
 .guests-blacklist-table td:nth-child(3) {
-  min-width: 100px;
-  width: 100px;
+  min-width: 120px;
+  width: 120px;
 }
 
 .guests-blacklist-table th:nth-child(4),
 .guests-blacklist-table td:nth-child(4) {
-  min-width: 90px;
-  width: 90px;
+  min-width: 100px;
+  width: 100px;
 }
 
 .guests-blacklist-table th:nth-child(5),
 .guests-blacklist-table td:nth-child(5) {
-  min-width: 260px;
-  width: 260px;
+  min-width: 280px;
+  width: 280px;
 }
 
 .guests-blacklist-table th:nth-child(6),
 .guests-blacklist-table td:nth-child(6) {
-  min-width: 100px;
-  width: 100px;
+  min-width: 120px;
+  width: 120px;
 }
 
 .guests-blacklist-table th:nth-child(7),
@@ -2511,8 +2511,8 @@ select:disabled {
 
 .guests-blacklist-table th:nth-child(1),
 .guests-blacklist-table td:nth-child(1) {
-  min-width: 130px;
-  width: 130px;
+  min-width: 150px;
+  width: 150px;
 }
 
 .guests-table th:nth-child(1),
