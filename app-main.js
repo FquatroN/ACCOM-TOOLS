@@ -11277,7 +11277,7 @@ function emptyGuestDraft() {
     birthDate: "",
     birthPlace: "",
     docNumber: "",
-    docType: "P",
+    docType: "",
     issuerCountry: "",
     issuerCountryCode: "",
     residenceCountry: "",
@@ -11341,6 +11341,11 @@ function resolveGuestCountryClient(value) {
 
 function normalizeGuestDocTypeClient(value) {
   return clean(value).toUpperCase();
+}
+
+function coerceGuestDocTypeClient(value) {
+  const normalized = normalizeGuestDocTypeClient(value);
+  return ["P", "O", "B"].includes(normalized) ? normalized : "O";
 }
 
 function normalizeGuestHAClient(value) {
@@ -11707,7 +11712,7 @@ function buildGuestPayload(draft, { isEdit = false } = {}) {
     birthDate: normalizeGuestDateClient(draft.birthDate),
     birthPlace: clean(draft.birthPlace),
     docNumber: normalizeGuestDocNumberClient(draft.docNumber),
-    docType: normalizeGuestDocTypeClient(draft.docType),
+    docType: coerceGuestDocTypeClient(draft.docType),
     issuerCountry: clean(draft.issuerCountry),
     residenceCountry: clean(draft.residenceCountry),
     residenceCity: clean(draft.residenceCity),
@@ -11740,7 +11745,6 @@ function validateGuestDraftClient(draft) {
   if (!clean(draft?.birthDate)) return "Birth date is required.";
   if (!normalizeGuestDateClient(draft?.birthDate)) return "Birth date must be a valid date.";
   if (!clean(draft?.docNumber)) return "Document number is required.";
-  if (!clean(draft?.docType) || !["P", "O", "B"].includes(normalizeGuestDocTypeClient(draft?.docType))) return "Doc Type must be P, O or B.";
   if (clean(draft?.checkIn) && !normalizeGuestDateClient(draft?.checkIn)) return "Check-in must be a valid date.";
   if (clean(draft?.checkOut) && !normalizeGuestDateClient(draft?.checkOut)) return "Check-out must be a valid date.";
   if (normalizeGuestDateClient(draft?.checkIn) && normalizeGuestDateClient(draft?.checkOut) && normalizeGuestDateClient(draft?.checkOut) < normalizeGuestDateClient(draft?.checkIn)) return "Check-out must be after or equal to check-in.";

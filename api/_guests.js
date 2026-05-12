@@ -56,7 +56,8 @@ function normalizeGuestName(value) {
 }
 
 function normalizeDocType(value) {
-  return cleanText(value).toUpperCase();
+  const normalized = cleanText(value).toUpperCase();
+  return ["P", "O", "B"].includes(normalized) ? normalized : "O";
 }
 
 function normalizeHA(value) {
@@ -239,11 +240,6 @@ function validateGuestRecord(record) {
   }
   if (!record.docNumber) {
     const error = new Error("Document number is required.");
-    error.statusCode = 400;
-    throw error;
-  }
-  if (!record.docType || !["P", "O", "B"].includes(record.docType)) {
-    const error = new Error("Doc Type must be P, O or B.");
     error.statusCode = 400;
     throw error;
   }
