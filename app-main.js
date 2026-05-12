@@ -11797,6 +11797,13 @@ async function saveGuestRecord(mode = "new", id = "", options = {}) {
     showToast(isEdit ? "Guest record saved." : "Guest record added.", "success");
     if (options?.focusNewRow) {
       requestAnimationFrame(() => {
+        state.guestsDraft.issuerCountry = "";
+        const issuerInputs = Array.from(document.querySelectorAll('[data-field="issuerCountry"][data-scope="new"]')).filter((element) => element instanceof HTMLElement && element.offsetParent !== null);
+        issuerInputs.forEach((input) => {
+          input.value = "";
+          input.defaultValue = "";
+          input.setAttribute("value", "");
+        });
         const next = Array.from(document.querySelectorAll('[data-field="name"][data-scope="new"]')).find((element) => element instanceof HTMLElement && element.offsetParent !== null);
         next?.focus();
       });
