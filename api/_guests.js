@@ -26,6 +26,10 @@ const DEFAULT_GUESTS_SETTINGS = {
 };
 
 const SEF_ENDPOINT = "https://siba.sef.pt/baws/boletinsalojamento.asmx";
+const SEF_ENDPOINTS = [
+  "https://siba.sef.pt/baws/boletinsalojamento.asmx",
+  "http://siba.sef.pt/baws/boletinsalojamento.asmx",
+];
 const SEF_HOTEL_PROFILE = {
   name: "Lisboa Central Hostel",
   abbreviation: "LCH",
@@ -459,6 +463,7 @@ module.exports = {
   DEFAULT_GUESTS_SETTINGS,
   GUESTS_SETTING_KEY,
   SEF_ENDPOINT,
+  SEF_ENDPOINTS,
   buildBalXml,
   buildSoapEnvelope,
   calculateAge,

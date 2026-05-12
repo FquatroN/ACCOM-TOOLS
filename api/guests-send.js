@@ -4,6 +4,7 @@ const {
   DEFAULT_GUESTS_SETTINGS,
   GUESTS_SETTING_KEY,
   SEF_ENDPOINT,
+  SEF_ENDPOINTS,
   buildBalXml,
   buildSoapEnvelope,
   lisbonTodayIso,
@@ -171,6 +172,29 @@ function parseSefResult(resultText) {
   };
 }
 
+async function postToSef(soap) {
+  const endpoints = Array.isArray(SEF_ENDPOINTS) && SEF_ENDPOINTS.length ? SEF_ENDPOINTS : [SEF_ENDPOINT];
+  const failures = [];
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/xml; charset=utf-8",
+          SOAPAction: "http://sef.pt/EntregaBoletinsAlojamento",
+        },
+        body: soap,
+      });
+      return { response, endpoint };
+    } catch (error) {
+      failures.push(`${endpoint}: ${cleanText(error?.cause?.message || error?.message || "fetch failed")}`);
+    }
+  }
+  const err = new Error(`Could not reach SEF endpoint. ${failures.join(" | ") || "fetch failed"}`);
+  err.statusCode = 502;
+  throw err;
+}
+
 module.exports = async function handler(req, res) {
   try {
     await requireFeature(req, "app", "guests");
@@ -208,14 +232,7 @@ module.exports = async function handler(req, res) {
     const xml = buildBalXml(sendableMapped, nextFileNumber, current.settings);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
     const soap = buildSoapEnvelope(base64Payload, current.settings);
-    const response = await fetch(SEF_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/xml; charset=utf-8",
-        SOAPAction: "http://sef.pt/EntregaBoletinsAlojamento",
-      },
-      body: soap,
-    });
+    const { response } = await postToSef(soap);
     const body = await response.text();
     const resultMatch = body.match(/<EntregaBoletinsAlojamentoResult>([\s\S]*?)<\/EntregaBoletinsAlojamentoResult>/i);
     const resultText = resultMatch ? resultMatch[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : body;
