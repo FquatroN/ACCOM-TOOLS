@@ -1,4 +1,4 @@
-const { parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
+const { hasFeature, loadAccessForUser, parseBody, requireFeature, restQuery, sendError, verifyUser } = require("./_supabase");
 
 const DEFAULT_SETTINGS = {
   general: {
@@ -139,9 +139,14 @@ function sanitizeSettings(input) {
 
 module.exports = async function handler(req, res) {
   try {
-    await requireFeature(req, "settings", "communications");
-
     if (req.method === "GET") {
+      const user = await verifyUser(req);
+      const access = await loadAccessForUser(user.id);
+      if (!hasFeature(access, "settings", "communications") && !hasFeature(access, "app", "communications")) {
+        const err = new Error("You do not have permission for this feature.");
+        err.statusCode = 403;
+        throw err;
+      }
       const rows = await restQuery("app_settings?select=payload&setting_key=eq.communications&limit=1", {
         method: "GET",
       });
@@ -151,6 +156,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === "PUT") {
+      await requireFeature(req, "settings", "communications");
       const body = await parseBody(req);
       const safe = sanitizeSettings(body?.settings);
       const existing = await restQuery(
