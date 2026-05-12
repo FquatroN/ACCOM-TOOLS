@@ -17,8 +17,8 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "cash", "lost-found", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry"];
-const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "cash", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry"];
+const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "cash", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -438,9 +438,14 @@ const DEFAULT_HOURS_SETTINGS = {
   people: ["Fernanda Pereira"],
 };
 
+const DEFAULT_GUESTS_SETTINGS = {
+  sendTime: "18:00",
+};
+
 const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
   { label: "App: Communications", kind: "app", key: "communications" },
+  { label: "App: Guests", kind: "app", key: "guests" },
   { label: "App: Cash Control", kind: "app", key: "cash" },
   { label: "App: Lost&Found", kind: "app", key: "lost-found" },
   { label: "App: Reviews", kind: "app", key: "reviews" },
@@ -452,6 +457,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Laundry Control", kind: "app", key: "laundry" },
   { label: "Settings: General", kind: "settings", key: "general" },
   { label: "Settings: Communications", kind: "settings", key: "communications" },
+  { label: "Settings: Guests", kind: "settings", key: "guests" },
   { label: "Settings: Cash Control", kind: "settings", key: "cash" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
   { label: "Settings: Groups", kind: "settings", key: "groups" },
@@ -711,6 +717,20 @@ const state = {
   cashItemsModalId: "",
   cashItemsDraft: {},
   cashItemsJustificationsDraft: {},
+  guestsRows: [],
+  guestsBlacklist: [],
+  guestsCountries: [],
+  guestsLoaded: false,
+  guestsSettings: clone(DEFAULT_GUESTS_SETTINGS),
+  guestsSettingsLoaded: false,
+  guestsScreen: "list",
+  guestsFilters: { showActive: true, ha: "", search: "", nationality: "", checkIn: "", checkOut: "" },
+  guestsDraft: null,
+  guestsEditDraft: null,
+  guestsEditingId: "",
+  guestsBlacklistDraft: null,
+  guestsBlacklistEditDraft: null,
+  guestsBlacklistEditingId: "",
   hoursRecords: [],
   hoursLoaded: false,
   hoursSettings: clone(DEFAULT_HOURS_SETTINGS),
@@ -810,6 +830,7 @@ const els = {
   topbar: document.querySelector(".topbar"),
   mobileMenuToggle: document.getElementById("mobile-menu-toggle"),
   navCommunications: document.getElementById("nav-communications"),
+  navGuests: document.getElementById("nav-guests"),
   navCash: document.getElementById("nav-cash"),
   navLostFound: document.getElementById("nav-lost-found"),
   navReviews: document.getElementById("nav-reviews"),
@@ -822,6 +843,7 @@ const els = {
   openSettings: document.getElementById("open-settings"),
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
+  viewGuests: document.getElementById("view-guests"),
   viewCash: document.getElementById("view-cash"),
   viewLostFound: document.getElementById("view-lost-found"),
   viewReviews: document.getElementById("view-reviews"),
@@ -833,6 +855,7 @@ const els = {
   viewSettings: document.getElementById("view-settings"),
   settingsMenuGeneral: document.getElementById("settings-menu-general"),
   settingsMenuCommunications: document.getElementById("settings-menu-communications"),
+  settingsMenuGuests: document.getElementById("settings-menu-guests"),
   settingsMenuCash: document.getElementById("settings-menu-cash"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
   settingsMenuGroups: document.getElementById("settings-menu-groups"),
@@ -894,6 +917,7 @@ const els = {
   cashItemsSave: document.getElementById("cash-items-save"),
   settingsViewGeneral: document.getElementById("settings-view-general"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
+  settingsViewGuests: document.getElementById("settings-view-guests"),
   settingsViewCash: document.getElementById("settings-view-cash"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
   settingsViewGroups: document.getElementById("settings-view-groups"),
@@ -908,6 +932,7 @@ const els = {
   settingsReviewsImportPanel: document.getElementById("settings-reviews-import-panel"),
   settingsReviewsConfigPanel: document.getElementById("settings-reviews-config-panel"),
   closeSettingsGeneral: document.getElementById("close-settings-general"),
+  closeSettingsGuests: document.getElementById("close-settings-guests"),
   closeSettingsAdmin: document.getElementById("close-settings-admin"),
   closeSettingsReviews: document.getElementById("close-settings-reviews"),
   closeSettingsGroups: document.getElementById("close-settings-groups"),
@@ -984,6 +1009,29 @@ const els = {
   testEmailNow: document.getElementById("test-email-now"),
   saveSettings: document.getElementById("save-settings"),
   settingsStatus: document.getElementById("settings-status"),
+  guestsTabList: document.getElementById("guests-tab-list"),
+  guestsTabBlacklist: document.getElementById("guests-tab-blacklist"),
+  guestsPanelList: document.getElementById("guests-panel-list"),
+  guestsPanelBlacklist: document.getElementById("guests-panel-blacklist"),
+  guestsShowActive: document.getElementById("guests-show-active"),
+  guestsSendPending: document.getElementById("guests-send-pending"),
+  guestsCount: document.getElementById("guests-count"),
+  guestsFilterHa: document.getElementById("guests-filter-ha"),
+  guestsFilterSearch: document.getElementById("guests-filter-search"),
+  guestsFilterNationality: document.getElementById("guests-filter-nationality"),
+  guestsFilterCheckin: document.getElementById("guests-filter-checkin"),
+  guestsFilterCheckout: document.getElementById("guests-filter-checkout"),
+  guestsCountryList: document.getElementById("guests-country-list"),
+  guestsRows: document.getElementById("guests-rows"),
+  guestsMobileCards: document.getElementById("guests-mobile-cards"),
+  guestsStatus: document.getElementById("guests-status"),
+  guestsBlacklistCount: document.getElementById("guests-blacklist-count"),
+  guestsBlacklistRows: document.getElementById("guests-blacklist-rows"),
+  guestsBlacklistMobileCards: document.getElementById("guests-blacklist-mobile-cards"),
+  guestsBlacklistStatus: document.getElementById("guests-blacklist-status"),
+  guestsSaveSettings: document.getElementById("guests-save-settings"),
+  guestsSettingsSendTime: document.getElementById("guests-settings-send-time"),
+  guestsSettingsStatus: document.getElementById("guests-settings-status"),
   viewGroups: document.getElementById("view-groups"),
   groupsNew: document.getElementById("groups-new"),
   groupsTabList: document.getElementById("groups-tab-list"),
@@ -1390,26 +1438,28 @@ async function init() {
   bindEvents();
   await initAuth();
   await loadAccess();
-  if (!canApp("communications") && canApp("cash")) state.currentView = "cash";
-  else if (!canApp("communications") && !canApp("cash") && canApp("lost-found")) state.currentView = "lost-found";
-  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && canApp("groups")) state.currentView = "groups";
-  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
-  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("shopping")) state.currentView = "shopping";
-  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("hours")) state.currentView = "hours";
-  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && canApp("bakery")) state.currentView = "bakery";
-  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
-  else if (!canApp("communications") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
+  if (!canApp("communications") && canApp("guests")) state.currentView = "guests";
+  else if (!canApp("communications") && !canApp("guests") && canApp("cash")) state.currentView = "cash";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && canApp("lost-found")) state.currentView = "lost-found";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && canApp("groups")) state.currentView = "groups";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && canApp("services")) state.currentView = "services";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && canApp("shopping")) state.currentView = "shopping";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && canApp("hours")) state.currentView = "hours";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && canApp("bakery")) state.currentView = "bakery";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
-  if (!canAccessGeneralSettings() && canSettings("cash")) state.settingsSection = "cash";
-  else if (!canAccessGeneralSettings() && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
-  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
-  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
-  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
-  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
-  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
-  else if (!canAccessGeneralSettings() && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
-  else if (!canAccessGeneralSettings() && !canSettings("cash") && canSettings("admin-users")) state.settingsSection = "admin-users";
+  if (!canAccessGeneralSettings() && canSettings("guests")) state.settingsSection = "guests";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && canSettings("cash")) state.settingsSection = "cash";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
   renderCategoryFilterOptions();
@@ -1417,6 +1467,7 @@ async function init() {
   render();
   if (canApp("communications")) loadSidebarReviewSummary({ silent: true }).catch(() => {});
   await ensureCurrentViewData();
+  if (canApp("guests")) loadGuestsData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("cash")) loadCashData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("hours")) loadHoursData({ silent: true }).catch(() => {});
@@ -1427,6 +1478,7 @@ async function init() {
 
 function bindEvents() {
   els.navCommunications.addEventListener("click", () => setView("communications"));
+  els.navGuests?.addEventListener("click", () => setView("guests"));
   els.navCash?.addEventListener("click", () => setView("cash"));
   els.navLostFound.addEventListener("click", () => setView("lost-found"));
   els.navReviews.addEventListener("click", () => setView("reviews"));
@@ -1454,8 +1506,10 @@ function bindEvents() {
   els.closeSettingsHours?.addEventListener("click", () => setView("hours"));
   els.closeSettingsBakery.addEventListener("click", () => setView("bakery"));
   els.closeSettingsLaundry?.addEventListener("click", () => setView("laundry"));
+  els.closeSettingsGuests?.addEventListener("click", () => setView("guests"));
   els.settingsMenuGeneral?.addEventListener("click", () => setSettingsSection("general"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
+  els.settingsMenuGuests?.addEventListener("click", () => setSettingsSection("guests"));
   els.settingsMenuCash?.addEventListener("click", () => setSettingsSection("cash"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuGroups.addEventListener("click", () => setSettingsSection("groups"));
@@ -1497,6 +1551,28 @@ function bindEvents() {
   els.shoppingSettingsCategoryColors?.addEventListener("input", onShoppingSettingsInput);
   els.shoppingSettingsCategoryColors?.addEventListener("change", onShoppingSettingsInput);
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
+  els.guestsTabList?.addEventListener("click", () => setGuestsScreen("list"));
+  els.guestsTabBlacklist?.addEventListener("click", () => setGuestsScreen("blacklist"));
+  els.guestsShowActive?.addEventListener("change", onGuestsFilterInput);
+  els.guestsFilterHa?.addEventListener("change", onGuestsFilterInput);
+  [els.guestsFilterSearch, els.guestsFilterNationality, els.guestsFilterCheckin, els.guestsFilterCheckout].forEach((el) => el?.addEventListener("input", onGuestsFilterInput));
+  els.guestsRows?.addEventListener("click", onGuestsAction);
+  els.guestsRows?.addEventListener("input", onGuestsDraftInput);
+  els.guestsRows?.addEventListener("change", onGuestsDraftInput);
+  els.guestsRows?.addEventListener("keydown", onGuestsKeydown);
+  els.guestsMobileCards?.addEventListener("click", onGuestsAction);
+  els.guestsMobileCards?.addEventListener("input", onGuestsDraftInput);
+  els.guestsMobileCards?.addEventListener("change", onGuestsDraftInput);
+  els.guestsMobileCards?.addEventListener("keydown", onGuestsKeydown);
+  els.guestsBlacklistRows?.addEventListener("click", onGuestsBlacklistAction);
+  els.guestsBlacklistRows?.addEventListener("input", onGuestsBlacklistDraftInput);
+  els.guestsBlacklistRows?.addEventListener("change", onGuestsBlacklistDraftInput);
+  els.guestsBlacklistMobileCards?.addEventListener("click", onGuestsBlacklistAction);
+  els.guestsBlacklistMobileCards?.addEventListener("input", onGuestsBlacklistDraftInput);
+  els.guestsBlacklistMobileCards?.addEventListener("change", onGuestsBlacklistDraftInput);
+  els.guestsSendPending?.addEventListener("click", sendPendingGuests);
+  els.guestsSaveSettings?.addEventListener("click", saveGuestsSettings);
+  els.guestsSettingsSendTime?.addEventListener("input", onGuestsSettingsInput);
   els.cashRows?.addEventListener("click", onCashTableAction);
   els.cashRows?.addEventListener("input", onCashTableInput);
   els.cashMobileCards?.addEventListener("click", onCashTableAction);
@@ -1946,6 +2022,9 @@ function applyInitialRouteFromUrl() {
     if (view === "services" && canApp("services")) {
       state.currentView = "services";
     }
+    if (view === "guests" && canApp("guests")) {
+      state.currentView = "guests";
+    }
     if (view === "shopping" && canApp("shopping")) {
       state.currentView = "shopping";
     }
@@ -1975,6 +2054,9 @@ function syncAppRoute() {
     } else if (state.currentView === "cash") {
       url.searchParams.set("view", "cash");
       url.searchParams.delete("service");
+    } else if (state.currentView === "guests") {
+      url.searchParams.set("view", "guests");
+      url.searchParams.delete("service");
     } else if (state.currentView === "hours") {
       url.searchParams.set("view", "hours");
       url.searchParams.delete("service");
@@ -1989,6 +2071,7 @@ function syncAppRoute() {
 
 async function setView(view) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
+  if (view === "guests" && !canApp("guests")) return showToast("No guests access.", "error");
   if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
   if (view === "groups" && !canApp("groups")) return showToast("No groups access.", "error");
@@ -2002,6 +2085,7 @@ async function setView(view) {
   state.currentView = view;
   if (view === "settings") {
     if (canAccessGeneralSettings()) state.settingsSection = "general";
+    else if (canSettings("guests")) state.settingsSection = "guests";
     else if (canSettings("cash")) state.settingsSection = "cash";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
     else if (canSettings("groups")) state.settingsSection = "groups";
@@ -2038,6 +2122,12 @@ async function setView(view) {
 async function ensureCurrentViewData() {
   if (state.currentView === "communications") {
     await ensureCommunicationsData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "guests") {
+    await ensureGuestsData();
     renderSettingsSection();
     render();
     return;
@@ -2129,6 +2219,14 @@ async function refreshCurrentViewData(reason = "timer") {
       state.lastAutoRefreshAt = now;
       return;
     }
+    if (state.currentView === "guests" && canApp("guests")) {
+      await loadGuestsData({ silent: true });
+      state.guestsLoaded = true;
+      renderGuests();
+      renderLayout();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
     if (state.currentView === "lost-found" && canApp("lost-found")) {
       await loadLostFound({ silent: true });
       state.lostFoundLoaded = true;
@@ -2202,6 +2300,7 @@ async function refreshCurrentViewData(reason = "timer") {
 function shouldSkipAutoRefresh() {
   if (state.currentView === "settings") return true;
   if (state.currentView === "communications" && (state.editingId || hasCommunicationDraft())) return true;
+  if (state.currentView === "guests" && (state.guestsEditingId || state.guestsBlacklistEditingId || hasGuestsDraft() || hasGuestsBlacklistDraft())) return true;
   if (state.currentView === "cash" && (state.cashEditingId || hasCashDraft() || state.cashMoneyModalOpen || state.cashItemsModalOpen)) return true;
   if (state.currentView === "lost-found" && (state.lostFoundEditingId || hasLostFoundDraft())) return true;
   if (state.currentView === "groups" && els.groupEditorModal && !els.groupEditorModal.hidden) return true;
@@ -2240,6 +2339,19 @@ async function ensureCommunicationsData() {
     await loadEntries();
     state.communicationsLoaded = true;
   }
+}
+
+async function ensureGuestsData() {
+  if (!canApp("guests") && !canSettings("guests")) return;
+  if ((canApp("guests") || canSettings("guests")) && !state.guestsSettingsLoaded) {
+    await loadGuestsSettings();
+  }
+  if (canApp("guests") && !state.guestsLoaded) {
+    await loadGuestsData();
+    state.guestsLoaded = true;
+  }
+  renderGuests();
+  renderGuestsSettings();
 }
 
 async function ensureLostFoundData() {
@@ -2383,6 +2495,10 @@ async function ensureSettingsSectionData() {
     await ensureCommunicationsData();
     return;
   }
+  if (state.settingsSection === "guests") {
+    await ensureGuestsData();
+    return;
+  }
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
     return;
@@ -2424,6 +2540,7 @@ async function ensureSettingsSectionData() {
 
 function renderLayout() {
   const comm = state.currentView === "communications";
+  const guests = state.currentView === "guests";
   const cash = state.currentView === "cash";
   const lostFound = state.currentView === "lost-found";
   const reviews = state.currentView === "reviews";
@@ -2435,6 +2552,7 @@ function renderLayout() {
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
   const canComm = canApp("communications");
+  const canGuests = canApp("guests");
   const canCash = canApp("cash");
   const canLostFound = canApp("lost-found");
   const canReviews = canApp("reviews");
@@ -2448,6 +2566,7 @@ function renderLayout() {
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
   els.navCommunications.classList.toggle("active", comm);
+  els.navGuests?.classList.toggle("active", guests);
   els.navCash?.classList.toggle("active", cash);
   els.navLostFound.classList.toggle("active", lostFound);
   els.navReviews.classList.toggle("active", reviews);
@@ -2458,6 +2577,7 @@ function renderLayout() {
   els.navBakery.classList.toggle("active", bakery);
   els.navLaundry.classList.toggle("active", laundry);
   els.navCommunications.hidden = !canComm;
+  if (els.navGuests) els.navGuests.hidden = !canGuests;
   if (els.navCash) els.navCash.hidden = !canCash;
   els.navLostFound.hidden = !canLostFound;
   els.navReviews.hidden = !canReviews;
@@ -2467,6 +2587,7 @@ function renderLayout() {
   els.navHours.hidden = !canHours;
   els.navBakery.hidden = !canBakery;
   els.navLaundry.hidden = !canLaundry;
+  els.navGuests?.classList.toggle("has-alert", shouldShowGuestsAlertClient());
   els.navCash?.classList.toggle("has-alert", shouldShowCashAlert());
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
   els.navHours.classList.toggle("has-alert", shouldShowHoursAlert());
@@ -2477,6 +2598,7 @@ function renderLayout() {
   els.topbar.hidden = false;
   if (els.mobileMenuToggle) els.mobileMenuToggle.hidden = settingsMode || !isMobileNavLayout();
   els.viewCommunications.hidden = !comm;
+  if (els.viewGuests) els.viewGuests.hidden = !guests;
   if (els.viewCash) els.viewCash.hidden = !cash;
   els.viewLostFound.hidden = !lostFound;
   els.viewReviews.hidden = !reviews;
@@ -2489,6 +2611,7 @@ function renderLayout() {
   els.viewSettings.hidden = !settingsMode;
   els.settingsMenuGeneral.hidden = !canAccessGeneralSettings();
   els.settingsMenuCommunications.hidden = !canSettings("communications");
+  if (els.settingsMenuGuests) els.settingsMenuGuests.hidden = !canSettings("guests");
   if (els.settingsMenuCash) els.settingsMenuCash.hidden = !canSettings("cash");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
   els.settingsMenuGroups.hidden = !canSettings("groups");
@@ -2500,6 +2623,7 @@ function renderLayout() {
   els.settingsMenuAdminUsers.hidden = !canSettings("admin-users");
   els.settingsMenuGeneral.classList.toggle("active", state.settingsSection === "general");
   els.settingsMenuCommunications.classList.toggle("active", state.settingsSection === "communications");
+  els.settingsMenuGuests?.classList.toggle("active", state.settingsSection === "guests");
   els.settingsMenuCash?.classList.toggle("active", state.settingsSection === "cash");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
   els.settingsMenuGroups.classList.toggle("active", state.settingsSection === "groups");
@@ -2515,6 +2639,7 @@ function renderLayout() {
 
 async function setSettingsSection(section) {
   if (section === "general" && !canAccessGeneralSettings()) return;
+  if (section === "guests" && !canSettings("guests")) return;
   if (section === "communications" && !canSettings("communications")) return;
   if (section === "cash" && !canSettings("cash")) return;
   if (section === "reviews" && !canSettings("reviews")) return;
@@ -2528,6 +2653,8 @@ async function setSettingsSection(section) {
   setMobileNavOpen(false);
   state.settingsSection = section === "admin-users"
     ? "admin-users"
+    : section === "guests"
+      ? "guests"
     : section === "cash"
       ? "cash"
     : section === "shopping"
@@ -2572,6 +2699,7 @@ async function ensureAdminUsersData() {
 
 function renderSettingsSection() {
   const isGeneral = state.settingsSection === "general" && canAccessGeneralSettings();
+  const isGuests = state.settingsSection === "guests" && canSettings("guests");
   const isComm = state.settingsSection === "communications" && canSettings("communications");
   const isCash = state.settingsSection === "cash" && canSettings("cash");
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
@@ -2583,6 +2711,7 @@ function renderSettingsSection() {
   const isLaundry = state.settingsSection === "laundry" && canSettings("laundry");
   const isAdmin = state.settingsSection === "admin-users" && canSettings("admin-users");
   els.settingsViewGeneral.hidden = !isGeneral;
+  if (els.settingsViewGuests) els.settingsViewGuests.hidden = !isGuests;
   els.settingsViewCommunications.hidden = !isComm;
   if (els.settingsViewCash) els.settingsViewCash.hidden = !isCash;
   els.settingsViewReviews.hidden = !isReviews;
@@ -2844,6 +2973,7 @@ function collectProfilePayload(id) {
   }
   const appFeatures = [];
   if (els.profilesBody.querySelector(`[data-profile-app-communications="${id}"]`)?.checked) appFeatures.push("communications");
+  if (els.profilesBody.querySelector(`[data-profile-app-guests="${id}"]`)?.checked) appFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-app-cash="${id}"]`)?.checked) appFeatures.push("cash");
   if (els.profilesBody.querySelector(`[data-profile-app-lost-found="${id}"]`)?.checked) appFeatures.push("lost-found");
   if (els.profilesBody.querySelector(`[data-profile-app-reviews="${id}"]`)?.checked) appFeatures.push("reviews");
@@ -2856,6 +2986,7 @@ function collectProfilePayload(id) {
   const settingsFeatures = [];
   if (els.profilesBody.querySelector(`[data-profile-settings-general="${id}"]`)?.checked) settingsFeatures.push("general");
   if (els.profilesBody.querySelector(`[data-profile-settings-communications="${id}"]`)?.checked) settingsFeatures.push("communications");
+  if (els.profilesBody.querySelector(`[data-profile-settings-guests="${id}"]`)?.checked) settingsFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-settings-cash="${id}"]`)?.checked) settingsFeatures.push("cash");
   if (els.profilesBody.querySelector(`[data-profile-settings-reviews="${id}"]`)?.checked) settingsFeatures.push("reviews");
   if (els.profilesBody.querySelector(`[data-profile-settings-groups="${id}"]`)?.checked) settingsFeatures.push("groups");
@@ -11065,6 +11196,1041 @@ function shouldShowCashAlert() {
   return isCashShiftOverdue(next.day, shift.startTime);
 }
 
+function normalizeGuestsSettingsClient(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    sendTime: /^\d{2}:\d{2}$/.test(clean(source.sendTime ?? source.send_time)) ? clean(source.sendTime ?? source.send_time) : DEFAULT_GUESTS_SETTINGS.sendTime,
+  };
+}
+
+function emptyGuestDraft() {
+  return {
+    ha: "H",
+    name: "",
+    nationality: "",
+    nationalityCode: "",
+    birthDate: "",
+    birthPlace: "",
+    docNumber: "",
+    docType: "P",
+    issuerCountry: "",
+    issuerCountryCode: "",
+    residenceCountry: "",
+    residenceCountryCode: "",
+    residenceCity: "",
+    checkIn: "",
+    checkOut: "",
+    sentStatus: "pending",
+    sentAt: "",
+    sendError: "",
+    sendBatchNumber: 0,
+  };
+}
+
+function emptyGuestsBlacklistDraft() {
+  return {
+    name: "",
+    nationality: "",
+    nationalityCode: "",
+    birthDate: "",
+    docNumber: "",
+    whatHappened: "",
+    occurrenceDate: "",
+    whoReported: "",
+  };
+}
+
+function guestCountryLookupKeyClient(value) {
+  return clean(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+}
+
+function resolveGuestCountryClient(value) {
+  const raw = clean(value);
+  const key = guestCountryLookupKeyClient(raw);
+  const entry = (state.guestsCountries || []).find((item) => {
+    const code = clean(item.code).toUpperCase();
+    const name = clean(item.name);
+    const abbr = clean(item.abbr);
+    return [code, name, abbr].some((candidate) => guestCountryLookupKeyClient(candidate) === key);
+  });
+  if (entry) {
+    return {
+      input: raw || clean(entry.name),
+      code: clean(entry.code).toUpperCase(),
+      name: clean(entry.name),
+      abbr: clean(entry.abbr),
+    };
+  }
+  return {
+    input: raw,
+    code: /^[A-Z]{3}$/.test(key) ? key : "",
+    name: raw,
+    abbr: raw,
+  };
+}
+
+function normalizeGuestDocTypeClient(value) {
+  const raw = clean(value).toUpperCase();
+  return raw === "O" || raw === "B" ? raw : "P";
+}
+
+function normalizeGuestHAClient(value) {
+  return clean(value).toUpperCase() === "A" ? "A" : "H";
+}
+
+function normalizeGuestDocNumberClient(value) {
+  return clean(value).toUpperCase().replace(/\s+/g, "");
+}
+
+function normalizeGuestRecordClient(input = {}) {
+  const nationality = resolveGuestCountryClient(input.nationality);
+  const issuerCountry = resolveGuestCountryClient(input.issuerCountry);
+  const residenceCountry = resolveGuestCountryClient(input.residenceCountry);
+  return {
+    id: clean(input.id),
+    ha: normalizeGuestHAClient(input.ha),
+    name: clean(input.name),
+    nationality: nationality.input,
+    nationalityCode: nationality.code,
+    birthDate: normalizeDateInput(input.birthDate),
+    birthPlace: clean(input.birthPlace),
+    docNumber: normalizeGuestDocNumberClient(input.docNumber),
+    docType: normalizeGuestDocTypeClient(input.docType),
+    issuerCountry: issuerCountry.input,
+    issuerCountryCode: issuerCountry.code,
+    residenceCountry: residenceCountry.input,
+    residenceCountryCode: residenceCountry.code,
+    residenceCity: clean(input.residenceCity),
+    checkIn: normalizeDateInput(input.checkIn),
+    checkOut: normalizeDateInput(input.checkOut),
+    sentStatus: ["sent", "error"].includes(clean(input.sentStatus).toLowerCase()) ? clean(input.sentStatus).toLowerCase() : "pending",
+    sentAt: clean(input.sentAt),
+    sendError: clean(input.sendError),
+    sendBatchNumber: Math.max(0, Number.parseInt(input.sendBatchNumber, 10) || 0),
+    createdAt: clean(input.createdAt),
+    updatedAt: clean(input.updatedAt),
+  };
+}
+
+function normalizeGuestsBlacklistRecordClient(input = {}) {
+  const nationality = resolveGuestCountryClient(input.nationality);
+  return {
+    id: clean(input.id),
+    name: clean(input.name),
+    nationality: nationality.input,
+    nationalityCode: nationality.code,
+    birthDate: normalizeDateInput(input.birthDate),
+    docNumber: normalizeGuestDocNumberClient(input.docNumber),
+    whatHappened: clean(input.whatHappened),
+    occurrenceDate: normalizeDateInput(input.occurrenceDate),
+    whoReported: clean(input.whoReported),
+    createdAt: clean(input.createdAt),
+    updatedAt: clean(input.updatedAt),
+  };
+}
+
+function sortGuestsRowsClient(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => clean(b.checkIn).localeCompare(clean(a.checkIn)) || clean(b.checkOut).localeCompare(clean(a.checkOut)) || clean(a.name).localeCompare(clean(b.name)));
+}
+
+function sortGuestsBlacklistRowsClient(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => clean(b.occurrenceDate).localeCompare(clean(a.occurrenceDate)) || clean(a.name).localeCompare(clean(b.name)));
+}
+
+function setGuestsStatus(message) {
+  if (els.guestsStatus) els.guestsStatus.textContent = message || "";
+}
+
+function setGuestsBlacklistStatus(message) {
+  if (els.guestsBlacklistStatus) els.guestsBlacklistStatus.textContent = message || "";
+}
+
+function setGuestsSettingsStatus(message) {
+  if (els.guestsSettingsStatus) els.guestsSettingsStatus.textContent = message || "";
+}
+
+async function loadGuestsSettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/guests-settings");
+    state.guestsSettings = normalizeGuestsSettingsClient(result?.settings);
+    state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
+    state.guestsSettingsLoaded = true;
+    renderGuestsCountryOptions();
+    renderGuestsSettings();
+    if (!silent) setGuestsSettingsStatus("Guests configuration loaded.");
+  } catch (e) {
+    state.guestsSettings = clone(DEFAULT_GUESTS_SETTINGS);
+    renderGuestsSettings();
+    if (!silent) setGuestsSettingsStatus(`Using default guests configuration (${e.message}).`);
+  }
+}
+
+async function loadGuestsData({ silent = false } = {}) {
+  try {
+    const [recordsResult, blacklistResult] = await Promise.all([
+      api("/api/guests"),
+      api("/api/guests-blacklist"),
+    ]);
+    state.guestsSettings = normalizeGuestsSettingsClient(recordsResult?.settings || state.guestsSettings);
+    state.guestsCountries = Array.isArray(recordsResult?.countries) ? recordsResult.countries : Array.isArray(blacklistResult?.countries) ? blacklistResult.countries : state.guestsCountries;
+    state.guestsRows = sortGuestsRowsClient((Array.isArray(recordsResult?.rows) ? recordsResult.rows : []).map(normalizeGuestRecordClient));
+    state.guestsBlacklist = sortGuestsBlacklistRowsClient((Array.isArray(blacklistResult?.rows) ? blacklistResult.rows : []).map(normalizeGuestsBlacklistRecordClient));
+    state.guestsLoaded = true;
+    state.guestsSettingsLoaded = true;
+    if (!state.guestsEditingId) state.guestsDraft = emptyGuestDraft();
+    if (!state.guestsBlacklistEditingId) state.guestsBlacklistDraft = emptyGuestsBlacklistDraft();
+    renderGuestsCountryOptions();
+    renderGuests();
+    renderGuestsSettings();
+    if (!silent) {
+      setGuestsStatus("Guest records loaded.");
+      setGuestsBlacklistStatus("Blacklist loaded.");
+    }
+  } catch (e) {
+    state.guestsRows = [];
+    state.guestsBlacklist = [];
+    state.guestsSettings = clone(DEFAULT_GUESTS_SETTINGS);
+    state.guestsDraft = emptyGuestDraft();
+    state.guestsBlacklistDraft = emptyGuestsBlacklistDraft();
+    renderGuestsCountryOptions();
+    renderGuests();
+    renderGuestsSettings();
+    if (!silent) {
+      setGuestsStatus(`Using default guests data (${e.message}).`);
+      setGuestsBlacklistStatus(`Using default blacklist data (${e.message}).`);
+    }
+  }
+}
+
+function onGuestsSettingsInput() {
+  state.guestsSettings = normalizeGuestsSettingsClient({ sendTime: els.guestsSettingsSendTime?.value });
+}
+
+async function saveGuestsSettings() {
+  onGuestsSettingsInput();
+  try {
+    const result = await api("/api/guests-settings", { method: "PUT", body: { settings: state.guestsSettings } });
+    state.guestsSettings = normalizeGuestsSettingsClient(result?.settings);
+    state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
+    state.guestsSettingsLoaded = true;
+    renderGuestsCountryOptions();
+    renderGuestsSettings();
+    renderLayout();
+    setGuestsSettingsStatus("Guests configuration saved.");
+    showToast("Guests configuration saved.", "success");
+  } catch (e) {
+    setGuestsSettingsStatus(`Save failed: ${e.message}`);
+    showToast(`Guests configuration save failed: ${e.message}`, "error");
+  }
+}
+
+function renderGuestsSettings() {
+  if (els.guestsSettingsSendTime) els.guestsSettingsSendTime.value = clean(state.guestsSettings?.sendTime) || DEFAULT_GUESTS_SETTINGS.sendTime;
+}
+
+function renderGuestsCountryOptions() {
+  if (!els.guestsCountryList) return;
+  const seen = new Set();
+  const options = [];
+  (state.guestsCountries || []).forEach((country) => {
+    const code = clean(country.code).toUpperCase();
+    const name = clean(country.name);
+    const abbr = clean(country.abbr);
+    [
+      [name, `${code}${abbr ? ` · ${abbr}` : ""}`],
+      [code, name],
+      [abbr, `${code} · ${name}`],
+    ].forEach(([value, label]) => {
+      if (!clean(value)) return;
+      const key = `${value}::${label}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      options.push(`<option value="${escape(value)}" label="${escape(label)}"></option>`);
+    });
+  });
+  els.guestsCountryList.innerHTML = options.join("");
+}
+
+function setGuestsScreen(screen) {
+  state.guestsScreen = screen === "blacklist" ? "blacklist" : "list";
+  renderGuests();
+}
+
+function onGuestsFilterInput(event) {
+  if (event?.target === els.guestsShowActive) state.guestsFilters.showActive = !!els.guestsShowActive?.checked;
+  state.guestsFilters.ha = clean(els.guestsFilterHa?.value);
+  state.guestsFilters.search = clean(els.guestsFilterSearch?.value);
+  state.guestsFilters.nationality = clean(els.guestsFilterNationality?.value);
+  state.guestsFilters.checkIn = clean(els.guestsFilterCheckin?.value);
+  state.guestsFilters.checkOut = clean(els.guestsFilterCheckout?.value);
+  renderGuests();
+}
+
+function guestAgeClient(birthDate, todayIso = lisbonTodayIsoClient()) {
+  const birth = clean(birthDate);
+  const today = clean(todayIso);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birth) || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return "";
+  let age = Number(today.slice(0, 4)) - Number(birth.slice(0, 4));
+  if (today.slice(5) < birth.slice(5)) age -= 1;
+  return age >= 0 ? String(age) : "";
+}
+
+function normalizeGuestNameMatchClient(value) {
+  return clean(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeGuestNameClient(value) {
+  return normalizeGuestNameMatchClient(value).split(" ").map((part) => part.trim()).filter((part) => part.length >= 3);
+}
+
+function guestBlacklistReasonClient(record, blacklistRecord) {
+  const guestDoc = normalizeGuestDocNumberClient(record?.docNumber);
+  const blackDoc = normalizeGuestDocNumberClient(blacklistRecord?.docNumber);
+  if (guestDoc && blackDoc && guestDoc === blackDoc) return "Doc Number";
+  const guestName = normalizeGuestNameMatchClient(record?.name);
+  const blackName = normalizeGuestNameMatchClient(blacklistRecord?.name);
+  if (guestName && blackName && guestName === blackName) return "Exact Name";
+  if (clean(record?.birthDate) && clean(record?.birthDate) === clean(blacklistRecord?.birthDate)) {
+    const guestTokens = tokenizeGuestNameClient(record?.name);
+    const blackTokens = tokenizeGuestNameClient(blacklistRecord?.name);
+    if (guestTokens.some((token) => blackTokens.includes(token))) return "Name + Birth Date";
+  }
+  return "";
+}
+
+function guestBirthdayAlertClient(record, todayIso = lisbonTodayIsoClient()) {
+  const birthDate = clean(record?.birthDate);
+  const checkIn = clean(record?.checkIn);
+  const checkOut = clean(record?.checkOut);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)) return "";
+  const birthdayMd = birthDate.slice(5);
+  if (todayIso >= checkIn && todayIso <= checkOut && todayIso.slice(5) === birthdayMd) return "Birthday today";
+  const cursor = new Date(`${checkIn}T00:00:00`);
+  const limit = new Date(`${checkOut}T00:00:00`);
+  let guard = 0;
+  while (!Number.isNaN(cursor.getTime()) && !Number.isNaN(limit.getTime()) && cursor <= limit && guard < 400) {
+    const dateIso = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit" }).format(cursor);
+    if (dateIso.slice(5) === birthdayMd) return "Birthday during stay";
+    cursor.setDate(cursor.getDate() + 1);
+    guard += 1;
+  }
+  return "";
+}
+
+function guestRowMetaClient(record) {
+  const blacklistMatch = state.guestsBlacklist
+    .map((item) => ({ item, reason: guestBlacklistReasonClient(record, item) }))
+    .find((match) => match.reason);
+  const birthdayAlert = guestBirthdayAlertClient(record);
+  const age = guestAgeClient(record.birthDate);
+  return {
+    blacklistMatch,
+    birthdayAlert,
+    age,
+    isBlacklisted: !!blacklistMatch,
+  };
+}
+
+function guestStatusText(record, meta) {
+  const sentStatus = clean(record.sentStatus).toLowerCase();
+  const lines = [];
+  lines.push(sentStatus === "sent" ? "Sent" : sentStatus === "error" ? "Error" : "Pending");
+  if (clean(record.sentAt)) lines.push(`Sent: ${formatDateTimeShort(record.sentAt)}`);
+  if (clean(record.sendError)) lines.push(clean(record.sendError));
+  if (meta?.blacklistMatch) lines.push(`Blacklist: ${meta.blacklistMatch.reason}`);
+  if (meta?.birthdayAlert) lines.push(meta.birthdayAlert);
+  return lines;
+}
+
+function guestStatusClass(record) {
+  const sentStatus = clean(record.sentStatus).toLowerCase();
+  if (sentStatus === "sent") return "guest-status-sent";
+  if (sentStatus === "error") return "guest-status-error";
+  return "guest-status-pending";
+}
+
+function guestNationalityMatchesFilter(record, filterValue) {
+  const filter = clean(filterValue);
+  if (!filter) return true;
+  const normalizedFilter = guestCountryLookupKeyClient(filter);
+  return [record.nationality, record.nationalityCode].some((value) => guestCountryLookupKeyClient(value) === normalizedFilter || guestCountryLookupKeyClient(value).includes(normalizedFilter));
+}
+
+function getFilteredGuestsRows() {
+  const filters = state.guestsFilters || {};
+  const today = lisbonTodayIsoClient();
+  const ha = clean(filters.ha).toUpperCase();
+  const search = clean(filters.search).toLowerCase();
+  return sortGuestsRowsClient(state.guestsRows)
+    .filter((row) => !filters.showActive || (clean(row.checkOut) && clean(row.checkOut) >= today))
+    .filter((row) => !ha || clean(row.ha).toUpperCase() === ha)
+    .filter((row) => !search || clean(row.name).toLowerCase().includes(search) || clean(row.docNumber).toLowerCase().includes(search))
+    .filter((row) => guestNationalityMatchesFilter(row, filters.nationality))
+    .filter((row) => !clean(filters.checkIn) || clean(row.checkIn) === clean(filters.checkIn))
+    .filter((row) => !clean(filters.checkOut) || clean(row.checkOut) === clean(filters.checkOut));
+}
+
+function getFilteredGuestsBlacklistRows() {
+  return sortGuestsBlacklistRowsClient(state.guestsBlacklist);
+}
+
+function buildGuestPayload(draft, { isEdit = false } = {}) {
+  const payload = {
+    ha: normalizeGuestHAClient(draft.ha),
+    name: clean(draft.name),
+    nationality: clean(draft.nationality),
+    birthDate: normalizeDateInput(draft.birthDate),
+    birthPlace: clean(draft.birthPlace),
+    docNumber: normalizeGuestDocNumberClient(draft.docNumber),
+    docType: normalizeGuestDocTypeClient(draft.docType),
+    issuerCountry: clean(draft.issuerCountry),
+    residenceCountry: clean(draft.residenceCountry),
+    residenceCity: clean(draft.residenceCity),
+    checkIn: normalizeDateInput(draft.checkIn),
+    checkOut: normalizeDateInput(draft.checkOut),
+  };
+  if (isEdit) {
+    payload.sentStatus = "pending";
+    payload.sentAt = "";
+    payload.sendError = "";
+    payload.sendBatchNumber = 0;
+  }
+  return payload;
+}
+
+function buildGuestsBlacklistPayload(draft) {
+  return {
+    name: clean(draft.name),
+    nationality: clean(draft.nationality),
+    birthDate: normalizeDateInput(draft.birthDate),
+    docNumber: normalizeGuestDocNumberClient(draft.docNumber),
+    whatHappened: clean(draft.whatHappened),
+    occurrenceDate: normalizeDateInput(draft.occurrenceDate),
+    whoReported: clean(draft.whoReported),
+  };
+}
+
+function validateGuestDraftClient(draft) {
+  if (!clean(draft?.name)) return "Guest name is required.";
+  if (!clean(draft?.birthDate)) return "Birth date is required.";
+  if (!clean(draft?.docNumber)) return "Document number is required.";
+  if (!clean(draft?.checkIn)) return "Check-in is required.";
+  if (!clean(draft?.checkOut)) return "Check-out is required.";
+  if (clean(draft?.checkOut) < clean(draft?.checkIn)) return "Check-out must be after or equal to check-in.";
+  return "";
+}
+
+function validateGuestsBlacklistDraftClient(draft) {
+  if (!clean(draft?.name) && !clean(draft?.docNumber)) return "Blacklist record requires a name or document number.";
+  if (!clean(draft?.occurrenceDate)) return "Occurrence date is required.";
+  return "";
+}
+
+async function saveGuestRecord(mode = "new", id = "", options = {}) {
+  const isEdit = mode === "edit";
+  const draft = isEdit ? state.guestsEditDraft : state.guestsDraft;
+  const validationError = validateGuestDraftClient(draft);
+  if (validationError) {
+    setGuestsStatus(validationError);
+    showToast(validationError, "error");
+    return;
+  }
+  try {
+    const result = await api(isEdit ? `/api/guests?id=${encodeURIComponent(id)}` : "/api/guests", {
+      method: isEdit ? "PUT" : "POST",
+      body: buildGuestPayload(draft, { isEdit }),
+    });
+    state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
+    state.guestsSettings = normalizeGuestsSettingsClient(result?.settings || state.guestsSettings);
+    state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
+    state.guestsLoaded = true;
+    state.guestsSettingsLoaded = true;
+    state.guestsEditingId = "";
+    state.guestsEditDraft = null;
+    state.guestsDraft = emptyGuestDraft();
+    renderGuestsCountryOptions();
+    renderGuests();
+    renderGuestsSettings();
+    renderLayout();
+    setGuestsStatus(isEdit ? "Guest record saved." : "Guest record added.");
+    showToast(isEdit ? "Guest record saved." : "Guest record added.", "success");
+    if (options?.focusNewRow) {
+      requestAnimationFrame(() => {
+        const next = Array.from(document.querySelectorAll('[data-field="ha"][data-scope="new"]')).find((element) => element instanceof HTMLElement && element.offsetParent !== null);
+        next?.focus();
+      });
+    }
+  } catch (e) {
+    setGuestsStatus(`Save failed: ${e.message}`);
+    showToast(`Guest save failed: ${e.message}`, "error");
+  }
+}
+
+async function deleteGuestRecord(id) {
+  if (!window.confirm("Delete this guest record?")) return;
+  try {
+    const result = await api(`/api/guests?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
+    state.guestsEditingId = "";
+    state.guestsEditDraft = null;
+    renderGuests();
+    renderLayout();
+    setGuestsStatus("Guest record deleted.");
+    showToast("Guest record deleted.", "success");
+  } catch (e) {
+    setGuestsStatus(`Delete failed: ${e.message}`);
+    showToast(`Guest delete failed: ${e.message}`, "error");
+  }
+}
+
+async function saveGuestsBlacklistRecord(mode = "new", id = "") {
+  const isEdit = mode === "edit";
+  const draft = isEdit ? state.guestsBlacklistEditDraft : state.guestsBlacklistDraft;
+  const validationError = validateGuestsBlacklistDraftClient(draft);
+  if (validationError) {
+    setGuestsBlacklistStatus(validationError);
+    showToast(validationError, "error");
+    return;
+  }
+  try {
+    const result = await api(isEdit ? `/api/guests-blacklist?id=${encodeURIComponent(id)}` : "/api/guests-blacklist", {
+      method: isEdit ? "PUT" : "POST",
+      body: buildGuestsBlacklistPayload(draft),
+    });
+    state.guestsBlacklist = sortGuestsBlacklistRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestsBlacklistRecordClient));
+    state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
+    state.guestsBlacklistEditingId = "";
+    state.guestsBlacklistEditDraft = null;
+    state.guestsBlacklistDraft = emptyGuestsBlacklistDraft();
+    renderGuestsCountryOptions();
+    renderGuests();
+    renderLayout();
+    setGuestsBlacklistStatus(isEdit ? "Blacklist record saved." : "Blacklist record added.");
+    showToast(isEdit ? "Blacklist record saved." : "Blacklist record added.", "success");
+  } catch (e) {
+    setGuestsBlacklistStatus(`Save failed: ${e.message}`);
+    showToast(`Blacklist save failed: ${e.message}`, "error");
+  }
+}
+
+async function deleteGuestsBlacklistRecord(id) {
+  if (!window.confirm("Delete this blacklist record?")) return;
+  try {
+    const result = await api(`/api/guests-blacklist?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    state.guestsBlacklist = sortGuestsBlacklistRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestsBlacklistRecordClient));
+    state.guestsBlacklistEditingId = "";
+    state.guestsBlacklistEditDraft = null;
+    renderGuests();
+    renderLayout();
+    setGuestsBlacklistStatus("Blacklist record deleted.");
+    showToast("Blacklist record deleted.", "success");
+  } catch (e) {
+    setGuestsBlacklistStatus(`Delete failed: ${e.message}`);
+    showToast(`Blacklist delete failed: ${e.message}`, "error");
+  }
+}
+
+async function sendPendingGuests() {
+  try {
+    const result = await api("/api/guests-send", { method: "POST" });
+    state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
+    state.guestsSettings = normalizeGuestsSettingsClient(result?.settings || state.guestsSettings);
+    renderGuests();
+    renderLayout();
+    setGuestsStatus(result?.message || "Guests sent successfully.");
+    showToast(result?.message || `Sent ${Number(result?.sent || 0)} guest record${Number(result?.sent || 0) === 1 ? "" : "s"}.`, "success");
+  } catch (e) {
+    await loadGuestsData({ silent: true });
+    renderLayout();
+    setGuestsStatus(`Send failed: ${e.message}`);
+    showToast(`Guest send failed: ${e.message}`, "error");
+  }
+}
+
+function onGuestsDraftInput(event) {
+  const field = clean(event.target.dataset.field);
+  const scope = clean(event.target.dataset.scope || "new");
+  if (!field) return;
+  const draft = scope === "edit" ? state.guestsEditDraft : state.guestsDraft;
+  if (!draft) return;
+  draft[field] = event.target.value;
+  if (event.type === "change") renderGuests();
+}
+
+function onGuestsBlacklistDraftInput(event) {
+  const field = clean(event.target.dataset.field);
+  const scope = clean(event.target.dataset.scope || "new");
+  if (!field) return;
+  const draft = scope === "edit" ? state.guestsBlacklistEditDraft : state.guestsBlacklistDraft;
+  if (!draft) return;
+  draft[field] = event.target.value;
+  if (event.type === "change") renderGuests();
+}
+
+async function onGuestsAction(event) {
+  const button = event.target.closest("button[data-guests-action]");
+  if (!button) return;
+  const action = clean(button.dataset.guestsAction);
+  const id = clean(button.dataset.id);
+  if (action === "save-inline") {
+    await saveGuestRecord("new");
+    return;
+  }
+  if (action === "edit" && id) {
+    const row = state.guestsRows.find((item) => item.id === id);
+    if (!row) return;
+    state.guestsEditingId = id;
+    state.guestsEditDraft = { ...row };
+    renderGuests();
+    return;
+  }
+  if (action === "save-edit" && id) {
+    await saveGuestRecord("edit", id);
+    return;
+  }
+  if (action === "cancel-edit") {
+    state.guestsEditingId = "";
+    state.guestsEditDraft = null;
+    renderGuests();
+    return;
+  }
+  if (action === "delete" && id) {
+    await deleteGuestRecord(id);
+  }
+}
+
+async function onGuestsBlacklistAction(event) {
+  const button = event.target.closest("button[data-guests-blacklist-action]");
+  if (!button) return;
+  const action = clean(button.dataset.guestsBlacklistAction);
+  const id = clean(button.dataset.id);
+  if (action === "save-inline") {
+    await saveGuestsBlacklistRecord("new");
+    return;
+  }
+  if (action === "edit" && id) {
+    const row = state.guestsBlacklist.find((item) => item.id === id);
+    if (!row) return;
+    state.guestsBlacklistEditingId = id;
+    state.guestsBlacklistEditDraft = { ...row };
+    renderGuests();
+    return;
+  }
+  if (action === "save-edit" && id) {
+    await saveGuestsBlacklistRecord("edit", id);
+    return;
+  }
+  if (action === "cancel-edit") {
+    state.guestsBlacklistEditingId = "";
+    state.guestsBlacklistEditDraft = null;
+    renderGuests();
+    return;
+  }
+  if (action === "delete" && id) {
+    await deleteGuestsBlacklistRecord(id);
+  }
+}
+
+async function onGuestsKeydown(event) {
+  const field = clean(event.target?.dataset?.field);
+  const scope = clean(event.target?.dataset?.scope || "new");
+  if (field === "checkOut" && scope === "new" && event.key === "Tab" && !event.shiftKey) {
+    event.preventDefault();
+    await saveGuestRecord("new", "", { focusNewRow: true });
+  }
+}
+
+function guestRowBackground(record, meta) {
+  return meta?.isBlacklisted ? hexToRgba("#b12030", 0.5) : "#ffffff";
+}
+
+function guestStatusMarkup(record, meta) {
+  return `<div class="guest-status-stack ${guestStatusClass(record)}">${guestStatusText(record, meta).map((line, index) => `<span${index > 0 ? ' class="guest-status-note"' : ""}>${escape(line)}</span>`).join("")}</div>`;
+}
+
+function buildGuestsInlineRow() {
+  const draft = state.guestsDraft || emptyGuestDraft();
+  const tr = document.createElement("tr");
+  tr.className = "inline-editor sticky-new-row";
+  tr.innerHTML = `<td><select data-field="ha" data-scope="new"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
+    <td><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></td>
+    <td><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
+    <td><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></td>
+    <td><input data-field="birthPlace" data-scope="new" value="${escape(draft.birthPlace)}" /></td>
+    <td><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></td>
+    <td><select data-field="docType" data-scope="new"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></td>
+    <td><input data-field="issuerCountry" data-scope="new" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></td>
+    <td><input data-field="residenceCountry" data-scope="new" list="guests-country-list" value="${escape(draft.residenceCountry)}" /></td>
+    <td><input data-field="residenceCity" data-scope="new" value="${escape(draft.residenceCity)}" /></td>
+    <td><input data-field="checkIn" data-scope="new" type="date" value="${escape(draft.checkIn)}" /></td>
+    <td><input data-field="checkOut" data-scope="new" type="date" value="${escape(draft.checkOut)}" /></td>
+    <td>${escape(guestAgeClient(draft.birthDate))}</td>
+    <td>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</td>
+    <td class="row-actions"><button type="button" data-guests-action="save-inline">Add</button></td>`;
+  tr.style.backgroundColor = "#ffffff";
+  return tr;
+}
+
+function buildGuestsReadOnlyRow(record) {
+  const meta = guestRowMetaClient(record);
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${escape(record.ha)}</td>
+    <td>${escape(record.name)}</td>
+    <td>${escape(record.nationality || record.nationalityCode || "-")}</td>
+    <td>${escape(record.birthDate || "-")}</td>
+    <td>${escape(record.birthPlace || "-")}</td>
+    <td>${escape(record.docNumber || "-")}</td>
+    <td>${escape(record.docType || "-")}</td>
+    <td>${escape(record.issuerCountry || record.issuerCountryCode || "-")}</td>
+    <td>${escape(record.residenceCountry || record.residenceCountryCode || "-")}</td>
+    <td>${escape(record.residenceCity || "-")}</td>
+    <td>${escape(record.checkIn || "-")}</td>
+    <td>${escape(record.checkOut || "-")}</td>
+    <td>${escape(meta.age || "-")}</td>
+    <td>${guestStatusMarkup(record, meta)}</td>
+    <td class="row-actions"><button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button></td>`;
+  tr.style.backgroundColor = guestRowBackground(record, meta);
+  return tr;
+}
+
+function buildGuestsEditableRow(record) {
+  const draft = state.guestsEditDraft || record;
+  const meta = guestRowMetaClient(draft);
+  const tr = document.createElement("tr");
+  tr.className = "inline-editor";
+  tr.innerHTML = `<td><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
+    <td><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></td>
+    <td><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
+    <td><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></td>
+    <td><input data-field="birthPlace" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.birthPlace)}" /></td>
+    <td><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></td>
+    <td><select data-field="docType" data-scope="edit" data-id="${escape(record.id)}"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></td>
+    <td><input data-field="issuerCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></td>
+    <td><input data-field="residenceCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.residenceCountry)}" /></td>
+    <td><input data-field="residenceCity" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.residenceCity)}" /></td>
+    <td><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></td>
+    <td><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></td>
+    <td>${escape(guestAgeClient(draft.birthDate) || "-")}</td>
+    <td>${guestStatusMarkup(draft, meta)}</td>
+    <td class="row-actions"><button type="button" data-guests-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
+  tr.style.backgroundColor = guestRowBackground(draft, meta);
+  return tr;
+}
+
+function buildGuestsInlineCard() {
+  const draft = state.guestsDraft || emptyGuestDraft();
+  const card = document.createElement("article");
+  card.className = "guests-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-grid">
+      <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="new"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></label>
+      <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
+      <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Birth Place</small><input data-field="birthPlace" data-scope="new" value="${escape(draft.birthPlace)}" /></label>
+      <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></label>
+      <label class="communication-mobile-field"><small>Doc Type</small><select data-field="docType" data-scope="new"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></label>
+      <label class="communication-mobile-field"><small>Issuer Country</small><input data-field="issuerCountry" data-scope="new" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></label>
+      <label class="communication-mobile-field"><small>Residence Country</small><input data-field="residenceCountry" data-scope="new" list="guests-country-list" value="${escape(draft.residenceCountry)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Residence City</small><input data-field="residenceCity" data-scope="new" value="${escape(draft.residenceCity)}" /></label>
+      <label class="communication-mobile-field"><small>Check-in</small><input data-field="checkIn" data-scope="new" type="date" value="${escape(draft.checkIn)}" /></label>
+      <label class="communication-mobile-field"><small>Check-out</small><input data-field="checkOut" data-scope="new" type="date" value="${escape(draft.checkOut)}" /></label>
+      <div class="communication-mobile-field"><small>Age</small><div class="communication-mobile-message">${escape(guestAgeClient(draft.birthDate) || "-")}</div></div>
+      <div class="communication-mobile-field communication-mobile-field-full"><small>Status</small>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-guests-action="save-inline">Add</button></div></div>`;
+  return card;
+}
+
+function buildGuestsReadOnlyCard(record) {
+  const meta = guestRowMetaClient(record);
+  const card = document.createElement("article");
+  card.className = "guests-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(record.name)}</div>
+        <div class="communication-mobile-meta">${escape(record.checkIn || "-")} · ${escape(record.ha)}</div>
+      </div>
+      <div class="group-mobile-total"><strong>${escape(meta.age || "-")}</strong><small>Age</small></div>
+    </div>
+    <div class="communication-mobile-grid">
+      <div class="communication-mobile-field"><small>Doc</small><div class="communication-mobile-message">${escape(record.docNumber || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Nationality</small><div class="communication-mobile-message">${escape(record.nationality || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Birth Date</small><div class="communication-mobile-message">${escape(record.birthDate || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Doc Type</small><div class="communication-mobile-message">${escape(record.docType || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Issuer</small><div class="communication-mobile-message">${escape(record.issuerCountry || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Residence Country</small><div class="communication-mobile-message">${escape(record.residenceCountry || "-")}</div></div>
+      <div class="communication-mobile-field communication-mobile-field-full"><small>Residence City</small><div class="communication-mobile-message">${escape(record.residenceCity || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Check-in</small><div class="communication-mobile-message">${escape(record.checkIn || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Check-out</small><div class="communication-mobile-message">${escape(record.checkOut || "-")}</div></div>
+      <div class="communication-mobile-field communication-mobile-field-full"><small>Status</small>${guestStatusMarkup(record, meta)}</div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button></div></div>`;
+  card.style.backgroundColor = guestRowBackground(record, meta);
+  return card;
+}
+
+function buildGuestsEditableCard(record) {
+  const draft = state.guestsEditDraft || record;
+  const meta = guestRowMetaClient(draft);
+  const card = document.createElement("article");
+  card.className = "guests-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-grid">
+      <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></label>
+      <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
+      <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Birth Place</small><input data-field="birthPlace" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.birthPlace)}" /></label>
+      <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></label>
+      <label class="communication-mobile-field"><small>Doc Type</small><select data-field="docType" data-scope="edit" data-id="${escape(record.id)}"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></label>
+      <label class="communication-mobile-field"><small>Issuer Country</small><input data-field="issuerCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></label>
+      <label class="communication-mobile-field"><small>Residence Country</small><input data-field="residenceCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.residenceCountry)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Residence City</small><input data-field="residenceCity" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.residenceCity)}" /></label>
+      <label class="communication-mobile-field"><small>Check-in</small><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></label>
+      <label class="communication-mobile-field"><small>Check-out</small><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></label>
+      <div class="communication-mobile-field"><small>Age</small><div class="communication-mobile-message">${escape(guestAgeClient(draft.birthDate) || "-")}</div></div>
+      <div class="communication-mobile-field communication-mobile-field-full"><small>Status</small>${guestStatusMarkup(draft, meta)}</div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-guests-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></div></div>`;
+  card.style.backgroundColor = guestRowBackground(draft, meta);
+  return card;
+}
+
+function buildGuestsBlacklistInlineRow() {
+  const draft = state.guestsBlacklistDraft || emptyGuestsBlacklistDraft();
+  const tr = document.createElement("tr");
+  tr.className = "inline-editor sticky-new-row";
+  tr.innerHTML = `<td><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></td>
+    <td><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
+    <td><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></td>
+    <td><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></td>
+    <td><textarea data-field="whatHappened" data-scope="new" rows="2">${escape(draft.whatHappened)}</textarea></td>
+    <td><input data-field="occurrenceDate" data-scope="new" type="date" value="${escape(draft.occurrenceDate)}" /></td>
+    <td><input data-field="whoReported" data-scope="new" value="${escape(draft.whoReported)}" /></td>
+    <td class="row-actions"><button type="button" data-guests-blacklist-action="save-inline">Add</button></td>`;
+  return tr;
+}
+
+function buildGuestsBlacklistReadOnlyRow(record) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${escape(record.name || "-")}</td>
+    <td>${escape(record.nationality || "-")}</td>
+    <td>${escape(record.birthDate || "-")}</td>
+    <td>${escape(record.docNumber || "-")}</td>
+    <td>${escape(record.whatHappened || "-")}</td>
+    <td>${escape(record.occurrenceDate || "-")}</td>
+    <td>${escape(record.whoReported || "-")}</td>
+    <td class="row-actions"><button type="button" class="ghost" data-guests-blacklist-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-blacklist-action="delete" data-id="${escape(record.id)}">Delete</button></td>`;
+  return tr;
+}
+
+function buildGuestsBlacklistEditableRow(record) {
+  const draft = state.guestsBlacklistEditDraft || record;
+  const tr = document.createElement("tr");
+  tr.className = "inline-editor";
+  tr.innerHTML = `<td><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></td>
+    <td><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
+    <td><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></td>
+    <td><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></td>
+    <td><textarea data-field="whatHappened" data-scope="edit" data-id="${escape(record.id)}" rows="2">${escape(draft.whatHappened)}</textarea></td>
+    <td><input data-field="occurrenceDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.occurrenceDate)}" /></td>
+    <td><input data-field="whoReported" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoReported)}" /></td>
+    <td class="row-actions"><button type="button" data-guests-blacklist-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-blacklist-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
+  return tr;
+}
+
+function buildGuestsBlacklistInlineCard() {
+  const draft = state.guestsBlacklistDraft || emptyGuestsBlacklistDraft();
+  const card = document.createElement("article");
+  card.className = "guests-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-grid">
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></label>
+      <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
+      <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></label>
+      <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></label>
+      <label class="communication-mobile-field"><small>Occurrence Date</small><input data-field="occurrenceDate" data-scope="new" type="date" value="${escape(draft.occurrenceDate)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Who Reported</small><input data-field="whoReported" data-scope="new" value="${escape(draft.whoReported)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>What Happened?</small><textarea data-field="whatHappened" data-scope="new" rows="3">${escape(draft.whatHappened)}</textarea></label>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-guests-blacklist-action="save-inline">Add</button></div></div>`;
+  return card;
+}
+
+function buildGuestsBlacklistReadOnlyCard(record) {
+  const card = document.createElement("article");
+  card.className = "guests-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(record.name || "-")}</div>
+        <div class="communication-mobile-meta">${escape(record.occurrenceDate || "-")}</div>
+      </div>
+    </div>
+    <div class="communication-mobile-grid">
+      <div class="communication-mobile-field"><small>Nationality</small><div class="communication-mobile-message">${escape(record.nationality || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Birth Date</small><div class="communication-mobile-message">${escape(record.birthDate || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Doc. Number</small><div class="communication-mobile-message">${escape(record.docNumber || "-")}</div></div>
+      <div class="communication-mobile-field"><small>Who Reported</small><div class="communication-mobile-message">${escape(record.whoReported || "-")}</div></div>
+      <div class="communication-mobile-field communication-mobile-field-full"><small>What Happened?</small><div class="communication-mobile-message">${escape(record.whatHappened || "-")}</div></div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost" data-guests-blacklist-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-blacklist-action="delete" data-id="${escape(record.id)}">Delete</button></div></div>`;
+  return card;
+}
+
+function buildGuestsBlacklistEditableCard(record) {
+  const draft = state.guestsBlacklistEditDraft || record;
+  const card = document.createElement("article");
+  card.className = "guests-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-grid">
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></label>
+      <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
+      <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></label>
+      <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></label>
+      <label class="communication-mobile-field"><small>Occurrence Date</small><input data-field="occurrenceDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.occurrenceDate)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Who Reported</small><input data-field="whoReported" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.whoReported)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>What Happened?</small><textarea data-field="whatHappened" data-scope="edit" data-id="${escape(record.id)}" rows="3">${escape(draft.whatHappened)}</textarea></label>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-guests-blacklist-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-blacklist-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></div></div>`;
+  return card;
+}
+
+function renderGuestsMobileCards(rows) {
+  if (!els.guestsMobileCards) return;
+  els.guestsMobileCards.innerHTML = "";
+  els.guestsMobileCards.appendChild(buildGuestsInlineCard());
+  if (!rows.length) {
+    els.guestsMobileCards.innerHTML += '<div class="services-mobile-empty">No guest records found.</div>';
+    return;
+  }
+  rows.forEach((record) => {
+    els.guestsMobileCards.appendChild(state.guestsEditingId === record.id ? buildGuestsEditableCard(record) : buildGuestsReadOnlyCard(record));
+  });
+}
+
+function renderGuestsBlacklistMobileCards(rows) {
+  if (!els.guestsBlacklistMobileCards) return;
+  els.guestsBlacklistMobileCards.innerHTML = "";
+  els.guestsBlacklistMobileCards.appendChild(buildGuestsBlacklistInlineCard());
+  if (!rows.length) {
+    els.guestsBlacklistMobileCards.innerHTML += '<div class="services-mobile-empty">No blacklist records found.</div>';
+    return;
+  }
+  rows.forEach((record) => {
+    els.guestsBlacklistMobileCards.appendChild(state.guestsBlacklistEditingId === record.id ? buildGuestsBlacklistEditableCard(record) : buildGuestsBlacklistReadOnlyCard(record));
+  });
+}
+
+function renderGuestsScreenTabs() {
+  if (els.guestsTabList) {
+    els.guestsTabList.classList.toggle("active-tab", state.guestsScreen === "list");
+    els.guestsTabList.classList.toggle("ghost", state.guestsScreen !== "list");
+  }
+  if (els.guestsTabBlacklist) {
+    els.guestsTabBlacklist.classList.toggle("active-tab", state.guestsScreen === "blacklist");
+    els.guestsTabBlacklist.classList.toggle("ghost", state.guestsScreen !== "blacklist");
+  }
+  if (els.guestsPanelList) els.guestsPanelList.hidden = state.guestsScreen !== "list";
+  if (els.guestsPanelBlacklist) els.guestsPanelBlacklist.hidden = state.guestsScreen !== "blacklist";
+}
+
+function shouldShowGuestsAlertClient(todayIso = lisbonTodayIsoClient()) {
+  if (!canApp("guests")) return false;
+  const sendTime = clean(state.guestsSettings?.sendTime) || DEFAULT_GUESTS_SETTINGS.sendTime;
+  const currentTime = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+  if (currentTime < sendTime) return false;
+  return state.guestsRows.some((row) => clean(row.sentStatus).toLowerCase() !== "sent" && clean(row.checkIn) && clean(row.checkIn) < todayIso);
+}
+
+function renderGuests() {
+  renderGuestsScreenTabs();
+  renderGuestsCountryOptions();
+  if (!canApp("guests")) {
+    if (els.guestsCount) els.guestsCount.textContent = "0 records";
+    if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="15" class="empty">Your profile has no access to Guests.</td></tr>';
+    if (els.guestsMobileCards) els.guestsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
+    if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Guests.</td></tr>';
+    if (els.guestsBlacklistMobileCards) els.guestsBlacklistMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
+    return;
+  }
+  if (els.guestsShowActive) els.guestsShowActive.checked = !!state.guestsFilters.showActive;
+  if (els.guestsFilterHa) els.guestsFilterHa.value = state.guestsFilters.ha;
+  if (els.guestsFilterSearch) els.guestsFilterSearch.value = state.guestsFilters.search;
+  if (els.guestsFilterNationality) els.guestsFilterNationality.value = state.guestsFilters.nationality;
+  if (els.guestsFilterCheckin) els.guestsFilterCheckin.value = state.guestsFilters.checkIn;
+  if (els.guestsFilterCheckout) els.guestsFilterCheckout.value = state.guestsFilters.checkOut;
+  const rows = getFilteredGuestsRows();
+  const blacklistRows = getFilteredGuestsBlacklistRows();
+  const sendableCount = state.guestsRows.filter((row) => clean(row.sentStatus).toLowerCase() !== "sent" && clean(row.checkIn) && clean(row.checkIn) <= lisbonTodayIsoClient()).length;
+  if (els.guestsSendPending) els.guestsSendPending.disabled = sendableCount === 0;
+  if (els.guestsCount) els.guestsCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.guestsBlacklistCount) els.guestsBlacklistCount.textContent = `${blacklistRows.length} record${blacklistRows.length === 1 ? "" : "s"}`;
+  if (state.guestsScreen === "blacklist") {
+    if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = "";
+    renderGuestsBlacklistMobileCards(blacklistRows);
+    if (!els.guestsBlacklistRows) return;
+    els.guestsBlacklistRows.appendChild(buildGuestsBlacklistInlineRow());
+    if (!blacklistRows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="8" class="empty">No blacklist records found.</td>';
+      els.guestsBlacklistRows.appendChild(tr);
+      return;
+    }
+    blacklistRows.forEach((record) => {
+      els.guestsBlacklistRows.appendChild(state.guestsBlacklistEditingId === record.id ? buildGuestsBlacklistEditableRow(record) : buildGuestsBlacklistReadOnlyRow(record));
+    });
+    return;
+  }
+  if (els.guestsRows) els.guestsRows.innerHTML = "";
+  renderGuestsMobileCards(rows);
+  if (!els.guestsRows) return;
+  els.guestsRows.appendChild(buildGuestsInlineRow());
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="15" class="empty">No guest records found.</td>';
+    els.guestsRows.appendChild(tr);
+    return;
+  }
+  rows.forEach((record) => {
+    els.guestsRows.appendChild(state.guestsEditingId === record.id ? buildGuestsEditableRow(record) : buildGuestsReadOnlyRow(record));
+  });
+}
+
+function hasGuestsDraft() {
+  const draft = state.guestsEditingId ? state.guestsEditDraft : state.guestsDraft;
+  return !!(
+    clean(draft?.name) ||
+    clean(draft?.nationality) ||
+    clean(draft?.birthDate) ||
+    clean(draft?.docNumber) ||
+    clean(draft?.checkIn) ||
+    clean(draft?.checkOut)
+  );
+}
+
+function hasGuestsBlacklistDraft() {
+  const draft = state.guestsBlacklistEditingId ? state.guestsBlacklistEditDraft : state.guestsBlacklistDraft;
+  return !!(
+    clean(draft?.name) ||
+    clean(draft?.docNumber) ||
+    clean(draft?.occurrenceDate) ||
+    clean(draft?.whatHappened)
+  );
+}
+
 async function loadHoursSettings({ silent = false } = {}) {
   try {
     const result = await api("/api/hours-register-settings");
@@ -12815,6 +13981,10 @@ async function onLaundryRowClick(event) {
 }
 
 function render() {
+  if (state.currentView === "guests") {
+    renderGuests();
+    return;
+  }
   if (state.currentView === "lost-found") {
     renderLostFound();
     return;

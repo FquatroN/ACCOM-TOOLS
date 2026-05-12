@@ -28,6 +28,7 @@
         </div>
         <aside class="left-nav">
           <button id="nav-communications" type="button" class="nav-link active">Communications</button>
+          <button id="nav-guests" type="button" class="nav-link">Guests</button>
           <button id="nav-cash" type="button" class="nav-link">Cash Control</button>
           <button id="nav-laundry" type="button" class="nav-link">Laundry Control</button>
           <button id="nav-bakery" type="button" class="nav-link">Bakery order</button>
@@ -185,6 +186,117 @@
             </div>
           </section>
           <p id="db-status" class="auth-status"></p>
+        </section>
+
+        <section id="view-guests" class="view" hidden>
+          <section class="feature-title">
+            <h2>Guests</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Guests</h2>
+              <div class="actions">
+                <button id="guests-tab-list" type="button" class="active-tab">List</button>
+                <button id="guests-tab-blacklist" type="button" class="ghost">Blacklist</button>
+              </div>
+            </div>
+
+            <section id="guests-panel-list">
+              <div class="bar services-subbar">
+                <h3>Records</h3>
+                <div class="actions">
+                  <label class="filter-checkbox">
+                    Show active
+                    <input id="guests-show-active" type="checkbox" checked />
+                  </label>
+                  <button id="guests-send-pending" type="button" class="ghost">Send Pending</button>
+                  <p id="guests-count">0 records</p>
+                </div>
+              </div>
+              <div class="grid filters guests-filters">
+                <label>
+                  HA
+                  <select id="guests-filter-ha">
+                    <option value="">All</option>
+                    <option value="H">H</option>
+                    <option value="A">A</option>
+                  </select>
+                </label>
+                <label>
+                  Name / Doc
+                  <input id="guests-filter-search" type="text" placeholder="Search name or document" />
+                </label>
+                <label>
+                  Nationality
+                  <input id="guests-filter-nationality" type="text" list="guests-country-list" />
+                </label>
+                <label>
+                  Check-in
+                  <input id="guests-filter-checkin" type="date" />
+                </label>
+                <label>
+                  Check-out
+                  <input id="guests-filter-checkout" type="date" />
+                </label>
+              </div>
+              <datalist id="guests-country-list"></datalist>
+              <div id="guests-mobile-cards" class="guests-mobile-cards"></div>
+              <div class="table-wrap">
+                <table class="shopping-history-table guests-table">
+                  <thead>
+                    <tr>
+                      <th>HA</th>
+                      <th>Name</th>
+                      <th>Nationality</th>
+                      <th>Birth Date</th>
+                      <th>Birth Place</th>
+                      <th>Doc. Number</th>
+                      <th>Doc Type</th>
+                      <th>Issuer Country</th>
+                      <th>Residence Country</th>
+                      <th>Residence City</th>
+                      <th>Check-in</th>
+                      <th>Check-out</th>
+                      <th>Age</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guests-rows"></tbody>
+                </table>
+              </div>
+              <p id="guests-status" class="auth-status"></p>
+            </section>
+
+            <section id="guests-panel-blacklist" hidden>
+              <div class="bar services-subbar">
+                <h3>Blacklist</h3>
+                <div class="actions">
+                  <p id="guests-blacklist-count">0 records</p>
+                </div>
+              </div>
+              <div id="guests-blacklist-mobile-cards" class="guests-mobile-cards"></div>
+              <div class="table-wrap">
+                <table class="shopping-history-table guests-blacklist-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Nationality</th>
+                      <th>Birth Date</th>
+                      <th>Doc. Number</th>
+                      <th>What Happened?</th>
+                      <th>Ocurrance Date</th>
+                      <th>Who Reported</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guests-blacklist-rows"></tbody>
+                </table>
+              </div>
+              <p id="guests-blacklist-status" class="auth-status"></p>
+            </section>
+          </section>
         </section>
 
         <section id="view-lost-found" class="view" hidden>
@@ -1735,6 +1847,9 @@
               <button id="settings-menu-communications" type="button" class="nav-link">
                 Communications
               </button>
+              <button id="settings-menu-guests" type="button" class="nav-link">
+                Guests
+              </button>
               <button id="settings-menu-cash" type="button" class="nav-link">
                 Cash Control
               </button>
@@ -1912,6 +2027,26 @@
                   <button id="save-settings" type="button">Save Settings</button>
                   <p id="settings-status" class="auth-status"></p>
                 </div>
+              </div>
+
+              <div id="settings-view-guests" hidden>
+                <div class="actions">
+                  <button id="close-settings-guests" type="button" class="ghost">Back To App</button>
+                  <button id="guests-save-settings" type="button" class="ghost">Save Configuration</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Guests Configuration</h3>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Send deadline time
+                      <input id="guests-settings-send-time" type="time" />
+                      <small class="field-hint">After this time, the menu shows a red dot if there are unsent guests with check-in before today.</small>
+                    </label>
+                  </div>
+                  <p id="guests-settings-status" class="auth-status"></p>
+                </section>
               </div>
 
               <div id="settings-view-admin-users" hidden>
