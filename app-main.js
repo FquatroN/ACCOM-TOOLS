@@ -11328,8 +11328,7 @@ function resolveGuestCountryClient(value) {
 }
 
 function normalizeGuestDocTypeClient(value) {
-  const raw = clean(value).toUpperCase();
-  return raw === "O" || raw === "B" ? raw : "P";
+  return clean(value).toUpperCase();
 }
 
 function normalizeGuestHAClient(value) {
@@ -11368,6 +11367,23 @@ function normalizeGuestRecordClient(input = {}) {
     createdAt: clean(input.createdAt),
     updatedAt: clean(input.updatedAt),
   };
+}
+
+function isValidIsoDateClient(value) {
+  const raw = clean(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const [year, month, day] = raw.split("-").map((part) => Number.parseInt(part, 10));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function normalizeGuestDateClient(value) {
+  const normalized = normalizeDateInput(value);
+  return isValidIsoDateClient(normalized) ? normalized : "";
+}
+
+function guestIsLocked(record) {
+  return clean(record?.sentStatus).toLowerCase() === "sent";
 }
 
 function normalizeGuestsBlacklistRecordClient(input = {}) {
@@ -11646,7 +11662,7 @@ function getFilteredGuestsRows() {
   const ha = clean(filters.ha).toUpperCase();
   const search = clean(filters.search).toLowerCase();
   return sortGuestsRowsClient(state.guestsRows)
-    .filter((row) => !filters.showActive || (clean(row.checkOut) && clean(row.checkOut) >= today))
+    .filter((row) => !filters.showActive || !clean(row.checkOut) || clean(row.checkOut) >= today)
     .filter((row) => !ha || clean(row.ha).toUpperCase() === ha)
     .filter((row) => !search || clean(row.name).toLowerCase().includes(search) || clean(row.docNumber).toLowerCase().includes(search))
     .filter((row) => guestNationalityMatchesFilter(row, filters.nationality))
@@ -11663,15 +11679,15 @@ function buildGuestPayload(draft, { isEdit = false } = {}) {
     ha: normalizeGuestHAClient(draft.ha),
     name: clean(draft.name),
     nationality: clean(draft.nationality),
-    birthDate: normalizeDateInput(draft.birthDate),
+    birthDate: normalizeGuestDateClient(draft.birthDate),
     birthPlace: clean(draft.birthPlace),
     docNumber: normalizeGuestDocNumberClient(draft.docNumber),
     docType: normalizeGuestDocTypeClient(draft.docType),
     issuerCountry: clean(draft.issuerCountry),
     residenceCountry: clean(draft.residenceCountry),
     residenceCity: clean(draft.residenceCity),
-    checkIn: normalizeDateInput(draft.checkIn),
-    checkOut: normalizeDateInput(draft.checkOut),
+    checkIn: normalizeGuestDateClient(draft.checkIn),
+    checkOut: normalizeGuestDateClient(draft.checkOut),
   };
   if (isEdit) {
     payload.sentStatus = "pending";
@@ -11697,10 +11713,12 @@ function buildGuestsBlacklistPayload(draft) {
 function validateGuestDraftClient(draft) {
   if (!clean(draft?.name)) return "Guest name is required.";
   if (!clean(draft?.birthDate)) return "Birth date is required.";
+  if (!normalizeGuestDateClient(draft?.birthDate)) return "Birth date must be a valid date.";
   if (!clean(draft?.docNumber)) return "Document number is required.";
-  if (!clean(draft?.checkIn)) return "Check-in is required.";
-  if (!clean(draft?.checkOut)) return "Check-out is required.";
-  if (clean(draft?.checkOut) < clean(draft?.checkIn)) return "Check-out must be after or equal to check-in.";
+  if (!clean(draft?.docType) || !["P", "O", "B"].includes(normalizeGuestDocTypeClient(draft?.docType))) return "Doc Type must be P, O or B.";
+  if (clean(draft?.checkIn) && !normalizeGuestDateClient(draft?.checkIn)) return "Check-in must be a valid date.";
+  if (clean(draft?.checkOut) && !normalizeGuestDateClient(draft?.checkOut)) return "Check-out must be a valid date.";
+  if (normalizeGuestDateClient(draft?.checkIn) && normalizeGuestDateClient(draft?.checkOut) && normalizeGuestDateClient(draft?.checkOut) < normalizeGuestDateClient(draft?.checkIn)) return "Check-out must be after or equal to check-in.";
   return "";
 }
 
@@ -11740,7 +11758,7 @@ async function saveGuestRecord(mode = "new", id = "", options = {}) {
     showToast(isEdit ? "Guest record saved." : "Guest record added.", "success");
     if (options?.focusNewRow) {
       requestAnimationFrame(() => {
-        const next = Array.from(document.querySelectorAll('[data-field="ha"][data-scope="new"]')).find((element) => element instanceof HTMLElement && element.offsetParent !== null);
+        const next = Array.from(document.querySelectorAll('[data-field="name"][data-scope="new"]')).find((element) => element instanceof HTMLElement && element.offsetParent !== null);
         next?.focus();
       });
     }
@@ -11837,7 +11855,14 @@ function onGuestsDraftInput(event) {
   if (!field) return;
   const draft = scope === "edit" ? state.guestsEditDraft : state.guestsDraft;
   if (!draft) return;
-  draft[field] = event.target.value;
+  let value = event.target.value;
+  if (event.type === "change" && ["birthDate", "checkIn", "checkOut"].includes(field)) {
+    const normalized = normalizeGuestDateClient(value);
+    if (normalized) value = normalized;
+  }
+  if (field === "docType") value = clean(value).toUpperCase();
+  draft[field] = value;
+  event.target.value = value;
   if (event.type === "change") renderGuests();
 }
 
@@ -11863,6 +11888,10 @@ async function onGuestsAction(event) {
   if (action === "edit" && id) {
     const row = state.guestsRows.find((item) => item.id === id);
     if (!row) return;
+    if (guestIsLocked(row)) {
+      showToast("Sent guest records cannot be modified.", "error");
+      return;
+    }
     state.guestsEditingId = id;
     state.guestsEditDraft = { ...row };
     renderGuests();
@@ -11879,6 +11908,11 @@ async function onGuestsAction(event) {
     return;
   }
   if (action === "delete" && id) {
+    const row = state.guestsRows.find((item) => item.id === id);
+    if (guestIsLocked(row)) {
+      showToast("Sent guest records cannot be modified.", "error");
+      return;
+    }
     await deleteGuestRecord(id);
   }
 }
@@ -11918,7 +11952,7 @@ async function onGuestsBlacklistAction(event) {
 async function onGuestsKeydown(event) {
   const field = clean(event.target?.dataset?.field);
   const scope = clean(event.target?.dataset?.scope || "new");
-  if (field === "checkOut" && scope === "new" && event.key === "Tab" && !event.shiftKey) {
+  if (field === "issuerCountry" && scope === "new" && event.key === "Tab" && !event.shiftKey) {
     event.preventDefault();
     await saveGuestRecord("new", "", { focusNewRow: true });
   }
@@ -11936,15 +11970,15 @@ function buildGuestsInlineRow() {
   const draft = state.guestsDraft || emptyGuestDraft();
   const tr = document.createElement("tr");
   tr.className = "inline-editor sticky-new-row";
-  tr.innerHTML = `<td><select data-field="ha" data-scope="new"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
+  tr.innerHTML = `<td><select data-field="ha" data-scope="new" tabindex="-1"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
     <td><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></td>
     <td><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
-    <td><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></td>
+    <td><input data-field="birthDate" data-scope="new" type="text" value="${escape(draft.birthDate)}" /></td>
     <td><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></td>
-    <td><select data-field="docType" data-scope="new"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></td>
+    <td><input data-field="docType" data-scope="new" type="text" value="${escape(draft.docType)}" /></td>
     <td><input data-field="issuerCountry" data-scope="new" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></td>
-    <td><input data-field="checkIn" data-scope="new" type="date" value="${escape(draft.checkIn)}" /></td>
-    <td><input data-field="checkOut" data-scope="new" type="date" value="${escape(draft.checkOut)}" /></td>
+    <td><input data-field="checkIn" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkIn)}" /></td>
+    <td><input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate))}</td>
     <td class="guest-alerts-cell"></td>
     <td>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</td>
@@ -11955,6 +11989,7 @@ function buildGuestsInlineRow() {
 
 function buildGuestsReadOnlyRow(record) {
   const meta = guestRowMetaClient(record);
+  const locked = guestIsLocked(record);
   const tr = document.createElement("tr");
   tr.innerHTML = `<td>${escape(record.ha)}</td>
     <td>${escape(record.name)}</td>
@@ -11968,7 +12003,7 @@ function buildGuestsReadOnlyRow(record) {
     <td>${escape(meta.age || "-")}</td>
     <td class="guest-alerts-cell">${guestAlertsMarkup(meta)}</td>
     <td>${guestStatusMarkup(record, meta)}</td>
-    <td class="row-actions"><button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button></td>`;
+    <td class="row-actions">${locked ? "-" : `<button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button>`}</td>`;
   tr.style.backgroundColor = guestRowBackground(record, meta);
   return tr;
 }
@@ -11981,9 +12016,9 @@ function buildGuestsEditableRow(record) {
   tr.innerHTML = `<td><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
     <td><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></td>
     <td><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
-    <td><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></td>
+    <td><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.birthDate)}" /></td>
     <td><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></td>
-    <td><select data-field="docType" data-scope="edit" data-id="${escape(record.id)}"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></td>
+    <td><input data-field="docType" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.docType)}" /></td>
     <td><input data-field="issuerCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></td>
     <td><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></td>
@@ -12000,15 +12035,15 @@ function buildGuestsInlineCard() {
   const card = document.createElement("article");
   card.className = "guests-mobile-card";
   card.innerHTML = `<div class="communication-mobile-grid">
-      <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="new"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
+      <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="new" tabindex="-1"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
       <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></label>
       <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
-      <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="new" type="date" value="${escape(draft.birthDate)}" /></label>
+      <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="new" type="text" value="${escape(draft.birthDate)}" /></label>
       <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="new" value="${escape(draft.docNumber)}" /></label>
-      <label class="communication-mobile-field"><small>Doc Type</small><select data-field="docType" data-scope="new"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></label>
+      <label class="communication-mobile-field"><small>Doc Type</small><input data-field="docType" data-scope="new" type="text" value="${escape(draft.docType)}" /></label>
       <label class="communication-mobile-field"><small>Issuer Country</small><input data-field="issuerCountry" data-scope="new" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></label>
-      <label class="communication-mobile-field"><small>Check-in</small><input data-field="checkIn" data-scope="new" type="date" value="${escape(draft.checkIn)}" /></label>
-      <label class="communication-mobile-field"><small>Check-out</small><input data-field="checkOut" data-scope="new" type="date" value="${escape(draft.checkOut)}" /></label>
+      <label class="communication-mobile-field"><small>Check-in</small><input data-field="checkIn" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkIn)}" /></label>
+      <label class="communication-mobile-field"><small>Check-out</small><input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" /></label>
       <div class="communication-mobile-field"><small>Age</small><div class="communication-mobile-message">${escape(guestAgeClient(draft.birthDate) || "-")}</div></div>
       <div class="communication-mobile-field communication-mobile-field-full"><small>Status</small>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</div>
     </div>
@@ -12018,6 +12053,7 @@ function buildGuestsInlineCard() {
 
 function buildGuestsReadOnlyCard(record) {
   const meta = guestRowMetaClient(record);
+  const locked = guestIsLocked(record);
   const card = document.createElement("article");
   card.className = "guests-mobile-card";
   card.innerHTML = `<div class="communication-mobile-header">
@@ -12037,7 +12073,7 @@ function buildGuestsReadOnlyCard(record) {
       <div class="communication-mobile-field"><small>Check-out</small><div class="communication-mobile-message">${escape(record.checkOut || "-")}</div></div>
       <div class="communication-mobile-field communication-mobile-field-full"><small>Status</small>${guestStatusMarkup(record, meta)}</div>
     </div>
-    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button></div></div>`;
+    <div class="communication-mobile-footer">${locked ? "" : `<div class="row-actions"><button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button></div>`}</div>`;
   card.style.backgroundColor = guestRowBackground(record, meta);
   return card;
 }
@@ -12051,9 +12087,9 @@ function buildGuestsEditableCard(record) {
       <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
       <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></label>
       <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
-      <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.birthDate)}" /></label>
+      <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.birthDate)}" /></label>
       <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></label>
-      <label class="communication-mobile-field"><small>Doc Type</small><select data-field="docType" data-scope="edit" data-id="${escape(record.id)}"><option value="P" ${draft.docType === "P" ? "selected" : ""}>P</option><option value="O" ${draft.docType === "O" ? "selected" : ""}>O</option><option value="B" ${draft.docType === "B" ? "selected" : ""}>B</option></select></label>
+      <label class="communication-mobile-field"><small>Doc Type</small><input data-field="docType" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.docType)}" /></label>
       <label class="communication-mobile-field"><small>Issuer Country</small><input data-field="issuerCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></label>
       <label class="communication-mobile-field"><small>Check-in</small><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></label>
       <label class="communication-mobile-field"><small>Check-out</small><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></label>
@@ -14791,6 +14827,8 @@ function normalizeDateInput(value) {
   const raw = clean(value);
   if (!raw) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const dmyMatch = raw.match(/^(\d{2})[\/.-](\d{2})[\/.-](\d{4})$/);
+  if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) {
     return new Intl.DateTimeFormat("sv-SE", {

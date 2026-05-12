@@ -56,8 +56,7 @@ function normalizeGuestName(value) {
 }
 
 function normalizeDocType(value) {
-  const raw = cleanText(value).toUpperCase();
-  return raw === "B" || raw === "O" ? raw : "P";
+  return cleanText(value).toUpperCase();
 }
 
 function normalizeHA(value) {
@@ -157,6 +156,14 @@ function normalizeSentStatus(value) {
   return "pending";
 }
 
+function isValidIsoDate(value) {
+  const raw = cleanText(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const [year, month, day] = raw.split("-").map((part) => Number.parseInt(part, 10));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function sanitizeGuestRecord(input = {}, existing = {}) {
   const name = normalizeGuestName(input.name ?? existing.name);
   const birthDate = normalizeDate(input.birthDate ?? input.birth_date ?? existing.birthDate ?? existing.birth_date);
@@ -225,22 +232,32 @@ function validateGuestRecord(record) {
     error.statusCode = 400;
     throw error;
   }
+  if (!isValidIsoDate(record.birthDate)) {
+    const error = new Error("Birth date must be a valid date.");
+    error.statusCode = 400;
+    throw error;
+  }
   if (!record.docNumber) {
     const error = new Error("Document number is required.");
     error.statusCode = 400;
     throw error;
   }
-  if (!record.checkIn) {
-    const error = new Error("Check-in is required.");
+  if (!record.docType || !["P", "O", "B"].includes(record.docType)) {
+    const error = new Error("Doc Type must be P, O or B.");
     error.statusCode = 400;
     throw error;
   }
-  if (!record.checkOut) {
-    const error = new Error("Check-out is required.");
+  if (record.checkIn && !isValidIsoDate(record.checkIn)) {
+    const error = new Error("Check-in must be a valid date.");
     error.statusCode = 400;
     throw error;
   }
-  if (record.checkOut < record.checkIn) {
+  if (record.checkOut && !isValidIsoDate(record.checkOut)) {
+    const error = new Error("Check-out must be a valid date.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (record.checkIn && record.checkOut && record.checkOut < record.checkIn) {
     const error = new Error("Check-out must be after or equal to check-in.");
     error.statusCode = 400;
     throw error;
