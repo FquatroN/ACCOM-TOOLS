@@ -2597,6 +2597,22 @@ select:disabled {
   min-width: 0;
 }
 
+.guests-blacklist-filters {
+  margin-top: 0.28rem;
+  margin-bottom: 0.55rem;
+  gap: 0.42rem 0.55rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.guests-blacklist-filters label {
+  font-size: 0.74rem;
+}
+
+.guests-blacklist-filters input {
+  font-size: 0.74rem;
+  padding: 0.32rem 0.44rem;
+}
+
 .guest-alerts-cell {
   text-align: left;
 }
