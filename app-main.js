@@ -1539,6 +1539,7 @@ function bindEvents() {
   els.cashSettingsItemsBody?.addEventListener("click", onCashSettingsAction);
   els.cashItemsClose?.addEventListener("click", closeCashItemsModal);
   els.cashItemsBody?.addEventListener("input", onCashItemsModalInput);
+  els.cashItemsBody?.addEventListener("click", onCashItemsModalAction);
   els.cashItemsSave?.addEventListener("click", saveCashItemsModal);
   els.hoursExportExcel?.addEventListener("click", exportHoursToExcel);
   els.hoursTabList?.addEventListener("click", () => setHoursScreen("list"));
@@ -9953,6 +9954,12 @@ function getNextCashDescriptor(day, shiftId, settings = state.cashSettings) {
   return { day: shiftCashDay(day, 1), shiftId: shifts[0].id };
 }
 
+function getPreviousCashRecordClient(record, records = state.cashRecords, settings = state.cashSettings) {
+  const previousRef = getPreviousCashDescriptor(record?.day, record?.shiftId, settings);
+  if (!previousRef) return null;
+  return (records || []).find((row) => clean(row.id) !== clean(record?.id) && clean(row.day) === clean(previousRef.day) && clean(row.shiftId) === clean(previousRef.shiftId)) || null;
+}
+
 function buildComputedCashRowsClient(records = state.cashRecords, settings = state.cashSettings) {
   const sorted = cashSortRecordsClient(records, settings);
   const byKey = new Map(sorted.map((row) => [cashRecordKey(row), row]));
@@ -10895,6 +10902,7 @@ function ensureCashItemsDraft(scope = "new", id = "") {
 
 function renderCashItemsModal(scope = "new", id = "") {
   const draft = currentCashDraft(scope, id) || emptyCashDraft();
+  const previousRecord = getPreviousCashRecordClient(draft, state.cashRecords, state.cashSettings);
   const computed = cashDraftComputed(draft);
   const focusTarget = document.activeElement?.matches?.("[data-cash-item-field]") ? document.activeElement : null;
   const focusItemId = clean(focusTarget?.dataset?.cashItemId);
@@ -10910,12 +10918,14 @@ function renderCashItemsModal(scope = "new", id = "") {
       const counted = state.cashItemsDraft[item.id];
       const diff = counted == null ? null : Number(counted) - Number(item.defaultQuantity || 0);
       const needsJustification = diff != null && diff !== 0;
+      const previousJustification = clean(previousRecord?.itemJustifications?.[item.id]);
       return `<tr>
         <td>${escape(item.name)}</td>
         <td>${escape(String(item.defaultQuantity || 0))}</td>
         <td><input data-cash-item-field="count" data-cash-item-id="${escape(item.id)}" type="text" inputmode="numeric" value="${counted == null ? "" : escape(String(counted))}" /></td>
         <td>${escape(diff == null ? "-" : `${diff > 0 ? "+" : ""}${diff}`)}</td>
         <td><input data-cash-item-field="justification" data-cash-item-id="${escape(item.id)}" type="text" value="${escape(state.cashItemsJustificationsDraft[item.id] || "")}" ${needsJustification ? "" : "disabled"} /></td>
+        <td>${previousJustification ? `<div class="cash-previous-justification">${escape(previousJustification)}</div><button type="button" class="ghost" data-cash-item-action="copy-previous" data-cash-item-id="${escape(item.id)}">Copy</button>` : "-"}</td>
       </tr>`;
     }).join("");
   }
@@ -10966,6 +10976,30 @@ function onCashItemsModalInput(event) {
     state.cashItemsJustificationsDraft[itemId] = target.value;
   }
   renderCashItemsModal(clean(state.cashItemsModalScope) || "new", clean(state.cashItemsModalId));
+}
+
+function onCashItemsModalAction(event) {
+  const button = event.target.closest("[data-cash-item-action]");
+  if (!button) return;
+  const action = clean(button.dataset.cashItemAction);
+  const itemId = clean(button.dataset.cashItemId);
+  if (action !== "copy-previous" || !itemId) return;
+  const scope = clean(state.cashItemsModalScope) || "new";
+  const targetId = clean(state.cashItemsModalId);
+  const draft = currentCashDraft(scope, targetId) || emptyCashDraft();
+  const previousRecord = getPreviousCashRecordClient(draft, state.cashRecords, state.cashSettings);
+  const previousJustification = clean(previousRecord?.itemJustifications?.[itemId]);
+  if (!previousJustification) return;
+  state.cashItemsJustificationsDraft[itemId] = previousJustification;
+  renderCashItemsModal(scope, targetId);
+  const input = document.querySelector(`[data-cash-item-id="${CSS.escape(itemId)}"][data-cash-item-field="justification"]`);
+  if (input) {
+    input.focus();
+    if (typeof input.setSelectionRange === "function") {
+      const length = String(input.value || "").length;
+      input.setSelectionRange(length, length);
+    }
+  }
 }
 
 function saveCashItemsModal() {
