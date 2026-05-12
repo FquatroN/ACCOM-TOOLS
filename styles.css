@@ -2470,8 +2470,8 @@ select:disabled {
 
 .guests-table th:nth-child(1),
 .guests-table td:nth-child(1) {
-  min-width: 28px;
-  width: 28px;
+  min-width: 32px;
+  width: 32px;
 }
 
 .guests-table th:nth-child(6),
@@ -2514,6 +2514,15 @@ select:disabled {
   align-items: center;
   gap: 0.22rem;
   flex-wrap: nowrap;
+}
+
+.guests-table.inline-editor input,
+.guests-table.inline-editor select,
+.guests-table.inline-editor textarea,
+.guests-table .inline-editor input,
+.guests-table .inline-editor select,
+.guests-table .inline-editor textarea {
+  font-size: 0.76rem;
 }
 
 .guest-alerts-cell {
