@@ -12467,7 +12467,7 @@ function buildGuestsReadOnlyRow(record) {
     !locked ? `<button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button>` : "",
   ].filter(Boolean).join("");
   const tr = document.createElement("tr");
-  const nameCell = `${escape(record.name)}${guestAlertsMarkup(meta)}`;
+  const nameCell = `<div class="guest-name-stack"><div class="guest-name-label">${escape(record.name)}</div>${guestAlertsMarkup(meta)}</div>`;
   tr.innerHTML = `<td>${guestQuickFieldMarkup(record, "ha")}</td>
     <td>${nameCell}</td>
     <td>${escape(record.nationality || record.nationalityCode || "-")}</td>
@@ -12489,7 +12489,7 @@ function buildGuestsEditableRow(record) {
   const meta = guestRowMetaClient(draft);
   const tr = document.createElement("tr");
   tr.className = "inline-editor";
-  const nameCell = `<input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" />${guestAlertsMarkup(meta)}`;
+  const nameCell = `<div class="guest-name-stack"><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" />${guestAlertsMarkup(meta)}</div>`;
   tr.innerHTML = `<td><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
     <td>${nameCell}</td>
     <td><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
@@ -12540,7 +12540,7 @@ function buildGuestsReadOnlyCard(record) {
   card.className = "guests-mobile-card";
   card.innerHTML = `<div class="communication-mobile-header">
       <div>
-        <div class="service-mobile-request">${escape(record.name)}</div>
+        <div class="guest-name-stack"><div class="service-mobile-request">${escape(record.name)}</div>${guestAlertsMarkup(meta)}</div>
         <div class="communication-mobile-meta">${escape(record.checkIn || "-")} · ${escape(record.ha)}</div>
       </div>
       <div class="group-mobile-total"><strong>${escape(meta.age || "-")}</strong><small>Age</small></div>
@@ -12568,7 +12568,7 @@ function buildGuestsEditableCard(record) {
   card.className = "guests-mobile-card";
   card.innerHTML = `<div class="communication-mobile-grid">
       <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
-      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><div class="guest-name-stack"><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" />${guestAlertsMarkup(meta)}</div></label>
       <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
       <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.birthDate)}" /></label>
       <label class="communication-mobile-field"><small>Doc. Number</small><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></label>

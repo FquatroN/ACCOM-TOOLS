@@ -2724,9 +2724,20 @@ select:disabled {
   text-align: left;
 }
 
+.guest-name-stack {
+  display: grid;
+  gap: 0.14rem;
+}
+
+.guest-name-label {
+  display: block;
+}
+
 .guest-alerts {
-  display: inline-grid;
+  display: grid;
   gap: 0.12rem;
+  justify-items: start;
+  margin-top: 0.04rem;
 }
 
 .guest-alert-chip {
