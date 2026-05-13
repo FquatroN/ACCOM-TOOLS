@@ -771,7 +771,7 @@ const state = {
   guestsSettingsLoaded: false,
   guestsSettingsTab: "config",
   guestsScreen: "list",
-  guestsFilters: { showActive: true, ha: "", search: "", nationality: "", checkIn: "", checkOut: "" },
+  guestsFilters: { showActive: true, ha: "", search: "", nationality: "", checkInFrom: "", checkInTo: "", checkOutFrom: "", checkOutTo: "" },
   guestsBlacklistFilters: { search: "", whoReported: "", nationality: "" },
   guestsDraft: null,
   guestsEditDraft: null,
@@ -1069,8 +1069,10 @@ const els = {
   guestsFilterHa: document.getElementById("guests-filter-ha"),
   guestsFilterSearch: document.getElementById("guests-filter-search"),
   guestsFilterNationality: document.getElementById("guests-filter-nationality"),
-  guestsFilterCheckin: document.getElementById("guests-filter-checkin"),
-  guestsFilterCheckout: document.getElementById("guests-filter-checkout"),
+  guestsFilterCheckinFrom: document.getElementById("guests-filter-checkin-from"),
+  guestsFilterCheckinTo: document.getElementById("guests-filter-checkin-to"),
+  guestsFilterCheckoutFrom: document.getElementById("guests-filter-checkout-from"),
+  guestsFilterCheckoutTo: document.getElementById("guests-filter-checkout-to"),
   guestsCountryList: document.getElementById("guests-country-list"),
   guestsRows: document.getElementById("guests-rows"),
   guestsMobileCards: document.getElementById("guests-mobile-cards"),
@@ -1624,7 +1626,14 @@ function bindEvents() {
   els.guestsSettingsApiTab?.addEventListener("click", () => setGuestsSettingsTab("api"));
   els.guestsShowActive?.addEventListener("change", onGuestsFilterInput);
   els.guestsFilterHa?.addEventListener("change", onGuestsFilterInput);
-  [els.guestsFilterSearch, els.guestsFilterNationality, els.guestsFilterCheckin, els.guestsFilterCheckout].forEach((el) => el?.addEventListener("input", onGuestsFilterInput));
+  [
+    els.guestsFilterSearch,
+    els.guestsFilterNationality,
+    els.guestsFilterCheckinFrom,
+    els.guestsFilterCheckinTo,
+    els.guestsFilterCheckoutFrom,
+    els.guestsFilterCheckoutTo,
+  ].forEach((el) => el?.addEventListener("input", onGuestsFilterInput));
   els.guestsRows?.addEventListener("click", onGuestsAction);
   els.guestsRows?.addEventListener("input", onGuestsDraftInput);
   els.guestsRows?.addEventListener("change", onGuestsDraftInput);
@@ -11732,8 +11741,10 @@ function onGuestsFilterInput(event) {
   state.guestsFilters.ha = clean(els.guestsFilterHa?.value);
   state.guestsFilters.search = clean(els.guestsFilterSearch?.value);
   state.guestsFilters.nationality = clean(els.guestsFilterNationality?.value);
-  state.guestsFilters.checkIn = clean(els.guestsFilterCheckin?.value);
-  state.guestsFilters.checkOut = clean(els.guestsFilterCheckout?.value);
+  state.guestsFilters.checkInFrom = clean(els.guestsFilterCheckinFrom?.value);
+  state.guestsFilters.checkInTo = clean(els.guestsFilterCheckinTo?.value);
+  state.guestsFilters.checkOutFrom = clean(els.guestsFilterCheckoutFrom?.value);
+  state.guestsFilters.checkOutTo = clean(els.guestsFilterCheckoutTo?.value);
   renderGuests();
 }
 
@@ -11846,15 +11857,19 @@ function getFilteredGuestsRows() {
   const today = lisbonTodayIsoClient();
   const ha = clean(filters.ha).toUpperCase();
   const search = clean(filters.search).toLowerCase();
-  const dateFrom = clean(filters.checkIn);
-  const dateTo = clean(filters.checkOut);
+  const checkInFrom = clean(filters.checkInFrom);
+  const checkInTo = clean(filters.checkInTo);
+  const checkOutFrom = clean(filters.checkOutFrom);
+  const checkOutTo = clean(filters.checkOutTo);
   return sortGuestsRowsClient(state.guestsRows)
     .filter((row) => !filters.showActive || !clean(row.checkOut) || clean(row.checkOut) >= today)
     .filter((row) => !ha || clean(row.ha).toUpperCase() === ha)
     .filter((row) => !search || clean(row.name).toLowerCase().includes(search) || clean(row.docNumber).toLowerCase().includes(search))
     .filter((row) => guestNationalityMatchesFilter(row, filters.nationality))
-    .filter((row) => !dateFrom || clean(row.checkIn) >= dateFrom)
-    .filter((row) => !dateTo || clean(row.checkIn) <= dateTo);
+    .filter((row) => !checkInFrom || clean(row.checkIn) >= checkInFrom)
+    .filter((row) => !checkInTo || clean(row.checkIn) <= checkInTo)
+    .filter((row) => !checkOutFrom || clean(row.checkOut) >= checkOutFrom)
+    .filter((row) => !checkOutTo || clean(row.checkOut) <= checkOutTo);
 }
 
 function getFilteredGuestsBlacklistRows() {
@@ -12602,8 +12617,10 @@ function renderGuests() {
   if (els.guestsFilterHa) els.guestsFilterHa.value = state.guestsFilters.ha;
   if (els.guestsFilterSearch) els.guestsFilterSearch.value = state.guestsFilters.search;
   if (els.guestsFilterNationality) els.guestsFilterNationality.value = state.guestsFilters.nationality;
-  if (els.guestsFilterCheckin) els.guestsFilterCheckin.value = state.guestsFilters.checkIn;
-  if (els.guestsFilterCheckout) els.guestsFilterCheckout.value = state.guestsFilters.checkOut;
+  if (els.guestsFilterCheckinFrom) els.guestsFilterCheckinFrom.value = state.guestsFilters.checkInFrom;
+  if (els.guestsFilterCheckinTo) els.guestsFilterCheckinTo.value = state.guestsFilters.checkInTo;
+  if (els.guestsFilterCheckoutFrom) els.guestsFilterCheckoutFrom.value = state.guestsFilters.checkOutFrom;
+  if (els.guestsFilterCheckoutTo) els.guestsFilterCheckoutTo.value = state.guestsFilters.checkOutTo;
   if (els.guestsBlacklistFilterSearch) els.guestsBlacklistFilterSearch.value = state.guestsBlacklistFilters.search;
   if (els.guestsBlacklistFilterReported) els.guestsBlacklistFilterReported.value = state.guestsBlacklistFilters.whoReported;
   if (els.guestsBlacklistFilterNationality) els.guestsBlacklistFilterNationality.value = state.guestsBlacklistFilters.nationality;
