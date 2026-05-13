@@ -2530,10 +2530,51 @@ select:disabled {
   width: 44px;
 }
 
+.guests-table th:nth-child(2),
+.guests-table td:nth-child(2) {
+  min-width: 150px;
+}
+
+.guests-table th:nth-child(3),
+.guests-table td:nth-child(3) {
+  min-width: 100px;
+  width: 100px;
+}
+
+.guests-table th:nth-child(4),
+.guests-table td:nth-child(4) {
+  min-width: 100px;
+  width: 100px;
+}
+
+.guests-table th:nth-child(5),
+.guests-table td:nth-child(5) {
+  min-width: 100px;
+  width: 100px;
+}
+
 .guests-table th:nth-child(6),
 .guests-table td:nth-child(6) {
   min-width: 42px;
   width: 42px;
+}
+
+.guests-table th:nth-child(7),
+.guests-table td:nth-child(7) {
+  min-width: 100px;
+  width: 100px;
+}
+
+.guests-table th:nth-child(8),
+.guests-table td:nth-child(8) {
+  min-width: 100px;
+  width: 100px;
+}
+
+.guests-table th:nth-child(9),
+.guests-table td:nth-child(9) {
+  min-width: 100px;
+  width: 100px;
 }
 
 .guests-table th:nth-child(10),
