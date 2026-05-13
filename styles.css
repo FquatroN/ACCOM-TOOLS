@@ -2530,6 +2530,15 @@ select:disabled {
   width: 44px;
 }
 
+.guests-table td:nth-child(1),
+.guests-table td:nth-child(4),
+.guests-table td:nth-child(6),
+.guests-table td:nth-child(8),
+.guests-table td:nth-child(9),
+.guests-table td:nth-child(10) {
+  text-align: center;
+}
+
 .guests-table th:nth-child(2),
 .guests-table td:nth-child(2) {
   min-width: 200px;
@@ -2659,6 +2668,13 @@ select:disabled {
   font-size: 0.76rem;
   font-weight: 400;
   text-align: left;
+}
+
+.guests-table td:nth-child(1) .guest-quick-trigger,
+.guests-table td:nth-child(8) .guest-quick-trigger,
+.guests-table td:nth-child(9) .guest-quick-trigger {
+  justify-content: center;
+  text-align: center;
 }
 
 .guests-blacklist-table.inline-editor input,
