@@ -12331,7 +12331,6 @@ function buildGuestsInlineRow() {
     <td><input data-field="checkIn" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate))}</td>
-    <td class="guest-alerts-cell"></td>
     <td>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</td>
     <td class="row-actions"><button type="button" data-guests-action="save-inline">Add</button></td>`;
   tr.style.backgroundColor = "#ffffff";
@@ -12342,8 +12341,9 @@ function buildGuestsReadOnlyRow(record) {
   const meta = guestRowMetaClient(record);
   const locked = guestIsLocked(record);
   const tr = document.createElement("tr");
+  const nameCell = `${escape(record.name)}${guestAlertsMarkup(meta)}`;
   tr.innerHTML = `<td>${guestQuickFieldMarkup(record, "ha")}</td>
-    <td>${escape(record.name)}</td>
+    <td>${nameCell}</td>
     <td>${escape(record.nationality || record.nationalityCode || "-")}</td>
     <td>${escape(record.birthDate || "-")}</td>
     <td>${escape(record.docNumber || "-")}</td>
@@ -12352,7 +12352,6 @@ function buildGuestsReadOnlyRow(record) {
     <td>${guestQuickFieldMarkup(record, "checkIn")}</td>
     <td>${guestQuickFieldMarkup(record, "checkOut")}</td>
     <td>${escape(meta.age || "-")}</td>
-    <td class="guest-alerts-cell">${guestAlertsMarkup(meta)}</td>
     <td>${guestStatusMarkup(record, meta)}</td>
     <td class="row-actions">${locked ? "-" : `<button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button>`}</td>`;
   tr.style.backgroundColor = guestRowBackground(record, meta);
@@ -12364,8 +12363,9 @@ function buildGuestsEditableRow(record) {
   const meta = guestRowMetaClient(draft);
   const tr = document.createElement("tr");
   tr.className = "inline-editor";
+  const nameCell = `<input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" />${guestAlertsMarkup(meta)}`;
   tr.innerHTML = `<td><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
-    <td><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" /></td>
+    <td>${nameCell}</td>
     <td><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
     <td><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.birthDate)}" /></td>
     <td><input data-field="docNumber" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.docNumber)}" /></td>
@@ -12374,7 +12374,6 @@ function buildGuestsEditableRow(record) {
     <td><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate) || "-")}</td>
-    <td class="guest-alerts-cell">${guestAlertsMarkup(meta)}</td>
     <td>${guestStatusMarkup(draft, meta)}</td>
     <td class="row-actions"><button type="button" data-guests-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
   tr.style.backgroundColor = guestRowBackground(draft, meta);
@@ -12607,7 +12606,7 @@ function renderGuests() {
   renderGuestsCountryOptions();
   if (!canApp("guests")) {
     if (els.guestsCount) els.guestsCount.textContent = "0 records";
-    if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="13" class="empty">Your profile has no access to Guests.</td></tr>';
+    if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="12" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsMobileCards) els.guestsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
     if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsBlacklistMobileCards) els.guestsBlacklistMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
@@ -12652,7 +12651,7 @@ function renderGuests() {
   els.guestsRows.appendChild(buildGuestsInlineRow());
   if (!rows.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="13" class="empty">No guest records found.</td>';
+    tr.innerHTML = '<td colspan="12" class="empty">No guest records found.</td>';
     els.guestsRows.appendChild(tr);
     return;
   }

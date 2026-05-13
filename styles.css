@@ -2544,23 +2544,17 @@ select:disabled {
 
 .guests-table th:nth-child(11),
 .guests-table td:nth-child(11) {
-  min-width: 118px;
-  width: 118px;
-}
-
-.guests-table th:nth-child(12),
-.guests-table td:nth-child(12) {
   min-width: 94px;
   width: 94px;
 }
 
-.guests-table th:nth-child(13),
-.guests-table td:nth-child(13) {
+.guests-table th:nth-child(12),
+.guests-table td:nth-child(12) {
   min-width: 122px;
   width: 122px;
 }
 
-.guests-table td:nth-child(12),
+.guests-table td:nth-child(11),
 .guests-blacklist-table td:nth-child(5) {
   white-space: normal;
 }
