@@ -2532,8 +2532,8 @@ select:disabled {
 
 .guests-table th:nth-child(2),
 .guests-table td:nth-child(2) {
-  min-width: 250px;
-  width: 250px;
+  min-width: 200px;
+  width: 200px;
 }
 
 .guests-table th:nth-child(3),
