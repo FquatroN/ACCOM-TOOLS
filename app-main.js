@@ -12451,8 +12451,8 @@ function buildGuestsInlineRow() {
     <td><input data-field="checkIn" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate))}</td>
-    <td>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</td>
-    <td class="row-actions"><button type="button" data-guests-action="save-inline">Add</button></td>`;
+    <td class="row-actions"><button type="button" data-guests-action="save-inline">Add</button></td>
+    <td>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</td>`;
   tr.style.backgroundColor = "#ffffff";
   return tr;
 }
@@ -12478,8 +12478,8 @@ function buildGuestsReadOnlyRow(record) {
     <td>${guestQuickFieldMarkup(record, "checkIn")}</td>
     <td>${guestQuickFieldMarkup(record, "checkOut")}</td>
     <td>${escape(meta.age || "-")}</td>
-    <td>${guestStatusMarkup(record, meta)}</td>
-    <td class="row-actions">${actions || "-"}</td>`;
+    <td class="row-actions">${actions || "-"}</td>
+    <td>${guestStatusMarkup(record, meta)}</td>`;
   tr.style.backgroundColor = guestRowBackground(record, meta);
   return tr;
 }
@@ -12500,8 +12500,8 @@ function buildGuestsEditableRow(record) {
     <td><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></td>
     <td><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></td>
     <td>${escape(guestAgeClient(draft.birthDate) || "-")}</td>
-    <td>${guestStatusMarkup(draft, meta)}</td>
-    <td class="row-actions"><button type="button" data-guests-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
+    <td class="row-actions"><button type="button" data-guests-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>
+    <td>${guestStatusMarkup(draft, meta)}</td>`;
   tr.style.backgroundColor = guestRowBackground(draft, meta);
   return tr;
 }

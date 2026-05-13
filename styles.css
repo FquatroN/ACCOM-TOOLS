@@ -2586,17 +2586,17 @@ select:disabled {
 
 .guests-table th:nth-child(11),
 .guests-table td:nth-child(11) {
-  min-width: 94px;
-  width: 94px;
-}
-
-.guests-table th:nth-child(12),
-.guests-table td:nth-child(12) {
   min-width: 150px;
   width: 150px;
 }
 
-.guests-table td:nth-child(11),
+.guests-table th:nth-child(12),
+.guests-table td:nth-child(12) {
+  min-width: 120px;
+  width: 120px;
+}
+
+.guests-table td:nth-child(12),
 .guests-blacklist-table td:nth-child(5) {
   white-space: normal;
 }
