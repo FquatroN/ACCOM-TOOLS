@@ -11846,13 +11846,15 @@ function getFilteredGuestsRows() {
   const today = lisbonTodayIsoClient();
   const ha = clean(filters.ha).toUpperCase();
   const search = clean(filters.search).toLowerCase();
+  const dateFrom = clean(filters.checkIn);
+  const dateTo = clean(filters.checkOut);
   return sortGuestsRowsClient(state.guestsRows)
     .filter((row) => !filters.showActive || !clean(row.checkOut) || clean(row.checkOut) >= today)
     .filter((row) => !ha || clean(row.ha).toUpperCase() === ha)
     .filter((row) => !search || clean(row.name).toLowerCase().includes(search) || clean(row.docNumber).toLowerCase().includes(search))
     .filter((row) => guestNationalityMatchesFilter(row, filters.nationality))
-    .filter((row) => !clean(filters.checkIn) || clean(row.checkIn) === clean(filters.checkIn))
-    .filter((row) => !clean(filters.checkOut) || clean(row.checkOut) === clean(filters.checkOut));
+    .filter((row) => !dateFrom || clean(row.checkIn) >= dateFrom)
+    .filter((row) => !dateTo || clean(row.checkIn) <= dateTo);
 }
 
 function getFilteredGuestsBlacklistRows() {

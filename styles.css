@@ -2450,8 +2450,17 @@ select:disabled {
 .guests-filters {
   margin-top: 0.55rem;
   gap: 0.7rem;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: 58px minmax(220px, 1.7fr) 116px 112px 112px;
   align-items: end;
+}
+
+.guests-filters label {
+  min-width: 0;
+}
+
+.guests-filters select,
+.guests-filters input {
+  min-width: 0;
 }
 
 .guests-table,
