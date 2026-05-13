@@ -1074,6 +1074,7 @@ const els = {
   guestsFilterCheckinTo: document.getElementById("guests-filter-checkin-to"),
   guestsFilterCheckoutFrom: document.getElementById("guests-filter-checkout-from"),
   guestsFilterCheckoutTo: document.getElementById("guests-filter-checkout-to"),
+  guestsAlertSummary: document.getElementById("guests-alert-summary"),
   guestsCountryList: document.getElementById("guests-country-list"),
   guestsRows: document.getElementById("guests-rows"),
   guestsMobileCards: document.getElementById("guests-mobile-cards"),
@@ -11807,6 +11808,33 @@ function guestBirthdayAlertClient(record, todayIso = lisbonTodayIsoClient()) {
   return "";
 }
 
+function shiftGuestIsoClient(isoDate, days) {
+  const value = clean(isoDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return date.toISOString().slice(0, 10);
+}
+
+function isGuestInHouseOnClient(record, dateIso) {
+  const target = clean(dateIso);
+  const checkIn = clean(record?.checkIn);
+  const checkOut = clean(record?.checkOut);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(target) || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn)) return false;
+  return checkIn <= target && (!checkOut || checkOut >= target);
+}
+
+function getGuestsTopAlertsSummaryText() {
+  const rows = getFilteredGuestsRows();
+  const todayIso = lisbonTodayIsoClient();
+  const tomorrowIso = shiftGuestIsoClient(todayIso, 1);
+  const birthdaysToday = rows.filter((row) => isGuestInHouseOnClient(row, todayIso) && guestBirthdayAlertClient(row, todayIso) === "Birthday today").length;
+  const birthdaysTomorrow = rows.filter((row) => isGuestInHouseOnClient(row, tomorrowIso) && guestBirthdayAlertClient(row, tomorrowIso) === "Birthday today").length;
+  const blacklistsInHouse = rows.filter((row) => isGuestInHouseOnClient(row, todayIso) && guestRowMetaClient(row).isBlacklisted).length;
+  return `Birthdays Today: ${birthdaysToday}; Birthdays tomorrow: ${birthdaysTomorrow}; Blacklists inhouse: ${blacklistsInHouse}`;
+}
+
 function guestRowMetaClient(record) {
   const blacklistMatch = state.guestsBlacklist
     .map((item) => ({ item, reason: guestBlacklistReasonClient(record, item) }))
@@ -12645,6 +12673,7 @@ function renderGuests() {
   renderGuestsCountryOptions();
   if (!canApp("guests")) {
     if (els.guestsCount) els.guestsCount.textContent = "0 records";
+    if (els.guestsAlertSummary) els.guestsAlertSummary.textContent = "";
     if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="12" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsMobileCards) els.guestsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
     if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Guests.</td></tr>';
@@ -12664,6 +12693,7 @@ function renderGuests() {
   if (els.guestsBlacklistFilterNationality) els.guestsBlacklistFilterNationality.value = state.guestsBlacklistFilters.nationality;
   const rows = getFilteredGuestsRows();
   const blacklistRows = getFilteredGuestsBlacklistRows();
+  if (els.guestsAlertSummary) els.guestsAlertSummary.textContent = getGuestsTopAlertsSummaryText();
   const sendableCount = state.guestsRows.filter((row) => clean(row.sentStatus).toLowerCase() !== "sent" && clean(row.checkIn) && clean(row.checkIn) <= lisbonTodayIsoClient()).length;
   if (els.guestsSendPending) els.guestsSendPending.disabled = sendableCount === 0;
   if (els.guestsCount) els.guestsCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
