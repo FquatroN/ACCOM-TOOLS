@@ -2606,14 +2606,26 @@ select:disabled {
   overflow-wrap: anywhere;
 }
 
-.guests-table .row-actions {
+.guests-table td.row-actions {
+  white-space: nowrap;
+}
+
+.guests-table td.row-actions > button {
+  margin-right: 0.22rem;
+}
+
+.guests-table td.row-actions > button:last-child {
+  margin-right: 0;
+}
+
+.guests-mobile-card .row-actions {
   display: flex;
   align-items: center;
   gap: 0.22rem;
   flex-wrap: nowrap;
 }
 
-.guests-table .row-actions button,
+.guests-table td.row-actions > button,
 .guests-mobile-card .row-actions button {
   font-size: 0.72rem;
   padding: 0.16rem 0.34rem;
