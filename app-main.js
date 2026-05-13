@@ -11949,6 +11949,30 @@ function exportGuestsToExcel() {
   showToast(`Exported ${rows.length} guest record${rows.length === 1 ? "" : "s"} to Excel.`, "success");
 }
 
+function guestCanCopyRecord(record, todayIso = lisbonTodayIsoClient()) {
+  const checkIn = clean(record?.checkIn);
+  return /^\d{4}-\d{2}-\d{2}$/.test(checkIn) && checkIn < clean(todayIso);
+}
+
+function buildGuestCopyDraft(record, todayIso = lisbonTodayIsoClient()) {
+  const copiedCheckOut = clean(record?.checkOut);
+  const nextCheckIn = /^\d{4}-\d{2}-\d{2}$/.test(copiedCheckOut) && copiedCheckOut >= todayIso ? copiedCheckOut : todayIso;
+  return {
+    ha: normalizeGuestHAClient(record?.ha),
+    name: clean(record?.name),
+    nationality: clean(record?.nationality || record?.nationalityCode),
+    birthDate: clean(record?.birthDate),
+    birthPlace: clean(record?.birthPlace),
+    docNumber: clean(record?.docNumber),
+    docType: clean(record?.docType),
+    issuerCountry: clean(record?.issuerCountry || record?.issuerCountryCode),
+    residenceCountry: clean(record?.residenceCountry),
+    residenceCity: clean(record?.residenceCity),
+    checkIn: nextCheckIn,
+    checkOut: "",
+  };
+}
+
 function buildGuestPayload(draft, { isEdit = false } = {}) {
   const payload = {
     ha: normalizeGuestHAClient(draft.ha),
@@ -12065,6 +12089,31 @@ async function deleteGuestRecord(id) {
   } catch (e) {
     setGuestsStatus(`Delete failed: ${e.message}`);
     showToast(`Guest delete failed: ${e.message}`, "error");
+  }
+}
+
+async function copyGuestRecord(id) {
+  const record = state.guestsRows.find((item) => item.id === id);
+  if (!record) return;
+  try {
+    const result = await api("/api/guests", {
+      method: "POST",
+      body: buildGuestPayload(buildGuestCopyDraft(record)),
+    });
+    state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
+    state.guestsSettings = normalizeGuestsSettingsClient(result?.settings || state.guestsSettings);
+    state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
+    state.guestsLoaded = true;
+    state.guestsSettingsLoaded = true;
+    renderGuestsCountryOptions();
+    renderGuests();
+    renderGuestsSettings();
+    renderLayout();
+    setGuestsStatus("Guest record copied.");
+    showToast("Guest record copied.", "success");
+  } catch (e) {
+    setGuestsStatus(`Copy failed: ${e.message}`);
+    showToast(`Guest copy failed: ${e.message}`, "error");
   }
 }
 
@@ -12312,6 +12361,10 @@ async function onGuestsAction(event) {
       return;
     }
     await deleteGuestRecord(id);
+    return;
+  }
+  if (action === "copy" && id) {
+    await copyGuestRecord(id);
   }
 }
 
@@ -12407,6 +12460,12 @@ function buildGuestsInlineRow() {
 function buildGuestsReadOnlyRow(record) {
   const meta = guestRowMetaClient(record);
   const locked = guestIsLocked(record);
+  const canCopy = guestCanCopyRecord(record);
+  const actions = [
+    canCopy ? `<button type="button" class="ghost" data-guests-action="copy" data-id="${escape(record.id)}">Copy</button>` : "",
+    !locked ? `<button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button>` : "",
+    !locked ? `<button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button>` : "",
+  ].filter(Boolean).join("");
   const tr = document.createElement("tr");
   const nameCell = `${escape(record.name)}${guestAlertsMarkup(meta)}`;
   tr.innerHTML = `<td>${guestQuickFieldMarkup(record, "ha")}</td>
@@ -12420,7 +12479,7 @@ function buildGuestsReadOnlyRow(record) {
     <td>${guestQuickFieldMarkup(record, "checkOut")}</td>
     <td>${escape(meta.age || "-")}</td>
     <td>${guestStatusMarkup(record, meta)}</td>
-    <td class="row-actions">${locked ? "-" : `<button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button>`}</td>`;
+    <td class="row-actions">${actions || "-"}</td>`;
   tr.style.backgroundColor = guestRowBackground(record, meta);
   return tr;
 }
@@ -12471,6 +12530,12 @@ function buildGuestsInlineCard() {
 function buildGuestsReadOnlyCard(record) {
   const meta = guestRowMetaClient(record);
   const locked = guestIsLocked(record);
+  const canCopy = guestCanCopyRecord(record);
+  const actions = [
+    canCopy ? `<button type="button" class="ghost" data-guests-action="copy" data-id="${escape(record.id)}">Copy</button>` : "",
+    !locked ? `<button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button>` : "",
+    !locked ? `<button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button>` : "",
+  ].filter(Boolean).join("");
   const card = document.createElement("article");
   card.className = "guests-mobile-card";
   card.innerHTML = `<div class="communication-mobile-header">
@@ -12491,7 +12556,7 @@ function buildGuestsReadOnlyCard(record) {
       <div class="communication-mobile-field"><small>Check-out</small><div class="communication-mobile-message">${guestQuickFieldMarkup(record, "checkOut")}</div></div>
       <div class="communication-mobile-field communication-mobile-field-full"><small>Status</small>${guestStatusMarkup(record, meta)}</div>
     </div>
-    <div class="communication-mobile-footer">${locked ? "" : `<div class="row-actions"><button type="button" class="ghost" data-guests-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button></div>`}</div>`;
+    <div class="communication-mobile-footer">${actions ? `<div class="row-actions">${actions}</div>` : ""}</div>`;
   card.style.backgroundColor = guestRowBackground(record, meta);
   return card;
 }

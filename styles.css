@@ -2571,6 +2571,12 @@ select:disabled {
   flex-wrap: nowrap;
 }
 
+.guests-table .row-actions button,
+.guests-mobile-card .row-actions button {
+  font-size: 0.72rem;
+  padding: 0.16rem 0.34rem;
+}
+
 .guests-table.inline-editor input,
 .guests-table.inline-editor select,
 .guests-table.inline-editor textarea,
