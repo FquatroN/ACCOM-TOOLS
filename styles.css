@@ -2584,6 +2584,10 @@ select:disabled {
   width: 38px;
 }
 
+.guests-table td:nth-child(10) {
+  font-weight: 700;
+}
+
 .guests-table th:nth-child(11),
 .guests-table td:nth-child(11) {
   min-width: 150px;
@@ -2653,6 +2657,7 @@ select:disabled {
   justify-content: flex-start;
   padding: 0.18rem 0.3rem;
   font-size: 0.76rem;
+  font-weight: 400;
   text-align: left;
 }
 
