@@ -1064,6 +1064,7 @@ const els = {
   guestsPanelList: document.getElementById("guests-panel-list"),
   guestsPanelBlacklist: document.getElementById("guests-panel-blacklist"),
   guestsShowActive: document.getElementById("guests-show-active"),
+  guestsExportExcel: document.getElementById("guests-export-excel"),
   guestsSendPending: document.getElementById("guests-send-pending"),
   guestsCount: document.getElementById("guests-count"),
   guestsFilterHa: document.getElementById("guests-filter-ha"),
@@ -1655,6 +1656,7 @@ function bindEvents() {
   els.guestsBlacklistMobileCards?.addEventListener("input", onGuestsBlacklistDraftInput);
   els.guestsBlacklistMobileCards?.addEventListener("change", onGuestsBlacklistDraftInput);
   [els.guestsBlacklistFilterSearch, els.guestsBlacklistFilterReported, els.guestsBlacklistFilterNationality].forEach((el) => el?.addEventListener("input", onGuestsBlacklistFilterInput));
+  els.guestsExportExcel?.addEventListener("click", exportGuestsToExcel);
   els.guestsSendPending?.addEventListener("click", sendPendingGuests);
   els.guestsSaveSettings?.addEventListener("click", saveGuestsSettings);
   els.guestsSettingsSendTime?.addEventListener("input", onGuestsSettingsInput);
@@ -11880,6 +11882,43 @@ function getFilteredGuestsBlacklistRows() {
     .filter((row) => !search || clean(row.name).toLowerCase().includes(search) || clean(row.docNumber).toLowerCase().includes(search) || clean(row.whatHappened).toLowerCase().includes(search))
     .filter((row) => !whoReported || clean(row.whoReported).toLowerCase().includes(whoReported))
     .filter((row) => guestNationalityMatchesFilter(row, filters.nationality));
+}
+
+function buildGuestsExportRows() {
+  return getFilteredGuestsRows().map((row) => {
+    const meta = guestRowMetaClient(row);
+    const alerts = [];
+    if (meta?.blacklistMatch) alerts.push("Blacklist");
+    if (meta?.birthdayAlert) alerts.push(meta.birthdayAlert);
+    if (meta?.missingCheckout) alerts.push("missing CO date");
+    return {
+      ha: normalizeGuestHAClient(row.ha),
+      name: clean(row.name),
+      alerts: alerts.join(" | "),
+      nationality: clean(row.nationality || row.nationalityCode),
+      birthDate: clean(row.birthDate),
+      docNumber: clean(row.docNumber),
+      docType: clean(row.docType),
+      issuerCountry: clean(row.issuerCountry || row.issuerCountryCode),
+      checkIn: clean(row.checkIn),
+      checkOut: clean(row.checkOut),
+      age: meta?.age == null ? "" : String(meta.age),
+      status: guestStatusText(row, meta).join(" | "),
+    };
+  });
+}
+
+function exportGuestsToExcel() {
+  const rows = buildGuestsExportRows();
+  if (!rows.length) {
+    showToast("No guest records to export.", "error");
+    return;
+  }
+  const headers = ["HA", "Name", "Alerts", "Nationality", "Birth Date", "Doc. Number", "Doc Type", "Issuer Country", "Check-in", "Check-out", "Age", "Status"];
+  const bodyRows = rows.map((row) => [row.ha, row.name, row.alerts, row.nationality, row.birthDate, row.docNumber, row.docType, row.issuerCountry, row.checkIn, row.checkOut, row.age, row.status]);
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers.map((cell) => `<th>${escape(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${escape(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+  downloadBlob(`guests_list_${formatDate(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8;");
+  showToast(`Exported ${rows.length} guest record${rows.length === 1 ? "" : "s"} to Excel.`, "success");
 }
 
 function buildGuestPayload(draft, { isEdit = false } = {}) {
