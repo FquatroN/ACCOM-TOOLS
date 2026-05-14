@@ -198,6 +198,7 @@
               <h2>Guests</h2>
               <div class="actions">
                 <button id="guests-tab-list" type="button" class="active-tab">List</button>
+                <button id="guests-tab-descriptions" type="button" class="ghost">Guest Descriptions</button>
                 <button id="guests-tab-blacklist" type="button" class="ghost">Blacklist</button>
               </div>
             </div>
@@ -274,6 +275,29 @@
                 </table>
               </div>
               <p id="guests-status" class="auth-status"></p>
+            </section>
+
+            <section id="guests-panel-descriptions" hidden>
+              <div class="bar services-subbar">
+                <h3>Guest Descriptions</h3>
+                <div class="actions">
+                  <p id="guests-descriptions-count">0 rows</p>
+                </div>
+              </div>
+              <div id="guests-descriptions-mobile-cards" class="guests-mobile-cards"></div>
+              <div class="table-wrap">
+                <table class="shopping-history-table guest-descriptions-table">
+                  <thead>
+                    <tr>
+                      <th>Room</th>
+                      <th>Bed</th>
+                      <th>Guest Description</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guests-descriptions-rows"></tbody>
+                </table>
+              </div>
+              <p id="guests-descriptions-status" class="auth-status"></p>
             </section>
 
             <section id="guests-panel-blacklist" hidden>

@@ -1,5 +1,6 @@
 const { randomUUID } = require("node:crypto");
 const countries = require("./_guests-countries.json");
+const guestDescriptionSeed = require("./_guest-descriptions-seed.json");
 const { cleanText, normalizeDate } = require("./_supabase");
 
 const GUESTS_SETTING_KEY = "guests";
@@ -43,6 +44,14 @@ const SEF_HOTEL_PROFILE = {
   contactName: "Lisboa Central Hostel",
   contactEmail: "global@lisboacentralhostel.com",
 };
+const DEFAULT_GUEST_DESCRIPTION_ROWS = Object.freeze((Array.isArray(guestDescriptionSeed) ? guestDescriptionSeed : []).map((item) => Object.freeze({
+  id: cleanText(item?.id),
+  room: cleanText(item?.room),
+  bed: cleanText(item?.bed).toUpperCase() || "NA",
+  guestDescription: normalizeGuestText(item?.guestDescription, 2000),
+  colorKey: ["blue", "pink", "rose", "yellow", "green"].includes(cleanText(item?.colorKey)) ? cleanText(item?.colorKey) : "blue",
+  rowOrder: Number.parseInt(item?.rowOrder, 10) || 0,
+})));
 
 function normalizeTime(value, fallback = "18:00") {
   const raw = cleanText(value);
@@ -231,6 +240,42 @@ function sanitizeBlacklistRecord(input = {}, existing = {}) {
   return record;
 }
 
+function sanitizeGuestDescriptionRecord(input = {}, existing = {}) {
+  const baseId = cleanText(input.id || existing.id);
+  const baseRoom = cleanText(input.room || existing.room);
+  const baseBed = cleanText(input.bed || existing.bed).toUpperCase() || "NA";
+  const record = {
+    id: baseId || `${baseRoom.toLowerCase()}-${baseBed.toLowerCase()}`,
+    room: baseRoom,
+    bed: baseBed,
+    guestDescription: normalizeGuestText(input.guestDescription ?? input.guest_description ?? existing.guestDescription ?? existing.guest_description, 2000),
+    colorKey: ["blue", "pink", "rose", "yellow", "green"].includes(cleanText(input.colorKey ?? input.color_key ?? existing.colorKey ?? existing.color_key))
+      ? cleanText(input.colorKey ?? input.color_key ?? existing.colorKey ?? existing.color_key)
+      : (cleanText(existing.colorKey || existing.color_key) || "blue"),
+    rowOrder: Number.parseInt(input.rowOrder ?? input.row_order ?? existing.rowOrder ?? existing.row_order, 10) || 0,
+  };
+  if (!record.id || !record.room) {
+    const error = new Error("Guest description rows require a fixed room and id.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return record;
+}
+
+function mergeGuestDescriptionRows(savedRows = []) {
+  const savedMap = new Map(
+    (Array.isArray(savedRows) ? savedRows : []).map((item) => {
+      const safe = sanitizeGuestDescriptionRecord(item);
+      return [safe.id, safe];
+    }),
+  );
+  const merged = DEFAULT_GUEST_DESCRIPTION_ROWS.map((seed) => {
+    const saved = savedMap.get(seed.id);
+    return sanitizeGuestDescriptionRecord(saved ? { ...seed, guestDescription: saved.guestDescription } : seed, seed);
+  });
+  return merged.sort((a, b) => a.rowOrder - b.rowOrder || a.room.localeCompare(b.room) || a.bed.localeCompare(b.bed));
+}
+
 function validateGuestRecord(record) {
   if (!record.name) {
     const error = new Error("Guest name is required.");
@@ -291,8 +336,9 @@ function sanitizeGuestsPayload(input = {}) {
   const blacklist = (Array.isArray(source.blacklist) ? source.blacklist : [])
     .map((item) => sanitizeBlacklistRecord(item))
     .sort((a, b) => cleanText(b.occurrenceDate).localeCompare(cleanText(a.occurrenceDate)) || cleanText(a.name).localeCompare(cleanText(b.name)));
+  const descriptions = mergeGuestDescriptionRows(source.descriptions);
   const lastFileNumber = Math.max(0, Number.parseInt(source.lastFileNumber ?? source.last_file_number, 10) || 0);
-  return { settings, rows, blacklist, lastFileNumber };
+  return { settings, rows, blacklist, descriptions, lastFileNumber };
 }
 
 function calculateAge(birthDate, todayIso) {
@@ -473,11 +519,14 @@ module.exports = {
   guestBlacklistMatches,
   lisbonTodayIso,
   normalizeCountryLookupKey,
+  DEFAULT_GUEST_DESCRIPTION_ROWS,
   normalizeGuestSettings,
   resolveSefConfig,
   resolveCountry,
   sanitizeBlacklistRecord,
+  sanitizeGuestDescriptionRecord,
   sanitizeGuestRecord,
   sanitizeGuestsPayload,
   shouldShowGuestsAlert,
+  mergeGuestDescriptionRows,
 };

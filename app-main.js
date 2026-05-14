@@ -486,6 +486,14 @@ const DEFAULT_GUESTS_SETTINGS = {
   },
 };
 
+const GUEST_DESCRIPTION_PALETTES = {
+  blue: { solid: "#d9e1f2", soft: "rgba(217, 225, 242, 0.8)" },
+  pink: { solid: "#e890ab", soft: "rgba(232, 144, 171, 0.8)" },
+  rose: { solid: "#eeb0c3", soft: "rgba(238, 176, 195, 0.8)" },
+  yellow: { solid: "#ffd999", soft: "rgba(255, 217, 153, 0.8)" },
+  green: { solid: "#c6deb5", soft: "rgba(198, 222, 181, 0.8)" },
+};
+
 const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
   { label: "App: Communications", kind: "app", key: "communications" },
@@ -762,6 +770,7 @@ const state = {
   cashItemsDraft: {},
   cashItemsJustificationsDraft: {},
   guestsRows: [],
+  guestDescriptionRows: [],
   guestsBlacklist: [],
   guestsCountries: [],
   guestsApiCalls: [],
@@ -1060,8 +1069,10 @@ const els = {
   saveSettings: document.getElementById("save-settings"),
   settingsStatus: document.getElementById("settings-status"),
   guestsTabList: document.getElementById("guests-tab-list"),
+  guestsTabDescriptions: document.getElementById("guests-tab-descriptions"),
   guestsTabBlacklist: document.getElementById("guests-tab-blacklist"),
   guestsPanelList: document.getElementById("guests-panel-list"),
+  guestsPanelDescriptions: document.getElementById("guests-panel-descriptions"),
   guestsPanelBlacklist: document.getElementById("guests-panel-blacklist"),
   guestsListAlertReason: document.getElementById("guests-list-alert-reason"),
   guestsShowActive: document.getElementById("guests-show-active"),
@@ -1078,8 +1089,12 @@ const els = {
   guestsAlertSummary: document.getElementById("guests-alert-summary"),
   guestsCountryList: document.getElementById("guests-country-list"),
   guestsRows: document.getElementById("guests-rows"),
+  guestsDescriptionsRows: document.getElementById("guests-descriptions-rows"),
   guestsMobileCards: document.getElementById("guests-mobile-cards"),
+  guestsDescriptionsMobileCards: document.getElementById("guests-descriptions-mobile-cards"),
   guestsStatus: document.getElementById("guests-status"),
+  guestsDescriptionsCount: document.getElementById("guests-descriptions-count"),
+  guestsDescriptionsStatus: document.getElementById("guests-descriptions-status"),
   guestsBlacklistCount: document.getElementById("guests-blacklist-count"),
   guestsBlacklistFilterSearch: document.getElementById("guests-blacklist-filter-search"),
   guestsBlacklistFilterReported: document.getElementById("guests-blacklist-filter-reported"),
@@ -1623,6 +1638,7 @@ function bindEvents() {
   els.shoppingSettingsCategoryColors?.addEventListener("change", onShoppingSettingsInput);
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
   els.guestsTabList?.addEventListener("click", () => setGuestsScreen("list"));
+  els.guestsTabDescriptions?.addEventListener("click", () => setGuestsScreen("descriptions"));
   els.guestsTabBlacklist?.addEventListener("click", () => setGuestsScreen("blacklist"));
   els.guestsSettingsConfigTab?.addEventListener("click", () => setGuestsSettingsTab("config"));
   els.guestsSettingsSefTab?.addEventListener("click", () => setGuestsSettingsTab("sef"));
@@ -1651,6 +1667,12 @@ function bindEvents() {
   els.guestsMobileCards?.addEventListener("click", onGuestsQuickEditClick);
   els.guestsMobileCards?.addEventListener("change", onGuestsQuickEditChange);
   els.guestsMobileCards?.addEventListener("keydown", onGuestsKeydown);
+  els.guestsDescriptionsRows?.addEventListener("focusin", onGuestDescriptionFocusIn);
+  els.guestsDescriptionsRows?.addEventListener("input", onGuestDescriptionInput);
+  els.guestsDescriptionsRows?.addEventListener("focusout", onGuestDescriptionFocusOut);
+  els.guestsDescriptionsMobileCards?.addEventListener("focusin", onGuestDescriptionFocusIn);
+  els.guestsDescriptionsMobileCards?.addEventListener("input", onGuestDescriptionInput);
+  els.guestsDescriptionsMobileCards?.addEventListener("focusout", onGuestDescriptionFocusOut);
   els.guestsBlacklistRows?.addEventListener("click", onGuestsBlacklistAction);
   els.guestsBlacklistRows?.addEventListener("input", onGuestsBlacklistDraftInput);
   els.guestsBlacklistRows?.addEventListener("change", onGuestsBlacklistDraftInput);
@@ -11507,8 +11529,28 @@ function sortGuestsBlacklistRowsClient(rows) {
   return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => clean(b.occurrenceDate).localeCompare(clean(a.occurrenceDate)) || clean(a.name).localeCompare(clean(b.name)));
 }
 
+function normalizeGuestDescriptionRowClient(input = {}) {
+  const colorKey = clean(input.colorKey || input.color_key).toLowerCase();
+  return {
+    id: clean(input.id),
+    room: clean(input.room),
+    bed: clean(input.bed).toUpperCase() || "NA",
+    guestDescription: clean(input.guestDescription ?? input.guest_description),
+    colorKey: Object.prototype.hasOwnProperty.call(GUEST_DESCRIPTION_PALETTES, colorKey) ? colorKey : "blue",
+    rowOrder: Number.parseInt(input.rowOrder ?? input.row_order, 10) || 0,
+  };
+}
+
+function sortGuestDescriptionRowsClient(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => (Number(a.rowOrder) || 0) - (Number(b.rowOrder) || 0) || clean(a.room).localeCompare(clean(b.room)) || clean(a.bed).localeCompare(clean(b.bed)));
+}
+
 function setGuestsStatus(message) {
   if (els.guestsStatus) els.guestsStatus.textContent = message || "";
+}
+
+function setGuestsDescriptionsStatus(message) {
+  if (els.guestsDescriptionsStatus) els.guestsDescriptionsStatus.textContent = message || "";
 }
 
 function setGuestsBlacklistStatus(message) {
@@ -11541,15 +11583,17 @@ async function loadGuestsSettings({ silent = false } = {}) {
 
 async function loadGuestsData({ silent = false } = {}) {
   try {
-    const [recordsResult, blacklistResult] = await Promise.all([
+    const [recordsResult, blacklistResult, descriptionsResult] = await Promise.all([
       api("/api/guests"),
       api("/api/guests-blacklist"),
+      api("/api/guests-descriptions"),
     ]);
     state.guestsSettings = normalizeGuestsSettingsClient(recordsResult?.settings || state.guestsSettings);
     state.guestsCountries = Array.isArray(recordsResult?.countries) ? recordsResult.countries : Array.isArray(blacklistResult?.countries) ? blacklistResult.countries : state.guestsCountries;
     if (Array.isArray(recordsResult?.apiCalls)) state.guestsApiCalls = recordsResult.apiCalls.map(normalizeGuestApiCallClient);
     if (typeof recordsResult?.apiCallsEnabled === "boolean") state.guestsApiCallsEnabled = recordsResult.apiCallsEnabled;
     state.guestsRows = sortGuestsRowsClient((Array.isArray(recordsResult?.rows) ? recordsResult.rows : []).map(normalizeGuestRecordClient));
+    state.guestDescriptionRows = sortGuestDescriptionRowsClient((Array.isArray(descriptionsResult?.rows) ? descriptionsResult.rows : []).map(normalizeGuestDescriptionRowClient));
     state.guestsBlacklist = sortGuestsBlacklistRowsClient((Array.isArray(blacklistResult?.rows) ? blacklistResult.rows : []).map(normalizeGuestsBlacklistRecordClient));
     state.guestsLoaded = true;
     state.guestsSettingsLoaded = true;
@@ -11560,10 +11604,12 @@ async function loadGuestsData({ silent = false } = {}) {
     renderGuestsSettings();
     if (!silent) {
       setGuestsStatus("Guest records loaded.");
+      setGuestsDescriptionsStatus("Guest descriptions loaded.");
       setGuestsBlacklistStatus("Blacklist loaded.");
     }
   } catch (e) {
     state.guestsRows = [];
+    state.guestDescriptionRows = [];
     state.guestsBlacklist = [];
     state.guestsSettings = clone(DEFAULT_GUESTS_SETTINGS);
     state.guestsApiCalls = [];
@@ -11574,6 +11620,7 @@ async function loadGuestsData({ silent = false } = {}) {
     renderGuestsSettings();
     if (!silent) {
       setGuestsStatus(`Using default guests data (${e.message}).`);
+      setGuestsDescriptionsStatus(`Using default guest descriptions (${e.message}).`);
       setGuestsBlacklistStatus(`Using default blacklist data (${e.message}).`);
     }
   }
@@ -11736,7 +11783,7 @@ function renderGuestsCountryOptions() {
 }
 
 function setGuestsScreen(screen) {
-  state.guestsScreen = screen === "blacklist" ? "blacklist" : "list";
+  state.guestsScreen = screen === "blacklist" || screen === "descriptions" ? screen : "list";
   renderGuests();
 }
 
@@ -12682,6 +12729,96 @@ function buildGuestsBlacklistEditableCard(record) {
   return card;
 }
 
+function guestDescriptionPaletteClient(colorKey) {
+  return GUEST_DESCRIPTION_PALETTES[clean(colorKey).toLowerCase()] || GUEST_DESCRIPTION_PALETTES.blue;
+}
+
+function buildGuestDescriptionRow(record) {
+  const palette = guestDescriptionPaletteClient(record.colorKey);
+  const tr = document.createElement("tr");
+  tr.className = "guest-description-row";
+  tr.dataset.colorKey = record.colorKey;
+  tr.innerHTML = `<td class="guest-description-fixed-cell" style="background:${palette.solid}">${escape(record.room || "-")}</td>
+    <td class="guest-description-fixed-cell" style="background:${palette.solid}">${escape(record.bed || "-")}</td>
+    <td class="guest-description-edit-cell" style="background:${palette.soft}"><textarea class="guest-description-input" data-guest-description-id="${escape(record.id)}" data-original-description="${escape(record.guestDescription)}" rows="2">${escape(record.guestDescription)}</textarea></td>`;
+  return tr;
+}
+
+function buildGuestDescriptionCard(record) {
+  const palette = guestDescriptionPaletteClient(record.colorKey);
+  const card = document.createElement("article");
+  card.className = "guests-mobile-card guest-description-card";
+  card.style.background = palette.soft;
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(record.room || "-")}</div>
+        <div class="communication-mobile-meta">Bed: ${escape(record.bed || "-")}</div>
+      </div>
+    </div>
+    <div class="communication-mobile-grid">
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Guest Description</small><textarea class="guest-description-input" data-guest-description-id="${escape(record.id)}" data-original-description="${escape(record.guestDescription)}" rows="4">${escape(record.guestDescription)}</textarea></label>
+    </div>`;
+  return card;
+}
+
+function renderGuestDescriptionMobileCards(rows) {
+  if (!els.guestsDescriptionsMobileCards) return;
+  els.guestsDescriptionsMobileCards.innerHTML = "";
+  if (!rows.length) {
+    els.guestsDescriptionsMobileCards.innerHTML = '<div class="services-mobile-empty">No guest description rows found.</div>';
+    return;
+  }
+  rows.forEach((record) => {
+    els.guestsDescriptionsMobileCards.appendChild(buildGuestDescriptionCard(record));
+  });
+}
+
+async function saveGuestDescriptionRow(id, guestDescription) {
+  const result = await api(`/api/guests-descriptions?id=${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: { guestDescription },
+  });
+  state.guestDescriptionRows = sortGuestDescriptionRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestDescriptionRowClient));
+  renderGuests();
+}
+
+function onGuestDescriptionFocusIn(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement) || !target.matches("[data-guest-description-id]")) return;
+  target.dataset.originalDescription = target.value;
+}
+
+function onGuestDescriptionInput(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement) || !target.matches("[data-guest-description-id]")) return;
+  const id = clean(target.dataset.guestDescriptionId);
+  const row = state.guestDescriptionRows.find((item) => item.id === id);
+  if (!row) return;
+  row.guestDescription = target.value;
+}
+
+async function onGuestDescriptionFocusOut(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement) || !target.matches("[data-guest-description-id]")) return;
+  const id = clean(target.dataset.guestDescriptionId);
+  const nextValue = clean(target.value);
+  const previousValue = clean(target.dataset.originalDescription);
+  if (!id || nextValue === previousValue) return;
+  try {
+    setGuestsDescriptionsStatus("Saving guest description...");
+    await saveGuestDescriptionRow(id, nextValue);
+    setGuestsDescriptionsStatus("Guest description saved.");
+  } catch (e) {
+    const row = state.guestDescriptionRows.find((item) => item.id === id);
+    const fallback = previousValue;
+    if (row) row.guestDescription = fallback;
+    target.value = fallback;
+    target.dataset.originalDescription = fallback;
+    setGuestsDescriptionsStatus(`Save failed: ${e.message}`);
+    showToast(`Guest description save failed: ${e.message}`, "error");
+  }
+}
+
 function renderGuestsMobileCards(rows) {
   if (!els.guestsMobileCards) return;
   els.guestsMobileCards.innerHTML = "";
@@ -12713,11 +12850,16 @@ function renderGuestsScreenTabs() {
     els.guestsTabList.classList.toggle("active-tab", state.guestsScreen === "list");
     els.guestsTabList.classList.toggle("ghost", state.guestsScreen !== "list");
   }
+  if (els.guestsTabDescriptions) {
+    els.guestsTabDescriptions.classList.toggle("active-tab", state.guestsScreen === "descriptions");
+    els.guestsTabDescriptions.classList.toggle("ghost", state.guestsScreen !== "descriptions");
+  }
   if (els.guestsTabBlacklist) {
     els.guestsTabBlacklist.classList.toggle("active-tab", state.guestsScreen === "blacklist");
     els.guestsTabBlacklist.classList.toggle("ghost", state.guestsScreen !== "blacklist");
   }
   if (els.guestsPanelList) els.guestsPanelList.hidden = state.guestsScreen !== "list";
+  if (els.guestsPanelDescriptions) els.guestsPanelDescriptions.hidden = state.guestsScreen !== "descriptions";
   if (els.guestsPanelBlacklist) els.guestsPanelBlacklist.hidden = state.guestsScreen !== "blacklist";
 }
 
@@ -12749,6 +12891,9 @@ function renderGuests() {
     if (els.guestsListAlertReason) els.guestsListAlertReason.textContent = "";
     if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="12" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsMobileCards) els.guestsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
+    if (els.guestsDescriptionsCount) els.guestsDescriptionsCount.textContent = "0 rows";
+    if (els.guestsDescriptionsRows) els.guestsDescriptionsRows.innerHTML = '<tr><td colspan="3" class="empty">Your profile has no access to Guests.</td></tr>';
+    if (els.guestsDescriptionsMobileCards) els.guestsDescriptionsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
     if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsBlacklistMobileCards) els.guestsBlacklistMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
     return;
@@ -12765,13 +12910,30 @@ function renderGuests() {
   if (els.guestsBlacklistFilterReported) els.guestsBlacklistFilterReported.value = state.guestsBlacklistFilters.whoReported;
   if (els.guestsBlacklistFilterNationality) els.guestsBlacklistFilterNationality.value = state.guestsBlacklistFilters.nationality;
   const rows = getFilteredGuestsRows();
+  const descriptionRows = sortGuestDescriptionRowsClient(state.guestDescriptionRows);
   const blacklistRows = getFilteredGuestsBlacklistRows();
   if (els.guestsListAlertReason) els.guestsListAlertReason.textContent = shouldShowGuestsAlertClient() ? getGuestsAlertReasonText() : "";
   if (els.guestsAlertSummary) els.guestsAlertSummary.textContent = getGuestsTopAlertsSummaryText();
   const sendableCount = state.guestsRows.filter((row) => clean(row.sentStatus).toLowerCase() !== "sent" && clean(row.checkIn) && clean(row.checkIn) <= lisbonTodayIsoClient()).length;
   if (els.guestsSendPending) els.guestsSendPending.disabled = sendableCount === 0;
   if (els.guestsCount) els.guestsCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.guestsDescriptionsCount) els.guestsDescriptionsCount.textContent = `${descriptionRows.length} row${descriptionRows.length === 1 ? "" : "s"}`;
   if (els.guestsBlacklistCount) els.guestsBlacklistCount.textContent = `${blacklistRows.length} record${blacklistRows.length === 1 ? "" : "s"}`;
+  if (state.guestsScreen === "descriptions") {
+    if (els.guestsDescriptionsRows) els.guestsDescriptionsRows.innerHTML = "";
+    renderGuestDescriptionMobileCards(descriptionRows);
+    if (!els.guestsDescriptionsRows) return;
+    if (!descriptionRows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="3" class="empty">No guest description rows found.</td>';
+      els.guestsDescriptionsRows.appendChild(tr);
+      return;
+    }
+    descriptionRows.forEach((record) => {
+      els.guestsDescriptionsRows.appendChild(buildGuestDescriptionRow(record));
+    });
+    return;
+  }
   if (state.guestsScreen === "blacklist") {
     if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = "";
     renderGuestsBlacklistMobileCards(blacklistRows);
