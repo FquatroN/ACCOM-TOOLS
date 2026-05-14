@@ -11945,7 +11945,11 @@ function getFilteredGuestsRows() {
   const checkOutFrom = clean(filters.checkOutFrom);
   const checkOutTo = clean(filters.checkOutTo);
   return sortGuestsRowsClient(state.guestsRows)
-    .filter((row) => !filters.showActive || !clean(row.checkOut) || clean(row.checkOut) >= today)
+    .filter((row) => {
+      if (!filters.showActive) return true;
+      const sentStatus = clean(row.sentStatus).toLowerCase();
+      return sentStatus !== "sent" || !clean(row.checkOut) || clean(row.checkOut) >= today;
+    })
     .filter((row) => !ha || clean(row.ha).toUpperCase() === ha)
     .filter((row) => !search || clean(row.name).toLowerCase().includes(search) || clean(row.docNumber).toLowerCase().includes(search))
     .filter((row) => guestNationalityMatchesFilter(row, filters.nationality))
