@@ -2487,7 +2487,7 @@ select:disabled {
 .guest-descriptions-table th,
 .guest-descriptions-table td {
   font-size: 0.72rem;
-  padding: 0.16rem 0.22rem;
+  padding: 0.12rem 0.18rem;
   vertical-align: top;
   border-color: #b8c2cc;
 }
@@ -2545,12 +2545,16 @@ select:disabled {
 .guest-descriptions-table td:nth-child(1) {
   min-width: 58px;
   width: 58px;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .guest-descriptions-table th:nth-child(2),
 .guest-descriptions-table td:nth-child(2) {
   min-width: 44px;
   width: 44px;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .guest-descriptions-table th:nth-child(3),
@@ -2690,7 +2694,7 @@ select:disabled {
 
 .guest-description-input {
   width: 100%;
-  min-height: 2.1rem;
+  min-height: 1.7rem;
   border: none;
   background: transparent;
   box-shadow: none;
