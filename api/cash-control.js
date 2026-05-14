@@ -147,18 +147,64 @@ async function maybeSendLowCashAlert(record, settings) {
 function buildHighCashAlertContent(record, items = []) {
   const cashTotalValue = calculateCashTotal(record?.denominations || {});
   const cashTotal = Number(cashTotalValue || 0).toFixed(2).replace(".", ",");
-  const noteList = CASH_DENOMINATIONS
+  const noteItems = CASH_DENOMINATIONS
     .map((item) => ({ label: formatCashDenominationLabel(item.key), quantity: Math.max(0, Number(record?.denominations?.[item.key] || 0)) }))
-    .filter((item) => item.quantity > 0)
-    .map((item) => `${item.label}: ${item.quantity}`)
-    .join(", ");
+    .filter((item) => item.quantity > 0);
   const dayLabel = formatCashAlertDay(record?.day);
   const shiftLabel = formatCashAlertShift(record);
   const subject = `Deposito Necessario - ${dayLabel}${shiftLabel ? ` ${shiftLabel}` : ""}`;
+  const tableRows = noteItems.length
+    ? noteItems.map((item) => `<tr>
+      <td style="border:1px solid #d8d0c7;padding:6px;">${escapeHtml(item.label)}</td>
+      <td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${escapeHtml(String(item.quantity))}</td>
+    </tr>`).join("")
+    : `<tr>
+      <td colspan="2" style="border:1px solid #d8d0c7;padding:6px;text-align:center;">-</td>
+    </tr>`;
   const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
     <p>O valor em caixa e ${escapeHtml(cashTotal)}€, existindo as seguintes notas: ${escapeHtml(noteList || "-")}.</p>
   </body></html>`;
   const text = `O valor em caixa e ${cashTotal}€, existindo as seguintes notas: ${noteList || "-"}.`;
+  return { subject, html, text };
+}
+
+function buildHighCashAlertContent(record, items = []) {
+  const cashTotalValue = calculateCashTotal(record?.denominations || {});
+  const cashTotal = Number(cashTotalValue || 0).toFixed(2).replace(".", ",");
+  const noteItems = CASH_DENOMINATIONS
+    .map((item) => ({ label: formatCashDenominationLabel(item.key), quantity: Math.max(0, Number(record?.denominations?.[item.key] || 0)) }))
+    .filter((item) => item.quantity > 0);
+  const dayLabel = formatCashAlertDay(record?.day);
+  const shiftLabel = formatCashAlertShift(record);
+  const subject = `Deposito Necessario - ${dayLabel}${shiftLabel ? ` ${shiftLabel}` : ""}`;
+  const tableRows = noteItems.length
+    ? noteItems.map((item) => `<tr>
+      <td style="border:1px solid #d8d0c7;padding:6px;">${escapeHtml(item.label)}</td>
+      <td style="border:1px solid #d8d0c7;padding:6px;text-align:center;">${escapeHtml(String(item.quantity))}</td>
+    </tr>`).join("")
+    : `<tr>
+      <td colspan="2" style="border:1px solid #d8d0c7;padding:6px;text-align:center;">-</td>
+    </tr>`;
+  const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">
+    <p>O valor em caixa e ${escapeHtml(cashTotal)}â‚¬.</p>
+    <p>Existem as seguintes notas/moedas em caixa:</p>
+    <table style="border-collapse:collapse;min-width:280px;">
+      <thead>
+        <tr>
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:left;">Nota/Moeda</th>
+          <th style="border:1px solid #d8d0c7;padding:6px;text-align:center;">Quantidade existente</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  </body></html>`;
+  const text = [
+    `O valor em caixa e ${cashTotal}â‚¬.`,
+    "Existem as seguintes notas/moedas em caixa:",
+    "",
+    "Nota/Moeda | Quantidade existente",
+    ...(noteItems.length ? noteItems.map((item) => `${item.label} | ${item.quantity}`) : ["- | -"]),
+  ].join("\n");
   return { subject, html, text };
 }
 
