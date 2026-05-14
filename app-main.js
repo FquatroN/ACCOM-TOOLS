@@ -1063,6 +1063,7 @@ const els = {
   guestsTabBlacklist: document.getElementById("guests-tab-blacklist"),
   guestsPanelList: document.getElementById("guests-panel-list"),
   guestsPanelBlacklist: document.getElementById("guests-panel-blacklist"),
+  guestsListAlertReason: document.getElementById("guests-list-alert-reason"),
   guestsShowActive: document.getElementById("guests-show-active"),
   guestsExportExcel: document.getElementById("guests-export-excel"),
   guestsSendPending: document.getElementById("guests-send-pending"),
@@ -12733,12 +12734,19 @@ function shouldShowGuestsAlertClient(todayIso = lisbonTodayIsoClient()) {
   return state.guestsRows.some((row) => clean(row.sentStatus).toLowerCase() !== "sent" && clean(row.checkIn) && clean(row.checkIn) < todayIso);
 }
 
+function getGuestsAlertReasonText(todayIso = lisbonTodayIsoClient()) {
+  const affected = state.guestsRows.filter((row) => clean(row.sentStatus).toLowerCase() !== "sent" && clean(row.checkIn) && clean(row.checkIn) < todayIso);
+  if (!affected.length) return "";
+  return `Pending send: ${affected.length} guest record${affected.length === 1 ? "" : "s"} with check-in before today.`;
+}
+
 function renderGuests() {
   renderGuestsScreenTabs();
   renderGuestsCountryOptions();
   if (!canApp("guests")) {
     if (els.guestsCount) els.guestsCount.textContent = "0 records";
     if (els.guestsAlertSummary) els.guestsAlertSummary.textContent = "";
+    if (els.guestsListAlertReason) els.guestsListAlertReason.textContent = "";
     if (els.guestsRows) els.guestsRows.innerHTML = '<tr><td colspan="12" class="empty">Your profile has no access to Guests.</td></tr>';
     if (els.guestsMobileCards) els.guestsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Guests.</div>';
     if (els.guestsBlacklistRows) els.guestsBlacklistRows.innerHTML = '<tr><td colspan="8" class="empty">Your profile has no access to Guests.</td></tr>';
@@ -12758,6 +12766,7 @@ function renderGuests() {
   if (els.guestsBlacklistFilterNationality) els.guestsBlacklistFilterNationality.value = state.guestsBlacklistFilters.nationality;
   const rows = getFilteredGuestsRows();
   const blacklistRows = getFilteredGuestsBlacklistRows();
+  if (els.guestsListAlertReason) els.guestsListAlertReason.textContent = shouldShowGuestsAlertClient() ? getGuestsAlertReasonText() : "";
   if (els.guestsAlertSummary) els.guestsAlertSummary.textContent = getGuestsTopAlertsSummaryText();
   const sendableCount = state.guestsRows.filter((row) => clean(row.sentStatus).toLowerCase() !== "sent" && clean(row.checkIn) && clean(row.checkIn) <= lisbonTodayIsoClient()).length;
   if (els.guestsSendPending) els.guestsSendPending.disabled = sendableCount === 0;
