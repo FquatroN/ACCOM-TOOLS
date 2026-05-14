@@ -2487,8 +2487,9 @@ select:disabled {
 .guest-descriptions-table th,
 .guest-descriptions-table td {
   font-size: 0.72rem;
-  padding: 0.28rem 0.34rem;
+  padding: 0.16rem 0.22rem;
   vertical-align: top;
+  border-color: #b8c2cc;
 }
 
 .guests-blacklist-table th,
@@ -2542,14 +2543,14 @@ select:disabled {
 
 .guest-descriptions-table th:nth-child(1),
 .guest-descriptions-table td:nth-child(1) {
-  min-width: 72px;
-  width: 72px;
+  min-width: 58px;
+  width: 58px;
 }
 
 .guest-descriptions-table th:nth-child(2),
 .guest-descriptions-table td:nth-child(2) {
-  min-width: 56px;
-  width: 56px;
+  min-width: 44px;
+  width: 44px;
 }
 
 .guest-descriptions-table th:nth-child(3),
@@ -2689,13 +2690,13 @@ select:disabled {
 
 .guest-description-input {
   width: 100%;
-  min-height: 3rem;
+  min-height: 2.1rem;
   border: none;
   background: transparent;
   box-shadow: none;
   resize: vertical;
   font-size: 0.74rem;
-  line-height: 1.3;
+  line-height: 1.2;
   padding: 0;
   color: #25313b;
 }
@@ -2714,7 +2715,23 @@ select:disabled {
 }
 
 .guest-description-card .guest-description-input {
-  min-height: 4.4rem;
+  min-height: 3.5rem;
+}
+
+.guests-descriptions-filters {
+  margin-top: 0.2rem;
+  margin-bottom: 0.45rem;
+  gap: 0.35rem 0.5rem;
+  grid-template-columns: 110px minmax(240px, 1fr);
+}
+
+.guests-descriptions-filters label {
+  font-size: 0.74rem;
+}
+
+.guests-descriptions-filters input {
+  font-size: 0.72rem;
+  padding: 0.28rem 0.4rem;
 }
 
 .guests-table [data-guests-quick-input],

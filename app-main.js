@@ -487,11 +487,11 @@ const DEFAULT_GUESTS_SETTINGS = {
 };
 
 const GUEST_DESCRIPTION_PALETTES = {
-  blue: { solid: "#d9e1f2", soft: "rgba(217, 225, 242, 0.8)" },
-  pink: { solid: "#e890ab", soft: "rgba(232, 144, 171, 0.8)" },
-  rose: { solid: "#eeb0c3", soft: "rgba(238, 176, 195, 0.8)" },
-  yellow: { solid: "#ffd999", soft: "rgba(255, 217, 153, 0.8)" },
-  green: { solid: "#c6deb5", soft: "rgba(198, 222, 181, 0.8)" },
+  blue: { solid: "#d9e1f2", soft: "rgba(217, 225, 242, 0.26)" },
+  pink: { solid: "#e890ab", soft: "rgba(232, 144, 171, 0.26)" },
+  rose: { solid: "#eeb0c3", soft: "rgba(238, 176, 195, 0.26)" },
+  yellow: { solid: "#ffd999", soft: "rgba(255, 217, 153, 0.26)" },
+  green: { solid: "#c6deb5", soft: "rgba(198, 222, 181, 0.26)" },
 };
 
 const PROFILE_MATRIX_ROWS = [
@@ -781,6 +781,7 @@ const state = {
   guestsSettingsTab: "config",
   guestsScreen: "list",
   guestsFilters: { showActive: true, ha: "", search: "", nationality: "", checkInFrom: "", checkInTo: "", checkOutFrom: "", checkOutTo: "" },
+  guestsDescriptionsFilters: { room: "", description: "" },
   guestsBlacklistFilters: { search: "", whoReported: "", nationality: "" },
   guestsDraft: null,
   guestsEditDraft: null,
@@ -1095,6 +1096,8 @@ const els = {
   guestsStatus: document.getElementById("guests-status"),
   guestsDescriptionsCount: document.getElementById("guests-descriptions-count"),
   guestsDescriptionsStatus: document.getElementById("guests-descriptions-status"),
+  guestsDescriptionsFilterRoom: document.getElementById("guests-descriptions-filter-room"),
+  guestsDescriptionsFilterDescription: document.getElementById("guests-descriptions-filter-description"),
   guestsBlacklistCount: document.getElementById("guests-blacklist-count"),
   guestsBlacklistFilterSearch: document.getElementById("guests-blacklist-filter-search"),
   guestsBlacklistFilterReported: document.getElementById("guests-blacklist-filter-reported"),
@@ -1673,6 +1676,8 @@ function bindEvents() {
   els.guestsDescriptionsMobileCards?.addEventListener("focusin", onGuestDescriptionFocusIn);
   els.guestsDescriptionsMobileCards?.addEventListener("input", onGuestDescriptionInput);
   els.guestsDescriptionsMobileCards?.addEventListener("focusout", onGuestDescriptionFocusOut);
+  els.guestsDescriptionsFilterRoom?.addEventListener("input", onGuestDescriptionsFilterInput);
+  els.guestsDescriptionsFilterDescription?.addEventListener("input", onGuestDescriptionsFilterInput);
   els.guestsBlacklistRows?.addEventListener("click", onGuestsBlacklistAction);
   els.guestsBlacklistRows?.addEventListener("input", onGuestsBlacklistDraftInput);
   els.guestsBlacklistRows?.addEventListener("change", onGuestsBlacklistDraftInput);
@@ -12797,6 +12802,23 @@ function onGuestDescriptionInput(event) {
   row.guestDescription = target.value;
 }
 
+function onGuestDescriptionsFilterInput() {
+  state.guestsDescriptionsFilters.room = clean(els.guestsDescriptionsFilterRoom?.value);
+  state.guestsDescriptionsFilters.description = clean(els.guestsDescriptionsFilterDescription?.value);
+  renderGuests();
+}
+
+function getFilteredGuestDescriptionRows() {
+  const filters = state.guestsDescriptionsFilters || {};
+  const room = clean(filters.room).toLowerCase();
+  const description = clean(filters.description).toLowerCase();
+  return sortGuestDescriptionRowsClient(state.guestDescriptionRows).filter((row) => {
+    const roomMatch = !room || clean(row.room).toLowerCase().includes(room);
+    const descriptionMatch = !description || clean(row.guestDescription).toLowerCase().includes(description);
+    return roomMatch && descriptionMatch;
+  });
+}
+
 async function onGuestDescriptionFocusOut(event) {
   const target = event.target;
   if (!(target instanceof HTMLTextAreaElement) || !target.matches("[data-guest-description-id]")) return;
@@ -12906,11 +12928,13 @@ function renderGuests() {
   if (els.guestsFilterCheckinTo) els.guestsFilterCheckinTo.value = state.guestsFilters.checkInTo;
   if (els.guestsFilterCheckoutFrom) els.guestsFilterCheckoutFrom.value = state.guestsFilters.checkOutFrom;
   if (els.guestsFilterCheckoutTo) els.guestsFilterCheckoutTo.value = state.guestsFilters.checkOutTo;
+  if (els.guestsDescriptionsFilterRoom) els.guestsDescriptionsFilterRoom.value = state.guestsDescriptionsFilters.room;
+  if (els.guestsDescriptionsFilterDescription) els.guestsDescriptionsFilterDescription.value = state.guestsDescriptionsFilters.description;
   if (els.guestsBlacklistFilterSearch) els.guestsBlacklistFilterSearch.value = state.guestsBlacklistFilters.search;
   if (els.guestsBlacklistFilterReported) els.guestsBlacklistFilterReported.value = state.guestsBlacklistFilters.whoReported;
   if (els.guestsBlacklistFilterNationality) els.guestsBlacklistFilterNationality.value = state.guestsBlacklistFilters.nationality;
   const rows = getFilteredGuestsRows();
-  const descriptionRows = sortGuestDescriptionRowsClient(state.guestDescriptionRows);
+  const descriptionRows = getFilteredGuestDescriptionRows();
   const blacklistRows = getFilteredGuestsBlacklistRows();
   if (els.guestsListAlertReason) els.guestsListAlertReason.textContent = shouldShowGuestsAlertClient() ? getGuestsAlertReasonText() : "";
   if (els.guestsAlertSummary) els.guestsAlertSummary.textContent = getGuestsTopAlertsSummaryText();
