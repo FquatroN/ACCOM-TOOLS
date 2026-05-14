@@ -12738,12 +12738,15 @@ function guestDescriptionPaletteClient(colorKey) {
   return GUEST_DESCRIPTION_PALETTES[clean(colorKey).toLowerCase()] || GUEST_DESCRIPTION_PALETTES.blue;
 }
 
-function buildGuestDescriptionRow(record) {
+function buildGuestDescriptionRow(record, { showRoom = true, rowSpan = 1 } = {}) {
   const palette = guestDescriptionPaletteClient(record.colorKey);
   const tr = document.createElement("tr");
   tr.className = "guest-description-row";
   tr.dataset.colorKey = record.colorKey;
-  tr.innerHTML = `<td class="guest-description-fixed-cell" style="background:${palette.solid}">${escape(record.room || "-")}</td>
+  const roomCell = showRoom
+    ? `<td class="guest-description-fixed-cell" rowspan="${Math.max(1, Number(rowSpan) || 1)}" style="background:${palette.solid}">${escape(record.room || "-")}</td>`
+    : "";
+  tr.innerHTML = `${roomCell}
     <td class="guest-description-fixed-cell" style="background:${palette.solid}">${escape(record.bed || "-")}</td>
     <td class="guest-description-edit-cell" style="background:${palette.soft}"><textarea class="guest-description-input" data-guest-description-id="${escape(record.id)}" data-original-description="${escape(record.guestDescription)}" rows="2">${escape(record.guestDescription)}</textarea></td>`;
   return tr;
@@ -12817,6 +12820,26 @@ function getFilteredGuestDescriptionRows() {
     const descriptionMatch = !description || clean(row.guestDescription).toLowerCase().includes(description);
     return roomMatch && descriptionMatch;
   });
+}
+
+function buildGuestDescriptionTableRows(rows) {
+  const records = Array.isArray(rows) ? rows : [];
+  const builtRows = [];
+  let index = 0;
+  while (index < records.length) {
+    const current = records[index];
+    const room = clean(current?.room);
+    let rowSpan = 1;
+    while (index + rowSpan < records.length && clean(records[index + rowSpan]?.room) === room) {
+      rowSpan += 1;
+    }
+    builtRows.push(buildGuestDescriptionRow(current, { showRoom: true, rowSpan }));
+    for (let offset = 1; offset < rowSpan; offset += 1) {
+      builtRows.push(buildGuestDescriptionRow(records[index + offset], { showRoom: false }));
+    }
+    index += rowSpan;
+  }
+  return builtRows;
 }
 
 async function onGuestDescriptionFocusOut(event) {
@@ -12953,8 +12976,8 @@ function renderGuests() {
       els.guestsDescriptionsRows.appendChild(tr);
       return;
     }
-    descriptionRows.forEach((record) => {
-      els.guestsDescriptionsRows.appendChild(buildGuestDescriptionRow(record));
+    buildGuestDescriptionTableRows(descriptionRows).forEach((row) => {
+      els.guestsDescriptionsRows.appendChild(row);
     });
     return;
   }
