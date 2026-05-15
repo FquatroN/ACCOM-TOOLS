@@ -1899,12 +1899,14 @@ select:disabled {
 .maintenance-table th,
 .maintenance-table td {
   vertical-align: top;
+  font-size: 0.78rem;
+  padding: 0.32rem 0.38rem;
 }
 
 .maintenance-table textarea,
 .maintenance-table input,
 .maintenance-table select {
-  font-size: 0.85rem;
+  font-size: 0.78rem;
 }
 
 .maintenance-table textarea {
@@ -1912,9 +1914,22 @@ select:disabled {
   resize: vertical;
 }
 
+.maintenance-table th:nth-child(1),
+.maintenance-table td:nth-child(1) {
+  min-width: 110px;
+  width: 110px;
+}
+
+.maintenance-table th:nth-child(5),
+.maintenance-table td:nth-child(5),
+.maintenance-table th:nth-child(6),
+.maintenance-table td:nth-child(6) {
+  min-width: 320px;
+}
+
 .maintenance-note-cell {
   white-space: normal;
-  min-width: 280px;
+  min-width: 320px;
 }
 
 .maintenance-type-badge {
