@@ -2020,6 +2020,12 @@ select:disabled {
   min-height: 2.05rem;
 }
 
+#maintenance-panel-list .maintenance-table input,
+#maintenance-panel-list .maintenance-table select,
+#maintenance-panel-list .maintenance-table textarea {
+  font-size: 0.72rem;
+}
+
 .cash-filters {
   margin-top: 0.45rem;
   gap: 0.65rem;
