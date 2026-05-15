@@ -1973,6 +1973,25 @@ select:disabled {
   background: rgba(246, 238, 228, 0.65);
 }
 
+#maintenance-panel-by-where .maintenance-table th:nth-child(2),
+#maintenance-panel-by-where .maintenance-table td:nth-child(2),
+#maintenance-panel-by-where .maintenance-table th:nth-child(3),
+#maintenance-panel-by-where .maintenance-table td:nth-child(3) {
+  min-width: 88px;
+  width: 88px;
+}
+
+#maintenance-panel-by-where .maintenance-table th:nth-child(5),
+#maintenance-panel-by-where .maintenance-table td:nth-child(5) {
+  min-width: 90px;
+  width: 90px;
+}
+
+#maintenance-panel-by-where .maintenance-table th:nth-child(6),
+#maintenance-panel-by-where .maintenance-table td:nth-child(6) {
+  min-width: 420px;
+}
+
 .maintenance-mobile-card {
   border: 1px solid rgba(95, 74, 52, 0.14);
   border-radius: 18px;
