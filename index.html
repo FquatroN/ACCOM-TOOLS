@@ -38,6 +38,7 @@
           <button id="nav-hours" type="button" class="nav-link">Hours Register</button>
           <button id="nav-groups" type="button" class="nav-link">Groups</button>
           <button id="nav-reviews" type="button" class="nav-link">Reviews</button>
+          <button id="nav-maintenance" type="button" class="nav-link">Maintenance</button>
         </aside>
         <section id="sidebar-review-summary-card" class="sidebar-summary-card" hidden>
           <div class="sidebar-summary-head">
@@ -1895,6 +1896,99 @@
           </section>
         </section>
 
+        <section id="view-maintenance" class="view" hidden>
+          <section class="feature-title">
+            <h2>Maintenance</h2>
+          </section>
+
+          <section class="card">
+            <div class="grid filters maintenance-task-top-grid">
+              <label>
+                Task
+                <select id="maintenance-task-select"></select>
+              </label>
+            </div>
+            <p id="maintenance-task-description" class="auth-status"></p>
+          </section>
+
+          <section class="card">
+            <div class="actions settings-review-tabs">
+              <button id="maintenance-tab-list" type="button" class="active-tab">Log List</button>
+              <button id="maintenance-tab-by-where" type="button" class="ghost">By Where</button>
+            </div>
+
+            <section id="maintenance-panel-list" class="view-panel">
+              <div class="grid filters maintenance-filters">
+                <label>
+                  Where
+                  <input id="maintenance-filter-where" type="text" placeholder="Search place / item" />
+                </label>
+                <label>
+                  Date From
+                  <input id="maintenance-filter-date-from" type="date" />
+                </label>
+                <label>
+                  Date To
+                  <input id="maintenance-filter-date-to" type="date" />
+                </label>
+                <label>
+                  Type
+                  <select id="maintenance-filter-type"></select>
+                </label>
+                <label>
+                  Who / Note
+                  <input id="maintenance-filter-search" type="text" placeholder="Search who or note" />
+                </label>
+              </div>
+
+              <div class="bar">
+                <h2>Log</h2>
+                <p id="maintenance-count">0 records</p>
+              </div>
+
+              <div class="table-wrap maintenance-table-wrap">
+                <table class="maintenance-table">
+                  <thead>
+                    <tr>
+                      <th>Where</th>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Who</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="maintenance-rows"></tbody>
+                </table>
+              </div>
+              <div id="maintenance-mobile-cards" class="maintenance-mobile-cards"></div>
+              <p id="maintenance-status" class="auth-status"></p>
+            </section>
+
+            <section id="maintenance-panel-by-where" class="view-panel" hidden>
+              <div class="bar">
+                <h2>By Where</h2>
+                <p id="maintenance-by-where-count">0 records</p>
+              </div>
+              <div class="table-wrap maintenance-table-wrap">
+                <table class="maintenance-table maintenance-where-table">
+                  <thead>
+                    <tr>
+                      <th>Where</th>
+                      <th>Last task</th>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Who</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody id="maintenance-by-where-rows"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        </section>
+
         <section id="view-settings" class="view" hidden>
           <section class="card settings-shell">
             <aside class="settings-nav">
@@ -1928,6 +2022,9 @@
               </button>
               <button id="settings-menu-reviews" type="button" class="nav-link">
                 Reviews
+              </button>
+              <button id="settings-menu-maintenance" type="button" class="nav-link">
+                Maintenance
               </button>
               <button id="settings-menu-admin-users" type="button" class="nav-link">
                 Admin Users
@@ -2860,6 +2957,37 @@
                     </div>
                   </section>
                 </div>
+              </div>
+
+              <div id="settings-view-maintenance" hidden>
+                <div class="actions">
+                  <button id="close-settings-maintenance" type="button" class="ghost">Back To App</button>
+                  <button id="maintenance-save-settings" type="button" class="ghost">Save Configuration</button>
+                </div>
+
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Tasks Configuration</h3>
+                    <button id="maintenance-add-task" type="button" class="ghost">Add Task</button>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="settings-table maintenance-settings-table">
+                      <thead>
+                        <tr>
+                          <th>Task</th>
+                          <th>Task Description</th>
+                          <th>Where</th>
+                          <th>Type</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="maintenance-settings-body"></tbody>
+                    </table>
+                  </div>
+                  <p class="field-hint">Use commas to separate the values in <strong>Where</strong> and <strong>Type</strong>.</p>
+                </section>
+
+                <p id="maintenance-settings-status" class="auth-status"></p>
               </div>
             </div>
           </section>

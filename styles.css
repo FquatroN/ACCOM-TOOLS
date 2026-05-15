@@ -1859,6 +1859,10 @@ select:disabled {
   display: none;
 }
 
+.maintenance-mobile-cards {
+  display: none;
+}
+
 .cash-mobile-cards {
   display: none;
 }
@@ -1870,6 +1874,96 @@ select:disabled {
 .cash-table-wrap {
   overflow-x: auto;
   padding-bottom: 0.4rem;
+}
+
+.maintenance-task-top-grid {
+  grid-template-columns: minmax(260px, 460px);
+  align-items: end;
+}
+
+.maintenance-filters {
+  gap: 0.65rem;
+  grid-template-columns: 1.1fr repeat(3, minmax(0, 0.8fr)) 1.1fr;
+  align-items: end;
+}
+
+.maintenance-table-wrap {
+  overflow-x: auto;
+  padding-bottom: 0.4rem;
+}
+
+.maintenance-table {
+  min-width: 980px;
+}
+
+.maintenance-table th,
+.maintenance-table td {
+  vertical-align: top;
+}
+
+.maintenance-table textarea,
+.maintenance-table input,
+.maintenance-table select {
+  font-size: 0.85rem;
+}
+
+.maintenance-table textarea {
+  min-height: 2.6rem;
+  resize: vertical;
+}
+
+.maintenance-note-cell {
+  white-space: normal;
+  min-width: 280px;
+}
+
+.maintenance-type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #3b2f24;
+  white-space: nowrap;
+}
+
+.maintenance-settings-table textarea {
+  min-height: 2.6rem;
+  resize: vertical;
+}
+
+.maintenance-settings-table th:nth-child(1),
+.maintenance-settings-table td:nth-child(1) {
+  min-width: 150px;
+}
+
+.maintenance-settings-table th:nth-child(2),
+.maintenance-settings-table td:nth-child(2) {
+  min-width: 260px;
+}
+
+.maintenance-settings-table th:nth-child(3),
+.maintenance-settings-table td:nth-child(3),
+.maintenance-settings-table th:nth-child(4),
+.maintenance-settings-table td:nth-child(4) {
+  min-width: 220px;
+}
+
+.maintenance-where-table .merge-cell {
+  vertical-align: middle;
+  font-weight: 600;
+  background: rgba(246, 238, 228, 0.65);
+}
+
+.maintenance-mobile-card {
+  border: 1px solid rgba(95, 74, 52, 0.14);
+  border-radius: 18px;
+  background: #fffdfa;
+  padding: 0.9rem;
+  box-shadow: 0 10px 24px rgba(55, 41, 28, 0.08);
 }
 
 .cash-filters {
@@ -4023,6 +4117,10 @@ select:disabled {
     display: none;
   }
 
+  #maintenance-panel-list .maintenance-table-wrap {
+    display: none;
+  }
+
   #laundry-panel-list .table-wrap {
     display: none;
   }
@@ -4076,6 +4174,12 @@ select:disabled {
     margin-top: 0.85rem;
   }
 
+  .maintenance-mobile-cards {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
   .cash-mobile-cards {
     display: grid;
     gap: 0.75rem;
@@ -4096,8 +4200,13 @@ select:disabled {
   }
 
   .shopping-current-filters,
-  .shopping-history-filters {
+  .shopping-history-filters,
+  .maintenance-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .maintenance-task-top-grid {
+    grid-template-columns: 1fr;
   }
 
   table {

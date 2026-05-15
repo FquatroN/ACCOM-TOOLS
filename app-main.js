@@ -17,8 +17,8 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry"];
-const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "cash", "reviews", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry"];
+const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -47,6 +47,8 @@ const SHOPPING_WEEKDAY_OPTIONS = [
   { key: "saturday", label: "Saturday" },
   { key: "sunday", label: "Sunday" },
 ];
+const DEFAULT_MAINTENANCE_SETTINGS = { tasks: [] };
+const MAINTENANCE_TYPE_COLOR_PALETTE = ["#f7d6d0", "#d5e8f2", "#d8ebc7", "#f7e0a8", "#e4d8f2", "#d9ecec", "#f4d8e7"];
 
 const DEFAULT_SETTINGS = {
   general: {
@@ -501,6 +503,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Cash Control", kind: "app", key: "cash" },
   { label: "App: Lost&Found", kind: "app", key: "lost-found" },
   { label: "App: Reviews", kind: "app", key: "reviews" },
+  { label: "App: Maintenance", kind: "app", key: "maintenance" },
   { label: "App: Groups", kind: "app", key: "groups" },
   { label: "App: Services", kind: "app", key: "services" },
   { label: "App: Shopping", kind: "app", key: "shopping" },
@@ -512,6 +515,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "Settings: Guests", kind: "settings", key: "guests" },
   { label: "Settings: Cash Control", kind: "settings", key: "cash" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
+  { label: "Settings: Maintenance", kind: "settings", key: "maintenance" },
   { label: "Settings: Groups", kind: "settings", key: "groups" },
   { label: "Settings: Services", kind: "settings", key: "services" },
   { label: "Settings: Shopping", kind: "settings", key: "shopping" },
@@ -769,6 +773,16 @@ const state = {
   cashItemsModalId: "",
   cashItemsDraft: {},
   cashItemsJustificationsDraft: {},
+  maintenanceLogs: [],
+  maintenanceLoaded: false,
+  maintenanceSettings: clone(DEFAULT_MAINTENANCE_SETTINGS),
+  maintenanceSettingsLoaded: false,
+  maintenanceScreen: "list",
+  maintenanceSelectedTaskId: "",
+  maintenanceFilters: { where: "", dateFrom: "", dateTo: "", type: "", search: "" },
+  maintenanceDraft: null,
+  maintenanceEditDraft: null,
+  maintenanceEditingId: "",
   guestsRows: [],
   guestDescriptionRows: [],
   guestsBlacklist: [],
@@ -894,6 +908,7 @@ const els = {
   navCash: document.getElementById("nav-cash"),
   navLostFound: document.getElementById("nav-lost-found"),
   navReviews: document.getElementById("nav-reviews"),
+  navMaintenance: document.getElementById("nav-maintenance"),
   navGroups: document.getElementById("nav-groups"),
   navServices: document.getElementById("nav-services"),
   navShopping: document.getElementById("nav-shopping"),
@@ -907,6 +922,7 @@ const els = {
   viewCash: document.getElementById("view-cash"),
   viewLostFound: document.getElementById("view-lost-found"),
   viewReviews: document.getElementById("view-reviews"),
+  viewMaintenance: document.getElementById("view-maintenance"),
   viewServices: document.getElementById("view-services"),
   viewShopping: document.getElementById("view-shopping"),
   viewHours: document.getElementById("view-hours"),
@@ -918,6 +934,7 @@ const els = {
   settingsMenuGuests: document.getElementById("settings-menu-guests"),
   settingsMenuCash: document.getElementById("settings-menu-cash"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
+  settingsMenuMaintenance: document.getElementById("settings-menu-maintenance"),
   settingsMenuGroups: document.getElementById("settings-menu-groups"),
   settingsMenuServices: document.getElementById("settings-menu-services"),
   settingsMenuShopping: document.getElementById("settings-menu-shopping"),
@@ -975,11 +992,29 @@ const els = {
   cashItemsBody: document.getElementById("cash-items-body"),
   cashItemsStatus: document.getElementById("cash-items-status"),
   cashItemsSave: document.getElementById("cash-items-save"),
+  maintenanceTaskSelect: document.getElementById("maintenance-task-select"),
+  maintenanceTaskDescription: document.getElementById("maintenance-task-description"),
+  maintenanceTabList: document.getElementById("maintenance-tab-list"),
+  maintenanceTabByWhere: document.getElementById("maintenance-tab-by-where"),
+  maintenancePanelList: document.getElementById("maintenance-panel-list"),
+  maintenancePanelByWhere: document.getElementById("maintenance-panel-by-where"),
+  maintenanceFilterWhere: document.getElementById("maintenance-filter-where"),
+  maintenanceFilterDateFrom: document.getElementById("maintenance-filter-date-from"),
+  maintenanceFilterDateTo: document.getElementById("maintenance-filter-date-to"),
+  maintenanceFilterType: document.getElementById("maintenance-filter-type"),
+  maintenanceFilterSearch: document.getElementById("maintenance-filter-search"),
+  maintenanceCount: document.getElementById("maintenance-count"),
+  maintenanceByWhereCount: document.getElementById("maintenance-by-where-count"),
+  maintenanceRows: document.getElementById("maintenance-rows"),
+  maintenanceByWhereRows: document.getElementById("maintenance-by-where-rows"),
+  maintenanceMobileCards: document.getElementById("maintenance-mobile-cards"),
+  maintenanceStatus: document.getElementById("maintenance-status"),
   settingsViewGeneral: document.getElementById("settings-view-general"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
   settingsViewGuests: document.getElementById("settings-view-guests"),
   settingsViewCash: document.getElementById("settings-view-cash"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
+  settingsViewMaintenance: document.getElementById("settings-view-maintenance"),
   settingsViewGroups: document.getElementById("settings-view-groups"),
   settingsViewServices: document.getElementById("settings-view-services"),
   settingsViewShopping: document.getElementById("settings-view-shopping"),
@@ -995,6 +1030,7 @@ const els = {
   closeSettingsGuests: document.getElementById("close-settings-guests"),
   closeSettingsAdmin: document.getElementById("close-settings-admin"),
   closeSettingsReviews: document.getElementById("close-settings-reviews"),
+  closeSettingsMaintenance: document.getElementById("close-settings-maintenance"),
   closeSettingsGroups: document.getElementById("close-settings-groups"),
   closeSettingsServices: document.getElementById("close-settings-services"),
   closeSettingsShopping: document.getElementById("close-settings-shopping"),
@@ -1023,6 +1059,10 @@ const els = {
   profilesBody: document.getElementById("profiles-body"),
   addProfile: document.getElementById("add-profile"),
   profilesStatus: document.getElementById("profiles-status"),
+  maintenanceSaveSettings: document.getElementById("maintenance-save-settings"),
+  maintenanceAddTask: document.getElementById("maintenance-add-task"),
+  maintenanceSettingsBody: document.getElementById("maintenance-settings-body"),
+  maintenanceSettingsStatus: document.getElementById("maintenance-settings-status"),
   rows: document.getElementById("rows"),
   communicationsMobileCards: document.getElementById("communications-mobile-cards"),
   lostFoundRows: document.getElementById("lost-found-rows"),
@@ -1537,6 +1577,7 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && canApp("bakery")) state.currentView = "bakery";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   if (!canAccessGeneralSettings() && canSettings("guests")) state.settingsSection = "guests";
@@ -1548,6 +1589,7 @@ async function init() {
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && !canSettings("laundry") && canSettings("maintenance")) state.settingsSection = "maintenance";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
@@ -1558,6 +1600,7 @@ async function init() {
   await ensureCurrentViewData();
   if (canApp("guests")) loadGuestsData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("cash")) loadCashData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canApp("maintenance")) loadMaintenanceData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("hours")) loadHoursData({ silent: true }).catch(() => {});
   if (canApp("bakery")) loadBakeryData({ silent: true }).then(() => renderLayout()).catch(() => {});
@@ -1571,6 +1614,7 @@ function bindEvents() {
   els.navCash?.addEventListener("click", () => setView("cash"));
   els.navLostFound.addEventListener("click", () => setView("lost-found"));
   els.navReviews.addEventListener("click", () => setView("reviews"));
+  els.navMaintenance?.addEventListener("click", () => setView("maintenance"));
   els.navGroups.addEventListener("click", () => setView("groups"));
   els.navServices.addEventListener("click", () => setView("services"));
   els.navShopping.addEventListener("click", () => setView("shopping"));
@@ -1596,11 +1640,13 @@ function bindEvents() {
   els.closeSettingsBakery.addEventListener("click", () => setView("bakery"));
   els.closeSettingsLaundry?.addEventListener("click", () => setView("laundry"));
   els.closeSettingsGuests?.addEventListener("click", () => setView("guests"));
+  els.closeSettingsMaintenance?.addEventListener("click", () => setView("maintenance"));
   els.settingsMenuGeneral?.addEventListener("click", () => setSettingsSection("general"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
   els.settingsMenuGuests?.addEventListener("click", () => setSettingsSection("guests"));
   els.settingsMenuCash?.addEventListener("click", () => setSettingsSection("cash"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
+  els.settingsMenuMaintenance?.addEventListener("click", () => setSettingsSection("maintenance"));
   els.settingsMenuGroups.addEventListener("click", () => setSettingsSection("groups"));
   els.settingsMenuServices.addEventListener("click", () => setSettingsSection("services"));
   els.settingsMenuShopping.addEventListener("click", () => setSettingsSection("shopping"));
@@ -1685,6 +1731,21 @@ function bindEvents() {
   els.guestsBlacklistMobileCards?.addEventListener("input", onGuestsBlacklistDraftInput);
   els.guestsBlacklistMobileCards?.addEventListener("change", onGuestsBlacklistDraftInput);
   [els.guestsBlacklistFilterSearch, els.guestsBlacklistFilterReported, els.guestsBlacklistFilterNationality].forEach((el) => el?.addEventListener("input", onGuestsBlacklistFilterInput));
+  els.maintenanceTabList?.addEventListener("click", () => setMaintenanceScreen("list"));
+  els.maintenanceTabByWhere?.addEventListener("click", () => setMaintenanceScreen("by-where"));
+  els.maintenanceTaskSelect?.addEventListener("change", onMaintenanceTaskChange);
+  [els.maintenanceFilterWhere, els.maintenanceFilterDateFrom, els.maintenanceFilterDateTo, els.maintenanceFilterType, els.maintenanceFilterSearch]
+    .forEach((el) => el?.addEventListener(el?.tagName === "SELECT" ? "change" : "input", onMaintenanceFilterInput));
+  els.maintenanceRows?.addEventListener("click", onMaintenanceAction);
+  els.maintenanceRows?.addEventListener("input", onMaintenanceDraftInput);
+  els.maintenanceRows?.addEventListener("change", onMaintenanceDraftInput);
+  els.maintenanceMobileCards?.addEventListener("click", onMaintenanceAction);
+  els.maintenanceMobileCards?.addEventListener("input", onMaintenanceDraftInput);
+  els.maintenanceMobileCards?.addEventListener("change", onMaintenanceDraftInput);
+  els.maintenanceSaveSettings?.addEventListener("click", saveMaintenanceSettings);
+  els.maintenanceAddTask?.addEventListener("click", addMaintenanceSettingsTask);
+  els.maintenanceSettingsBody?.addEventListener("input", onMaintenanceSettingsInput);
+  els.maintenanceSettingsBody?.addEventListener("click", onMaintenanceSettingsAction);
   els.guestsExportExcel?.addEventListener("click", exportGuestsToExcel);
   els.guestsSendPending?.addEventListener("click", sendPendingGuests);
   els.guestsSaveSettings?.addEventListener("click", saveGuestsSettings);
@@ -2155,6 +2216,9 @@ function applyInitialRouteFromUrl() {
     if (view === "cash" && canApp("cash")) {
       state.currentView = "cash";
     }
+    if (view === "maintenance" && canApp("maintenance")) {
+      state.currentView = "maintenance";
+    }
     if (view === "hours" && canApp("hours")) {
       state.currentView = "hours";
     }
@@ -2181,6 +2245,9 @@ function syncAppRoute() {
     } else if (state.currentView === "guests") {
       url.searchParams.set("view", "guests");
       url.searchParams.delete("service");
+    } else if (state.currentView === "maintenance") {
+      url.searchParams.set("view", "maintenance");
+      url.searchParams.delete("service");
     } else if (state.currentView === "hours") {
       url.searchParams.set("view", "hours");
       url.searchParams.delete("service");
@@ -2198,6 +2265,7 @@ async function setView(view) {
   if (view === "guests" && !canApp("guests")) return showToast("No guests access.", "error");
   if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
+  if (view === "maintenance" && !canApp("maintenance")) return showToast("No maintenance access.", "error");
   if (view === "groups" && !canApp("groups")) return showToast("No groups access.", "error");
   if (view === "services" && !canApp("services")) return showToast("No services access.", "error");
   if (view === "cash" && !canApp("cash")) return showToast("No cash control access.", "error");
@@ -2212,6 +2280,7 @@ async function setView(view) {
     else if (canSettings("guests")) state.settingsSection = "guests";
     else if (canSettings("cash")) state.settingsSection = "cash";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
+    else if (canSettings("maintenance")) state.settingsSection = "maintenance";
     else if (canSettings("groups")) state.settingsSection = "groups";
     else if (canSettings("services")) state.settingsSection = "services";
     else if (canSettings("shopping")) state.settingsSection = "shopping";
@@ -2235,6 +2304,10 @@ async function setView(view) {
   }
   if (view !== "cash" && state.cashItemsModalOpen) {
     closeCashItemsModal();
+  }
+  if (view !== "maintenance") {
+    state.maintenanceEditingId = "";
+    state.maintenanceEditDraft = null;
   }
   syncAppRoute();
   renderLayout();
@@ -2264,6 +2337,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "reviews") {
     await ensureReviewsData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "maintenance") {
+    await ensureMaintenanceData();
     renderSettingsSection();
     render();
     return;
@@ -2365,6 +2444,13 @@ async function refreshCurrentViewData(reason = "timer") {
       state.lastAutoRefreshAt = now;
       return;
     }
+    if (state.currentView === "maintenance" && canApp("maintenance")) {
+      await loadMaintenanceData({ silent: true });
+      state.maintenanceLoaded = true;
+      renderMaintenance();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
     if (state.currentView === "groups" && canApp("groups")) {
       await loadGroups({ silent: true });
       state.groupsLoaded = true;
@@ -2425,6 +2511,7 @@ function shouldSkipAutoRefresh() {
   if (state.currentView === "settings") return true;
   if (state.currentView === "communications" && (state.editingId || hasCommunicationDraft())) return true;
   if (state.currentView === "guests" && (state.guestsEditingId || state.guestsBlacklistEditingId || hasGuestsDraft() || hasGuestsBlacklistDraft())) return true;
+  if (state.currentView === "maintenance" && (state.maintenanceEditingId || hasMaintenanceDraft())) return true;
   if (state.currentView === "cash" && (state.cashEditingId || hasCashDraft() || state.cashMoneyModalOpen || state.cashItemsModalOpen)) return true;
   if (state.currentView === "lost-found" && (state.lostFoundEditingId || hasLostFoundDraft())) return true;
   if (state.currentView === "groups" && els.groupEditorModal && !els.groupEditorModal.hidden) return true;
@@ -2614,6 +2701,20 @@ async function ensureLaundryData() {
   renderLaundrySettings();
 }
 
+async function ensureMaintenanceData() {
+  if (!canApp("maintenance") && !canSettings("maintenance")) return;
+  if ((canApp("maintenance") || canSettings("maintenance")) && !state.maintenanceSettingsLoaded) {
+    await loadMaintenanceSettings();
+    state.maintenanceSettingsLoaded = true;
+  }
+  if (canApp("maintenance") && !state.maintenanceLoaded) {
+    await loadMaintenanceData();
+    state.maintenanceLoaded = true;
+  }
+  renderMaintenance();
+  renderMaintenanceSettings();
+}
+
 async function ensureSettingsSectionData() {
   if (state.settingsSection === "general") {
     await ensureCommunicationsData();
@@ -2629,6 +2730,10 @@ async function ensureSettingsSectionData() {
   }
   if (state.settingsSection === "reviews") {
     await ensureReviewsData({ includeImportRuns: state.reviewSettingsScreen === "import" });
+    return;
+  }
+  if (state.settingsSection === "maintenance") {
+    await ensureMaintenanceData();
     return;
   }
   if (state.settingsSection === "groups") {
@@ -2668,6 +2773,7 @@ function renderLayout() {
   const cash = state.currentView === "cash";
   const lostFound = state.currentView === "lost-found";
   const reviews = state.currentView === "reviews";
+  const maintenance = state.currentView === "maintenance";
   const groups = state.currentView === "groups";
   const services = state.currentView === "services";
   const shopping = state.currentView === "shopping";
@@ -2680,6 +2786,7 @@ function renderLayout() {
   const canCash = canApp("cash");
   const canLostFound = canApp("lost-found");
   const canReviews = canApp("reviews");
+  const canMaintenance = canApp("maintenance");
   const canGroups = canApp("groups");
   const canServices = canApp("services");
   const canShopping = canApp("shopping");
@@ -2694,6 +2801,7 @@ function renderLayout() {
   els.navCash?.classList.toggle("active", cash);
   els.navLostFound.classList.toggle("active", lostFound);
   els.navReviews.classList.toggle("active", reviews);
+  els.navMaintenance?.classList.toggle("active", maintenance);
   els.navGroups.classList.toggle("active", groups);
   els.navServices.classList.toggle("active", services);
   els.navShopping.classList.toggle("active", shopping);
@@ -2705,6 +2813,7 @@ function renderLayout() {
   if (els.navCash) els.navCash.hidden = !canCash;
   els.navLostFound.hidden = !canLostFound;
   els.navReviews.hidden = !canReviews;
+  if (els.navMaintenance) els.navMaintenance.hidden = !canMaintenance;
   els.navGroups.hidden = !canGroups;
   els.navServices.hidden = !canServices;
   els.navShopping.hidden = !canShopping;
@@ -2726,6 +2835,7 @@ function renderLayout() {
   if (els.viewCash) els.viewCash.hidden = !cash;
   els.viewLostFound.hidden = !lostFound;
   els.viewReviews.hidden = !reviews;
+  if (els.viewMaintenance) els.viewMaintenance.hidden = !maintenance;
   els.viewGroups.hidden = !groups;
   els.viewServices.hidden = !services;
   els.viewShopping.hidden = !shopping;
@@ -2738,6 +2848,7 @@ function renderLayout() {
   if (els.settingsMenuGuests) els.settingsMenuGuests.hidden = !canSettings("guests");
   if (els.settingsMenuCash) els.settingsMenuCash.hidden = !canSettings("cash");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
+  if (els.settingsMenuMaintenance) els.settingsMenuMaintenance.hidden = !canSettings("maintenance");
   els.settingsMenuGroups.hidden = !canSettings("groups");
   els.settingsMenuServices.hidden = !canSettings("services");
   els.settingsMenuShopping.hidden = !canSettings("shopping");
@@ -2750,6 +2861,7 @@ function renderLayout() {
   els.settingsMenuGuests?.classList.toggle("active", state.settingsSection === "guests");
   els.settingsMenuCash?.classList.toggle("active", state.settingsSection === "cash");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
+  els.settingsMenuMaintenance?.classList.toggle("active", state.settingsSection === "maintenance");
   els.settingsMenuGroups.classList.toggle("active", state.settingsSection === "groups");
   els.settingsMenuServices.classList.toggle("active", state.settingsSection === "services");
   els.settingsMenuShopping.classList.toggle("active", state.settingsSection === "shopping");
@@ -2767,6 +2879,7 @@ async function setSettingsSection(section) {
   if (section === "communications" && !canSettings("communications")) return;
   if (section === "cash" && !canSettings("cash")) return;
   if (section === "reviews" && !canSettings("reviews")) return;
+  if (section === "maintenance" && !canSettings("maintenance")) return;
   if (section === "groups" && !canSettings("groups")) return;
   if (section === "services" && !canSettings("services")) return;
   if (section === "shopping" && !canSettings("shopping")) return;
@@ -2776,12 +2889,15 @@ async function setSettingsSection(section) {
   if (section === "admin-users" && !canSettings("admin-users")) return;
   setMobileNavOpen(false);
   if (section === "guests") state.guestsSettingsLoaded = false;
+  if (section === "maintenance") state.maintenanceSettingsLoaded = false;
   state.settingsSection = section === "admin-users"
     ? "admin-users"
     : section === "guests"
       ? "guests"
     : section === "cash"
       ? "cash"
+    : section === "maintenance"
+      ? "maintenance"
     : section === "shopping"
       ? "shopping"
     : section === "hours"
@@ -2828,6 +2944,7 @@ function renderSettingsSection() {
   const isComm = state.settingsSection === "communications" && canSettings("communications");
   const isCash = state.settingsSection === "cash" && canSettings("cash");
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
+  const isMaintenance = state.settingsSection === "maintenance" && canSettings("maintenance");
   const isGroups = state.settingsSection === "groups" && canSettings("groups");
   const isServices = state.settingsSection === "services" && canSettings("services");
   const isShopping = state.settingsSection === "shopping" && canSettings("shopping");
@@ -2840,6 +2957,7 @@ function renderSettingsSection() {
   els.settingsViewCommunications.hidden = !isComm;
   if (els.settingsViewCash) els.settingsViewCash.hidden = !isCash;
   els.settingsViewReviews.hidden = !isReviews;
+  if (els.settingsViewMaintenance) els.settingsViewMaintenance.hidden = !isMaintenance;
   els.settingsViewGroups.hidden = !isGroups;
   els.settingsViewServices.hidden = !isServices;
   els.settingsViewShopping.hidden = !isShopping;
@@ -3102,6 +3220,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-cash="${id}"]`)?.checked) appFeatures.push("cash");
   if (els.profilesBody.querySelector(`[data-profile-app-lost-found="${id}"]`)?.checked) appFeatures.push("lost-found");
   if (els.profilesBody.querySelector(`[data-profile-app-reviews="${id}"]`)?.checked) appFeatures.push("reviews");
+  if (els.profilesBody.querySelector(`[data-profile-app-maintenance="${id}"]`)?.checked) appFeatures.push("maintenance");
   if (els.profilesBody.querySelector(`[data-profile-app-groups="${id}"]`)?.checked) appFeatures.push("groups");
   if (els.profilesBody.querySelector(`[data-profile-app-services="${id}"]`)?.checked) appFeatures.push("services");
   if (els.profilesBody.querySelector(`[data-profile-app-shopping="${id}"]`)?.checked) appFeatures.push("shopping");
@@ -3114,6 +3233,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-settings-guests="${id}"]`)?.checked) settingsFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-settings-cash="${id}"]`)?.checked) settingsFeatures.push("cash");
   if (els.profilesBody.querySelector(`[data-profile-settings-reviews="${id}"]`)?.checked) settingsFeatures.push("reviews");
+  if (els.profilesBody.querySelector(`[data-profile-settings-maintenance="${id}"]`)?.checked) settingsFeatures.push("maintenance");
   if (els.profilesBody.querySelector(`[data-profile-settings-groups="${id}"]`)?.checked) settingsFeatures.push("groups");
   if (els.profilesBody.querySelector(`[data-profile-settings-services="${id}"]`)?.checked) settingsFeatures.push("services");
   if (els.profilesBody.querySelector(`[data-profile-settings-shopping="${id}"]`)?.checked) settingsFeatures.push("shopping");
@@ -9227,6 +9347,621 @@ async function copyShoppingOrderAsDraft(sourceId = "") {
   }
 }
 
+function normalizeMaintenanceTaskClient(task = {}, index = 0) {
+  const name = clean(task.task || task.name);
+  return {
+    id: clean(task.id) || `maintenance-task-${index + 1}`,
+    task: name,
+    taskDescription: clean(task.taskDescription || task.task_description || task.description),
+    whereOptions: Array.isArray(task.whereOptions || task.where_options)
+      ? (task.whereOptions || task.where_options).map((item) => clean(item)).filter(Boolean)
+      : String(task.where || "").split(/[\n,;]/).map((item) => clean(item)).filter(Boolean),
+    typeOptions: Array.isArray(task.typeOptions || task.type_options)
+      ? (task.typeOptions || task.type_options).map((item) => clean(item)).filter(Boolean)
+      : String(task.type || "").split(/[\n,;]/).map((item) => clean(item)).filter(Boolean),
+  };
+}
+
+function normalizeMaintenanceSettingsClient(settings = {}) {
+  const tasks = (Array.isArray(settings.tasks) ? settings.tasks : [])
+    .map((task, index) => normalizeMaintenanceTaskClient(task, index))
+    .filter((task) => clean(task.task));
+  return { tasks };
+}
+
+function normalizeMaintenanceLogRecordClient(row = {}) {
+  return {
+    id: clean(row.id),
+    taskId: clean(row.taskId || row.task_id),
+    taskName: clean(row.taskName || row.task_name),
+    whereValue: clean(row.whereValue || row.where_value || row.where),
+    doneDate: clean(row.doneDate || row.done_date || row.date),
+    type: clean(row.type),
+    who: clean(row.who),
+    note: String(row.note || "").trim(),
+    createdAt: clean(row.createdAt || row.created_at),
+    updatedAt: clean(row.updatedAt || row.updated_at),
+  };
+}
+
+function emptyMaintenanceDraft(task = getSelectedMaintenanceTask()) {
+  return {
+    taskId: clean(task?.id),
+    whereValue: "",
+    doneDate: lisbonTodayIsoClient(),
+    type: "",
+    who: "",
+    note: "",
+  };
+}
+
+function setMaintenanceStatus(text) {
+  if (els.maintenanceStatus) els.maintenanceStatus.textContent = text || "";
+}
+
+function setMaintenanceSettingsStatus(text) {
+  if (els.maintenanceSettingsStatus) els.maintenanceSettingsStatus.textContent = text || "";
+}
+
+function getMaintenanceTaskById(taskId) {
+  return (Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : []).find((task) => clean(task.id) === clean(taskId)) || null;
+}
+
+function getSelectedMaintenanceTask() {
+  return getMaintenanceTaskById(state.maintenanceSelectedTaskId);
+}
+
+function syncMaintenanceSelection() {
+  const tasks = Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : [];
+  if (!tasks.length) {
+    state.maintenanceSelectedTaskId = "";
+    state.maintenanceDraft = emptyMaintenanceDraft(null);
+    if (clean(state.maintenanceFilters.type)) state.maintenanceFilters.type = "";
+    return null;
+  }
+  if (!tasks.some((task) => clean(task.id) === clean(state.maintenanceSelectedTaskId))) {
+    state.maintenanceSelectedTaskId = clean(tasks[0].id);
+  }
+  const task = getSelectedMaintenanceTask();
+  if (!task?.typeOptions?.includes(clean(state.maintenanceFilters.type))) {
+    state.maintenanceFilters.type = "";
+  }
+  if (!state.maintenanceDraft || clean(state.maintenanceDraft.taskId) !== clean(task?.id)) {
+    state.maintenanceDraft = emptyMaintenanceDraft(task);
+  }
+  return task;
+}
+
+async function loadMaintenanceSettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/maintenance-settings");
+    state.maintenanceSettings = normalizeMaintenanceSettingsClient(result?.settings);
+    state.maintenanceSettingsLoaded = true;
+    syncMaintenanceSelection();
+    renderMaintenanceSettings();
+    renderMaintenance();
+    if (!silent) setMaintenanceSettingsStatus("Maintenance configuration loaded.");
+  } catch (e) {
+    state.maintenanceSettings = clone(DEFAULT_MAINTENANCE_SETTINGS);
+    syncMaintenanceSelection();
+    renderMaintenanceSettings();
+    renderMaintenance();
+    if (!silent) setMaintenanceSettingsStatus(`Using default maintenance settings (${e.message}).`);
+  }
+}
+
+async function loadMaintenanceData({ silent = false } = {}) {
+  try {
+    const result = await api("/api/maintenance");
+    state.maintenanceSettings = normalizeMaintenanceSettingsClient(result?.settings || state.maintenanceSettings);
+    state.maintenanceLogs = (Array.isArray(result?.rows) ? result.rows : []).map(normalizeMaintenanceLogRecordClient);
+    state.maintenanceLoaded = true;
+    state.maintenanceSettingsLoaded = true;
+    syncMaintenanceSelection();
+    renderMaintenance();
+    renderMaintenanceSettings();
+    if (!silent) setMaintenanceStatus("Maintenance records loaded.");
+  } catch (e) {
+    state.maintenanceLogs = [];
+    state.maintenanceLoaded = false;
+    renderMaintenance();
+    if (!silent) {
+      setMaintenanceStatus(`Failed to load maintenance records: ${e.message}`);
+      showToast(`Failed to load maintenance records: ${e.message}`, "error");
+    }
+  }
+}
+
+function maintenanceTypeColor(task, type) {
+  const options = Array.isArray(task?.typeOptions) ? task.typeOptions : [];
+  const index = Math.max(0, options.findIndex((item) => clean(item).toLowerCase() === clean(type).toLowerCase()));
+  return MAINTENANCE_TYPE_COLOR_PALETTE[index % MAINTENANCE_TYPE_COLOR_PALETTE.length];
+}
+
+function hexToRgba(hex, alpha = 0.28) {
+  const raw = clean(hex).replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(raw)) return `rgba(31, 41, 55, ${alpha})`;
+  const r = Number.parseInt(raw.slice(0, 2), 16);
+  const g = Number.parseInt(raw.slice(2, 4), 16);
+  const b = Number.parseInt(raw.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function maintenanceTypeBadge(task, type) {
+  const color = maintenanceTypeColor(task, type);
+  return `<span class="maintenance-type-badge" style="background:${escape(hexToRgba(color, 0.32))};border-color:${escape(hexToRgba(color, 0.62))};">${escape(type || "-")}</span>`;
+}
+
+function maintenanceTypeOptionsHtml(task, currentValue = "") {
+  const current = clean(currentValue);
+  const options = Array.isArray(task?.typeOptions) ? [...task.typeOptions] : [];
+  if (current && !options.includes(current)) options.unshift(current);
+  return ['<option value=""></option>']
+    .concat(options.map((value) => `<option value="${escape(value)}" ${value === current ? "selected" : ""}>${escape(value)}</option>`))
+    .join("");
+}
+
+function maintenanceWhereOptionsHtml(task, currentValue = "") {
+  const current = clean(currentValue);
+  const options = Array.isArray(task?.whereOptions) ? [...task.whereOptions] : [];
+  if (current && !options.includes(current)) options.unshift(current);
+  return ['<option value=""></option>']
+    .concat(options.map((value) => `<option value="${escape(value)}" ${value === current ? "selected" : ""}>${escape(value)}</option>`))
+    .join("");
+}
+
+function onMaintenanceTaskChange() {
+  state.maintenanceSelectedTaskId = clean(els.maintenanceTaskSelect?.value);
+  const task = syncMaintenanceSelection();
+  state.maintenanceEditingId = "";
+  state.maintenanceEditDraft = null;
+  state.maintenanceDraft = emptyMaintenanceDraft(task);
+  renderMaintenance();
+}
+
+function onMaintenanceFilterInput() {
+  state.maintenanceFilters.where = clean(els.maintenanceFilterWhere?.value);
+  state.maintenanceFilters.dateFrom = clean(els.maintenanceFilterDateFrom?.value);
+  state.maintenanceFilters.dateTo = clean(els.maintenanceFilterDateTo?.value);
+  state.maintenanceFilters.type = clean(els.maintenanceFilterType?.value);
+  state.maintenanceFilters.search = clean(els.maintenanceFilterSearch?.value);
+  renderMaintenance();
+}
+
+function setMaintenanceScreen(screen) {
+  state.maintenanceScreen = screen === "by-where" ? "by-where" : "list";
+  if (els.maintenanceTabList) {
+    els.maintenanceTabList.classList.toggle("active-tab", state.maintenanceScreen === "list");
+    els.maintenanceTabList.classList.toggle("ghost", state.maintenanceScreen !== "list");
+  }
+  if (els.maintenanceTabByWhere) {
+    els.maintenanceTabByWhere.classList.toggle("active-tab", state.maintenanceScreen === "by-where");
+    els.maintenanceTabByWhere.classList.toggle("ghost", state.maintenanceScreen !== "by-where");
+  }
+  if (els.maintenancePanelList) els.maintenancePanelList.hidden = state.maintenanceScreen !== "list";
+  if (els.maintenancePanelByWhere) els.maintenancePanelByWhere.hidden = state.maintenanceScreen !== "by-where";
+}
+
+function getFilteredMaintenanceLogs() {
+  const filters = state.maintenanceFilters || {};
+  const taskId = clean(state.maintenanceSelectedTaskId);
+  return [...(Array.isArray(state.maintenanceLogs) ? state.maintenanceLogs : [])]
+    .filter((row) => clean(row.taskId) === taskId)
+    .filter((row) => !clean(filters.where) || clean(row.whereValue).toLowerCase().includes(clean(filters.where).toLowerCase()))
+    .filter((row) => !clean(filters.type) || clean(row.type) === clean(filters.type))
+    .filter((row) => !clean(filters.dateFrom) || clean(row.doneDate) >= clean(filters.dateFrom))
+    .filter((row) => !clean(filters.dateTo) || clean(row.doneDate) <= clean(filters.dateTo))
+    .filter((row) => {
+      const term = clean(filters.search).toLowerCase();
+      if (!term) return true;
+      return clean(row.who).toLowerCase().includes(term) || clean(row.note).toLowerCase().includes(term);
+    })
+    .sort((a, b) => {
+      const whereCompare = clean(a.whereValue).localeCompare(clean(b.whereValue), undefined, { sensitivity: "base" });
+      if (state.maintenanceScreen === "by-where" && whereCompare !== 0) return whereCompare;
+      const dateCompare = clean(b.doneDate).localeCompare(clean(a.doneDate));
+      if (dateCompare !== 0) return dateCompare;
+      if (whereCompare !== 0) return whereCompare;
+      return clean(b.createdAt).localeCompare(clean(a.createdAt));
+    });
+}
+
+function hasMaintenanceDraft() {
+  const draft = state.maintenanceDraft || {};
+  return !!(clean(draft.whereValue) || clean(draft.type) || clean(draft.who) || clean(draft.note));
+}
+
+function onMaintenanceDraftInput(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
+  const field = clean(target.dataset.field);
+  const scope = clean(target.dataset.scope || "new");
+  if (!field) return;
+  const draft = scope === "edit" ? (state.maintenanceEditDraft || {}) : (state.maintenanceDraft || {});
+  draft[field] = target.value;
+  if (scope === "edit") state.maintenanceEditDraft = draft;
+  else state.maintenanceDraft = draft;
+}
+
+async function saveMaintenanceDraft() {
+  const task = getSelectedMaintenanceTask();
+  if (!task) {
+    setMaintenanceStatus("Select a configured task first.");
+    return;
+  }
+  try {
+    const payload = { ...(state.maintenanceDraft || emptyMaintenanceDraft(task)), taskId: task.id };
+    const result = await api("/api/maintenance", { method: "POST", body: payload });
+    state.maintenanceLogs = (Array.isArray(result?.rows) ? result.rows : []).map(normalizeMaintenanceLogRecordClient);
+    state.maintenanceSettings = normalizeMaintenanceSettingsClient(result?.settings || state.maintenanceSettings);
+    state.maintenanceLoaded = true;
+    state.maintenanceSettingsLoaded = true;
+    state.maintenanceDraft = emptyMaintenanceDraft(task);
+    renderMaintenance();
+    setMaintenanceStatus("Maintenance record added.");
+    showToast("Maintenance record added.", "success");
+  } catch (e) {
+    setMaintenanceStatus(`Save failed: ${e.message}`);
+    showToast(`Save failed: ${e.message}`, "error");
+  }
+}
+
+async function saveMaintenanceEdit(id) {
+  if (!id) return;
+  const task = getSelectedMaintenanceTask();
+  try {
+    const payload = { ...(state.maintenanceEditDraft || {}), taskId: task?.id || state.maintenanceSelectedTaskId };
+    const result = await api(`/api/maintenance?id=${encodeURIComponent(id)}`, { method: "PUT", body: payload });
+    state.maintenanceLogs = (Array.isArray(result?.rows) ? result.rows : []).map(normalizeMaintenanceLogRecordClient);
+    state.maintenanceSettings = normalizeMaintenanceSettingsClient(result?.settings || state.maintenanceSettings);
+    state.maintenanceLoaded = true;
+    state.maintenanceSettingsLoaded = true;
+    state.maintenanceEditingId = "";
+    state.maintenanceEditDraft = null;
+    renderMaintenance();
+    setMaintenanceStatus("Maintenance record saved.");
+    showToast("Maintenance record saved.", "success");
+  } catch (e) {
+    setMaintenanceStatus(`Save failed: ${e.message}`);
+    showToast(`Save failed: ${e.message}`, "error");
+  }
+}
+
+async function deleteMaintenanceRecord(id) {
+  if (!id || !window.confirm("Delete this maintenance record?")) return;
+  try {
+    const result = await api(`/api/maintenance?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    state.maintenanceLogs = (Array.isArray(result?.rows) ? result.rows : []).map(normalizeMaintenanceLogRecordClient);
+    state.maintenanceEditingId = "";
+    state.maintenanceEditDraft = null;
+    renderMaintenance();
+    setMaintenanceStatus("Maintenance record deleted.");
+    showToast("Maintenance record deleted.", "success");
+  } catch (e) {
+    setMaintenanceStatus(`Delete failed: ${e.message}`);
+    showToast(`Delete failed: ${e.message}`, "error");
+  }
+}
+
+function onMaintenanceAction(event) {
+  const button = event.target.closest("button[data-maintenance-action]");
+  if (!button) return;
+  const action = clean(button.dataset.maintenanceAction);
+  const id = clean(button.dataset.id);
+  if (action === "add") {
+    saveMaintenanceDraft();
+    return;
+  }
+  if (action === "edit") {
+    const row = state.maintenanceLogs.find((item) => clean(item.id) === id);
+    if (!row) return;
+    state.maintenanceEditingId = id;
+    state.maintenanceEditDraft = { ...row };
+    renderMaintenance();
+    return;
+  }
+  if (action === "cancel") {
+    state.maintenanceEditingId = "";
+    state.maintenanceEditDraft = null;
+    renderMaintenance();
+    return;
+  }
+  if (action === "save") {
+    saveMaintenanceEdit(id);
+    return;
+  }
+  if (action === "delete") {
+    deleteMaintenanceRecord(id);
+  }
+}
+
+function buildMaintenanceInlineRow(task) {
+  const draft = state.maintenanceDraft || emptyMaintenanceDraft(task);
+  const tr = document.createElement("tr");
+  tr.className = "maintenance-inline-row";
+  tr.innerHTML = `<td><select data-scope="new" data-field="whereValue">${maintenanceWhereOptionsHtml(task, draft.whereValue)}</select></td>
+    <td><input data-scope="new" data-field="doneDate" type="date" value="${escape(draft.doneDate)}" /></td>
+    <td><select data-scope="new" data-field="type">${maintenanceTypeOptionsHtml(task, draft.type)}</select></td>
+    <td><input data-scope="new" data-field="who" value="${escape(draft.who)}" /></td>
+    <td><textarea data-scope="new" data-field="note" rows="2">${escape(draft.note)}</textarea></td>
+    <td class="row-actions"><button type="button" data-maintenance-action="add">Add</button></td>`;
+  return tr;
+}
+
+function buildMaintenanceReadOnlyRow(record, task) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${escape(record.whereValue || "-")}</td>
+    <td>${escape(formatDateOnly(record.doneDate) || record.doneDate || "-")}</td>
+    <td>${maintenanceTypeBadge(task, record.type)}</td>
+    <td>${escape(record.who || "-")}</td>
+    <td class="maintenance-note-cell">${escape(record.note || "-").replace(/\n/g, "<br>")}</td>
+    <td class="row-actions"><button type="button" class="ghost" data-maintenance-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="ghost" data-maintenance-action="delete" data-id="${escape(record.id)}">Delete</button></td>`;
+  return tr;
+}
+
+function buildMaintenanceEditableRow(record, task) {
+  const draft = state.maintenanceEditDraft || record;
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><select data-scope="edit" data-id="${escape(record.id)}" data-field="whereValue">${maintenanceWhereOptionsHtml(task, draft.whereValue)}</select></td>
+    <td><input data-scope="edit" data-id="${escape(record.id)}" data-field="doneDate" type="date" value="${escape(draft.doneDate)}" /></td>
+    <td><select data-scope="edit" data-id="${escape(record.id)}" data-field="type">${maintenanceTypeOptionsHtml(task, draft.type)}</select></td>
+    <td><input data-scope="edit" data-id="${escape(record.id)}" data-field="who" value="${escape(draft.who)}" /></td>
+    <td><textarea data-scope="edit" data-id="${escape(record.id)}" data-field="note" rows="2">${escape(draft.note)}</textarea></td>
+    <td class="row-actions"><button type="button" data-maintenance-action="save" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-maintenance-action="cancel" data-id="${escape(record.id)}">Cancel</button></td>`;
+  return tr;
+}
+
+function buildMaintenanceMobileInlineCard(task) {
+  const draft = state.maintenanceDraft || emptyMaintenanceDraft(task);
+  const card = document.createElement("article");
+  card.className = "maintenance-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">New row</div>
+        <div class="communication-mobile-meta">${escape(task?.task || "-")}</div>
+      </div>
+    </div>
+    <div class="communication-mobile-grid">
+      <label class="communication-mobile-field"><small>Where</small><select data-scope="new" data-field="whereValue">${maintenanceWhereOptionsHtml(task, draft.whereValue)}</select></label>
+      <label class="communication-mobile-field"><small>Date</small><input data-scope="new" data-field="doneDate" type="date" value="${escape(draft.doneDate)}" /></label>
+      <label class="communication-mobile-field"><small>Type</small><select data-scope="new" data-field="type">${maintenanceTypeOptionsHtml(task, draft.type)}</select></label>
+      <label class="communication-mobile-field"><small>Who</small><input data-scope="new" data-field="who" value="${escape(draft.who)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Note</small><textarea data-scope="new" data-field="note" rows="3">${escape(draft.note)}</textarea></label>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-maintenance-action="add">Add</button></div></div>`;
+  return card;
+}
+
+function buildMaintenanceMobileReadOnlyCard(record, task) {
+  const card = document.createElement("article");
+  card.className = "maintenance-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">${escape(record.whereValue || "-")}</div>
+        <div class="communication-mobile-meta">${escape(formatDateOnly(record.doneDate) || record.doneDate || "-")}</div>
+      </div>
+      <div>${maintenanceTypeBadge(task, record.type)}</div>
+    </div>
+    <div class="communication-mobile-grid">
+      <div class="communication-mobile-field"><small>Who</small><div class="communication-mobile-message">${escape(record.who || "-")}</div></div>
+      <div class="communication-mobile-field communication-mobile-field-full"><small>Note</small><div class="communication-mobile-message">${escape(record.note || "-").replace(/\n/g, "<br>")}</div></div>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" class="ghost" data-maintenance-action="edit" data-id="${escape(record.id)}">Edit</button><button type="button" class="ghost" data-maintenance-action="delete" data-id="${escape(record.id)}">Delete</button></div></div>`;
+  return card;
+}
+
+function buildMaintenanceMobileEditableCard(record, task) {
+  const draft = state.maintenanceEditDraft || record;
+  const card = document.createElement("article");
+  card.className = "maintenance-mobile-card";
+  card.innerHTML = `<div class="communication-mobile-header">
+      <div>
+        <div class="service-mobile-request">Editing row</div>
+        <div class="communication-mobile-meta">${escape(task?.task || "-")}</div>
+      </div>
+    </div>
+    <div class="communication-mobile-grid">
+      <label class="communication-mobile-field"><small>Where</small><select data-scope="edit" data-id="${escape(record.id)}" data-field="whereValue">${maintenanceWhereOptionsHtml(task, draft.whereValue)}</select></label>
+      <label class="communication-mobile-field"><small>Date</small><input data-scope="edit" data-id="${escape(record.id)}" data-field="doneDate" type="date" value="${escape(draft.doneDate)}" /></label>
+      <label class="communication-mobile-field"><small>Type</small><select data-scope="edit" data-id="${escape(record.id)}" data-field="type">${maintenanceTypeOptionsHtml(task, draft.type)}</select></label>
+      <label class="communication-mobile-field"><small>Who</small><input data-scope="edit" data-id="${escape(record.id)}" data-field="who" value="${escape(draft.who)}" /></label>
+      <label class="communication-mobile-field communication-mobile-field-full"><small>Note</small><textarea data-scope="edit" data-id="${escape(record.id)}" data-field="note" rows="3">${escape(draft.note)}</textarea></label>
+    </div>
+    <div class="communication-mobile-footer"><div class="row-actions"><button type="button" data-maintenance-action="save" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-maintenance-action="cancel" data-id="${escape(record.id)}">Cancel</button></div></div>`;
+  return card;
+}
+
+function renderMaintenanceByWhere(rows, task) {
+  if (!els.maintenanceByWhereRows) return;
+  els.maintenanceByWhereRows.innerHTML = "";
+  if (els.maintenanceByWhereCount) els.maintenanceByWhereCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (!rows.length) {
+    els.maintenanceByWhereRows.innerHTML = '<tr><td colspan="6" class="empty">No maintenance records match the current filters.</td></tr>';
+    return;
+  }
+  const groups = [];
+  rows.forEach((row) => {
+    const key = clean(row.whereValue);
+    const existing = groups.find((group) => group.whereValue === key);
+    if (existing) existing.rows.push(row);
+    else groups.push({ whereValue: key, rows: [row] });
+  });
+  groups.forEach((group) => {
+    const sorted = [...group.rows].sort((a, b) => clean(b.doneDate).localeCompare(clean(a.doneDate)) || clean(b.createdAt).localeCompare(clean(a.createdAt)));
+    const lastTask = sorted[0]?.doneDate || "";
+    sorted.forEach((row, index) => {
+      const tr = document.createElement("tr");
+      if (index === 0) {
+        const whereCell = document.createElement("td");
+        whereCell.rowSpan = sorted.length;
+        whereCell.className = "merge-cell";
+        whereCell.textContent = group.whereValue || "-";
+        tr.appendChild(whereCell);
+        const lastTaskCell = document.createElement("td");
+        lastTaskCell.rowSpan = sorted.length;
+        lastTaskCell.className = "merge-cell";
+        lastTaskCell.textContent = formatDateOnly(lastTask) || lastTask || "-";
+        tr.appendChild(lastTaskCell);
+      }
+      tr.insertAdjacentHTML(
+        "beforeend",
+        `<td>${escape(formatDateOnly(row.doneDate) || row.doneDate || "-")}</td>
+        <td>${maintenanceTypeBadge(task, row.type)}</td>
+        <td>${escape(row.who || "-")}</td>
+        <td class="maintenance-note-cell">${escape(row.note || "-").replace(/\n/g, "<br>")}</td>`
+      );
+      els.maintenanceByWhereRows.appendChild(tr);
+    });
+  });
+}
+
+function renderMaintenance() {
+  const task = syncMaintenanceSelection();
+  setMaintenanceScreen(state.maintenanceScreen);
+  if (!canApp("maintenance")) {
+    if (els.maintenanceRows) els.maintenanceRows.innerHTML = '<tr><td colspan="6" class="empty">Your profile has no access to Maintenance.</td></tr>';
+    if (els.maintenanceByWhereRows) els.maintenanceByWhereRows.innerHTML = '<tr><td colspan="6" class="empty">Your profile has no access to Maintenance.</td></tr>';
+    if (els.maintenanceMobileCards) els.maintenanceMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Maintenance.</div>';
+    return;
+  }
+  const tasks = Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : [];
+  if (els.maintenanceTaskSelect) {
+    els.maintenanceTaskSelect.innerHTML = tasks.length
+      ? tasks.map((item) => `<option value="${escape(item.id)}">${escape(item.task)}</option>`).join("")
+      : '<option value="">No tasks configured</option>';
+    els.maintenanceTaskSelect.value = clean(state.maintenanceSelectedTaskId);
+  }
+  if (els.maintenanceTaskDescription) {
+    els.maintenanceTaskDescription.textContent = clean(task?.taskDescription) || "Select a task to view and log records.";
+  }
+  if (els.maintenanceFilterWhere) els.maintenanceFilterWhere.value = state.maintenanceFilters.where;
+  if (els.maintenanceFilterDateFrom) els.maintenanceFilterDateFrom.value = state.maintenanceFilters.dateFrom;
+  if (els.maintenanceFilterDateTo) els.maintenanceFilterDateTo.value = state.maintenanceFilters.dateTo;
+  if (els.maintenanceFilterSearch) els.maintenanceFilterSearch.value = state.maintenanceFilters.search;
+  if (els.maintenanceFilterType) {
+    const currentType = clean(state.maintenanceFilters.type);
+    els.maintenanceFilterType.innerHTML = ['<option value="">All</option>']
+      .concat((Array.isArray(task?.typeOptions) ? task.typeOptions : []).map((value) => `<option value="${escape(value)}">${escape(value)}</option>`))
+      .join("");
+    els.maintenanceFilterType.value = currentType;
+  }
+  const rows = task ? getFilteredMaintenanceLogs() : [];
+  if (els.maintenanceCount) els.maintenanceCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.maintenanceRows) {
+    els.maintenanceRows.innerHTML = "";
+    if (!task) {
+      els.maintenanceRows.innerHTML = '<tr><td colspan="6" class="empty">Configure at least one maintenance task to start logging records.</td></tr>';
+    } else {
+      els.maintenanceRows.appendChild(buildMaintenanceInlineRow(task));
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="6" class="empty">No maintenance records match the current filters.</td>';
+        els.maintenanceRows.appendChild(tr);
+      } else {
+        rows.forEach((row) => {
+          els.maintenanceRows.appendChild(state.maintenanceEditingId === row.id ? buildMaintenanceEditableRow(row, task) : buildMaintenanceReadOnlyRow(row, task));
+        });
+      }
+    }
+  }
+  if (els.maintenanceMobileCards) {
+    els.maintenanceMobileCards.innerHTML = "";
+    if (!task) {
+      els.maintenanceMobileCards.innerHTML = '<div class="services-mobile-empty">Configure at least one maintenance task to start logging records.</div>';
+    } else {
+      els.maintenanceMobileCards.appendChild(buildMaintenanceMobileInlineCard(task));
+      if (!rows.length) {
+        els.maintenanceMobileCards.innerHTML += '<div class="services-mobile-empty">No maintenance records match the current filters.</div>';
+      } else {
+        rows.forEach((row) => {
+          els.maintenanceMobileCards.appendChild(state.maintenanceEditingId === row.id ? buildMaintenanceMobileEditableCard(row, task) : buildMaintenanceMobileReadOnlyCard(row, task));
+        });
+      }
+    }
+  }
+  renderMaintenanceByWhere(rows, task);
+}
+
+function renderMaintenanceSettings() {
+  if (!canSettings("maintenance")) return;
+  if (!els.maintenanceSettingsBody) return;
+  const tasks = Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : [];
+  els.maintenanceSettingsBody.innerHTML = "";
+  if (!tasks.length) {
+    els.maintenanceSettingsBody.innerHTML = '<tr><td colspan="5" class="empty">No maintenance tasks configured yet.</td></tr>';
+    return;
+  }
+  tasks.forEach((task, index) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><input data-maintenance-settings-field="task" data-index="${index}" value="${escape(task.task)}" /></td>
+      <td><textarea data-maintenance-settings-field="taskDescription" data-index="${index}" rows="2">${escape(task.taskDescription)}</textarea></td>
+      <td><textarea data-maintenance-settings-field="whereOptions" data-index="${index}" rows="2">${escape((task.whereOptions || []).join(", "))}</textarea></td>
+      <td><textarea data-maintenance-settings-field="typeOptions" data-index="${index}" rows="2">${escape((task.typeOptions || []).join(", "))}</textarea></td>
+      <td class="row-actions"><button type="button" class="ghost" data-maintenance-settings-action="remove" data-index="${index}">Delete</button></td>`;
+    els.maintenanceSettingsBody.appendChild(tr);
+  });
+}
+
+function onMaintenanceSettingsInput(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+  const index = Number.parseInt(target.dataset.index, 10);
+  const field = clean(target.dataset.maintenanceSettingsField);
+  if (!Number.isFinite(index) || index < 0 || !field) return;
+  const tasks = Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : [];
+  const current = tasks[index];
+  if (!current) return;
+  if (field === "whereOptions" || field === "typeOptions") current[field] = String(target.value || "")
+    .split(/[\n,;]/)
+    .map((item) => clean(item))
+    .filter(Boolean);
+  else current[field] = target.value;
+}
+
+function onMaintenanceSettingsAction(event) {
+  const button = event.target.closest("button[data-maintenance-settings-action]");
+  if (!button) return;
+  const action = clean(button.dataset.maintenanceSettingsAction);
+  const index = Number.parseInt(button.dataset.index, 10);
+  if (action === "remove" && Number.isFinite(index) && index >= 0) {
+    state.maintenanceSettings.tasks.splice(index, 1);
+    syncMaintenanceSelection();
+    renderMaintenanceSettings();
+    renderMaintenance();
+  }
+}
+
+function addMaintenanceSettingsTask() {
+  const nextIndex = (Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks.length : 0) + 1;
+  state.maintenanceSettings.tasks.push({
+    id: `maintenance-task-${Date.now()}`,
+    task: `Task ${nextIndex}`,
+    taskDescription: "",
+    whereOptions: [],
+    typeOptions: [],
+  });
+  syncMaintenanceSelection();
+  renderMaintenanceSettings();
+  renderMaintenance();
+}
+
+async function saveMaintenanceSettings() {
+  try {
+    const payload = normalizeMaintenanceSettingsClient(state.maintenanceSettings);
+    const result = await api("/api/maintenance-settings", { method: "PUT", body: { settings: payload } });
+    state.maintenanceSettings = normalizeMaintenanceSettingsClient(result?.settings);
+    state.maintenanceSettingsLoaded = true;
+    syncMaintenanceSelection();
+    renderMaintenanceSettings();
+    renderMaintenance();
+    setMaintenanceSettingsStatus("Maintenance configuration saved.");
+    showToast("Maintenance configuration saved.", "success");
+  } catch (e) {
+    setMaintenanceSettingsStatus(`Save failed: ${e.message}`);
+    showToast(`Maintenance settings save failed: ${e.message}`, "error");
+  }
+}
+
 function setBakeryCurrentStatus(text) {
   if (els.bakeryCurrentStatus) els.bakeryCurrentStatus.textContent = text;
 }
@@ -14798,6 +15533,10 @@ function render() {
   }
   if (state.currentView === "reviews") {
     renderReviews();
+    return;
+  }
+  if (state.currentView === "maintenance") {
+    renderMaintenance();
     return;
   }
   if (state.currentView === "groups") {
