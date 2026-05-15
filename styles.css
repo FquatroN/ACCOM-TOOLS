@@ -1920,16 +1920,9 @@ select:disabled {
   width: 110px;
 }
 
-.maintenance-table th:nth-child(5),
-.maintenance-table td:nth-child(5),
-.maintenance-table th:nth-child(6),
-.maintenance-table td:nth-child(6) {
-  min-width: 320px;
-}
-
 .maintenance-note-cell {
   white-space: normal;
-  min-width: 320px;
+  min-width: 300px;
 }
 
 .maintenance-type-badge {
@@ -2002,14 +1995,25 @@ select:disabled {
 
 #maintenance-panel-list .maintenance-table th:nth-child(2),
 #maintenance-panel-list .maintenance-table td:nth-child(2) {
-  min-width: 88px;
-  width: 88px;
+  min-width: 110px;
+  width: 110px;
+}
+
+#maintenance-panel-list .maintenance-table th:nth-child(3),
+#maintenance-panel-list .maintenance-table td:nth-child(3) {
+  min-width: 140px;
+  width: 140px;
 }
 
 #maintenance-panel-list .maintenance-table th:nth-child(4),
 #maintenance-panel-list .maintenance-table td:nth-child(4) {
-  min-width: 90px;
-  width: 90px;
+  min-width: 130px;
+  width: 130px;
+}
+
+#maintenance-panel-list .maintenance-table th:nth-child(5),
+#maintenance-panel-list .maintenance-table td:nth-child(5) {
+  min-width: 300px;
 }
 
 #maintenance-panel-list .maintenance-table textarea {
