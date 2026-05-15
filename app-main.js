@@ -9683,7 +9683,7 @@ function buildMaintenanceInlineRow(task) {
     <td><input data-scope="new" data-field="doneDate" type="date" value="${escape(draft.doneDate)}" /></td>
     <td><select data-scope="new" data-field="type">${maintenanceTypeOptionsHtml(task, draft.type)}</select></td>
     <td><input data-scope="new" data-field="who" value="${escape(draft.who)}" /></td>
-    <td><textarea data-scope="new" data-field="note" rows="2">${escape(draft.note)}</textarea></td>
+    <td><textarea data-scope="new" data-field="note" rows="1">${escape(draft.note)}</textarea></td>
     <td class="row-actions"><button type="button" data-maintenance-action="add">Add</button></td>`;
   return tr;
 }
@@ -9706,7 +9706,7 @@ function buildMaintenanceEditableRow(record, task) {
     <td><input data-scope="edit" data-id="${escape(record.id)}" data-field="doneDate" type="date" value="${escape(draft.doneDate)}" /></td>
     <td><select data-scope="edit" data-id="${escape(record.id)}" data-field="type">${maintenanceTypeOptionsHtml(task, draft.type)}</select></td>
     <td><input data-scope="edit" data-id="${escape(record.id)}" data-field="who" value="${escape(draft.who)}" /></td>
-    <td><textarea data-scope="edit" data-id="${escape(record.id)}" data-field="note" rows="2">${escape(draft.note)}</textarea></td>
+    <td><textarea data-scope="edit" data-id="${escape(record.id)}" data-field="note" rows="1">${escape(draft.note)}</textarea></td>
     <td class="row-actions"><button type="button" data-maintenance-action="save" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-maintenance-action="cancel" data-id="${escape(record.id)}">Cancel</button></td>`;
   return tr;
 }
