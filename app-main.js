@@ -9558,15 +9558,16 @@ function getFilteredMaintenanceLogs() {
       if (!term) return true;
       return clean(row.who).toLowerCase().includes(term) || clean(row.note).toLowerCase().includes(term);
     })
-    .sort((a, b) => {
-      const whereCompare = clean(a.whereValue).localeCompare(clean(b.whereValue), undefined, { sensitivity: "base" });
-      if (state.maintenanceScreen === "by-where" && whereCompare !== 0) return whereCompare;
-      const dateCompare = clean(b.doneDate).localeCompare(clean(a.doneDate));
-      if (dateCompare !== 0) return dateCompare;
-      if (whereCompare !== 0) return whereCompare;
-      return clean(b.createdAt).localeCompare(clean(a.createdAt));
-    });
-}
+      .sort((a, b) => {
+        const whereCompare = clean(a.whereValue).localeCompare(clean(b.whereValue), undefined, { sensitivity: "base" });
+        const dateCompare = clean(b.doneDate).localeCompare(clean(a.doneDate));
+        if (state.maintenanceScreen === "by-where" && whereCompare !== 0) return whereCompare;
+        if (dateCompare !== 0) return dateCompare;
+        const createdCompare = clean(b.createdAt).localeCompare(clean(a.createdAt));
+        if (createdCompare !== 0) return createdCompare;
+        return whereCompare;
+      });
+  }
 
 function hasMaintenanceDraft() {
   const draft = state.maintenanceDraft || {};
