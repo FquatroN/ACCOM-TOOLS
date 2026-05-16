@@ -10016,7 +10016,7 @@ function renderMaintenance() {
       }
     }
     renderMaintenanceByWhere(rows, task);
-    renderMaintenanceOverdue(task);
+    renderMaintenanceOverdue();
   }
 
 function renderMaintenanceSettings() {
@@ -10040,13 +10040,13 @@ function renderMaintenanceSettings() {
   });
 }
 
-function renderMaintenanceOverdue(task) {
+function renderMaintenanceOverdue() {
   if (!els.maintenanceOverdueRows) return;
-  const rows = buildMaintenanceOverdueRows(task);
+  const rows = buildAllMaintenanceOverdueRows();
   els.maintenanceOverdueRows.innerHTML = "";
   if (els.maintenanceOverdueCount) els.maintenanceOverdueCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   if (!rows.length) {
-    els.maintenanceOverdueRows.innerHTML = '<tr><td colspan="4" class="empty">No overdue tasks for the selected configuration.</td></tr>';
+    els.maintenanceOverdueRows.innerHTML = '<tr><td colspan="4" class="empty">No overdue maintenance tasks.</td></tr>';
     return;
   }
   rows.forEach((row) => {
