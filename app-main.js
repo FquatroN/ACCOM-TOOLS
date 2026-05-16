@@ -1003,6 +1003,7 @@ const els = {
   maintenanceFilterDateTo: document.getElementById("maintenance-filter-date-to"),
   maintenanceFilterType: document.getElementById("maintenance-filter-type"),
   maintenanceFilterSearch: document.getElementById("maintenance-filter-search"),
+  maintenanceExportExcel: document.getElementById("maintenance-export-excel"),
   maintenanceCount: document.getElementById("maintenance-count"),
   maintenanceByWhereCount: document.getElementById("maintenance-by-where-count"),
   maintenanceRows: document.getElementById("maintenance-rows"),
@@ -1742,6 +1743,7 @@ function bindEvents() {
   els.maintenanceMobileCards?.addEventListener("click", onMaintenanceAction);
   els.maintenanceMobileCards?.addEventListener("input", onMaintenanceDraftInput);
   els.maintenanceMobileCards?.addEventListener("change", onMaintenanceDraftInput);
+  els.maintenanceExportExcel?.addEventListener("click", exportMaintenanceToExcel);
   els.maintenanceSaveSettings?.addEventListener("click", saveMaintenanceSettings);
   els.maintenanceAddTask?.addEventListener("click", addMaintenanceSettingsTask);
   els.maintenanceSettingsBody?.addEventListener("input", onMaintenanceSettingsInput);
@@ -9900,6 +9902,38 @@ function renderMaintenanceSettings() {
       <td class="row-actions"><button type="button" class="ghost" data-maintenance-settings-action="remove" data-index="${index}">Delete</button></td>`;
     els.maintenanceSettingsBody.appendChild(tr);
   });
+}
+
+function buildMaintenanceExportRows() {
+  const task = getSelectedMaintenanceTask();
+  if (!task) return [];
+  return getFilteredMaintenanceLogs().map((row) => ({
+    task: clean(task.task),
+    where: clean(row.whereValue),
+    date: clean(row.doneDate),
+    type: clean(row.type),
+    who: clean(row.who),
+    note: String(row.note || "").trim(),
+  }));
+}
+
+function exportMaintenanceToExcel() {
+  const task = getSelectedMaintenanceTask();
+  if (!task) {
+    showToast("Select a maintenance task first.", "error");
+    return;
+  }
+  const rows = buildMaintenanceExportRows();
+  if (!rows.length) {
+    showToast("No maintenance records to export.", "error");
+    return;
+  }
+  const headers = ["Task", "Where", "Date", "Type", "Who", "Note"];
+  const bodyRows = rows.map((row) => [row.task, row.where, row.date, row.type, row.who, row.note]);
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers.map((cell) => `<th>${escape(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${escape(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+  const fileSlug = clean(task.task).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "task";
+  downloadBlob(`maintenance_${fileSlug}_${formatDate(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8;");
+  showToast(`Exported ${rows.length} maintenance record${rows.length === 1 ? "" : "s"} to Excel.`, "success");
 }
 
 function onMaintenanceSettingsInput(event) {
