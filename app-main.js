@@ -1732,8 +1732,14 @@ function bindEvents() {
   els.guestsBlacklistMobileCards?.addEventListener("input", onGuestsBlacklistDraftInput);
   els.guestsBlacklistMobileCards?.addEventListener("change", onGuestsBlacklistDraftInput);
   [els.guestsBlacklistFilterSearch, els.guestsBlacklistFilterReported, els.guestsBlacklistFilterNationality].forEach((el) => el?.addEventListener("input", onGuestsBlacklistFilterInput));
-  els.maintenanceTabList?.addEventListener("click", () => setMaintenanceScreen("list"));
-  els.maintenanceTabByWhere?.addEventListener("click", () => setMaintenanceScreen("by-where"));
+  els.maintenanceTabList?.addEventListener("click", () => {
+    setMaintenanceScreen("list");
+    renderMaintenance();
+  });
+  els.maintenanceTabByWhere?.addEventListener("click", () => {
+    setMaintenanceScreen("by-where");
+    renderMaintenance();
+  });
   els.maintenanceTaskSelect?.addEventListener("change", onMaintenanceTaskChange);
   [els.maintenanceFilterWhere, els.maintenanceFilterDateFrom, els.maintenanceFilterDateTo, els.maintenanceFilterType, els.maintenanceFilterSearch]
     .forEach((el) => el?.addEventListener(el?.tagName === "SELECT" ? "change" : "input", onMaintenanceFilterInput));
