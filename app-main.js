@@ -9500,6 +9500,25 @@ function maintenanceTypeBadge(task, type) {
   return `<span class="maintenance-type-badge" style="background:${escape(hexToRgba(color, 0.32))};border-color:${escape(hexToRgba(color, 0.62))};">${escape(type || "-")}</span>`;
 }
 
+function maintenanceDateValue(dateText) {
+  const value = clean(dateText);
+  if (!value) return Number.NaN;
+  return Date.parse(`${value}T00:00:00`);
+}
+
+function maintenanceLastTaskScaleColor(dateText, minValue, maxValue) {
+  const currentValue = maintenanceDateValue(dateText);
+  if (!Number.isFinite(currentValue)) return "";
+  const start = { r: 212, g: 76, b: 76 };
+  const end = { r: 46, g: 159, b: 66 };
+  const range = maxValue - minValue;
+  const ratio = range > 0 ? Math.max(0, Math.min(1, (currentValue - minValue) / range)) : 1;
+  const r = Math.round(start.r + (end.r - start.r) * ratio);
+  const g = Math.round(start.g + (end.g - start.g) * ratio);
+  const b = Math.round(start.b + (end.b - start.b) * ratio);
+  return `rgba(${r}, ${g}, ${b}, 0.1)`;
+}
+
 function maintenanceTypeOptionsHtml(task, currentValue = "") {
   const current = clean(currentValue);
   const options = Array.isArray(task?.typeOptions) ? [...task.typeOptions] : [];
@@ -9801,21 +9820,34 @@ function renderMaintenanceByWhere(rows, task) {
     if (existing) existing.rows.push(row);
     else groups.push({ whereValue: key, rows: [row] });
   });
-  groups.forEach((group) => {
+  const preparedGroups = groups.map((group) => {
     const sorted = [...group.rows].sort((a, b) => clean(b.doneDate).localeCompare(clean(a.doneDate)) || clean(b.createdAt).localeCompare(clean(a.createdAt)));
-    const lastTask = sorted[0]?.doneDate || "";
-    sorted.forEach((row, index) => {
+    return {
+      whereValue: group.whereValue,
+      rows: sorted,
+      lastTask: sorted[0]?.doneDate || "",
+    };
+  });
+  const lastTaskValues = preparedGroups
+    .map((group) => maintenanceDateValue(group.lastTask))
+    .filter((value) => Number.isFinite(value));
+  const oldestLastTask = lastTaskValues.length ? Math.min(...lastTaskValues) : Number.NaN;
+  const newestLastTask = lastTaskValues.length ? Math.max(...lastTaskValues) : Number.NaN;
+  preparedGroups.forEach((group) => {
+    const lastTaskColor = maintenanceLastTaskScaleColor(group.lastTask, oldestLastTask, newestLastTask);
+    group.rows.forEach((row, index) => {
       const tr = document.createElement("tr");
       if (index === 0) {
         const whereCell = document.createElement("td");
-        whereCell.rowSpan = sorted.length;
+        whereCell.rowSpan = group.rows.length;
         whereCell.className = "merge-cell";
         whereCell.textContent = group.whereValue || "-";
         tr.appendChild(whereCell);
         const lastTaskCell = document.createElement("td");
-        lastTaskCell.rowSpan = sorted.length;
+        lastTaskCell.rowSpan = group.rows.length;
         lastTaskCell.className = "merge-cell";
-        lastTaskCell.textContent = formatDateOnly(lastTask) || lastTask || "-";
+        if (lastTaskColor) lastTaskCell.style.background = lastTaskColor;
+        lastTaskCell.textContent = formatDateOnly(group.lastTask) || group.lastTask || "-";
         tr.appendChild(lastTaskCell);
       }
       tr.insertAdjacentHTML(
@@ -9824,11 +9856,11 @@ function renderMaintenanceByWhere(rows, task) {
         <td>${maintenanceTypeBadge(task, row.type)}</td>
         <td>${escape(row.who || "-")}</td>
         <td class="maintenance-note-cell">${escape(row.note || "-").replace(/\n/g, "<br>")}</td>`
-      );
-      els.maintenanceByWhereRows.appendChild(tr);
+        );
+        els.maintenanceByWhereRows.appendChild(tr);
+      });
     });
-  });
-}
+  }
 
 function renderMaintenance() {
   const task = syncMaintenanceSelection();
