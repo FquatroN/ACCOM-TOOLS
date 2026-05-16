@@ -1995,8 +1995,8 @@ select:disabled {
 
 #maintenance-panel-list .maintenance-table th:nth-child(2),
 #maintenance-panel-list .maintenance-table td:nth-child(2) {
-  min-width: 110px;
-  width: 110px;
+  min-width: 120px;
+  width: 120px;
 }
 
 #maintenance-panel-list .maintenance-table th:nth-child(3),
@@ -2007,13 +2007,13 @@ select:disabled {
 
 #maintenance-panel-list .maintenance-table th:nth-child(4),
 #maintenance-panel-list .maintenance-table td:nth-child(4) {
-  min-width: 130px;
-  width: 130px;
+  min-width: 140px;
+  width: 140px;
 }
 
 #maintenance-panel-list .maintenance-table th:nth-child(5),
 #maintenance-panel-list .maintenance-table td:nth-child(5) {
-  min-width: 300px;
+  min-width: 400px;
 }
 
 #maintenance-panel-list .maintenance-table textarea {
