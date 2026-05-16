@@ -670,6 +670,22 @@ button.ghost,
   box-shadow: 0 0 0 2px #fff;
 }
 
+.settings-review-tabs button.has-alert {
+  position: relative;
+}
+
+.settings-review-tabs button.has-alert::after {
+  content: "";
+  position: absolute;
+  top: 0.34rem;
+  right: 0.34rem;
+  width: 0.52rem;
+  height: 0.52rem;
+  border-radius: 999px;
+  background: #d22f27;
+  box-shadow: 0 0 0 2px #fff;
+}
+
 button.danger {
   background: #fff6f7;
   color: var(--danger);
@@ -1995,6 +2011,30 @@ select:disabled {
 #maintenance-panel-by-where .maintenance-table th:nth-child(6),
 #maintenance-panel-by-where .maintenance-table td:nth-child(6) {
   min-width: 500px;
+}
+
+#maintenance-panel-overdue .maintenance-table th:nth-child(1),
+#maintenance-panel-overdue .maintenance-table td:nth-child(1) {
+  min-width: 180px;
+  width: 180px;
+}
+
+#maintenance-panel-overdue .maintenance-table th:nth-child(2),
+#maintenance-panel-overdue .maintenance-table td:nth-child(2) {
+  min-width: 120px;
+  width: 120px;
+}
+
+#maintenance-panel-overdue .maintenance-table th:nth-child(3),
+#maintenance-panel-overdue .maintenance-table td:nth-child(3) {
+  min-width: 120px;
+  width: 120px;
+}
+
+#maintenance-panel-overdue .maintenance-table th:nth-child(4),
+#maintenance-panel-overdue .maintenance-table td:nth-child(4) {
+  min-width: 130px;
+  width: 130px;
 }
 
 .maintenance-mobile-card {

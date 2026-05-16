@@ -108,12 +108,14 @@ function normalizeCsvList(value) {
 
 function sanitizeMaintenanceTask(input = {}, index = 0) {
   const name = cleanText(input.task || input.name);
+  const maxDaysRaw = Number.parseInt(cleanText(input.maxDays || input.max_days), 10);
   const task = {
     id: cleanText(input.id) || `maintenance-task-${index + 1}-${slugify(name || `task-${index + 1}`)}`,
     task: name,
     taskDescription: cleanText(input.taskDescription || input.task_description || input.description).slice(0, 1000),
     whereOptions: normalizeCsvList(input.whereOptions || input.where_options || input.where),
     typeOptions: normalizeCsvList(input.typeOptions || input.type_options || input.type),
+    maxDays: Number.isFinite(maxDaysRaw) && maxDaysRaw > 0 ? maxDaysRaw : "",
   };
   return task;
 }
@@ -142,6 +144,7 @@ function cloneDefaultMaintenanceTasks() {
     taskDescription: task.taskDescription,
     whereOptions: [...task.whereOptions],
     typeOptions: [...task.typeOptions],
+    maxDays: task.maxDays,
   }));
 }
 

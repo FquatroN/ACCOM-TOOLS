@@ -996,8 +996,11 @@ const els = {
   maintenanceTaskDescription: document.getElementById("maintenance-task-description"),
   maintenanceTabList: document.getElementById("maintenance-tab-list"),
   maintenanceTabByWhere: document.getElementById("maintenance-tab-by-where"),
+  maintenanceTabOverdue: document.getElementById("maintenance-tab-overdue"),
+  maintenanceFilterBar: document.getElementById("maintenance-filter-bar"),
   maintenancePanelList: document.getElementById("maintenance-panel-list"),
   maintenancePanelByWhere: document.getElementById("maintenance-panel-by-where"),
+  maintenancePanelOverdue: document.getElementById("maintenance-panel-overdue"),
   maintenanceFilterWhere: document.getElementById("maintenance-filter-where"),
   maintenanceFilterDateFrom: document.getElementById("maintenance-filter-date-from"),
   maintenanceFilterDateTo: document.getElementById("maintenance-filter-date-to"),
@@ -1006,8 +1009,10 @@ const els = {
   maintenanceExportExcel: document.getElementById("maintenance-export-excel"),
   maintenanceCount: document.getElementById("maintenance-count"),
   maintenanceByWhereCount: document.getElementById("maintenance-by-where-count"),
+  maintenanceOverdueCount: document.getElementById("maintenance-overdue-count"),
   maintenanceRows: document.getElementById("maintenance-rows"),
   maintenanceByWhereRows: document.getElementById("maintenance-by-where-rows"),
+  maintenanceOverdueRows: document.getElementById("maintenance-overdue-rows"),
   maintenanceMobileCards: document.getElementById("maintenance-mobile-cards"),
   maintenanceStatus: document.getElementById("maintenance-status"),
   settingsViewGeneral: document.getElementById("settings-view-general"),
@@ -1738,6 +1743,10 @@ function bindEvents() {
   });
   els.maintenanceTabByWhere?.addEventListener("click", () => {
     setMaintenanceScreen("by-where");
+    renderMaintenance();
+  });
+  els.maintenanceTabOverdue?.addEventListener("click", () => {
+    setMaintenanceScreen("overdue");
     renderMaintenance();
   });
   els.maintenanceTaskSelect?.addEventListener("change", onMaintenanceTaskChange);
@@ -2830,6 +2839,7 @@ function renderLayout() {
   els.navLaundry.hidden = !canLaundry;
   els.navGuests?.classList.toggle("has-alert", shouldShowGuestsAlertClient());
   els.navCash?.classList.toggle("has-alert", shouldShowCashAlert());
+  els.navMaintenance?.classList.toggle("has-alert", shouldShowMaintenanceAlert());
   els.navShopping.classList.toggle("has-alert", shouldShowShoppingAlert());
   els.navHours.classList.toggle("has-alert", shouldShowHoursAlert());
   els.navBakery.classList.toggle("has-alert", shouldShowBakeryAlert());
@@ -9357,6 +9367,7 @@ async function copyShoppingOrderAsDraft(sourceId = "") {
 
 function normalizeMaintenanceTaskClient(task = {}, index = 0) {
   const name = clean(task.task || task.name);
+  const maxDaysRaw = Number.parseInt(clean(task.maxDays ?? task.max_days), 10);
   return {
     id: clean(task.id) || `maintenance-task-${index + 1}`,
     task: name,
@@ -9367,6 +9378,7 @@ function normalizeMaintenanceTaskClient(task = {}, index = 0) {
     typeOptions: Array.isArray(task.typeOptions || task.type_options)
       ? (task.typeOptions || task.type_options).map((item) => clean(item)).filter(Boolean)
       : String(task.type || "").split(/[\n,;]/).map((item) => clean(item)).filter(Boolean),
+    maxDays: Number.isFinite(maxDaysRaw) && maxDaysRaw > 0 ? maxDaysRaw : "",
   };
 }
 
@@ -9556,7 +9568,11 @@ function onMaintenanceFilterInput() {
 }
 
 function setMaintenanceScreen(screen) {
-  state.maintenanceScreen = screen === "by-where" ? "by-where" : "list";
+  state.maintenanceScreen = screen === "by-where"
+    ? "by-where"
+    : screen === "overdue"
+      ? "overdue"
+      : "list";
   if (els.maintenanceTabList) {
     els.maintenanceTabList.classList.toggle("active-tab", state.maintenanceScreen === "list");
     els.maintenanceTabList.classList.toggle("ghost", state.maintenanceScreen !== "list");
@@ -9565,8 +9581,14 @@ function setMaintenanceScreen(screen) {
     els.maintenanceTabByWhere.classList.toggle("active-tab", state.maintenanceScreen === "by-where");
     els.maintenanceTabByWhere.classList.toggle("ghost", state.maintenanceScreen !== "by-where");
   }
+  if (els.maintenanceTabOverdue) {
+    els.maintenanceTabOverdue.classList.toggle("active-tab", state.maintenanceScreen === "overdue");
+    els.maintenanceTabOverdue.classList.toggle("ghost", state.maintenanceScreen !== "overdue");
+  }
   if (els.maintenancePanelList) els.maintenancePanelList.hidden = state.maintenanceScreen !== "list";
   if (els.maintenancePanelByWhere) els.maintenancePanelByWhere.hidden = state.maintenanceScreen !== "by-where";
+  if (els.maintenancePanelOverdue) els.maintenancePanelOverdue.hidden = state.maintenanceScreen !== "overdue";
+  if (els.maintenanceFilterBar) els.maintenanceFilterBar.hidden = state.maintenanceScreen === "overdue";
 }
 
 function getFilteredMaintenanceLogs() {
@@ -9598,7 +9620,71 @@ function getFilteredMaintenanceLogs() {
         if (createdCompare !== 0) return createdCompare;
         return whereCompare;
       });
-  }
+}
+
+function maintenanceDaysSince(dateText) {
+  const targetValue = maintenanceDateValue(dateText);
+  const todayValue = maintenanceDateValue(lisbonTodayIsoClient());
+  if (!Number.isFinite(targetValue) || !Number.isFinite(todayValue)) return Number.NaN;
+  return Math.floor((todayValue - targetValue) / 86400000);
+}
+
+function buildMaintenanceOverdueRows(task = getSelectedMaintenanceTask()) {
+  if (!task || !(Number.parseInt(task.maxDays, 10) > 0)) return [];
+  const maxDays = Number.parseInt(task.maxDays, 10);
+  const taskRows = (Array.isArray(state.maintenanceLogs) ? state.maintenanceLogs : [])
+    .filter((row) => clean(row.taskId) === clean(task.id));
+  const byWhere = new Map();
+  taskRows.forEach((row) => {
+    const key = clean(row.whereValue);
+    if (!key) return;
+    const existing = byWhere.get(key);
+    if (!existing) {
+      byWhere.set(key, row);
+      return;
+    }
+    const existingDate = clean(existing.doneDate);
+    const rowDate = clean(row.doneDate);
+    if (rowDate > existingDate || (rowDate === existingDate && clean(row.createdAt) > clean(existing.createdAt))) {
+      byWhere.set(key, row);
+    }
+  });
+  const configuredWhere = Array.isArray(task.whereOptions) ? task.whereOptions : [];
+  return configuredWhere
+    .map((whereValue) => {
+      const latest = byWhere.get(clean(whereValue));
+      const lastTask = clean(latest?.doneDate);
+      const daysSince = lastTask ? maintenanceDaysSince(lastTask) : Number.NaN;
+      const overdueDays = Number.isFinite(daysSince) ? daysSince - maxDays : Number.NaN;
+      const isOverdue = !lastTask || overdueDays > 0;
+      if (!isOverdue) return null;
+      return {
+        task: clean(task.task),
+        whereValue: clean(whereValue),
+        lastTask,
+        overdueLabel: lastTask ? `${overdueDays} day${overdueDays === 1 ? "" : "s"}` : "Not done yet",
+        overdueDays: lastTask ? overdueDays : Number.POSITIVE_INFINITY,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const taskCompare = clean(a.task).localeCompare(clean(b.task), undefined, { sensitivity: "base" });
+      if (taskCompare !== 0) return taskCompare;
+      const whereCompare = clean(a.whereValue).localeCompare(clean(b.whereValue), undefined, { sensitivity: "base" });
+      if (whereCompare !== 0) return whereCompare;
+      return clean(a.lastTask).localeCompare(clean(b.lastTask));
+    });
+}
+
+function buildAllMaintenanceOverdueRows() {
+  const tasks = Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : [];
+  return tasks.flatMap((task) => buildMaintenanceOverdueRows(task));
+}
+
+function shouldShowMaintenanceAlert() {
+  if (!canApp("maintenance")) return false;
+  return buildAllMaintenanceOverdueRows().length > 0;
+}
 
 function hasMaintenanceDraft() {
   const draft = state.maintenanceDraft || {};
@@ -9868,6 +9954,7 @@ function renderMaintenance() {
   if (!canApp("maintenance")) {
     if (els.maintenanceRows) els.maintenanceRows.innerHTML = '<tr><td colspan="6" class="empty">Your profile has no access to Maintenance.</td></tr>';
     if (els.maintenanceByWhereRows) els.maintenanceByWhereRows.innerHTML = '<tr><td colspan="6" class="empty">Your profile has no access to Maintenance.</td></tr>';
+    if (els.maintenanceOverdueRows) els.maintenanceOverdueRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Maintenance.</td></tr>';
     if (els.maintenanceMobileCards) els.maintenanceMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Maintenance.</div>';
     return;
   }
@@ -9885,14 +9972,16 @@ function renderMaintenance() {
   if (els.maintenanceFilterDateFrom) els.maintenanceFilterDateFrom.value = state.maintenanceFilters.dateFrom;
   if (els.maintenanceFilterDateTo) els.maintenanceFilterDateTo.value = state.maintenanceFilters.dateTo;
   if (els.maintenanceFilterSearch) els.maintenanceFilterSearch.value = state.maintenanceFilters.search;
-  if (els.maintenanceFilterType) {
-    const currentType = clean(state.maintenanceFilters.type);
-    els.maintenanceFilterType.innerHTML = ['<option value="">All</option>']
-      .concat((Array.isArray(task?.typeOptions) ? task.typeOptions : []).map((value) => `<option value="${escape(value)}">${escape(value)}</option>`))
-      .join("");
-    els.maintenanceFilterType.value = currentType;
-  }
-  const rows = task ? getFilteredMaintenanceLogs() : [];
+    if (els.maintenanceFilterType) {
+      const currentType = clean(state.maintenanceFilters.type);
+      els.maintenanceFilterType.innerHTML = ['<option value="">All</option>']
+        .concat((Array.isArray(task?.typeOptions) ? task.typeOptions : []).map((value) => `<option value="${escape(value)}">${escape(value)}</option>`))
+        .join("");
+      els.maintenanceFilterType.value = currentType;
+    }
+    const anyOverdueRows = buildAllMaintenanceOverdueRows();
+    if (els.maintenanceTabOverdue) els.maintenanceTabOverdue.classList.toggle("has-alert", anyOverdueRows.length > 0);
+    const rows = task ? getFilteredMaintenanceLogs() : [];
   if (els.maintenanceCount) els.maintenanceCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   if (els.maintenanceRows) {
     els.maintenanceRows.innerHTML = "";
@@ -9911,11 +10000,11 @@ function renderMaintenance() {
       }
     }
   }
-  if (els.maintenanceMobileCards) {
-    els.maintenanceMobileCards.innerHTML = "";
-    if (!task) {
-      els.maintenanceMobileCards.innerHTML = '<div class="services-mobile-empty">Configure at least one maintenance task to start logging records.</div>';
-    } else {
+    if (els.maintenanceMobileCards) {
+      els.maintenanceMobileCards.innerHTML = "";
+      if (!task) {
+        els.maintenanceMobileCards.innerHTML = '<div class="services-mobile-empty">Configure at least one maintenance task to start logging records.</div>';
+      } else {
       els.maintenanceMobileCards.appendChild(buildMaintenanceMobileInlineCard(task));
       if (!rows.length) {
         els.maintenanceMobileCards.innerHTML += '<div class="services-mobile-empty">No maintenance records match the current filters.</div>';
@@ -9923,11 +10012,12 @@ function renderMaintenance() {
         rows.forEach((row) => {
           els.maintenanceMobileCards.appendChild(state.maintenanceEditingId === row.id ? buildMaintenanceMobileEditableCard(row, task) : buildMaintenanceMobileReadOnlyCard(row, task));
         });
+        }
       }
     }
+    renderMaintenanceByWhere(rows, task);
+    renderMaintenanceOverdue(task);
   }
-  renderMaintenanceByWhere(rows, task);
-}
 
 function renderMaintenanceSettings() {
   if (!canSettings("maintenance")) return;
@@ -9935,17 +10025,37 @@ function renderMaintenanceSettings() {
   const tasks = Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : [];
   els.maintenanceSettingsBody.innerHTML = "";
   if (!tasks.length) {
-    els.maintenanceSettingsBody.innerHTML = '<tr><td colspan="5" class="empty">No maintenance tasks configured yet.</td></tr>';
+    els.maintenanceSettingsBody.innerHTML = '<tr><td colspan="6" class="empty">No maintenance tasks configured yet.</td></tr>';
     return;
   }
   tasks.forEach((task, index) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td><input data-maintenance-settings-field="task" data-index="${index}" value="${escape(task.task)}" /></td>
-      <td><textarea data-maintenance-settings-field="taskDescription" data-index="${index}" rows="2">${escape(task.taskDescription)}</textarea></td>
-      <td><textarea data-maintenance-settings-field="whereOptions" data-index="${index}" rows="2">${escape((task.whereOptions || []).join(", "))}</textarea></td>
-      <td><textarea data-maintenance-settings-field="typeOptions" data-index="${index}" rows="2">${escape((task.typeOptions || []).join(", "))}</textarea></td>
-      <td class="row-actions"><button type="button" class="ghost" data-maintenance-settings-action="remove" data-index="${index}">Delete</button></td>`;
+        <td><textarea data-maintenance-settings-field="taskDescription" data-index="${index}" rows="2">${escape(task.taskDescription)}</textarea></td>
+        <td><textarea data-maintenance-settings-field="whereOptions" data-index="${index}" rows="2">${escape((task.whereOptions || []).join(", "))}</textarea></td>
+        <td><textarea data-maintenance-settings-field="typeOptions" data-index="${index}" rows="2">${escape((task.typeOptions || []).join(", "))}</textarea></td>
+        <td><input data-maintenance-settings-field="maxDays" data-index="${index}" type="number" min="1" step="1" value="${escape(task.maxDays)}" /></td>
+        <td class="row-actions"><button type="button" class="ghost" data-maintenance-settings-action="remove" data-index="${index}">Delete</button></td>`;
     els.maintenanceSettingsBody.appendChild(tr);
+  });
+}
+
+function renderMaintenanceOverdue(task) {
+  if (!els.maintenanceOverdueRows) return;
+  const rows = buildMaintenanceOverdueRows(task);
+  els.maintenanceOverdueRows.innerHTML = "";
+  if (els.maintenanceOverdueCount) els.maintenanceOverdueCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (!rows.length) {
+    els.maintenanceOverdueRows.innerHTML = '<tr><td colspan="4" class="empty">No overdue tasks for the selected configuration.</td></tr>';
+    return;
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escape(row.task || "-")}</td>
+      <td>${escape(row.whereValue || "-")}</td>
+      <td>${escape(row.lastTask ? (formatDateOnly(row.lastTask) || row.lastTask) : "Never")}</td>
+      <td>${escape(row.overdueLabel || "-")}</td>`;
+    els.maintenanceOverdueRows.appendChild(tr);
   });
 }
 
@@ -9991,9 +10101,13 @@ function onMaintenanceSettingsInput(event) {
   const current = tasks[index];
   if (!current) return;
   if (field === "whereOptions" || field === "typeOptions") current[field] = String(target.value || "")
-    .split(/[\n,;]/)
-    .map((item) => clean(item))
-    .filter(Boolean);
+      .split(/[\n,;]/)
+      .map((item) => clean(item))
+      .filter(Boolean);
+  else if (field === "maxDays") {
+    const value = Number.parseInt(clean(target.value), 10);
+    current.maxDays = Number.isFinite(value) && value > 0 ? value : "";
+  }
   else current[field] = target.value;
 }
 
@@ -10018,6 +10132,7 @@ function addMaintenanceSettingsTask() {
     taskDescription: "",
     whereOptions: [],
     typeOptions: [],
+    maxDays: "",
   });
   syncMaintenanceSelection();
   renderMaintenanceSettings();

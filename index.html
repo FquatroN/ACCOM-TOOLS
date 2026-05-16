@@ -1912,15 +1912,16 @@
           </section>
 
           <section class="card">
-            <div class="actions settings-review-tabs">
-              <button id="maintenance-tab-list" type="button" class="active-tab">Log List</button>
-              <button id="maintenance-tab-by-where" type="button" class="ghost">By Where</button>
-            </div>
+              <div class="actions settings-review-tabs">
+                <button id="maintenance-tab-list" type="button" class="active-tab">Log List</button>
+                <button id="maintenance-tab-by-where" type="button" class="ghost">By Where</button>
+                <button id="maintenance-tab-overdue" type="button" class="ghost">Overdue Tasks</button>
+              </div>
 
-            <div class="grid filters maintenance-filters">
-              <label>
-                Where
-                <input id="maintenance-filter-where" type="text" placeholder="Search place / item" />
+              <div id="maintenance-filter-bar" class="grid filters maintenance-filters">
+                <label>
+                  Where
+                  <input id="maintenance-filter-where" type="text" placeholder="Search place / item" />
               </label>
               <label>
                 Date From
@@ -1968,11 +1969,11 @@
               <p id="maintenance-status" class="auth-status"></p>
             </section>
 
-            <section id="maintenance-panel-by-where" class="view-panel" hidden>
-              <div class="bar">
-                <h2>By Where</h2>
-                <p id="maintenance-by-where-count">0 records</p>
-              </div>
+              <section id="maintenance-panel-by-where" class="view-panel" hidden>
+                <div class="bar">
+                  <h2>By Where</h2>
+                  <p id="maintenance-by-where-count">0 records</p>
+                </div>
               <div class="table-wrap maintenance-table-wrap">
                 <table class="maintenance-table maintenance-where-table">
                   <thead>
@@ -1986,6 +1987,26 @@
                     </tr>
                   </thead>
                   <tbody id="maintenance-by-where-rows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="maintenance-panel-overdue" class="view-panel" hidden>
+              <div class="bar">
+                <h2>Overdue Tasks</h2>
+                <p id="maintenance-overdue-count">0 records</p>
+              </div>
+              <div class="table-wrap maintenance-table-wrap">
+                <table class="maintenance-table maintenance-overdue-table">
+                  <thead>
+                    <tr>
+                      <th>Task</th>
+                      <th>Where</th>
+                      <th>Last task</th>
+                      <th>Overdue by</th>
+                    </tr>
+                  </thead>
+                  <tbody id="maintenance-overdue-rows"></tbody>
                 </table>
               </div>
             </section>
@@ -2975,15 +2996,16 @@
                   </div>
                   <div class="table-wrap">
                     <table class="settings-table maintenance-settings-table">
-                      <thead>
-                        <tr>
-                          <th>Task</th>
-                          <th>Task Description</th>
-                          <th>Where</th>
-                          <th>Type</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
+                        <thead>
+                          <tr>
+                            <th>Task</th>
+                            <th>Task Description</th>
+                            <th>Where</th>
+                            <th>Type</th>
+                            <th>Max Days</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
                       <tbody id="maintenance-settings-body"></tbody>
                     </table>
                   </div>
