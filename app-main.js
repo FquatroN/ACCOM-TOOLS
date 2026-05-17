@@ -1015,6 +1015,8 @@ const els = {
   maintenanceOverdueRows: document.getElementById("maintenance-overdue-rows"),
   maintenanceMobileCards: document.getElementById("maintenance-mobile-cards"),
   maintenanceStatus: document.getElementById("maintenance-status"),
+  maintenanceOverdueEmails: document.getElementById("maintenance-overdue-emails"),
+  maintenanceTestEmail: document.getElementById("maintenance-test-email"),
   settingsViewGeneral: document.getElementById("settings-view-general"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
   settingsViewGuests: document.getElementById("settings-view-guests"),
@@ -1763,6 +1765,8 @@ function bindEvents() {
   els.maintenanceAddTask?.addEventListener("click", addMaintenanceSettingsTask);
   els.maintenanceSettingsBody?.addEventListener("input", onMaintenanceSettingsInput);
   els.maintenanceSettingsBody?.addEventListener("click", onMaintenanceSettingsAction);
+  els.maintenanceOverdueEmails?.addEventListener("input", onMaintenanceSettingsInput);
+  els.maintenanceTestEmail?.addEventListener("click", triggerMaintenanceOverdueEmailNow);
   els.guestsExportExcel?.addEventListener("click", exportGuestsToExcel);
   els.guestsSendPending?.addEventListener("click", sendPendingGuests);
   els.guestsSaveSettings?.addEventListener("click", saveGuestsSettings);
@@ -9386,7 +9390,13 @@ function normalizeMaintenanceSettingsClient(settings = {}) {
   const tasks = (Array.isArray(settings.tasks) ? settings.tasks : [])
     .map((task, index) => normalizeMaintenanceTaskClient(task, index))
     .filter((task) => clean(task.task));
-  return { tasks };
+  const overdueEmailRecipients = Array.isArray(settings.overdueEmailRecipients || settings.overdue_email_recipients)
+    ? (settings.overdueEmailRecipients || settings.overdue_email_recipients).map((item) => clean(item)).filter(Boolean)
+    : String(settings.overdueEmailRecipients || settings.overdue_email_recipients || "")
+      .split(/[\n,;]/)
+      .map((item) => clean(item).toLowerCase())
+      .filter(Boolean);
+  return { overdueEmailRecipients, tasks };
 }
 
 function normalizeMaintenanceLogRecordClient(row = {}) {
@@ -10023,6 +10033,9 @@ function renderMaintenanceSettings() {
   if (!canSettings("maintenance")) return;
   if (!els.maintenanceSettingsBody) return;
   const tasks = Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : [];
+  if (els.maintenanceOverdueEmails) {
+    els.maintenanceOverdueEmails.value = (Array.isArray(state.maintenanceSettings?.overdueEmailRecipients) ? state.maintenanceSettings.overdueEmailRecipients : []).join(", ");
+  }
   els.maintenanceSettingsBody.innerHTML = "";
   if (!tasks.length) {
     els.maintenanceSettingsBody.innerHTML = '<tr><td colspan="6" class="empty">No maintenance tasks configured yet.</td></tr>';
@@ -10093,9 +10106,16 @@ function exportMaintenanceToExcel() {
 
 function onMaintenanceSettingsInput(event) {
   const target = event.target;
+  const field = clean(target.dataset.maintenanceSettingsField);
+  if (target === els.maintenanceOverdueEmails) {
+    state.maintenanceSettings.overdueEmailRecipients = String(target.value || "")
+      .split(/[\n,;]/)
+      .map((item) => clean(item).toLowerCase())
+      .filter(Boolean);
+    return;
+  }
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
   const index = Number.parseInt(target.dataset.index, 10);
-  const field = clean(target.dataset.maintenanceSettingsField);
   if (!Number.isFinite(index) || index < 0 || !field) return;
   const tasks = Array.isArray(state.maintenanceSettings?.tasks) ? state.maintenanceSettings.tasks : [];
   const current = tasks[index];
@@ -10153,6 +10173,32 @@ async function saveMaintenanceSettings() {
   } catch (e) {
     setMaintenanceSettingsStatus(`Save failed: ${e.message}`);
     showToast(`Maintenance settings save failed: ${e.message}`, "error");
+  }
+}
+
+async function triggerMaintenanceOverdueEmailNow() {
+  if (!els.maintenanceTestEmail) return;
+  els.maintenanceTestEmail.disabled = true;
+  setMaintenanceSettingsStatus("Sending maintenance overdue test email...");
+  try {
+    const saved = await api("/api/maintenance-settings", { method: "PUT", body: { settings: normalizeMaintenanceSettingsClient(state.maintenanceSettings) } });
+    state.maintenanceSettings = normalizeMaintenanceSettingsClient(saved?.settings);
+    state.maintenanceSettingsLoaded = true;
+    renderMaintenanceSettings();
+    const result = await api("/api/maintenance-overdue-email-automation?force=1", {
+      method: "POST",
+      body: {},
+    });
+    if (result?.status === "sent") {
+      setMaintenanceSettingsStatus("Maintenance overdue test email sent successfully.");
+    } else {
+      const reason = clean(result?.reason) || "the server skipped the send";
+      setMaintenanceSettingsStatus(`Maintenance overdue test email was not sent: ${reason}.`);
+    }
+  } catch (e) {
+    setMaintenanceSettingsStatus(`Maintenance overdue test email failed: ${e.message}`);
+  } finally {
+    els.maintenanceTestEmail.disabled = false;
   }
 }
 

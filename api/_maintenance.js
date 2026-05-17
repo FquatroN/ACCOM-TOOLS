@@ -2,6 +2,7 @@ const { randomUUID } = require("node:crypto");
 const { cleanText, normalizeDate } = require("./_supabase");
 
 const MAINTENANCE_SETTING_KEY = "maintenance";
+const MAINTENANCE_OVERDUE_EMAIL_LAST_SENT_KEY = "maintenance_overdue_email_last_sent";
 
 const DEFAULT_MAINTENANCE_TASKS = [
   {
@@ -106,6 +107,24 @@ function normalizeCsvList(value) {
     });
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanText(value));
+}
+
+function normalizeRecipients(value) {
+  const source = Array.isArray(value) ? value.join(",") : String(value || "");
+  const seen = new Set();
+  return source
+    .split(/[\n,;]/)
+    .map((item) => cleanText(item).toLowerCase())
+    .filter((item) => isValidEmail(item))
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
 function sanitizeMaintenanceTask(input = {}, index = 0) {
   const name = cleanText(input.task || input.name);
   const maxDaysRaw = Number.parseInt(cleanText(input.maxDays || input.max_days), 10);
@@ -133,6 +152,7 @@ function sanitizeMaintenanceSettings(input = {}) {
       return true;
     });
   return {
+    overdueEmailRecipients: normalizeRecipients(source.overdueEmailRecipients || source.overdue_email_recipients || source.emailRecipients || source.email_recipients),
     tasks: tasks.length ? tasks : cloneDefaultMaintenanceTasks(),
   };
 }
@@ -146,6 +166,80 @@ function cloneDefaultMaintenanceTasks() {
     typeOptions: [...task.typeOptions],
     maxDays: task.maxDays,
   }));
+}
+
+function isoTodayInTimeZone(now = new Date(), timeZone = "Europe/Lisbon") {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(now);
+}
+
+function maintenanceDateValue(dateText) {
+  const value = cleanText(dateText);
+  if (!value) return Number.NaN;
+  return Date.parse(`${value}T00:00:00`);
+}
+
+function maintenanceDaysSince(dateText, todayIso = isoTodayInTimeZone()) {
+  const targetValue = maintenanceDateValue(dateText);
+  const todayValue = maintenanceDateValue(todayIso);
+  if (!Number.isFinite(targetValue) || !Number.isFinite(todayValue)) return Number.NaN;
+  return Math.floor((todayValue - targetValue) / 86400000);
+}
+
+function buildMaintenanceOverdueRows(settings, logs, todayIso = isoTodayInTimeZone()) {
+  const tasks = Array.isArray(settings?.tasks) ? settings.tasks : [];
+  const rows = Array.isArray(logs) ? logs : [];
+  return tasks
+    .flatMap((task) => {
+      const maxDays = Number.parseInt(cleanText(task?.maxDays), 10);
+      if (!(Number.isFinite(maxDays) && maxDays > 0)) return [];
+      const taskRows = rows.filter((row) => cleanText(row?.taskId || row?.task_id) === cleanText(task.id));
+      const byWhere = new Map();
+      taskRows.forEach((row) => {
+        const key = cleanText(row?.whereValue || row?.where_value || row?.where);
+        if (!key) return;
+        const existing = byWhere.get(key);
+        if (!existing) {
+          byWhere.set(key, row);
+          return;
+        }
+        const existingDate = cleanText(existing?.doneDate || existing?.done_date || existing?.date);
+        const rowDate = cleanText(row?.doneDate || row?.done_date || row?.date);
+        const existingCreated = cleanText(existing?.createdAt || existing?.created_at);
+        const rowCreated = cleanText(row?.createdAt || row?.created_at);
+        if (rowDate > existingDate || (rowDate === existingDate && rowCreated > existingCreated)) {
+          byWhere.set(key, row);
+        }
+      });
+      return (Array.isArray(task.whereOptions) ? task.whereOptions : [])
+        .map((whereValue) => {
+          const latest = byWhere.get(cleanText(whereValue));
+          const lastTask = cleanText(latest?.doneDate || latest?.done_date || latest?.date);
+          const daysSince = lastTask ? maintenanceDaysSince(lastTask, todayIso) : Number.NaN;
+          const overdueDays = Number.isFinite(daysSince) ? daysSince - maxDays : Number.NaN;
+          const isOverdue = !lastTask || overdueDays > 0;
+          if (!isOverdue) return null;
+          return {
+            task: cleanText(task.task),
+            taskId: cleanText(task.id),
+            whereValue: cleanText(whereValue),
+            lastTask,
+            overdueByDays: lastTask ? overdueDays : null,
+            overdueLabel: lastTask ? `${overdueDays} day${overdueDays === 1 ? "" : "s"}` : "Not done yet",
+          };
+        })
+        .filter(Boolean);
+    })
+    .sort((a, b) => {
+      const taskCompare = cleanText(a.task).localeCompare(cleanText(b.task), undefined, { sensitivity: "base" });
+      if (taskCompare !== 0) return taskCompare;
+      return cleanText(a.whereValue).localeCompare(cleanText(b.whereValue), undefined, { sensitivity: "base" });
+    });
 }
 
 function findMaintenanceTask(settings, taskId) {
@@ -211,9 +305,14 @@ function validateMaintenanceLog(record, taskConfig = null) {
 module.exports = {
   DEFAULT_MAINTENANCE_SETTINGS,
   MAINTENANCE_SETTING_KEY,
+  MAINTENANCE_OVERDUE_EMAIL_LAST_SENT_KEY,
+  buildMaintenanceOverdueRows,
   cloneDefaultMaintenanceTasks,
   findMaintenanceTask,
+  isValidEmail,
+  isoTodayInTimeZone,
   normalizeCsvList,
+  normalizeRecipients,
   sanitizeMaintenanceLog,
   sanitizeMaintenanceSettings,
   sanitizeMaintenanceTask,
