@@ -1016,6 +1016,7 @@ const els = {
   maintenanceMobileCards: document.getElementById("maintenance-mobile-cards"),
   maintenanceStatus: document.getElementById("maintenance-status"),
   maintenanceOverdueEmails: document.getElementById("maintenance-overdue-emails"),
+  maintenanceOverdueNextSend: document.getElementById("maintenance-overdue-next-send"),
   maintenanceTestEmail: document.getElementById("maintenance-test-email"),
   settingsViewGeneral: document.getElementById("settings-view-general"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
@@ -10036,6 +10037,9 @@ function renderMaintenanceSettings() {
   if (els.maintenanceOverdueEmails) {
     els.maintenanceOverdueEmails.value = (Array.isArray(state.maintenanceSettings?.overdueEmailRecipients) ? state.maintenanceSettings.overdueEmailRecipients : []).join(", ");
   }
+  if (els.maintenanceOverdueNextSend) {
+    els.maintenanceOverdueNextSend.textContent = nextMaintenanceOverdueEmailNoteClient();
+  }
   els.maintenanceSettingsBody.innerHTML = "";
   if (!tasks.length) {
     els.maintenanceSettingsBody.innerHTML = '<tr><td colspan="6" class="empty">No maintenance tasks configured yet.</td></tr>';
@@ -10317,6 +10321,30 @@ function renderBakeryCurrentRows(order) {
       els.bakeryMobileCards.appendChild(card);
     });
   }
+
+function nextMaintenanceOverdueEmailNoteClient() {
+  const todayIso = lisbonTodayIsoClient();
+  const currentTime = lisbonCurrentTimeClient();
+  const cursor = new Date(`${todayIso}T00:00:00`);
+  const jsDay = cursor.getDay();
+  const isoDay = jsDay === 0 ? 7 : jsDay;
+  let offsetDays = (1 - isoDay + 7) % 7;
+  if (offsetDays === 0 && clean(currentTime) >= "09:00") offsetDays = 7;
+  cursor.setDate(cursor.getDate() + offsetDays);
+  const nextIso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+  const nextDate = new Date(`${nextIso}T09:00:00`);
+  const formatted = new Intl.DateTimeFormat("pt-PT", {
+    timeZone: "Europe/Lisbon",
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(nextDate);
+  return `Next automatic email: ${formatted} (Lisbon time).`;
+}
 }
 
 function renderBakeryCurrentRows(order) {
