@@ -10076,6 +10076,30 @@ function renderMaintenanceOverdue() {
   });
 }
 
+function nextMaintenanceOverdueEmailNoteClient() {
+  const todayIso = lisbonTodayIsoClient();
+  const currentTime = lisbonCurrentTimeClient();
+  const cursor = new Date(`${todayIso}T00:00:00`);
+  const jsDay = cursor.getDay();
+  const isoDay = jsDay === 0 ? 7 : jsDay;
+  let offsetDays = (1 - isoDay + 7) % 7;
+  if (offsetDays === 0 && clean(currentTime) >= "09:00") offsetDays = 7;
+  cursor.setDate(cursor.getDate() + offsetDays);
+  const nextIso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+  const nextDate = new Date(`${nextIso}T09:00:00`);
+  const formatted = new Intl.DateTimeFormat("pt-PT", {
+    timeZone: "Europe/Lisbon",
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(nextDate);
+  return `Next automatic email: ${formatted} (Lisbon time).`;
+}
+
 function buildMaintenanceExportRows() {
   const task = getSelectedMaintenanceTask();
   if (!task) return [];
@@ -10288,6 +10312,7 @@ function refreshBakeryOpenOrderDerivedState() {
   state.bakeryOpenOrder.generatedText = buildBakeryGeneratedTextClient(state.bakeryOpenOrder, state.bakerySubmitName);
 }
 
+/*
 function renderBakeryCurrentRows(order) {
   const rows = Array.isArray(order?.days) ? order.days : [];
   if (els.bakeryOpenRows) {
@@ -10322,31 +10347,7 @@ function renderBakeryCurrentRows(order) {
     });
   }
 
-function nextMaintenanceOverdueEmailNoteClient() {
-  const todayIso = lisbonTodayIsoClient();
-  const currentTime = lisbonCurrentTimeClient();
-  const cursor = new Date(`${todayIso}T00:00:00`);
-  const jsDay = cursor.getDay();
-  const isoDay = jsDay === 0 ? 7 : jsDay;
-  let offsetDays = (1 - isoDay + 7) % 7;
-  if (offsetDays === 0 && clean(currentTime) >= "09:00") offsetDays = 7;
-  cursor.setDate(cursor.getDate() + offsetDays);
-  const nextIso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
-  const nextDate = new Date(`${nextIso}T09:00:00`);
-  const formatted = new Intl.DateTimeFormat("pt-PT", {
-    timeZone: "Europe/Lisbon",
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(nextDate);
-  return `Next automatic email: ${formatted} (Lisbon time).`;
-}
-}
-
+*/
 function renderBakeryCurrentRows(order) {
   const rows = Array.isArray(order?.days) ? order.days : [];
   const breadTypes = bakeryBreadTypeColumnsClient(order);
