@@ -12908,6 +12908,16 @@ function guestRowMetaClient(record) {
   };
 }
 
+function guestBlacklistTooltipClient(match) {
+  const item = match?.item || {};
+  const lines = ["Blacklist"];
+  if (clean(match?.reason)) lines.push(`Match: ${clean(match.reason)}`);
+  if (clean(item.occurrenceDate)) lines.push(`Occurrence date: ${formatDateOnly(item.occurrenceDate)}`);
+  if (clean(item.whoReported)) lines.push(`Who reported: ${clean(item.whoReported)}`);
+  if (clean(item.whatHappened)) lines.push(`What happened: ${clean(item.whatHappened)}`);
+  return lines.join("\n");
+}
+
 function guestStatusText(record, meta) {
   const sentStatus = clean(record.sentStatus).toLowerCase();
   const lines = [];
@@ -12926,7 +12936,7 @@ function guestStatusClass(record) {
 
 function guestAlertsMarkup(meta) {
   const alerts = [];
-  if (meta?.blacklistMatch) alerts.push('<span class="guest-alert-chip guest-alert-blacklist" title="Blacklist"><span class="guest-alert-icon">\u26d4</span><span class="guest-alert-text">Blacklist</span></span>');
+  if (meta?.blacklistMatch) alerts.push(`<span class="guest-alert-chip guest-alert-blacklist" title="${escape(guestBlacklistTooltipClient(meta.blacklistMatch))}"><span class="guest-alert-icon">\u26d4</span><span class="guest-alert-text">Blacklist</span></span>`);
   if (meta?.birthdayAlert) alerts.push(`<span class="guest-alert-chip guest-alert-birthday" title="${escape(meta.birthdayAlert)}"><span class="guest-alert-icon">\ud83c\udf82</span><span class="guest-alert-text">${escape(meta.birthdayAlert)}</span></span>`);
   if (meta?.missingCheckout) alerts.push('<span class="guest-alert-chip guest-alert-missing-co" title="Missing check-out date"><span class="guest-alert-text">missing CO date</span></span>');
   return alerts.length ? `<div class="guest-alerts">${alerts.join("")}</div>` : "";
