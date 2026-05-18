@@ -768,6 +768,7 @@ const state = {
   cashMoneyModalOpen: false,
   cashMoneyModalScope: "new",
   cashMoneyModalId: "",
+  cashRandomCountDraft: null,
   cashItemsModalOpen: false,
   cashItemsModalScope: "new",
   cashItemsModalId: "",
@@ -981,8 +982,10 @@ const els = {
   cashResumeRows: document.getElementById("cash-resume-rows"),
   cashMobileCards: document.getElementById("cash-mobile-cards"),
   cashStatus: document.getElementById("cash-status"),
+  cashRandomCount: document.getElementById("cash-random-count"),
   cashMoneyModal: document.getElementById("cash-money-modal"),
   cashMoneyClose: document.getElementById("cash-money-close"),
+  cashMoneyTitle: document.getElementById("cash-money-title"),
   cashMoneyMeta: document.getElementById("cash-money-meta"),
   cashMoneyBody: document.getElementById("cash-money-body"),
   cashMoneyTotal: document.getElementById("cash-money-total"),
@@ -1806,6 +1809,7 @@ function bindEvents() {
   els.cashMoneyClose?.addEventListener("click", closeCashMoneyModal);
   els.cashMoneyBody?.addEventListener("input", onCashMoneyModalInput);
   els.cashMoneySave?.addEventListener("click", saveCashMoneyModal);
+  els.cashRandomCount?.addEventListener("click", () => openCashMoneyModal("random"));
   els.cashSettingsShiftsBody?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsItemsBody?.addEventListener("input", onCashSettingsInput);
   els.cashSettingsMinBody?.addEventListener("input", onCashSettingsInput);
@@ -11323,6 +11327,27 @@ function emptyCashDraft() {
   }, state.cashSettings);
 }
 
+function emptyRandomCashDraft() {
+  return normalizeCashRecordClient({
+    id: "random-count",
+    day: "",
+    shiftId: "",
+    shiftName: "",
+    status: "C",
+    name: "",
+    denominations: CASH_DENOMINATIONS.reduce((acc, denom) => {
+      acc[denom.key] = 0;
+      return acc;
+    }, {}),
+    cardPos: "",
+    cashFdm: "",
+    cardFdm: "",
+    justification: "",
+    itemCounts: {},
+    itemJustifications: {},
+  }, state.cashSettings);
+}
+
 function hasCashDraft() {
   const draft = state.cashEditingId ? state.cashEditDraft : (state.cashOpenDraft || state.cashDraft);
   return !!(
@@ -12022,13 +12047,15 @@ async function saveCashSettings() {
 }
 
 function currentCashDraft(scope = "new", id = "") {
+  if (scope === "random") return state.cashRandomCountDraft;
   if (scope === "open") return state.cashOpenDraft;
   if (scope === "edit") return state.cashEditDraft;
   return state.cashDraft;
 }
 
 function setCurrentCashDraft(nextDraft, scope = "new") {
-  if (scope === "open") state.cashOpenDraft = nextDraft;
+  if (scope === "random") state.cashRandomCountDraft = nextDraft;
+  else if (scope === "open") state.cashOpenDraft = nextDraft;
   else if (scope === "edit") state.cashEditDraft = nextDraft;
   else state.cashDraft = nextDraft;
 }
@@ -12121,12 +12148,46 @@ async function saveCashDraft(scope = "new", id = "", { closeRecord = false } = {
 }
 
 function renderCashMoneyModal(scope = "new", id = "") {
-  const draft = currentCashDraft(scope, id) || emptyCashDraft();
+  const isRandom = scope === "random";
+  const draft = currentCashDraft(scope, id) || (isRandom ? emptyRandomCashDraft() : emptyCashDraft());
   const computed = cashDraftComputed(draft);
   const focusTarget = document.activeElement?.matches?.("[data-cash-money-key]") ? document.activeElement : null;
   const focusKey = clean(focusTarget?.dataset?.cashMoneyKey);
   const caretStart = focusTarget && typeof focusTarget.selectionStart === "number" ? focusTarget.selectionStart : null;
   const caretEnd = focusTarget && typeof focusTarget.selectionEnd === "number" ? focusTarget.selectionEnd : null;
+  if (els.cashMoneyTitle) els.cashMoneyTitle.textContent = isRandom ? "Random Count" : "Cash Count";
+  if (isRandom) {
+    if (els.cashMoneyMeta) {
+      els.cashMoneyMeta.classList.remove("empty");
+      els.cashMoneyMeta.textContent = "Temporary count only. This does not save to the database.";
+    }
+    if (els.cashMoneyBody) {
+      els.cashMoneyBody.innerHTML = CASH_DENOMINATIONS.map((denom) => {
+        const quantity = Math.max(0, Math.round(Number(draft.denominations?.[denom.key] || 0)));
+        const value = Number((quantity * denom.value).toFixed(2));
+        return `<tr>
+          <td>${escape(denom.key)}</td>
+          <td><input data-cash-money-key="${escape(denom.key)}" type="text" inputmode="numeric" value="${escape(String(quantity))}" /></td>
+          <td>${escape(formatCashMoney(value))}</td>
+        </tr>`;
+      }).join("");
+    }
+    if (els.cashMoneyTotal) els.cashMoneyTotal.textContent = `Total cash: ${formatCashMoney(computed.cashTotal)}`;
+    if (els.cashMoneySave) els.cashMoneySave.textContent = "Done";
+    if (els.cashMoneyModal) els.cashMoneyModal.hidden = false;
+    document.body.classList.add("modal-open");
+    if (focusKey) {
+      const restoreTarget = document.querySelector(`[data-cash-money-key="${CSS.escape(focusKey)}"]`);
+      if (restoreTarget) {
+        restoreTarget.focus();
+        if (typeof caretStart === "number" && typeof restoreTarget.setSelectionRange === "function") {
+          const valueLength = String(restoreTarget.value || "").length;
+          restoreTarget.setSelectionRange(valueLength, valueLength);
+        }
+      }
+    }
+    return;
+  }
   if (els.cashMoneyMeta) {
     els.cashMoneyMeta.classList.remove("empty");
     els.cashMoneyMeta.textContent = `${draft.day} · ${draft.shiftName || cashShiftById(draft.shiftId)?.name || ""} · ${draft.name || "-"}`;
@@ -12143,6 +12204,7 @@ function renderCashMoneyModal(scope = "new", id = "") {
     }).join("");
   }
   if (els.cashMoneyTotal) els.cashMoneyTotal.textContent = `Total cash: ${formatCashMoney(computed.cashTotal)}`;
+  if (els.cashMoneySave) els.cashMoneySave.textContent = "Save Cash";
   if (els.cashMoneyModal) els.cashMoneyModal.hidden = false;
   document.body.classList.add("modal-open");
   if (focusKey) {
@@ -12161,6 +12223,7 @@ function renderCashMoneyModal(scope = "new", id = "") {
 
 function openCashMoneyModal(scope = "new", id = "") {
   if (scope === "edit" && id && clean(state.cashEditingId) !== clean(id)) startCashEdit(id);
+  if (scope === "random") state.cashRandomCountDraft = emptyRandomCashDraft();
   state.cashMoneyModalScope = scope || "new";
   state.cashMoneyModalId = id || "";
   state.cashMoneyModalOpen = true;
@@ -12171,6 +12234,7 @@ function closeCashMoneyModal() {
   state.cashMoneyModalOpen = false;
   state.cashMoneyModalScope = "new";
   state.cashMoneyModalId = "";
+  state.cashRandomCountDraft = null;
   if (els.cashMoneyModal) els.cashMoneyModal.hidden = true;
   document.body.classList.remove("modal-open");
 }
@@ -12188,6 +12252,10 @@ function onCashMoneyModalInput(event) {
 }
 
 function saveCashMoneyModal() {
+  if (clean(state.cashMoneyModalScope) === "random") {
+    closeCashMoneyModal();
+    return;
+  }
   closeCashMoneyModal();
   renderCash();
 }

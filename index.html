@@ -1294,12 +1294,15 @@
                 <p id="cash-count">0 records</p>
               </div>
             </div>
-            <div class="bar services-subbar">
-              <div>
-                <h3>Records</h3>
-                <p id="cash-warning" class="warning-text" hidden></p>
+              <div class="bar services-subbar">
+                <div>
+                  <h3>Records</h3>
+                  <p id="cash-warning" class="warning-text" hidden></p>
+                </div>
+                <div class="actions">
+                  <button id="cash-random-count" type="button" class="ghost">Random Count</button>
+                </div>
               </div>
-            </div>
             <div class="grid filters cash-filters">
               <label>
                 Date From
@@ -1405,14 +1408,14 @@
           </section>
         </section>
 
-        <section id="cash-money-modal" class="modal-backdrop" hidden>
-          <section class="card modal-card cash-items-modal-card">
-            <div class="bar">
-              <h2>Cash Count</h2>
-              <div class="actions">
-                <button id="cash-money-close" type="button" class="ghost">Close</button>
+          <section id="cash-money-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card cash-items-modal-card">
+              <div class="bar">
+                <h2 id="cash-money-title">Cash Count</h2>
+                <div class="actions">
+                  <button id="cash-money-close" type="button" class="ghost">Close</button>
+                </div>
               </div>
-            </div>
             <div id="cash-money-meta" class="review-detail empty"></div>
             <div class="table-wrap">
               <table class="settings-table cash-items-table">
