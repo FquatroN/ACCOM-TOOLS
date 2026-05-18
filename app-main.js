@@ -871,6 +871,7 @@ const state = {
   },
   profiles: [],
   profilesLoaded: false,
+  pendingProfileFocusId: "",
   settings: clone(DEFAULT_SETTINGS),
   currentView: "communications",
   settingsSection: "general",
@@ -3167,6 +3168,29 @@ function renderProfiles() {
       .join("")}`;
     els.profilesBody.appendChild(tr);
   });
+  if (clean(state.pendingProfileFocusId)) {
+    const focusId = clean(state.pendingProfileFocusId);
+    state.pendingProfileFocusId = "";
+    requestAnimationFrame(() => {
+      const input = els.profilesBody?.querySelector(`[data-profile-name="${focusId}"]`);
+      if (input instanceof HTMLInputElement) {
+        input.scrollIntoView({ block: "center", inline: "center" });
+        input.focus();
+        input.select();
+      }
+    });
+  }
+}
+
+function nextProfileDefaultName() {
+  const used = new Set((Array.isArray(state.profiles) ? state.profiles : []).map((profile) => clean(profile.name).toLowerCase()).filter(Boolean));
+  let index = Math.max(1, (Array.isArray(state.profiles) ? state.profiles.length : 0) + 1);
+  let candidate = `Profile ${index}`;
+  while (used.has(candidate.toLowerCase())) {
+    index += 1;
+    candidate = `Profile ${index}`;
+  }
+  return candidate;
 }
 
 async function createProfile() {
@@ -3174,12 +3198,13 @@ async function createProfile() {
     const created = await api("/api/profiles", {
       method: "POST",
       body: {
-        name: `Profile ${state.profiles.length + 1}`,
+        name: nextProfileDefaultName(),
         appFeatures: [...APP_FEATURE_OPTIONS],
         settingsFeatures: [],
       },
     });
     if (created.profile) {
+      state.pendingProfileFocusId = clean(created.profile.id);
       state.profilesLoaded = false;
       await loadProfiles(true);
       setProfilesStatus("Profile created.");
