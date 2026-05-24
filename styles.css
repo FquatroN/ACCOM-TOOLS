@@ -3580,11 +3580,11 @@ select:disabled {
 }
 
 .groups-table th {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
 }
 
 .groups-table td {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   padding: 0.3rem;
 }
 
@@ -3605,7 +3605,7 @@ select:disabled {
 }
 
 .groups-table .compact-summary-cell {
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   line-height: 1.2;
 }
 
