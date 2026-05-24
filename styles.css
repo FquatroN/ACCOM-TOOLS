@@ -3579,6 +3579,10 @@ select:disabled {
   overflow-wrap: anywhere;
 }
 
+.groups-table td {
+  padding: 0.3rem;
+}
+
 .groups-table col.narrow-col {
   width: 86px;
 }
