@@ -3591,10 +3591,6 @@ select:disabled {
   width: 330px;
 }
 
-.groups-table col.group-dates-col {
-  width: 140px;
-}
-
 .groups-table col.reservation-col {
   width: 82px;
 }
