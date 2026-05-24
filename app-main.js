@@ -3516,7 +3516,7 @@ function renderGroups() {
   els.groupsRows.innerHTML = "";
   if (els.groupsMobileCards) els.groupsMobileCards.innerHTML = "";
   if (rows.length === 0) {
-    els.groupsRows.innerHTML = '<tr><td colspan="9" class="empty">No group proposals found.</td></tr>';
+    els.groupsRows.innerHTML = '<tr><td colspan="8" class="empty">No group proposals found.</td></tr>';
     if (els.groupsMobileCards) {
       els.groupsMobileCards.innerHTML = '<div class="services-mobile-empty">No group proposals found.</div>';
     }
@@ -3531,12 +3531,11 @@ function renderGroups() {
     tr.className = `clickable-row${statusClass}${row.id === state.groupSelectedId ? " selected-row" : ""}`;
     tr.innerHTML = `<td>${escape(formatDateOnly(row.creationDate))}</td>
       <td>${escape(row.name)}</td>
-      <td class="group-dates-cell"><span>${escape(formatGroupDateDisplay(row.checkIn))} - ${escape(formatGroupDateDisplay(row.checkOut))}</span><small>(${escape(String(dateDiffDays(row.checkIn, row.checkOut)))} nights)</small></td>
+      <td class="group-dates-cell"><span>${escape(formatGroupDateDisplay(row.checkIn))} - ${escape(formatGroupDateDisplay(row.checkOut))}</span><small>(${escape(String(dateDiffDays(row.checkIn, row.checkOut)))} nights)</small>${groupOptionDateNoteHtml(row.optionDate)}</td>
       <td>${escape(String(row.guests || 0))}</td>
       <td class="group-total-cell"><strong>${escape(formatMoney(row.totalValue))}</strong><small>(${escape(groupDepositText(row.totalValue))})</small></td>
       <td class="compact-summary-cell room-types-cell" title="${escape(roomTypeSummary)}">${groupRoomTypeSummaryHtml(row.roomItems)}</td>
       <td class="compact-summary-cell" title="${escape(roomSummary)}">${escape(roomSummary || "-")}</td>
-      <td>${escape(row.optionDate || "-")}</td>
       <td>${escape(row.reservationNumber || "-")}</td>`;
     els.groupsRows.appendChild(tr);
     if (els.groupsMobileCards) {
@@ -3565,15 +3564,11 @@ function buildGroupMobileCard(row) {
     <div class="communication-mobile-grid">
       <div class="communication-mobile-field">
         <small>Dates</small>
-        <div class="communication-mobile-message">${escape(formatGroupDateDisplay(row.checkIn))} - ${escape(formatGroupDateDisplay(row.checkOut))}<br><small>${escape(String(dateDiffDays(row.checkIn, row.checkOut)))} nights</small></div>
+        <div class="communication-mobile-message">${escape(formatGroupDateDisplay(row.checkIn))} - ${escape(formatGroupDateDisplay(row.checkOut))}<br><small>${escape(String(dateDiffDays(row.checkIn, row.checkOut)))} nights</small>${groupOptionDateNoteHtml(row.optionDate, "group-mobile-option-date")}</div>
       </div>
       <div class="communication-mobile-field">
         <small>Guests</small>
         <div class="communication-mobile-message">${escape(String(row.guests || 0))}</div>
-      </div>
-      <div class="communication-mobile-field">
-        <small>Option</small>
-        <div class="communication-mobile-message">${escape(row.optionDate || "-")}</div>
       </div>
       <div class="communication-mobile-field">
         <small>Reservation</small>
@@ -3589,6 +3584,12 @@ function buildGroupMobileCard(row) {
       </div>
     </div>`;
   return card;
+}
+
+function groupOptionDateNoteHtml(value, className = "group-option-date-note") {
+  const optionDate = clean(value);
+  if (!optionDate) return "";
+  return `<span class="${escape(className)}">Option: ${escape(formatGroupDateDisplay(optionDate))}</span>`;
 }
 
 function getFilteredGroups() {

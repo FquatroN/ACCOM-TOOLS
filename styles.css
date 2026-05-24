@@ -3615,20 +3615,26 @@ select:disabled {
 .groups-table th:nth-child(5),
 .groups-table td:nth-child(5),
 .groups-table th:nth-child(8),
-.groups-table td:nth-child(8),
-.groups-table th:nth-child(9),
-.groups-table td:nth-child(9) {
+.groups-table td:nth-child(8) {
   font-size: 0.74rem;
 }
 
 .groups-table .room-types-cell span,
 .groups-table .group-dates-cell span,
-.groups-table .group-dates-cell small {
+.groups-table .group-dates-cell small,
+.groups-table .group-option-date-note {
   display: block;
 }
 
 .groups-table .group-dates-cell small {
   color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.groups-table .group-option-date-note,
+.group-mobile-option-date {
+  color: #1f5fbf;
   font-size: 0.72rem;
   line-height: 1.2;
 }
