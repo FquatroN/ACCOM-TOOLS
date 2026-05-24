@@ -3579,7 +3579,12 @@ select:disabled {
   overflow-wrap: anywhere;
 }
 
+.groups-table th {
+  font-size: 0.8rem;
+}
+
 .groups-table td {
+  font-size: 0.78rem;
   padding: 0.3rem;
 }
 
@@ -3600,23 +3605,12 @@ select:disabled {
 }
 
 .groups-table .compact-summary-cell {
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   line-height: 1.2;
 }
 
-.groups-table th:nth-child(1),
-.groups-table td:nth-child(1),
-.groups-table th:nth-child(2),
-.groups-table td:nth-child(2),
-.groups-table th:nth-child(3),
-.groups-table td:nth-child(3),
-.groups-table th:nth-child(4),
-.groups-table td:nth-child(4),
-.groups-table th:nth-child(5),
-.groups-table td:nth-child(5),
-.groups-table th:nth-child(8),
-.groups-table td:nth-child(8) {
-  font-size: 0.74rem;
+.groups-table .room-types-cell {
+  font-size: 0.72rem;
 }
 
 .groups-table .room-types-cell span,
