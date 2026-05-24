@@ -3668,15 +3668,23 @@ function updateGroupSortIndicators() {
 function groupRoomTypeSummary(items = []) {
   return items
     .filter((item) => clean(item.roomType))
-    .map((item) => `${normalizeGroupRoomCount(item.roomCount)}x ${clean(item.roomType)}`)
+    .map((item) => groupRoomTypeSummaryLabel(item))
     .join(", ");
 }
 
 function groupRoomTypeSummaryHtml(items = []) {
   const lines = items
     .filter((item) => clean(item.roomType))
-    .map((item) => `<span>${escape(`${normalizeGroupRoomCount(item.roomCount)}x ${clean(item.roomType)}`)}</span>`);
+    .map((item) => `<span>${escape(groupRoomTypeSummaryLabel(item))}</span>`);
   return lines.length ? lines.join("") : "-";
+}
+
+function groupRoomTypeSummaryLabel(item) {
+  const roomType = clean(item?.roomType);
+  if (!roomType) return "";
+  const price = formatMoney(normalizeNumber(item?.price));
+  const mode = clean(item?.priceMode) === "room" ? "per room" : "per guest";
+  return `${normalizeGroupRoomCount(item?.roomCount)}x ${roomType} (${price} ${mode})`;
 }
 
 function groupRoomSelectionSummary(items = []) {
@@ -3690,7 +3698,7 @@ function groupRoomSelectionSummary(items = []) {
 function groupPdfRoomTypeLines(items = []) {
   return (Array.isArray(items) ? items : [])
     .filter((item) => clean(item.roomType))
-    .map((item) => `${normalizeGroupRoomCount(item.roomCount)}x ${clean(item.roomType)}`);
+    .map((item) => groupRoomTypeSummaryLabel(item));
 }
 
 function groupPdfRoomLines(items = []) {
