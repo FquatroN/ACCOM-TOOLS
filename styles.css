@@ -3604,6 +3604,23 @@ select:disabled {
   line-height: 1.2;
 }
 
+.groups-table th:nth-child(1),
+.groups-table td:nth-child(1),
+.groups-table th:nth-child(2),
+.groups-table td:nth-child(2),
+.groups-table th:nth-child(3),
+.groups-table td:nth-child(3),
+.groups-table th:nth-child(4),
+.groups-table td:nth-child(4),
+.groups-table th:nth-child(5),
+.groups-table td:nth-child(5),
+.groups-table th:nth-child(8),
+.groups-table td:nth-child(8),
+.groups-table th:nth-child(9),
+.groups-table td:nth-child(9) {
+  font-size: 0.74rem;
+}
+
 .groups-table .room-types-cell span,
 .groups-table .group-dates-cell span,
 .groups-table .group-dates-cell small {
