@@ -16536,7 +16536,7 @@ async function saveFinancialDocsSettings() {
       method: "PUT",
       body: {
         attributes: payload.attributes,
-        drive: { folderPath: payload.drive.folderPath, baseFolderId: payload.drive.baseFolderId },
+        drive: { folderPath: payload.drive.folderPath },
       },
     });
     state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result?.settings);

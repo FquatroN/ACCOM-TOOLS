@@ -283,7 +283,8 @@ async function downloadDriveFile(accessToken, fileId) {
 async function prepareDriveDestination(req, createdAt, settings) {
   const { accessToken } = await refreshDriveAccessToken(settings);
   const baseFolderPath = cleanText(settings?.drive?.folderPath) || "Financial Documents";
-  const baseFolderId = await ensureDriveFolderPath(accessToken, baseFolderPath);
+  const configuredFolderId = cleanText(settings?.drive?.baseFolderId);
+  const baseFolderId = configuredFolderId || await ensureDriveFolderPath(accessToken, baseFolderPath);
   const monthlyKey = monthlyFolderKey(createdAt);
   const monthlyFolderId = monthlyKey ? await ensureDriveFolder(accessToken, monthlyKey, baseFolderId) : baseFolderId;
   return { accessToken, baseFolderId, folderId: monthlyFolderId };

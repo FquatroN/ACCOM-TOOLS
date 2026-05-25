@@ -5,7 +5,7 @@ const {
   saveFinancialDocsSettings,
   safeFinancialDocsSettings,
 } = require("./_financial-docs-service");
-const { sanitizeFinancialDocsSettings } = require("./_financial-docs");
+const { extractGoogleDriveFolderId, sanitizeFinancialDocsSettings } = require("./_financial-docs");
 
 module.exports = async function handler(req, res) {
   try {
@@ -25,7 +25,10 @@ module.exports = async function handler(req, res) {
         drive: {
           ...current.drive,
           folderPath: body?.drive?.folderPath ?? current.drive.folderPath,
-          baseFolderId: body?.drive?.baseFolderId ?? current.drive.baseFolderId,
+          baseFolderId:
+            body?.drive?.baseFolderId ??
+            extractGoogleDriveFolderId(body?.drive?.folderPath) ??
+            current.drive.baseFolderId,
         },
       });
       const saved = await saveFinancialDocsSettings(next);

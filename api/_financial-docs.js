@@ -21,6 +21,20 @@ const DEFAULT_FINANCIAL_DOCS_SETTINGS = {
   },
 };
 
+function extractGoogleDriveFolderId(value) {
+  const raw = cleanText(value);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (!/drive\.google\.com$/i.test(url.hostname)) return "";
+    const folderMatch = url.pathname.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (folderMatch?.[1]) return cleanText(folderMatch[1]);
+    const queryId = cleanText(url.searchParams.get("id"));
+    if (queryId) return queryId;
+  } catch {}
+  return "";
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -60,7 +74,7 @@ function sanitizeFinancialDocsSettings(source = {}) {
       connectedAt: cleanText(rawGoogle.connectedAt || rawDrive.connectedAt),
       accountEmail: cleanText(rawGoogle.accountEmail || rawDrive.accountEmail),
       folderPath: cleanText(rawDrive.folderPath || rawDrive.path) || defaults.drive.folderPath,
-      baseFolderId: cleanText(rawDrive.baseFolderId),
+      baseFolderId: cleanText(rawDrive.baseFolderId) || extractGoogleDriveFolderId(rawDrive.folderPath || rawDrive.path),
       accessToken: cleanText(rawGoogle.accessToken),
       refreshToken: cleanText(rawGoogle.refreshToken),
       tokenExpiresAt: cleanText(rawGoogle.tokenExpiresAt),
@@ -327,6 +341,7 @@ module.exports = {
   safeFinancialDocsSettings,
   sanitizeFinancialDocumentInput,
   sanitizeFinancialDocsSettings,
+  extractGoogleDriveFolderId,
   sha256Base64Content,
   toClientDocument,
   toClientHistory,
