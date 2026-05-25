@@ -936,6 +936,7 @@ const els = {
   appLogoHome: document.getElementById("app-logo-home"),
   leftNav: document.getElementById("main-left-nav"),
   backofficeTopNav: document.getElementById("backoffice-top-nav"),
+  backofficeBackToApp: document.getElementById("backoffice-back-to-app"),
   sidebarReviewSummaryCard: document.getElementById("sidebar-review-summary-card"),
   sidebarReviewSummaryStatus: document.getElementById("sidebar-review-summary-status"),
   sidebarReviewSummaryBody: document.getElementById("sidebar-review-summary-body"),
@@ -1732,6 +1733,7 @@ function bindEvents() {
   els.appLogoHome?.addEventListener("click", onLogoHomeClick);
   els.navCommunications.addEventListener("click", () => setView("communications"));
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
+  els.backofficeBackToApp?.addEventListener("click", onLogoHomeClick);
   els.navGuests?.addEventListener("click", () => setView("guests"));
   els.navCash?.addEventListener("click", () => setView("cash"));
   els.navLostFound.addEventListener("click", () => setView("lost-found"));
