@@ -4603,9 +4603,13 @@ select:disabled {
 }
 
 .backoffice-top-nav {
-  display: grid;
+  display: none;
   gap: 0.65rem;
   padding: 0.75rem 0.9rem;
+}
+
+.app-layout.backoffice-mode .backoffice-top-nav {
+  display: grid;
 }
 
 .backoffice-top-links {
