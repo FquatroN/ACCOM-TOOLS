@@ -1,0 +1,304 @@
+const { cleanText, parseBody, requireFeature, sendError } = require("./_supabase");
+const {
+  buildStoredFileName,
+  findPossibleDuplicates,
+  safeFinancialDocsSettings,
+  sanitizeFinancialDocumentInput,
+  sha256Base64Content,
+} = require("./_financial-docs");
+const {
+  attachDocumentFile,
+  deleteDriveFile,
+  insertFinancialDocument,
+  insertFinancialDocumentHistory,
+  listFinancialDocuments,
+  loadFinancialDocumentRowById,
+  loadFinancialDocumentWithHistory,
+  loadFinancialDocsSettings,
+  refreshDriveAccessToken,
+  renameExistingDriveFileIfNeeded,
+  updateFinancialDocumentRow,
+} = require("./_financial-docs-service");
+
+const TRACKED_FIELDS = [
+  ["cc", "CC"],
+  ["document_date", "Date"],
+  ["doc_number", "Doc Number"],
+  ["description", "Description"],
+  ["supplier_nif", "Supplier NIF"],
+  ["supplier_name", "Name"],
+  ["amount", "Amount"],
+  ["vat_amount", "VAT Amount"],
+  ["payment", "Payment"],
+  ["document_type", "Type"],
+  ["fat", "Fat"],
+  ["category", "Category"],
+  ["status", "Status"],
+];
+
+function normalizeUpload(upload, userEmail) {
+  if (!upload || typeof upload !== "object") return null;
+  const base64Content = cleanText(upload.base64Content);
+  if (!base64Content) return null;
+  return {
+    base64Content,
+    originalFilename: cleanText(upload.originalFilename || upload.fileName) || "document.pdf",
+    mimeType: cleanText(upload.mimeType) || "application/pdf",
+    fileSize: Number(upload.fileSize || 0),
+    fileHash: cleanText(upload.fileHash) || sha256Base64Content(base64Content),
+    uploadedBy: cleanText(upload.uploadedBy) || cleanText(userEmail),
+  };
+}
+
+function buildDbPayload(doc, userEmail) {
+  return {
+    cc: doc.cc,
+    document_date: doc.documentDate,
+    doc_number: doc.docNumber,
+    description: doc.description,
+    supplier_nif: doc.supplierNif,
+    supplier_name: doc.supplierName,
+    amount: doc.amount,
+    vat_amount: doc.vatAmount,
+    payment: doc.payment,
+    document_type: doc.docType,
+    fat: doc.fat,
+    category: doc.category,
+    status: doc.status,
+    created_by: cleanText(userEmail),
+  };
+}
+
+function duplicateConflict(duplicates) {
+  const error = new Error("Possible duplicate found.");
+  error.statusCode = 409;
+  error.duplicates = duplicates;
+  return error;
+}
+
+function trackFieldChanges(before, after) {
+  return TRACKED_FIELDS
+    .map(([key, label]) => {
+      const previous = before?.[key] ?? null;
+      const next = after?.[key] ?? null;
+      return JSON.stringify(previous) === JSON.stringify(next)
+        ? null
+        : {
+            action_type: "field_update",
+            field_name: key,
+            message: `${label} updated.`,
+            old_value: previous,
+            new_value: next,
+          };
+    })
+    .filter(Boolean);
+}
+
+module.exports = async function handler(req, res) {
+  try {
+    const auth = await requireFeature(req, "app", "financial-docs");
+    const userEmail = cleanText(auth.user?.email) || cleanText(auth.user?.id);
+
+    if (req.method === "GET") {
+      const id = cleanText(req.query?.id);
+      const settings = await loadFinancialDocsSettings();
+      if (id) {
+        const document = await loadFinancialDocumentWithHistory(id);
+        if (!document) {
+          res.status(404).json({ error: "Financial document not found." });
+          return;
+        }
+        res.status(200).json({ row: document, settings: safeFinancialDocsSettings(settings) });
+        return;
+      }
+      const rows = await listFinancialDocuments();
+      res.status(200).json({ rows, settings: safeFinancialDocsSettings(settings) });
+      return;
+    }
+
+    if (req.method === "POST") {
+      const body = await parseBody(req);
+      const settings = await loadFinancialDocsSettings();
+      const sanitized = sanitizeFinancialDocumentInput(body, settings);
+      const upload = normalizeUpload(body?.attachmentUpload, userEmail);
+      const duplicates = findPossibleDuplicates(sanitized, await listFinancialDocuments(), {
+        checksum: upload?.fileHash,
+      });
+      if (duplicates.length && !body?.confirmDuplicate) throw duplicateConflict(duplicates);
+
+      let created = await insertFinancialDocument({
+        ...buildDbPayload(sanitized, userEmail),
+        ocr_fields: body?.ocrFields && typeof body.ocrFields === "object" ? body.ocrFields : {},
+        ocr_raw_text: cleanText(body?.ocrRawText),
+      });
+
+      const historyEntries = [{
+        document_id: cleanText(created?.id),
+        action_type: "created",
+        field_name: "",
+        message: "Document created.",
+        old_value: null,
+        new_value: null,
+        metadata: { source: cleanText(body?.source || "manual") },
+        created_by: userEmail,
+      }];
+
+      if (duplicates.length) {
+        historyEntries.push({
+          document_id: cleanText(created?.id),
+          action_type: "duplicate_warning",
+          field_name: "",
+          message: "Possible duplicate found. Save was confirmed by the user.",
+          old_value: null,
+          new_value: null,
+          metadata: { duplicates },
+          created_by: userEmail,
+        });
+      }
+
+      if (upload) {
+        const attachmentFields = await attachDocumentFile(req, created, upload, settings);
+        created = await updateFinancialDocumentRow(cleanText(created.id), attachmentFields);
+        historyEntries.push({
+          document_id: cleanText(created?.id),
+          action_type: "file_uploaded",
+          field_name: "",
+          message: "Attachment uploaded.",
+          old_value: null,
+          new_value: attachmentFields.stored_filename,
+          metadata: { originalFilename: attachmentFields.original_filename, fileHash: attachmentFields.file_hash },
+          created_by: userEmail,
+        });
+      }
+
+      if (body?.ocrFields || body?.ocrRawText) {
+        historyEntries.push({
+          document_id: cleanText(created?.id),
+          action_type: "ocr_parse",
+          field_name: "",
+          message: "OCR/AI extracted draft values.",
+          old_value: null,
+          new_value: null,
+          metadata: { fields: body?.ocrFields || {} },
+          created_by: userEmail,
+        });
+      }
+
+      await insertFinancialDocumentHistory(historyEntries);
+      const row = await loadFinancialDocumentWithHistory(cleanText(created.id));
+      res.status(200).json({ row, duplicates });
+      return;
+    }
+
+    if (req.method === "PUT") {
+      const id = cleanText(req.query?.id || req.body?.id);
+      if (!id) {
+        res.status(400).json({ error: "Document id is required." });
+        return;
+      }
+      const body = await parseBody(req);
+      const existing = await loadFinancialDocumentRowById(id);
+      if (!existing) {
+        res.status(404).json({ error: "Financial document not found." });
+        return;
+      }
+      const settings = await loadFinancialDocsSettings();
+      const sanitized = sanitizeFinancialDocumentInput(body, settings);
+      const upload = normalizeUpload(body?.attachmentUpload, userEmail);
+      const duplicates = findPossibleDuplicates(sanitized, await listFinancialDocuments(), {
+        currentId: id,
+        checksum: upload?.fileHash,
+      });
+      if (duplicates.length && !body?.confirmDuplicate) throw duplicateConflict(duplicates);
+
+      let updated = await updateFinancialDocumentRow(id, {
+        ...buildDbPayload(sanitized, existing.created_by || userEmail),
+        ocr_fields: body?.ocrFields && typeof body.ocrFields === "object" ? body.ocrFields : (existing.ocr_fields || {}),
+        ocr_raw_text: cleanText(body?.ocrRawText) || cleanText(existing.ocr_raw_text),
+      });
+
+      const historyEntries = trackFieldChanges(existing, updated).map((item) => ({
+        document_id: id,
+        ...item,
+        metadata: {},
+        created_by: userEmail,
+      }));
+
+      if (duplicates.length) {
+        historyEntries.push({
+          document_id: id,
+          action_type: "duplicate_warning",
+          field_name: "",
+          message: "Possible duplicate found. Save was confirmed by the user.",
+          old_value: null,
+          new_value: null,
+          metadata: { duplicates },
+          created_by: userEmail,
+        });
+      }
+
+      if (upload) {
+        const oldDriveFileId = cleanText(existing.drive_file_id);
+        const attachmentFields = await attachDocumentFile(req, updated, upload, settings);
+        updated = await updateFinancialDocumentRow(id, attachmentFields);
+        if (oldDriveFileId && oldDriveFileId !== cleanText(attachmentFields.drive_file_id)) {
+          try {
+            const refreshed = await refreshDriveAccessToken(settings);
+            await deleteDriveFile(refreshed.accessToken, oldDriveFileId);
+          } catch {}
+        }
+        historyEntries.push({
+          document_id: id,
+          action_type: oldDriveFileId ? "file_replaced" : "file_uploaded",
+          field_name: "",
+          message: oldDriveFileId ? "Attachment replaced." : "Attachment uploaded.",
+          old_value: oldDriveFileId || null,
+          new_value: attachmentFields.stored_filename,
+          metadata: { originalFilename: attachmentFields.original_filename, fileHash: attachmentFields.file_hash },
+          created_by: userEmail,
+        });
+      } else if (cleanText(existing.drive_file_id)) {
+        const nextName = await renameExistingDriveFileIfNeeded(req, updated, settings);
+        if (nextName) {
+          updated = await updateFinancialDocumentRow(id, { stored_filename: nextName });
+          historyEntries.push({
+            document_id: id,
+            action_type: "file_renamed",
+            field_name: "",
+            message: "Attachment renamed to match document data.",
+            old_value: cleanText(existing.stored_filename),
+            new_value: nextName,
+            metadata: {},
+            created_by: userEmail,
+          });
+        }
+      }
+
+      if (body?.ocrFields || body?.ocrRawText) {
+        historyEntries.push({
+          document_id: id,
+          action_type: "ocr_parse",
+          field_name: "",
+          message: "OCR/AI extracted draft values.",
+          old_value: null,
+          new_value: null,
+          metadata: { fields: body?.ocrFields || {} },
+          created_by: userEmail,
+        });
+      }
+
+      if (historyEntries.length) await insertFinancialDocumentHistory(historyEntries);
+      const row = await loadFinancialDocumentWithHistory(id);
+      res.status(200).json({ row, duplicates });
+      return;
+    }
+
+    res.status(405).json({ error: "Method not allowed." });
+  } catch (error) {
+    if (error.statusCode === 409) {
+      res.status(409).json({ error: error.message, duplicates: error.duplicates || [] });
+      return;
+    }
+    sendError(res, error);
+  }
+};

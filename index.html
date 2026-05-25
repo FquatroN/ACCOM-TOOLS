@@ -23,10 +23,10 @@
   <body style="visibility: hidden">
     <main id="app-shell" class="app-layout">
       <div class="left-rail">
-        <div class="app-logo-wrap" aria-label="Accomtools">
+        <div id="app-logo-home" class="app-logo-wrap" aria-label="Accomtools">
           <img class="app-logo" src="assets/app-icon-1024.png" alt="Accomtools" />
         </div>
-        <aside class="left-nav">
+        <aside id="main-left-nav" class="left-nav">
           <button id="nav-communications" type="button" class="nav-link active">Communications</button>
           <button id="nav-guests" type="button" class="nav-link">Guests</button>
           <button id="nav-cash" type="button" class="nav-link">Cash Control</button>
@@ -39,6 +39,10 @@
           <button id="nav-groups" type="button" class="nav-link">Groups</button>
           <button id="nav-reviews" type="button" class="nav-link">Reviews</button>
           <button id="nav-maintenance" type="button" class="nav-link">Maintenance</button>
+        </aside>
+        <aside id="backoffice-left-nav" class="left-nav" hidden>
+          <p class="eyebrow sidebar-eyebrow">Backoffice</p>
+          <button id="nav-financial-docs" type="button" class="nav-link">Financial Documents</button>
         </aside>
         <section id="sidebar-review-summary-card" class="sidebar-summary-card" hidden>
           <div class="sidebar-summary-head">
@@ -58,6 +62,11 @@
           </button>
           <div class="session-box">
             <span id="auth-user" class="user-pill">Signed in</span>
+            <button id="open-backoffice" type="button" class="ghost icon-btn" aria-label="Backoffice" title="Backoffice">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 20h18M5 20V8l7-4 7 4v12M9 12h2v2H9zm0 4h2v2H9zm4-4h2v2h-2zm0 4h2v2h-2z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+              </svg>
+            </button>
             <button id="open-settings" type="button" class="ghost icon-btn" aria-label="Settings" title="Settings">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -2024,6 +2033,9 @@
               <button id="settings-menu-guests" type="button" class="nav-link">
                 Guests
               </button>
+              <button id="settings-menu-financial-docs" type="button" class="nav-link">
+                Financial Documents
+              </button>
               <button id="settings-menu-cash" type="button" class="nav-link">
                 Cash Control
               </button>
@@ -2286,6 +2298,73 @@
                   </div>
                 </section>
                 <p id="guests-settings-status" class="auth-status"></p>
+              </div>
+
+              <div id="settings-view-financial-docs" hidden>
+                <div class="actions">
+                  <button id="close-settings-financial-docs" type="button" class="ghost">Back To App</button>
+                  <button id="financial-docs-settings-attributes-tab" type="button" class="active-tab">Attributes</button>
+                  <button id="financial-docs-settings-drive-tab" type="button" class="ghost">Drive settings</button>
+                  <button id="financial-docs-save-settings" type="button" class="ghost">Save Configuration</button>
+                </div>
+
+                <section id="financial-docs-settings-attributes-panel" class="settings-block">
+                  <div class="bar">
+                    <h3>Attributes</h3>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      CC
+                      <input id="financial-docs-settings-cc" type="text" placeholder="H, A" />
+                    </label>
+                    <label>
+                      Payment
+                      <input id="financial-docs-settings-payment" type="text" placeholder="Banco, Visa, Cash" />
+                    </label>
+                    <label>
+                      Type
+                      <input id="financial-docs-settings-type" type="text" placeholder="R, F" />
+                    </label>
+                    <label>
+                      Fat
+                      <input id="financial-docs-settings-fat" type="text" placeholder="S, N" />
+                    </label>
+                    <label class="settings-email-recipients">
+                      Category
+                      <textarea id="financial-docs-settings-category" rows="3" placeholder="Renda, Alimentacao, Utility"></textarea>
+                    </label>
+                    <label>
+                      Status
+                      <input id="financial-docs-settings-status-values" type="text" placeholder="Draft, Confirmed" />
+                    </label>
+                  </div>
+                  <p class="field-hint">Separate values with commas. These lists are used in the Financial Documents form.</p>
+                </section>
+
+                <section id="financial-docs-settings-drive-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Drive settings</h3>
+                    <div class="row-actions">
+                      <button id="financial-docs-drive-connect" type="button" class="ghost">Connect Google Drive</button>
+                      <button id="financial-docs-drive-refresh" type="button" class="ghost">Refresh</button>
+                      <button id="financial-docs-drive-disconnect" type="button" class="ghost">Disconnect</button>
+                    </div>
+                  </div>
+                  <div class="grid settings-grid">
+                    <label>
+                      Connected account
+                      <input id="financial-docs-drive-account" type="text" readonly />
+                    </label>
+                    <label>
+                      Base folder path
+                      <input id="financial-docs-drive-folder-path" type="text" placeholder="Financial Documents" />
+                      <small class="field-hint">Documents are stored in a monthly subfolder named YYYYMM based on the record create date.</small>
+                    </label>
+                  </div>
+                  <p id="financial-docs-drive-status" class="auth-status"></p>
+                </section>
+
+                <p id="financial-docs-settings-status" class="auth-status"></p>
               </div>
 
               <div id="settings-view-admin-users" hidden>
@@ -3029,6 +3108,207 @@
                 <p id="maintenance-settings-status" class="auth-status"></p>
               </div>
             </div>
+          </section>
+        </section>
+
+        <section id="view-financial-docs" class="view" hidden>
+          <section class="feature-title">
+            <h2>Financial Documents</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Filters</h2>
+              <div class="actions">
+                <button id="financial-docs-new" type="button" class="ghost">New Document</button>
+                <button id="financial-docs-upload-parse" type="button" class="ghost">Upload &amp; Parse</button>
+              </div>
+            </div>
+            <div class="grid filters financial-docs-filters">
+              <label>
+                Create From
+                <input id="financial-docs-filter-created-from" type="date" />
+              </label>
+              <label>
+                Create To
+                <input id="financial-docs-filter-created-to" type="date" />
+              </label>
+              <label>
+                Date From
+                <input id="financial-docs-filter-date-from" type="date" />
+              </label>
+              <label>
+                Date To
+                <input id="financial-docs-filter-date-to" type="date" />
+              </label>
+              <label>
+                Supplier NIF / Name
+                <input id="financial-docs-filter-supplier" type="search" placeholder="NIF or supplier name" />
+              </label>
+              <label>
+                Description
+                <input id="financial-docs-filter-description" type="search" placeholder="Description" />
+              </label>
+              <label>
+                Payment
+                <select id="financial-docs-filter-payment"></select>
+              </label>
+              <label>
+                Type
+                <select id="financial-docs-filter-type"></select>
+              </label>
+              <label>
+                Fat
+                <select id="financial-docs-filter-fat"></select>
+              </label>
+              <label>
+                Category
+                <select id="financial-docs-filter-category"></select>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Documents</h2>
+              <p id="financial-docs-count">0 records</p>
+            </div>
+            <div class="table-wrap financial-docs-table-wrap">
+              <table class="financial-docs-table">
+                <thead>
+                  <tr>
+                    <th>Create Date</th>
+                    <th>CC</th>
+                    <th>Date</th>
+                    <th>Doc Number</th>
+                    <th>Description</th>
+                    <th>Supplier NIF</th>
+                    <th>Name</th>
+                    <th>Amount</th>
+                    <th>VAT Amount</th>
+                    <th>Payment</th>
+                    <th>Type</th>
+                    <th>Fat</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th>File</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="financial-docs-rows"></tbody>
+              </table>
+            </div>
+            <div id="financial-docs-mobile-cards" class="services-mobile-cards financial-docs-mobile-cards"></div>
+            <p id="financial-docs-status" class="auth-status"></p>
+          </section>
+
+          <input id="financial-docs-parse-input" class="sr-only-file" type="file" accept=".pdf,image/*,application/pdf" />
+          <input id="financial-docs-attachment-input" class="sr-only-file" type="file" accept=".pdf,image/*,application/pdf" />
+
+          <section id="financial-docs-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card financial-docs-modal-card">
+              <div class="bar">
+                <h2 id="financial-docs-modal-title">Financial Document</h2>
+                <div class="actions">
+                  <p id="financial-docs-modal-status" class="auth-status"></p>
+                  <button id="financial-docs-modal-close" type="button" class="ghost">Close</button>
+                </div>
+              </div>
+
+              <div class="grid settings-grid financial-docs-editor-grid">
+                <label>
+                  Create Date
+                  <input id="financial-docs-created-at" type="text" readonly />
+                </label>
+                <label>
+                  Status
+                  <select id="financial-docs-status-field"></select>
+                </label>
+                <label>
+                  CC *
+                  <select id="financial-docs-cc-field"></select>
+                </label>
+                <label>
+                  Date *
+                  <input id="financial-docs-date-field" type="date" />
+                </label>
+                <label>
+                  Doc Number
+                  <input id="financial-docs-doc-number-field" type="text" />
+                </label>
+                <label>
+                  Description *
+                  <input id="financial-docs-description-field" type="text" />
+                </label>
+                <label>
+                  Supplier NIF
+                  <input id="financial-docs-supplier-nif-field" type="text" maxlength="15" />
+                </label>
+                <label>
+                  Name *
+                  <input id="financial-docs-supplier-name-field" type="text" />
+                </label>
+                <label>
+                  Amount *
+                  <input id="financial-docs-amount-field" type="number" step="0.01" />
+                </label>
+                <label>
+                  VAT Amount
+                  <input id="financial-docs-vat-amount-field" type="number" step="0.01" />
+                </label>
+                <label>
+                  Payment *
+                  <select id="financial-docs-payment-field"></select>
+                </label>
+                <label>
+                  Type *
+                  <select id="financial-docs-type-field"></select>
+                </label>
+                <label>
+                  Fat *
+                  <select id="financial-docs-fat-field"></select>
+                </label>
+                <label>
+                  Category *
+                  <select id="financial-docs-category-field"></select>
+                </label>
+              </div>
+
+              <section class="settings-block">
+                <div class="bar">
+                  <h3>Attachment</h3>
+                  <div class="row-actions">
+                    <button id="financial-docs-choose-attachment" type="button" class="ghost">Choose File</button>
+                    <button id="financial-docs-download-file" type="button" class="ghost">Download</button>
+                  </div>
+                </div>
+                <p id="financial-docs-file-summary" class="auth-status">No file attached.</p>
+                <div id="financial-docs-preview" class="financial-docs-preview muted">No document preview available.</div>
+              </section>
+
+              <section class="settings-block">
+                <div class="bar">
+                  <h3>History</h3>
+                </div>
+                <div class="table-wrap compact-table-wrap">
+                  <table class="compact-table financial-docs-history-table">
+                    <thead>
+                      <tr>
+                        <th>Timestamp</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Message</th>
+                      </tr>
+                    </thead>
+                    <tbody id="financial-docs-history-rows"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <div class="actions">
+                <button id="financial-docs-save" type="button">Save</button>
+              </div>
+            </section>
           </section>
         </section>
       </section>

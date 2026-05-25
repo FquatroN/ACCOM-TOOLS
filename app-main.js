@@ -17,8 +17,8 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry"];
-const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs"];
+const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -488,6 +488,26 @@ const DEFAULT_GUESTS_SETTINGS = {
   },
 };
 
+const DEFAULT_FINANCIAL_DOCS_SETTINGS = {
+  attributes: {
+    cc: ["H", "A"],
+    payment: ["Banco", "Visa", "Cash", "Caixa", "Miguel", "Carlos", "Odete"],
+    docType: ["R", "F"],
+    fat: ["S", "N"],
+    category: ["Renda", "Alimentacao", "Utility", "Setup", "Imposto", "Financ", "Ordenados", "Outros", "Servicos"],
+    status: ["Draft", "Confirmed"],
+  },
+  drive: {
+    connected: false,
+    connectedAt: "",
+    accountEmail: "",
+    folderPath: "Financial Documents",
+    baseFolderId: "",
+  },
+};
+
+const FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT = "Possible duplicate found. Do you still want to save this document?";
+
 const GUEST_DESCRIPTION_PALETTES = {
   blue: { solid: "#d9e1f2", soft: "rgba(217, 225, 242, 0.26)" },
   pink: { solid: "#e890ab", soft: "rgba(232, 144, 171, 0.26)" },
@@ -498,6 +518,8 @@ const GUEST_DESCRIPTION_PALETTES = {
 
 const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
+  { label: "App: Backoffice", kind: "app", key: "backoffice" },
+  { label: "App: Financial Documents", kind: "app", key: "financial-docs" },
   { label: "App: Communications", kind: "app", key: "communications" },
   { label: "App: Guests", kind: "app", key: "guests" },
   { label: "App: Cash Control", kind: "app", key: "cash" },
@@ -513,6 +535,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "Settings: General", kind: "settings", key: "general" },
   { label: "Settings: Communications", kind: "settings", key: "communications" },
   { label: "Settings: Guests", kind: "settings", key: "guests" },
+  { label: "Settings: Financial Documents", kind: "settings", key: "financial-docs" },
   { label: "Settings: Cash Control", kind: "settings", key: "cash" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
   { label: "Settings: Maintenance", kind: "settings", key: "maintenance" },
@@ -874,6 +897,17 @@ const state = {
   profilesLoaded: false,
   pendingProfileFocusId: "",
   settings: clone(DEFAULT_SETTINGS),
+  financialDocsSettings: clone(DEFAULT_FINANCIAL_DOCS_SETTINGS),
+  financialDocsRows: [],
+  financialDocsLoaded: false,
+  financialDocsSettingsLoaded: false,
+  financialDocsSettingsTab: "attributes",
+  financialDocsDraft: null,
+  financialDocsAttachment: null,
+  financialDocsModalOpen: false,
+  financialDocsPreviewUrl: "",
+  financialDocsLastOpenedId: "",
+  lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
   autoRefreshTimer: null,
@@ -899,13 +933,16 @@ const state = {
 
 const els = {
   appShell: document.getElementById("app-shell"),
-  leftNav: document.querySelector(".left-nav"),
+  appLogoHome: document.getElementById("app-logo-home"),
+  leftNav: document.getElementById("main-left-nav"),
+  backofficeLeftNav: document.getElementById("backoffice-left-nav"),
   sidebarReviewSummaryCard: document.getElementById("sidebar-review-summary-card"),
   sidebarReviewSummaryStatus: document.getElementById("sidebar-review-summary-status"),
   sidebarReviewSummaryBody: document.getElementById("sidebar-review-summary-body"),
   topbar: document.querySelector(".topbar"),
   mobileMenuToggle: document.getElementById("mobile-menu-toggle"),
   navCommunications: document.getElementById("nav-communications"),
+  navFinancialDocs: document.getElementById("nav-financial-docs"),
   navGuests: document.getElementById("nav-guests"),
   navCash: document.getElementById("nav-cash"),
   navLostFound: document.getElementById("nav-lost-found"),
@@ -918,8 +955,10 @@ const els = {
   navBakery: document.getElementById("nav-bakery"),
   navLaundry: document.getElementById("nav-laundry"),
   openSettings: document.getElementById("open-settings"),
+  openBackoffice: document.getElementById("open-backoffice"),
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
+  viewFinancialDocs: document.getElementById("view-financial-docs"),
   viewGuests: document.getElementById("view-guests"),
   viewCash: document.getElementById("view-cash"),
   viewLostFound: document.getElementById("view-lost-found"),
@@ -934,6 +973,7 @@ const els = {
   settingsMenuGeneral: document.getElementById("settings-menu-general"),
   settingsMenuCommunications: document.getElementById("settings-menu-communications"),
   settingsMenuGuests: document.getElementById("settings-menu-guests"),
+  settingsMenuFinancialDocs: document.getElementById("settings-menu-financial-docs"),
   settingsMenuCash: document.getElementById("settings-menu-cash"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
   settingsMenuMaintenance: document.getElementById("settings-menu-maintenance"),
@@ -1025,6 +1065,7 @@ const els = {
   settingsViewGeneral: document.getElementById("settings-view-general"),
   settingsViewCommunications: document.getElementById("settings-view-communications"),
   settingsViewGuests: document.getElementById("settings-view-guests"),
+  settingsViewFinancialDocs: document.getElementById("settings-view-financial-docs"),
   settingsViewCash: document.getElementById("settings-view-cash"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
   settingsViewMaintenance: document.getElementById("settings-view-maintenance"),
@@ -1041,6 +1082,7 @@ const els = {
   settingsReviewsConfigPanel: document.getElementById("settings-reviews-config-panel"),
   closeSettingsGeneral: document.getElementById("close-settings-general"),
   closeSettingsGuests: document.getElementById("close-settings-guests"),
+  closeSettingsFinancialDocs: document.getElementById("close-settings-financial-docs"),
   closeSettingsAdmin: document.getElementById("close-settings-admin"),
   closeSettingsReviews: document.getElementById("close-settings-reviews"),
   closeSettingsMaintenance: document.getElementById("close-settings-maintenance"),
@@ -1051,6 +1093,66 @@ const els = {
   closeSettingsBakery: document.getElementById("close-settings-bakery"),
   closeSettingsLaundry: document.getElementById("close-settings-laundry"),
   generalSaveSettings: document.getElementById("general-save-settings"),
+  financialDocsNew: document.getElementById("financial-docs-new"),
+  financialDocsUploadParse: document.getElementById("financial-docs-upload-parse"),
+  financialDocsFilterCreatedFrom: document.getElementById("financial-docs-filter-created-from"),
+  financialDocsFilterCreatedTo: document.getElementById("financial-docs-filter-created-to"),
+  financialDocsFilterDateFrom: document.getElementById("financial-docs-filter-date-from"),
+  financialDocsFilterDateTo: document.getElementById("financial-docs-filter-date-to"),
+  financialDocsFilterSupplier: document.getElementById("financial-docs-filter-supplier"),
+  financialDocsFilterDescription: document.getElementById("financial-docs-filter-description"),
+  financialDocsFilterPayment: document.getElementById("financial-docs-filter-payment"),
+  financialDocsFilterType: document.getElementById("financial-docs-filter-type"),
+  financialDocsFilterFat: document.getElementById("financial-docs-filter-fat"),
+  financialDocsFilterCategory: document.getElementById("financial-docs-filter-category"),
+  financialDocsCount: document.getElementById("financial-docs-count"),
+  financialDocsRows: document.getElementById("financial-docs-rows"),
+  financialDocsMobileCards: document.getElementById("financial-docs-mobile-cards"),
+  financialDocsStatus: document.getElementById("financial-docs-status"),
+  financialDocsParseInput: document.getElementById("financial-docs-parse-input"),
+  financialDocsAttachmentInput: document.getElementById("financial-docs-attachment-input"),
+  financialDocsModal: document.getElementById("financial-docs-modal"),
+  financialDocsModalTitle: document.getElementById("financial-docs-modal-title"),
+  financialDocsModalStatus: document.getElementById("financial-docs-modal-status"),
+  financialDocsModalClose: document.getElementById("financial-docs-modal-close"),
+  financialDocsCreatedAt: document.getElementById("financial-docs-created-at"),
+  financialDocsStatusField: document.getElementById("financial-docs-status-field"),
+  financialDocsCcField: document.getElementById("financial-docs-cc-field"),
+  financialDocsDateField: document.getElementById("financial-docs-date-field"),
+  financialDocsDocNumberField: document.getElementById("financial-docs-doc-number-field"),
+  financialDocsDescriptionField: document.getElementById("financial-docs-description-field"),
+  financialDocsSupplierNifField: document.getElementById("financial-docs-supplier-nif-field"),
+  financialDocsSupplierNameField: document.getElementById("financial-docs-supplier-name-field"),
+  financialDocsAmountField: document.getElementById("financial-docs-amount-field"),
+  financialDocsVatAmountField: document.getElementById("financial-docs-vat-amount-field"),
+  financialDocsPaymentField: document.getElementById("financial-docs-payment-field"),
+  financialDocsTypeField: document.getElementById("financial-docs-type-field"),
+  financialDocsFatField: document.getElementById("financial-docs-fat-field"),
+  financialDocsCategoryField: document.getElementById("financial-docs-category-field"),
+  financialDocsChooseAttachment: document.getElementById("financial-docs-choose-attachment"),
+  financialDocsDownloadFile: document.getElementById("financial-docs-download-file"),
+  financialDocsFileSummary: document.getElementById("financial-docs-file-summary"),
+  financialDocsPreview: document.getElementById("financial-docs-preview"),
+  financialDocsHistoryRows: document.getElementById("financial-docs-history-rows"),
+  financialDocsSave: document.getElementById("financial-docs-save"),
+  financialDocsSettingsAttributesTab: document.getElementById("financial-docs-settings-attributes-tab"),
+  financialDocsSettingsDriveTab: document.getElementById("financial-docs-settings-drive-tab"),
+  financialDocsSettingsAttributesPanel: document.getElementById("financial-docs-settings-attributes-panel"),
+  financialDocsSettingsDrivePanel: document.getElementById("financial-docs-settings-drive-panel"),
+  financialDocsSaveSettings: document.getElementById("financial-docs-save-settings"),
+  financialDocsSettingsCc: document.getElementById("financial-docs-settings-cc"),
+  financialDocsSettingsPayment: document.getElementById("financial-docs-settings-payment"),
+  financialDocsSettingsType: document.getElementById("financial-docs-settings-type"),
+  financialDocsSettingsFat: document.getElementById("financial-docs-settings-fat"),
+  financialDocsSettingsCategory: document.getElementById("financial-docs-settings-category"),
+  financialDocsSettingsStatusValues: document.getElementById("financial-docs-settings-status-values"),
+  financialDocsDriveConnect: document.getElementById("financial-docs-drive-connect"),
+  financialDocsDriveRefresh: document.getElementById("financial-docs-drive-refresh"),
+  financialDocsDriveDisconnect: document.getElementById("financial-docs-drive-disconnect"),
+  financialDocsDriveAccount: document.getElementById("financial-docs-drive-account"),
+  financialDocsDriveFolderPath: document.getElementById("financial-docs-drive-folder-path"),
+  financialDocsDriveStatus: document.getElementById("financial-docs-drive-status"),
+  financialDocsSettingsStatus: document.getElementById("financial-docs-settings-status"),
   generalEmailProvider: document.getElementById("general-email-provider"),
   generalEmailSmtpHost: document.getElementById("general-email-smtp-host"),
   generalEmailSmtpPort: document.getElementById("general-email-smtp-port"),
@@ -1580,6 +1682,7 @@ async function init() {
   bindEvents();
   await initAuth();
   await loadAccess();
+  if (!state.financialDocsDraft) state.financialDocsDraft = emptyFinancialDocDraft();
   if (!canApp("communications") && canApp("guests")) state.currentView = "guests";
   else if (!canApp("communications") && !canApp("guests") && canApp("cash")) state.currentView = "cash";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && canApp("lost-found")) state.currentView = "lost-found";
@@ -1591,19 +1694,22 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = "financial-docs";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
+  handleFinancialDocsDriveCallbackQuery();
   if (!canAccessGeneralSettings() && canSettings("guests")) state.settingsSection = "guests";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && canSettings("cash")) state.settingsSection = "cash";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && !canSettings("laundry") && canSettings("maintenance")) state.settingsSection = "maintenance";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("cash") && canSettings("admin-users")) state.settingsSection = "admin-users";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && canSettings("financial-docs")) state.settingsSection = "financial-docs";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && canSettings("cash")) state.settingsSection = "cash";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && canSettings("shopping")) state.settingsSection = "shopping";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && canSettings("hours")) state.settingsSection = "hours";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && canSettings("bakery")) state.settingsSection = "bakery";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && canSettings("laundry")) state.settingsSection = "laundry";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && !canSettings("services") && !canSettings("shopping") && !canSettings("hours") && !canSettings("bakery") && !canSettings("laundry") && canSettings("maintenance")) state.settingsSection = "maintenance";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && canSettings("admin-users")) state.settingsSection = "admin-users";
   renderLayout();
   renderSettingsSection();
   renderCategoryFilterOptions();
@@ -1612,6 +1718,7 @@ async function init() {
   if (canApp("communications")) loadSidebarReviewSummary({ silent: true }).catch(() => {});
   await ensureCurrentViewData();
   if (canApp("guests")) loadGuestsData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canUseBackoffice()) loadFinancialDocsData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("cash")) loadCashData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("maintenance")) loadMaintenanceData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
@@ -1622,7 +1729,9 @@ async function init() {
 }
 
 function bindEvents() {
+  els.appLogoHome?.addEventListener("click", onLogoHomeClick);
   els.navCommunications.addEventListener("click", () => setView("communications"));
+  els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.navGuests?.addEventListener("click", () => setView("guests"));
   els.navCash?.addEventListener("click", () => setView("cash"));
   els.navLostFound.addEventListener("click", () => setView("lost-found"));
@@ -1640,9 +1749,11 @@ function bindEvents() {
     setReviewScreen("resume");
   });
   els.mobileMenuToggle?.addEventListener("click", toggleMobileNav);
-  els.openSettings.addEventListener("click", () => setView("settings"));
+  els.openBackoffice?.addEventListener("click", openBackofficeHome);
+  els.openSettings.addEventListener("click", openSettingsFromCurrentContext);
   els.closeSettingsGeneral?.addEventListener("click", () => setView("communications"));
   els.closeSettings.addEventListener("click", () => setView("communications"));
+  els.closeSettingsFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.closeSettingsCash?.addEventListener("click", () => setView("cash"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
   els.closeSettingsReviews.addEventListener("click", () => setView("reviews"));
@@ -1657,6 +1768,7 @@ function bindEvents() {
   els.settingsMenuGeneral?.addEventListener("click", () => setSettingsSection("general"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
   els.settingsMenuGuests?.addEventListener("click", () => setSettingsSection("guests"));
+  els.settingsMenuFinancialDocs?.addEventListener("click", () => setSettingsSection("financial-docs"));
   els.settingsMenuCash?.addEventListener("click", () => setSettingsSection("cash"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuMaintenance?.addEventListener("click", () => setSettingsSection("maintenance"));
@@ -1699,6 +1811,28 @@ function bindEvents() {
   els.shoppingSettingsCategoryColors?.addEventListener("input", onShoppingSettingsInput);
   els.shoppingSettingsCategoryColors?.addEventListener("change", onShoppingSettingsInput);
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
+  [els.financialDocsFilterCreatedFrom, els.financialDocsFilterCreatedTo, els.financialDocsFilterDateFrom, els.financialDocsFilterDateTo, els.financialDocsFilterSupplier, els.financialDocsFilterDescription].forEach((el) =>
+    el?.addEventListener("input", renderFinancialDocs)
+  );
+  [els.financialDocsFilterPayment, els.financialDocsFilterType, els.financialDocsFilterFat, els.financialDocsFilterCategory].forEach((el) =>
+    el?.addEventListener("change", renderFinancialDocs)
+  );
+  els.financialDocsNew?.addEventListener("click", () => openFinancialDocModal());
+  els.financialDocsUploadParse?.addEventListener("click", triggerFinancialDocParsePicker);
+  els.financialDocsParseInput?.addEventListener("change", onFinancialDocParsePicked);
+  els.financialDocsAttachmentInput?.addEventListener("change", onFinancialDocAttachmentPicked);
+  els.financialDocsRows?.addEventListener("click", onFinancialDocTableAction);
+  els.financialDocsMobileCards?.addEventListener("click", onFinancialDocTableAction);
+  els.financialDocsModalClose?.addEventListener("click", closeFinancialDocModal);
+  els.financialDocsChooseAttachment?.addEventListener("click", () => els.financialDocsAttachmentInput?.click());
+  els.financialDocsDownloadFile?.addEventListener("click", () => downloadFinancialDocFile());
+  els.financialDocsSave?.addEventListener("click", saveFinancialDoc);
+  els.financialDocsSettingsAttributesTab?.addEventListener("click", () => setFinancialDocsSettingsTab("attributes"));
+  els.financialDocsSettingsDriveTab?.addEventListener("click", () => setFinancialDocsSettingsTab("drive"));
+  els.financialDocsSaveSettings?.addEventListener("click", saveFinancialDocsSettings);
+  els.financialDocsDriveConnect?.addEventListener("click", connectFinancialDocsDrive);
+  els.financialDocsDriveRefresh?.addEventListener("click", refreshFinancialDocsDrive);
+  els.financialDocsDriveDisconnect?.addEventListener("click", disconnectFinancialDocsDrive);
   els.guestsTabList?.addEventListener("click", () => setGuestsScreen("list"));
   els.guestsTabDescriptions?.addEventListener("click", () => setGuestsScreen("descriptions"));
   els.guestsTabBlacklist?.addEventListener("click", () => setGuestsScreen("blacklist"));
@@ -2181,6 +2315,10 @@ function canSettings(feature) {
   return state.access.settingsFeatures.includes(clean(feature).toLowerCase());
 }
 
+function canUseBackoffice() {
+  return canApp("backoffice") && canApp("financial-docs");
+}
+
 function canAccessGeneralSettings() {
   return canSettings("general") || canSettings("communications");
 }
@@ -2246,6 +2384,9 @@ function applyInitialRouteFromUrl() {
     if (view === "maintenance" && canApp("maintenance")) {
       state.currentView = "maintenance";
     }
+    if (view === "financial-docs" && canUseBackoffice()) {
+      state.currentView = "financial-docs";
+    }
     if (view === "hours" && canApp("hours")) {
       state.currentView = "hours";
     }
@@ -2275,6 +2416,9 @@ function syncAppRoute() {
     } else if (state.currentView === "maintenance") {
       url.searchParams.set("view", "maintenance");
       url.searchParams.delete("service");
+    } else if (state.currentView === "financial-docs") {
+      url.searchParams.set("view", "financial-docs");
+      url.searchParams.delete("service");
     } else if (state.currentView === "hours") {
       url.searchParams.set("view", "hours");
       url.searchParams.delete("service");
@@ -2289,6 +2433,7 @@ function syncAppRoute() {
 
 async function setView(view) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
+  if (view === "financial-docs" && !canUseBackoffice()) return showToast("No financial documents access.", "error");
   if (view === "guests" && !canApp("guests")) return showToast("No guests access.", "error");
   if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
@@ -2301,10 +2446,16 @@ async function setView(view) {
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
+  if (state.currentView !== "settings" && state.currentView !== "financial-docs") {
+    state.lastMainView = state.currentView;
+  }
+  const previousView = state.currentView;
   state.currentView = view;
   if (view === "settings") {
-    if (canAccessGeneralSettings()) state.settingsSection = "general";
+    if (previousView === "financial-docs" && canSettings("financial-docs")) state.settingsSection = "financial-docs";
+    else if (canAccessGeneralSettings()) state.settingsSection = "general";
     else if (canSettings("guests")) state.settingsSection = "guests";
+    else if (canSettings("financial-docs")) state.settingsSection = "financial-docs";
     else if (canSettings("cash")) state.settingsSection = "cash";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
     else if (canSettings("maintenance")) state.settingsSection = "maintenance";
@@ -2335,6 +2486,9 @@ async function setView(view) {
   if (view !== "maintenance") {
     state.maintenanceEditingId = "";
     state.maintenanceEditDraft = null;
+  }
+  if (view !== "financial-docs" && state.financialDocsModalOpen) {
+    closeFinancialDocModal();
   }
   syncAppRoute();
   renderLayout();
@@ -2370,6 +2524,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "maintenance") {
     await ensureMaintenanceData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "financial-docs") {
+    await ensureFinancialDocsData();
     renderSettingsSection();
     render();
     return;
@@ -2475,6 +2635,14 @@ async function refreshCurrentViewData(reason = "timer") {
       await loadMaintenanceData({ silent: true });
       state.maintenanceLoaded = true;
       renderMaintenance();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
+    if (state.currentView === "financial-docs" && canUseBackoffice()) {
+      await loadFinancialDocsData({ silent: true });
+      state.financialDocsLoaded = true;
+      renderFinancialDocs();
+      renderLayout();
       state.lastAutoRefreshAt = now;
       return;
     }
@@ -2751,6 +2919,10 @@ async function ensureSettingsSectionData() {
     await ensureGuestsData();
     return;
   }
+  if (state.settingsSection === "financial-docs") {
+    await ensureFinancialDocsData();
+    return;
+  }
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
     return;
@@ -2796,6 +2968,8 @@ async function ensureSettingsSectionData() {
 
 function renderLayout() {
   const comm = state.currentView === "communications";
+  const financialDocs = state.currentView === "financial-docs";
+  const backofficeSettings = state.currentView === "settings" && state.settingsSection === "financial-docs";
   const guests = state.currentView === "guests";
   const cash = state.currentView === "cash";
   const lostFound = state.currentView === "lost-found";
@@ -2808,7 +2982,9 @@ function renderLayout() {
   const bakery = state.currentView === "bakery";
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
+  const backofficeMode = financialDocs || backofficeSettings;
   const canComm = canApp("communications");
+  const canFinancialDocs = canUseBackoffice();
   const canGuests = canApp("guests");
   const canCash = canApp("cash");
   const canLostFound = canApp("lost-found");
@@ -2820,10 +2996,12 @@ function renderLayout() {
   const canHours = canApp("hours");
   const canBakery = canApp("bakery");
   const canLaundry = canApp("laundry");
-  if (els.sidebarReviewSummaryCard) els.sidebarReviewSummaryCard.hidden = !canComm;
+  if (els.sidebarReviewSummaryCard) els.sidebarReviewSummaryCard.hidden = !canComm || backofficeMode || settingsMode;
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
+  els.appShell.classList.toggle("backoffice-mode", backofficeMode);
   els.navCommunications.classList.toggle("active", comm);
+  els.navFinancialDocs?.classList.toggle("active", financialDocs);
   els.navGuests?.classList.toggle("active", guests);
   els.navCash?.classList.toggle("active", cash);
   els.navLostFound.classList.toggle("active", lostFound);
@@ -2836,6 +3014,7 @@ function renderLayout() {
   els.navBakery.classList.toggle("active", bakery);
   els.navLaundry.classList.toggle("active", laundry);
   els.navCommunications.hidden = !canComm;
+  if (els.navFinancialDocs) els.navFinancialDocs.hidden = !canFinancialDocs;
   if (els.navGuests) els.navGuests.hidden = !canGuests;
   if (els.navCash) els.navCash.hidden = !canCash;
   els.navLostFound.hidden = !canLostFound;
@@ -2855,10 +3034,16 @@ function renderLayout() {
   els.navBakery.classList.toggle("has-alert", shouldShowBakeryAlert());
   els.navLaundry.classList.toggle("has-alert", shouldShowLaundryAlert());
   els.openSettings.hidden = !state.access.settingsFeatures.length;
-  els.leftNav.hidden = settingsMode;
+  if (els.openBackoffice) {
+    els.openBackoffice.hidden = !canFinancialDocs;
+    els.openBackoffice.classList.toggle("active", backofficeMode);
+  }
+  if (els.leftNav) els.leftNav.hidden = settingsMode || backofficeMode;
+  if (els.backofficeLeftNav) els.backofficeLeftNav.hidden = settingsMode || !backofficeMode;
   els.topbar.hidden = false;
   if (els.mobileMenuToggle) els.mobileMenuToggle.hidden = settingsMode || !isMobileNavLayout();
   els.viewCommunications.hidden = !comm;
+  if (els.viewFinancialDocs) els.viewFinancialDocs.hidden = !financialDocs;
   if (els.viewGuests) els.viewGuests.hidden = !guests;
   if (els.viewCash) els.viewCash.hidden = !cash;
   els.viewLostFound.hidden = !lostFound;
@@ -2874,6 +3059,7 @@ function renderLayout() {
   els.settingsMenuGeneral.hidden = !canAccessGeneralSettings();
   els.settingsMenuCommunications.hidden = !canSettings("communications");
   if (els.settingsMenuGuests) els.settingsMenuGuests.hidden = !canSettings("guests");
+  if (els.settingsMenuFinancialDocs) els.settingsMenuFinancialDocs.hidden = !canSettings("financial-docs");
   if (els.settingsMenuCash) els.settingsMenuCash.hidden = !canSettings("cash");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
   if (els.settingsMenuMaintenance) els.settingsMenuMaintenance.hidden = !canSettings("maintenance");
@@ -2887,6 +3073,7 @@ function renderLayout() {
   els.settingsMenuGeneral.classList.toggle("active", state.settingsSection === "general");
   els.settingsMenuCommunications.classList.toggle("active", state.settingsSection === "communications");
   els.settingsMenuGuests?.classList.toggle("active", state.settingsSection === "guests");
+  els.settingsMenuFinancialDocs?.classList.toggle("active", state.settingsSection === "financial-docs");
   els.settingsMenuCash?.classList.toggle("active", state.settingsSection === "cash");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
   els.settingsMenuMaintenance?.classList.toggle("active", state.settingsSection === "maintenance");
@@ -2904,6 +3091,7 @@ function renderLayout() {
 async function setSettingsSection(section) {
   if (section === "general" && !canAccessGeneralSettings()) return;
   if (section === "guests" && !canSettings("guests")) return;
+  if (section === "financial-docs" && !canSettings("financial-docs")) return;
   if (section === "communications" && !canSettings("communications")) return;
   if (section === "cash" && !canSettings("cash")) return;
   if (section === "reviews" && !canSettings("reviews")) return;
@@ -2917,11 +3105,14 @@ async function setSettingsSection(section) {
   if (section === "admin-users" && !canSettings("admin-users")) return;
   setMobileNavOpen(false);
   if (section === "guests") state.guestsSettingsLoaded = false;
+  if (section === "financial-docs") state.financialDocsSettingsLoaded = false;
   if (section === "maintenance") state.maintenanceSettingsLoaded = false;
   state.settingsSection = section === "admin-users"
     ? "admin-users"
     : section === "guests"
       ? "guests"
+    : section === "financial-docs"
+      ? "financial-docs"
     : section === "cash"
       ? "cash"
     : section === "maintenance"
@@ -2969,6 +3160,7 @@ async function ensureAdminUsersData() {
 function renderSettingsSection() {
   const isGeneral = state.settingsSection === "general" && canAccessGeneralSettings();
   const isGuests = state.settingsSection === "guests" && canSettings("guests");
+  const isFinancialDocs = state.settingsSection === "financial-docs" && canSettings("financial-docs");
   const isComm = state.settingsSection === "communications" && canSettings("communications");
   const isCash = state.settingsSection === "cash" && canSettings("cash");
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
@@ -2982,6 +3174,7 @@ function renderSettingsSection() {
   const isAdmin = state.settingsSection === "admin-users" && canSettings("admin-users");
   els.settingsViewGeneral.hidden = !isGeneral;
   if (els.settingsViewGuests) els.settingsViewGuests.hidden = !isGuests;
+  if (els.settingsViewFinancialDocs) els.settingsViewFinancialDocs.hidden = !isFinancialDocs;
   els.settingsViewCommunications.hidden = !isComm;
   if (els.settingsViewCash) els.settingsViewCash.hidden = !isCash;
   els.settingsViewReviews.hidden = !isReviews;
@@ -3267,6 +3460,8 @@ function collectProfilePayload(id) {
     return null;
   }
   const appFeatures = [];
+  if (els.profilesBody.querySelector(`[data-profile-app-backoffice="${id}"]`)?.checked) appFeatures.push("backoffice");
+  if (els.profilesBody.querySelector(`[data-profile-app-financial-docs="${id}"]`)?.checked) appFeatures.push("financial-docs");
   if (els.profilesBody.querySelector(`[data-profile-app-communications="${id}"]`)?.checked) appFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-app-guests="${id}"]`)?.checked) appFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-app-cash="${id}"]`)?.checked) appFeatures.push("cash");
@@ -3283,6 +3478,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-settings-general="${id}"]`)?.checked) settingsFeatures.push("general");
   if (els.profilesBody.querySelector(`[data-profile-settings-communications="${id}"]`)?.checked) settingsFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-settings-guests="${id}"]`)?.checked) settingsFeatures.push("guests");
+  if (els.profilesBody.querySelector(`[data-profile-settings-financial-docs="${id}"]`)?.checked) settingsFeatures.push("financial-docs");
   if (els.profilesBody.querySelector(`[data-profile-settings-cash="${id}"]`)?.checked) settingsFeatures.push("cash");
   if (els.profilesBody.querySelector(`[data-profile-settings-reviews="${id}"]`)?.checked) settingsFeatures.push("reviews");
   if (els.profilesBody.querySelector(`[data-profile-settings-maintenance="${id}"]`)?.checked) settingsFeatures.push("maintenance");
@@ -15903,7 +16099,876 @@ async function onLaundryRowClick(event) {
   openLaundryModal(record.id);
 }
 
+function emptyFinancialDocDraft() {
+  return {
+    id: "",
+    createdAt: "",
+    updatedAt: "",
+    cc: "",
+    documentDate: "",
+    docNumber: "",
+    description: "",
+    supplierNif: "",
+    supplierName: "",
+    amount: "",
+    vatAmount: "",
+    payment: "",
+    docType: "",
+    fat: "",
+    category: "",
+    status: "Draft",
+    driveFileId: "",
+    driveFolderId: "",
+    driveFileUrl: "",
+    originalFilename: "",
+    storedFilename: "",
+    mimeType: "",
+    fileSize: 0,
+    fileHash: "",
+    uploadedBy: "",
+    uploadedAt: "",
+    ocrFields: {},
+    ocrRawText: "",
+    history: [],
+  };
+}
+
+function normalizeFinancialDocsSettingsClient(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const defaults = clone(DEFAULT_FINANCIAL_DOCS_SETTINGS);
+  const attr = source.attributes && typeof source.attributes === "object" ? source.attributes : {};
+  const drive = source.drive && typeof source.drive === "object" ? source.drive : {};
+  const unique = (values, fallback) => {
+    const list = Array.isArray(values) ? values : fallback;
+    const seen = new Set();
+    return list
+      .map((item) => clean(item))
+      .filter(Boolean)
+      .filter((item) => {
+        const key = item.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  };
+  return {
+    attributes: {
+      cc: unique(attr.cc, defaults.attributes.cc),
+      payment: unique(attr.payment, defaults.attributes.payment),
+      docType: unique(attr.docType || attr.type, defaults.attributes.docType),
+      fat: unique(attr.fat, defaults.attributes.fat),
+      category: unique(attr.category, defaults.attributes.category),
+      status: unique(attr.status, defaults.attributes.status),
+    },
+    drive: {
+      connected: !!drive.connected,
+      connectedAt: clean(drive.connectedAt),
+      accountEmail: clean(drive.accountEmail),
+      folderPath: clean(drive.folderPath) || defaults.drive.folderPath,
+      baseFolderId: clean(drive.baseFolderId),
+    },
+  };
+}
+
+function normalizeFinancialDocHistoryClient(input = {}) {
+  return {
+    id: clean(input.id),
+    documentId: clean(input.documentId || input.document_id),
+    actionType: clean(input.actionType || input.action_type),
+    fieldName: clean(input.fieldName || input.field_name),
+    message: clean(input.message),
+    oldValue: input.oldValue ?? input.old_value ?? null,
+    newValue: input.newValue ?? input.new_value ?? null,
+    metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
+    createdBy: clean(input.createdBy || input.created_by),
+    createdAt: clean(input.createdAt || input.created_at),
+  };
+}
+
+function normalizeFinancialDocRowClient(input = {}) {
+  const row = {
+    ...emptyFinancialDocDraft(),
+    id: clean(input.id),
+    createdAt: clean(input.createdAt || input.created_at),
+    updatedAt: clean(input.updatedAt || input.updated_at),
+    cc: clean(input.cc),
+    documentDate: normalizeDateInput(input.documentDate || input.document_date),
+    docNumber: clean(input.docNumber || input.doc_number),
+    description: clean(input.description),
+    supplierNif: clean(input.supplierNif || input.supplier_nif),
+    supplierName: clean(input.supplierName || input.supplier_name),
+    amount: input.amount === "" ? "" : (normalizeNumber(input.amount) ?? ""),
+    vatAmount: input.vatAmount === "" || input.vatAmount === null || input.vat_amount === null ? "" : (normalizeNumber(input.vatAmount ?? input.vat_amount) ?? ""),
+    payment: clean(input.payment),
+    docType: clean(input.docType || input.document_type),
+    fat: clean(input.fat),
+    category: clean(input.category),
+    status: clean(input.status) || "Draft",
+    driveFileId: clean(input.driveFileId || input.drive_file_id),
+    driveFolderId: clean(input.driveFolderId || input.drive_folder_id),
+    driveFileUrl: clean(input.driveFileUrl || input.drive_file_url),
+    originalFilename: clean(input.originalFilename || input.original_filename),
+    storedFilename: clean(input.storedFilename || input.stored_filename),
+    mimeType: clean(input.mimeType || input.mime_type),
+    fileSize: Number(input.fileSize || input.file_size || 0),
+    fileHash: clean(input.fileHash || input.file_hash),
+    uploadedBy: clean(input.uploadedBy || input.uploaded_by),
+    uploadedAt: clean(input.uploadedAt || input.uploaded_at),
+    ocrFields: input.ocrFields && typeof input.ocrFields === "object" ? input.ocrFields : (input.ocr_fields && typeof input.ocr_fields === "object" ? input.ocr_fields : {}),
+    ocrRawText: clean(input.ocrRawText || input.ocr_raw_text),
+    history: Array.isArray(input.history) ? input.history.map(normalizeFinancialDocHistoryClient) : [],
+  };
+  return row;
+}
+
+function sortFinancialDocRows(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+    const at = Date.parse(clean(a.createdAt)) || 0;
+    const bt = Date.parse(clean(b.createdAt)) || 0;
+    return bt - at || clean(a.supplierName).localeCompare(clean(b.supplierName));
+  });
+}
+
+function setFinancialDocsStatus(message) {
+  if (els.financialDocsStatus) els.financialDocsStatus.textContent = message || "";
+}
+
+function setFinancialDocsSettingsStatus(message) {
+  if (els.financialDocsSettingsStatus) els.financialDocsSettingsStatus.textContent = message || "";
+}
+
+function setFinancialDocsDriveStatus(message) {
+  if (els.financialDocsDriveStatus) els.financialDocsDriveStatus.textContent = message || "";
+}
+
+function setFinancialDocsModalStatus(message) {
+  if (els.financialDocsModalStatus) els.financialDocsModalStatus.textContent = message || "";
+}
+
+function parseFinancialDocsCsvList(value) {
+  return String(value || "")
+    .split(/[,\n;]/)
+    .map((item) => clean(item))
+    .filter(Boolean);
+}
+
+function formatFinancialDocsCreateDate(value) {
+  return formatDateTimeShort(value) || "-";
+}
+
+function financialDocHasAttachment(row) {
+  return !!clean(row?.driveFileId || row?.storedFilename || row?.originalFilename);
+}
+
+function getFinancialDocsSettingsForApp() {
+  return normalizeFinancialDocsSettingsClient(state.financialDocsSettings);
+}
+
+function getFinancialDocSelectOptions(key) {
+  const settings = getFinancialDocsSettingsForApp();
+  if (key === "cc") return settings.attributes.cc;
+  if (key === "payment") return settings.attributes.payment;
+  if (key === "docType") return settings.attributes.docType;
+  if (key === "fat") return settings.attributes.fat;
+  if (key === "category") return settings.attributes.category;
+  if (key === "status") return settings.attributes.status;
+  return [];
+}
+
+function revokeFinancialDocPreviewUrl() {
+  if (clean(state.financialDocsPreviewUrl) && state.financialDocsPreviewUrl !== state.financialDocsAttachment?.previewUrl) {
+    try {
+      URL.revokeObjectURL(state.financialDocsPreviewUrl);
+    } catch {}
+  }
+  state.financialDocsPreviewUrl = "";
+}
+
+function isBackofficeSettingsContext() {
+  return state.currentView === "settings" && state.settingsSection === "financial-docs";
+}
+
+function onLogoHomeClick() {
+  if (state.currentView === "financial-docs" || isBackofficeSettingsContext()) {
+    const next = preferredMainAppView();
+    if (next) setView(next);
+  }
+}
+
+function openBackofficeHome() {
+  if (!canUseBackoffice()) {
+    showToast("No financial documents access.", "error");
+    return;
+  }
+  setView("financial-docs");
+}
+
+function preferredMainAppView() {
+  const candidates = [
+    state.lastMainView,
+    "communications",
+    "guests",
+    "cash",
+    "lost-found",
+    "groups",
+    "services",
+    "shopping",
+    "hours",
+    "bakery",
+    "laundry",
+    "reviews",
+    "maintenance",
+  ];
+  return candidates.find((view) => clean(view) && canApp(view)) || "";
+}
+
+function openSettingsFromCurrentContext() {
+  if (!state.access.settingsFeatures.length) {
+    showToast("No settings access.", "error");
+    return;
+  }
+  if (state.currentView === "financial-docs" && canSettings("financial-docs")) {
+    state.settingsSection = "financial-docs";
+  }
+  setView("settings");
+}
+
+async function apiBlob(path, options = {}) {
+  const { data } = await state.supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    ...(options.headers || {}),
+  };
+  const response = await fetch(path, {
+    method: options.method || "GET",
+    headers,
+  });
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const payload = await response.json();
+      message = payload.error || message;
+    } catch {}
+    throw new Error(message);
+  }
+  return response.blob();
+}
+
+async function fileToUploadPayload(file) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve(String(event?.target?.result || ""));
+    reader.onerror = () => reject(new Error("Could not read the selected file."));
+    reader.readAsDataURL(file);
+  });
+  const commaIndex = dataUrl.indexOf(",");
+  const base64Content = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
+  return {
+    base64Content,
+    originalFilename: clean(file.name) || "document.pdf",
+    mimeType: clean(file.type) || "application/pdf",
+    fileSize: Number(file.size || 0),
+  };
+}
+
+async function loadFinancialDocsData({ silent = false } = {}) {
+  try {
+    const result = await api("/api/financial-docs");
+    state.financialDocsRows = sortFinancialDocRows((Array.isArray(result?.rows) ? result.rows : []).map(normalizeFinancialDocRowClient));
+    if (result?.settings) {
+      state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result.settings);
+      state.financialDocsSettingsLoaded = true;
+    }
+    state.financialDocsLoaded = true;
+    if (!state.financialDocsDraft) state.financialDocsDraft = emptyFinancialDocDraft();
+    renderFinancialDocsSettings();
+    renderFinancialDocs();
+    if (!silent) setFinancialDocsStatus("Financial documents loaded.");
+  } catch (error) {
+    state.financialDocsRows = [];
+    state.financialDocsSettings = clone(DEFAULT_FINANCIAL_DOCS_SETTINGS);
+    state.financialDocsLoaded = false;
+    state.financialDocsSettingsLoaded = false;
+    if (!state.financialDocsDraft) state.financialDocsDraft = emptyFinancialDocDraft();
+    renderFinancialDocsSettings();
+    renderFinancialDocs();
+    if (!silent) setFinancialDocsStatus(`Failed to load financial documents: ${error.message}`);
+  }
+}
+
+async function loadFinancialDocsSettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/financial-docs-settings");
+    state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result?.settings);
+    state.financialDocsSettingsLoaded = true;
+    renderFinancialDocsSettings();
+    if (!silent) setFinancialDocsSettingsStatus("Financial documents settings loaded.");
+  } catch (error) {
+    state.financialDocsSettings = clone(DEFAULT_FINANCIAL_DOCS_SETTINGS);
+    state.financialDocsSettingsLoaded = false;
+    renderFinancialDocsSettings();
+    if (!silent) setFinancialDocsSettingsStatus(`Using default settings (${error.message}).`);
+  }
+}
+
+async function ensureFinancialDocsData() {
+  if (!state.financialDocsLoaded) {
+    await loadFinancialDocsData({ silent: true });
+  }
+  if ((state.currentView === "settings" && state.settingsSection === "financial-docs") && !state.financialDocsSettingsLoaded) {
+    await loadFinancialDocsSettings({ silent: true });
+  }
+}
+
+function getFilteredFinancialDocs() {
+  const createdFrom = clean(els.financialDocsFilterCreatedFrom?.value);
+  const createdTo = clean(els.financialDocsFilterCreatedTo?.value);
+  const dateFrom = clean(els.financialDocsFilterDateFrom?.value);
+  const dateTo = clean(els.financialDocsFilterDateTo?.value);
+  const supplierSearch = clean(els.financialDocsFilterSupplier?.value).toLowerCase();
+  const descriptionSearch = clean(els.financialDocsFilterDescription?.value).toLowerCase();
+  const payment = clean(els.financialDocsFilterPayment?.value);
+  const docType = clean(els.financialDocsFilterType?.value);
+  const fat = clean(els.financialDocsFilterFat?.value);
+  const category = clean(els.financialDocsFilterCategory?.value);
+  return state.financialDocsRows.filter((row) => {
+    const createdDate = formatDateInLisbon(row.createdAt);
+    if (createdFrom && createdDate && createdDate < createdFrom) return false;
+    if (createdTo && createdDate && createdDate > createdTo) return false;
+    if (dateFrom && clean(row.documentDate) && clean(row.documentDate) < dateFrom) return false;
+    if (dateTo && clean(row.documentDate) && clean(row.documentDate) > dateTo) return false;
+    if (supplierSearch) {
+      const hay = `${clean(row.supplierNif)} ${clean(row.supplierName)}`.toLowerCase();
+      if (!hay.includes(supplierSearch)) return false;
+    }
+    if (descriptionSearch && !clean(row.description).toLowerCase().includes(descriptionSearch)) return false;
+    if (payment && clean(row.payment) !== payment) return false;
+    if (docType && clean(row.docType) !== docType) return false;
+    if (fat && clean(row.fat) !== fat) return false;
+    if (category && clean(row.category) !== category) return false;
+    return true;
+  });
+}
+
+function renderFinancialDocsFilterOptions() {
+  const setFilterOptions = (select, values) => {
+    if (!select) return;
+    const current = clean(select.value);
+    select.innerHTML = [`<option value="">All</option>`, ...values.map((item) => `<option value="${escape(item)}">${escape(item)}</option>`)].join("");
+    if ([...values, ""].includes(current)) select.value = current;
+  };
+  setFilterOptions(els.financialDocsFilterPayment, getFinancialDocSelectOptions("payment"));
+  setFilterOptions(els.financialDocsFilterType, getFinancialDocSelectOptions("docType"));
+  setFilterOptions(els.financialDocsFilterFat, getFinancialDocSelectOptions("fat"));
+  setFilterOptions(els.financialDocsFilterCategory, getFinancialDocSelectOptions("category"));
+}
+
+function renderFinancialDocsSettingsTabs() {
+  const isAttributes = state.financialDocsSettingsTab === "attributes";
+  const isDrive = state.financialDocsSettingsTab === "drive";
+  if (els.financialDocsSettingsAttributesTab) {
+    els.financialDocsSettingsAttributesTab.classList.toggle("active-tab", isAttributes);
+    els.financialDocsSettingsAttributesTab.classList.toggle("ghost", !isAttributes);
+  }
+  if (els.financialDocsSettingsDriveTab) {
+    els.financialDocsSettingsDriveTab.classList.toggle("active-tab", isDrive);
+    els.financialDocsSettingsDriveTab.classList.toggle("ghost", !isDrive);
+  }
+  if (els.financialDocsSettingsAttributesPanel) els.financialDocsSettingsAttributesPanel.hidden = !isAttributes;
+  if (els.financialDocsSettingsDrivePanel) els.financialDocsSettingsDrivePanel.hidden = !isDrive;
+}
+
+function setFinancialDocsSettingsTab(tab) {
+  state.financialDocsSettingsTab = tab === "drive" ? "drive" : "attributes";
+  renderFinancialDocsSettingsTabs();
+}
+
+function renderFinancialDocsSettings() {
+  renderFinancialDocsSettingsTabs();
+  const settings = getFinancialDocsSettingsForApp();
+  if (els.financialDocsSettingsCc) els.financialDocsSettingsCc.value = settings.attributes.cc.join(", ");
+  if (els.financialDocsSettingsPayment) els.financialDocsSettingsPayment.value = settings.attributes.payment.join(", ");
+  if (els.financialDocsSettingsType) els.financialDocsSettingsType.value = settings.attributes.docType.join(", ");
+  if (els.financialDocsSettingsFat) els.financialDocsSettingsFat.value = settings.attributes.fat.join(", ");
+  if (els.financialDocsSettingsCategory) els.financialDocsSettingsCategory.value = settings.attributes.category.join(", ");
+  if (els.financialDocsSettingsStatusValues) els.financialDocsSettingsStatusValues.value = settings.attributes.status.join(", ");
+  if (els.financialDocsDriveAccount) els.financialDocsDriveAccount.value = settings.drive.connected ? (settings.drive.accountEmail || "Connected") : "Not connected";
+  if (els.financialDocsDriveFolderPath) els.financialDocsDriveFolderPath.value = settings.drive.folderPath || DEFAULT_FINANCIAL_DOCS_SETTINGS.drive.folderPath;
+  setFinancialDocsDriveStatus(settings.drive.connected
+    ? `Connected${settings.drive.connectedAt ? ` on ${formatDateTimeShort(settings.drive.connectedAt)}` : ""}.`
+    : "Google Drive is not connected yet.");
+  renderFinancialDocsFilterOptions();
+  renderFinancialDocEditorOptions();
+}
+
+function currentFinancialDocsSettingsPayload() {
+  return normalizeFinancialDocsSettingsClient({
+    attributes: {
+      cc: parseFinancialDocsCsvList(els.financialDocsSettingsCc?.value),
+      payment: parseFinancialDocsCsvList(els.financialDocsSettingsPayment?.value),
+      docType: parseFinancialDocsCsvList(els.financialDocsSettingsType?.value),
+      fat: parseFinancialDocsCsvList(els.financialDocsSettingsFat?.value),
+      category: parseFinancialDocsCsvList(els.financialDocsSettingsCategory?.value),
+      status: parseFinancialDocsCsvList(els.financialDocsSettingsStatusValues?.value),
+    },
+    drive: {
+      ...state.financialDocsSettings.drive,
+      folderPath: clean(els.financialDocsDriveFolderPath?.value),
+    },
+  });
+}
+
+async function saveFinancialDocsSettings() {
+  try {
+    const payload = currentFinancialDocsSettingsPayload();
+    const result = await api("/api/financial-docs-settings", {
+      method: "PUT",
+      body: {
+        attributes: payload.attributes,
+        drive: { folderPath: payload.drive.folderPath, baseFolderId: payload.drive.baseFolderId },
+      },
+    });
+    state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result?.settings);
+    state.financialDocsSettingsLoaded = true;
+    renderFinancialDocsSettings();
+    renderFinancialDocs();
+    setFinancialDocsSettingsStatus("Financial documents settings saved.");
+    showToast("Financial documents settings saved.", "success");
+  } catch (error) {
+    setFinancialDocsSettingsStatus(`Save failed: ${error.message}`);
+    showToast(`Financial documents settings save failed: ${error.message}`, "error");
+  }
+}
+
+async function connectFinancialDocsDrive() {
+  try {
+    const result = await api("/api/financial-docs-drive?action=auth-url", { method: "POST", body: {} });
+    if (!clean(result?.authUrl)) throw new Error("Could not build the Google Drive authorization URL.");
+    window.location.href = result.authUrl;
+  } catch (error) {
+    setFinancialDocsDriveStatus(`Connection failed: ${error.message}`);
+    showToast(`Google Drive connection failed: ${error.message}`, "error");
+  }
+}
+
+async function refreshFinancialDocsDrive() {
+  try {
+    const result = await api("/api/financial-docs-drive?action=refresh", { method: "POST", body: {} });
+    state.financialDocsSettings = normalizeFinancialDocsSettingsClient({ ...state.financialDocsSettings, drive: result?.drive });
+    state.financialDocsSettingsLoaded = true;
+    renderFinancialDocsSettings();
+    setFinancialDocsSettingsStatus("Drive connection refreshed.");
+    showToast("Google Drive connection refreshed.", "success");
+  } catch (error) {
+    setFinancialDocsDriveStatus(`Refresh failed: ${error.message}`);
+    showToast(`Google Drive refresh failed: ${error.message}`, "error");
+  }
+}
+
+async function disconnectFinancialDocsDrive() {
+  try {
+    const result = await api("/api/financial-docs-drive?action=disconnect", { method: "POST", body: {} });
+    state.financialDocsSettings = normalizeFinancialDocsSettingsClient({ ...state.financialDocsSettings, drive: result?.drive });
+    state.financialDocsSettingsLoaded = true;
+    renderFinancialDocsSettings();
+    showToast("Google Drive disconnected.", "success");
+  } catch (error) {
+    setFinancialDocsDriveStatus(`Disconnect failed: ${error.message}`);
+    showToast(`Google Drive disconnect failed: ${error.message}`, "error");
+  }
+}
+
+function buildFinancialDocTableRow(row) {
+  return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row">
+    <td>${escape(formatFinancialDocsCreateDate(row.createdAt))}</td>
+    <td class="center-cell">${escape(row.cc || "-")}</td>
+    <td>${escape(formatDateOnly(row.documentDate))}</td>
+    <td>${escape(row.docNumber || "-")}</td>
+    <td>${escape(row.description || "-")}</td>
+    <td>${escape(row.supplierNif || "-")}</td>
+    <td>${escape(row.supplierName || "-")}</td>
+    <td>${escape(formatMoney(row.amount || 0))}</td>
+    <td>${row.vatAmount === "" ? "-" : escape(formatMoney(row.vatAmount || 0))}</td>
+    <td>${escape(row.payment || "-")}</td>
+    <td class="center-cell">${escape(row.docType || "-")}</td>
+    <td class="center-cell">${escape(row.fat || "-")}</td>
+    <td>${escape(row.category || "-")}</td>
+    <td>${escape(row.status || "-")}</td>
+    <td class="center-cell">${financialDocHasAttachment(row) ? "Yes" : "-"}</td>
+    <td class="row-actions">
+      <button type="button" class="ghost" data-action="open-financial-doc" data-id="${escape(row.id)}">Open</button>
+      ${financialDocHasAttachment(row) ? `<button type="button" class="ghost" data-action="download-financial-doc" data-id="${escape(row.id)}">Download</button>` : ""}
+    </td>
+  </tr>`;
+}
+
+function renderFinancialDocsMobileCards(rows) {
+  if (!els.financialDocsMobileCards) return;
+  if (!rows.length) {
+    els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">No financial documents found.</div>';
+    return;
+  }
+  els.financialDocsMobileCards.innerHTML = rows.map((row) => `
+    <article class="service-mobile-card financial-doc-mobile-card" data-financial-doc-id="${escape(row.id)}">
+      <div class="service-mobile-head">
+        <strong>${escape(row.description || "Document")}</strong>
+        <span>${escape(row.status || "-")}</span>
+      </div>
+      <div class="service-mobile-grid">
+        <div><small>Create</small><strong>${escape(formatFinancialDocsCreateDate(row.createdAt))}</strong></div>
+        <div><small>Date</small><strong>${escape(formatDateOnly(row.documentDate))}</strong></div>
+        <div><small>Supplier</small><strong>${escape(row.supplierName || "-")}</strong></div>
+        <div><small>Amount</small><strong>${escape(formatMoney(row.amount || 0))}</strong></div>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="ghost" data-action="open-financial-doc" data-id="${escape(row.id)}">Open</button>
+        ${financialDocHasAttachment(row) ? `<button type="button" class="ghost" data-action="download-financial-doc" data-id="${escape(row.id)}">Download</button>` : ""}
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderFinancialDocs() {
+  if (!canUseBackoffice()) {
+    if (els.financialDocsCount) els.financialDocsCount.textContent = "0 records";
+    if (els.financialDocsRows) els.financialDocsRows.innerHTML = '<tr><td colspan="16" class="empty">Your profile has no access to Financial Documents.</td></tr>';
+    if (els.financialDocsMobileCards) els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Financial Documents.</div>';
+    return;
+  }
+  renderFinancialDocsSettings();
+  const rows = getFilteredFinancialDocs();
+  if (els.financialDocsCount) els.financialDocsCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.financialDocsRows) {
+    els.financialDocsRows.innerHTML = rows.length
+      ? rows.map(buildFinancialDocTableRow).join("")
+      : '<tr><td colspan="16" class="empty">No financial documents found.</td></tr>';
+  }
+  renderFinancialDocsMobileCards(rows);
+}
+
+function renderFinancialDocEditorOptions() {
+  const setOptions = (select, values, current) => {
+    if (!select) return;
+    select.innerHTML = `<option value=""></option>${values.map((item) => `<option value="${escape(item)}"${item === current ? " selected" : ""}>${escape(item)}</option>`).join("")}`;
+  };
+  const draft = state.financialDocsDraft || emptyFinancialDocDraft();
+  setOptions(els.financialDocsCcField, getFinancialDocSelectOptions("cc"), draft.cc);
+  setOptions(els.financialDocsPaymentField, getFinancialDocSelectOptions("payment"), draft.payment);
+  setOptions(els.financialDocsTypeField, getFinancialDocSelectOptions("docType"), draft.docType);
+  setOptions(els.financialDocsFatField, getFinancialDocSelectOptions("fat"), draft.fat);
+  setOptions(els.financialDocsCategoryField, getFinancialDocSelectOptions("category"), draft.category);
+  setOptions(els.financialDocsStatusField, getFinancialDocSelectOptions("status"), draft.status || "Draft");
+}
+
+function renderFinancialDocHistory() {
+  if (!els.financialDocsHistoryRows) return;
+  const history = Array.isArray(state.financialDocsDraft?.history) ? state.financialDocsDraft.history : [];
+  if (!history.length) {
+    els.financialDocsHistoryRows.innerHTML = '<tr><td colspan="4" class="muted">No history yet.</td></tr>';
+    return;
+  }
+  els.financialDocsHistoryRows.innerHTML = history.map((item) => `
+    <tr>
+      <td>${escape(formatDateTimeShort(item.createdAt))}</td>
+      <td>${escape(item.createdBy || "-")}</td>
+      <td>${escape(item.actionType || "-")}</td>
+      <td>${escape(item.message || "-")}</td>
+    </tr>
+  `).join("");
+}
+
+function renderFinancialDocAttachmentSummary() {
+  const draft = state.financialDocsDraft || emptyFinancialDocDraft();
+  const attachment = state.financialDocsAttachment;
+  const summary = attachment
+    ? `${attachment.upload.originalFilename} (${attachment.upload.mimeType || "file"}, ${attachment.upload.fileSize || 0} bytes)`
+    : financialDocHasAttachment(draft)
+      ? `${draft.storedFilename || draft.originalFilename || "File attached"}`
+      : "No file attached.";
+  if (els.financialDocsFileSummary) els.financialDocsFileSummary.textContent = summary;
+  if (els.financialDocsDownloadFile) els.financialDocsDownloadFile.disabled = !attachment && !clean(draft.driveFileId);
+}
+
+function renderFinancialDocEditor() {
+  const draft = state.financialDocsDraft || emptyFinancialDocDraft();
+  if (els.financialDocsModalTitle) els.financialDocsModalTitle.textContent = clean(draft.id) ? "Financial Document Detail" : "New Financial Document";
+  if (els.financialDocsCreatedAt) els.financialDocsCreatedAt.value = clean(draft.createdAt) ? formatFinancialDocsCreateDate(draft.createdAt) : formatFinancialDocsCreateDate(new Date().toISOString());
+  if (els.financialDocsDateField) els.financialDocsDateField.value = clean(draft.documentDate);
+  if (els.financialDocsDocNumberField) els.financialDocsDocNumberField.value = clean(draft.docNumber);
+  if (els.financialDocsDescriptionField) els.financialDocsDescriptionField.value = clean(draft.description);
+  if (els.financialDocsSupplierNifField) els.financialDocsSupplierNifField.value = clean(draft.supplierNif);
+  if (els.financialDocsSupplierNameField) els.financialDocsSupplierNameField.value = clean(draft.supplierName);
+  if (els.financialDocsAmountField) els.financialDocsAmountField.value = draft.amount === "" ? "" : String(draft.amount);
+  if (els.financialDocsVatAmountField) els.financialDocsVatAmountField.value = draft.vatAmount === "" ? "" : String(draft.vatAmount);
+  renderFinancialDocEditorOptions();
+  renderFinancialDocAttachmentSummary();
+  renderFinancialDocHistory();
+}
+
+async function renderFinancialDocPreview() {
+  if (!els.financialDocsPreview) return;
+  revokeFinancialDocPreviewUrl();
+  const draft = state.financialDocsDraft || emptyFinancialDocDraft();
+  els.financialDocsPreview.innerHTML = '<div class="muted">No document preview available.</div>';
+  if (state.financialDocsAttachment?.previewUrl) {
+    state.financialDocsPreviewUrl = state.financialDocsAttachment.previewUrl;
+    const mime = clean(state.financialDocsAttachment.upload?.mimeType);
+    if (mime.startsWith("image/")) {
+      els.financialDocsPreview.innerHTML = `<img class="financial-docs-preview-image" src="${escape(state.financialDocsPreviewUrl)}" alt="Document preview" />`;
+    } else {
+      els.financialDocsPreview.innerHTML = `<iframe class="financial-docs-preview-frame" src="${escape(state.financialDocsPreviewUrl)}" title="Document preview"></iframe>`;
+    }
+    return;
+  }
+  if (!clean(draft.driveFileId)) return;
+  try {
+    const blob = await apiBlob(`/api/financial-docs-file?id=${encodeURIComponent(draft.id)}`);
+    state.financialDocsPreviewUrl = URL.createObjectURL(blob);
+    const mime = clean(blob.type || draft.mimeType);
+    if (mime.startsWith("image/")) {
+      els.financialDocsPreview.innerHTML = `<img class="financial-docs-preview-image" src="${escape(state.financialDocsPreviewUrl)}" alt="Document preview" />`;
+    } else {
+      els.financialDocsPreview.innerHTML = `<iframe class="financial-docs-preview-frame" src="${escape(state.financialDocsPreviewUrl)}" title="Document preview"></iframe>`;
+    }
+  } catch (error) {
+    els.financialDocsPreview.innerHTML = `<div class="muted">${escape(error.message)}</div>`;
+  }
+}
+
+async function loadFinancialDocDetail(id) {
+  const result = await api(`/api/financial-docs?id=${encodeURIComponent(id)}`);
+  if (result?.settings) state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result.settings);
+  return normalizeFinancialDocRowClient(result?.row);
+}
+
+async function openFinancialDocModal(id = "", options = {}) {
+  try {
+    const { seedRow = null, preserveAttachment = false } = options || {};
+    setFinancialDocsModalStatus("");
+    if (!preserveAttachment) state.financialDocsAttachment = null;
+    state.financialDocsLastOpenedId = clean(id);
+    state.financialDocsDraft = clean(id)
+      ? await loadFinancialDocDetail(id)
+      : normalizeFinancialDocRowClient(seedRow || emptyFinancialDocDraft());
+    state.financialDocsModalOpen = true;
+    if (els.financialDocsModal) els.financialDocsModal.hidden = false;
+    document.body.classList.add("modal-open");
+    renderFinancialDocEditor();
+    await renderFinancialDocPreview();
+  } catch (error) {
+    showToast(`Could not load financial document: ${error.message}`, "error");
+  }
+}
+
+function closeFinancialDocModal() {
+  state.financialDocsModalOpen = false;
+  if (state.financialDocsAttachment?.previewUrl) {
+    try {
+      URL.revokeObjectURL(state.financialDocsAttachment.previewUrl);
+    } catch {}
+  }
+  state.financialDocsAttachment = null;
+  if (els.financialDocsAttachmentInput) els.financialDocsAttachmentInput.value = "";
+  if (els.financialDocsParseInput) els.financialDocsParseInput.value = "";
+  revokeFinancialDocPreviewUrl();
+  if (els.financialDocsModal) els.financialDocsModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function financialDocDraftFromInputs() {
+  const current = state.financialDocsDraft || emptyFinancialDocDraft();
+  return normalizeFinancialDocRowClient({
+    ...current,
+    cc: els.financialDocsCcField?.value,
+    documentDate: els.financialDocsDateField?.value,
+    docNumber: els.financialDocsDocNumberField?.value,
+    description: els.financialDocsDescriptionField?.value,
+    supplierNif: els.financialDocsSupplierNifField?.value,
+    supplierName: els.financialDocsSupplierNameField?.value,
+    amount: clean(els.financialDocsAmountField?.value) === "" ? "" : normalizeNumber(els.financialDocsAmountField?.value),
+    vatAmount: clean(els.financialDocsVatAmountField?.value) === "" ? "" : normalizeNumber(els.financialDocsVatAmountField?.value),
+    payment: els.financialDocsPaymentField?.value,
+    docType: els.financialDocsTypeField?.value,
+    fat: els.financialDocsFatField?.value,
+    category: els.financialDocsCategoryField?.value,
+    status: els.financialDocsStatusField?.value || "Draft",
+  });
+}
+
+function triggerFinancialDocParsePicker() {
+  els.financialDocsParseInput?.click();
+}
+
+async function onFinancialDocParsePicked(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    setFinancialDocsStatus("Parsing document...");
+    const upload = await fileToUploadPayload(file);
+    const result = await api("/api/financial-docs-parse", {
+      method: "POST",
+      body: { file: upload },
+    });
+    const seedRow = normalizeFinancialDocRowClient({
+      ...emptyFinancialDocDraft(),
+      ...(result?.row || {}),
+      ocrFields: result?.ocrFields || {},
+      ocrRawText: clean(result?.ocrRawText),
+      status: clean(result?.row?.status) || "Draft",
+    });
+    const previewUrl = URL.createObjectURL(file);
+    state.financialDocsAttachment = { file, upload, previewUrl };
+    await openFinancialDocModal("", { seedRow, preserveAttachment: true });
+    setFinancialDocsModalStatus(clean(result?.notes) || "Draft values extracted with OCR/AI.");
+    setFinancialDocsStatus("Document parsed.");
+  } catch (error) {
+    setFinancialDocsStatus(`Parse failed: ${error.message}`);
+    showToast(`Financial document parse failed: ${error.message}`, "error");
+  } finally {
+    if (els.financialDocsParseInput) els.financialDocsParseInput.value = "";
+  }
+}
+
+async function onFinancialDocAttachmentPicked(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const upload = await fileToUploadPayload(file);
+    const previewUrl = URL.createObjectURL(file);
+    if (state.financialDocsAttachment?.previewUrl) {
+      try { URL.revokeObjectURL(state.financialDocsAttachment.previewUrl); } catch {}
+    }
+    state.financialDocsAttachment = { file, upload, previewUrl };
+    renderFinancialDocAttachmentSummary();
+    await renderFinancialDocPreview();
+  } catch (error) {
+    setFinancialDocsModalStatus(`Attachment failed: ${error.message}`);
+  } finally {
+    if (els.financialDocsAttachmentInput) els.financialDocsAttachmentInput.value = "";
+  }
+}
+
+async function saveFinancialDocRequest(payload, isUpdate, id) {
+  return isUpdate
+    ? api(`/api/financial-docs?id=${encodeURIComponent(id)}`, { method: "PUT", body: payload })
+    : api("/api/financial-docs", { method: "POST", body: payload });
+}
+
+async function saveFinancialDoc() {
+  const draft = financialDocDraftFromInputs();
+  const isUpdate = !!clean(draft.id);
+  const payload = {
+    cc: draft.cc,
+    documentDate: draft.documentDate,
+    docNumber: draft.docNumber,
+    description: draft.description,
+    supplierNif: draft.supplierNif,
+    supplierName: draft.supplierName,
+    amount: draft.amount,
+    vatAmount: draft.vatAmount === "" ? "" : draft.vatAmount,
+    payment: draft.payment,
+    docType: draft.docType,
+    fat: draft.fat,
+    category: draft.category,
+    status: draft.status,
+    ocrFields: draft.ocrFields || {},
+    ocrRawText: clean(draft.ocrRawText),
+  };
+  if (state.financialDocsAttachment?.upload) payload.attachmentUpload = state.financialDocsAttachment.upload;
+  try {
+    setFinancialDocsModalStatus("Saving...");
+    let result;
+    try {
+      result = await saveFinancialDocRequest(payload, isUpdate, draft.id);
+    } catch (error) {
+      if (!/Possible duplicate found/i.test(error.message)) throw error;
+      if (!window.confirm(FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT)) {
+        setFinancialDocsModalStatus("Save canceled.");
+        return;
+      }
+      result = await saveFinancialDocRequest({ ...payload, confirmDuplicate: true }, isUpdate, draft.id);
+    }
+    const savedRow = normalizeFinancialDocRowClient(result?.row);
+    state.financialDocsRows = sortFinancialDocRows([
+      savedRow,
+      ...state.financialDocsRows.filter((row) => row.id !== savedRow.id),
+    ]);
+    state.financialDocsDraft = savedRow;
+    state.financialDocsAttachment = null;
+    renderFinancialDocs();
+    renderFinancialDocEditor();
+    await renderFinancialDocPreview();
+    setFinancialDocsModalStatus("Document saved.");
+    setFinancialDocsStatus("Financial document saved.");
+    showToast("Financial document saved.", "success");
+  } catch (error) {
+    setFinancialDocsModalStatus(`Save failed: ${error.message}`);
+    showToast(`Financial document save failed: ${error.message}`, "error");
+  }
+}
+
+async function downloadFinancialDocFile(rowOverride = null) {
+  const draft = rowOverride ? normalizeFinancialDocRowClient(rowOverride) : (state.financialDocsDraft || emptyFinancialDocDraft());
+  try {
+    if (!rowOverride && state.financialDocsAttachment?.file) {
+      downloadBlob(state.financialDocsAttachment.upload.originalFilename || "document.pdf", state.financialDocsAttachment.file, state.financialDocsAttachment.upload.mimeType || "application/pdf");
+      return;
+    }
+    if (!clean(draft.id)) return;
+    const blob = await apiBlob(`/api/financial-docs-file?id=${encodeURIComponent(draft.id)}&download=1`);
+    downloadBlob(draft.storedFilename || draft.originalFilename || "document.pdf", blob, blob.type || draft.mimeType || "application/octet-stream");
+  } catch (error) {
+    showToast(`Download failed: ${error.message}`, "error");
+  }
+}
+
+function onFinancialDocTableAction(event) {
+  const button = event.target.closest("button[data-action]");
+  if (button) {
+    const action = clean(button.dataset.action);
+    const id = clean(button.dataset.id);
+    if (action === "open-financial-doc") {
+      openFinancialDocModal(id);
+      return;
+    }
+    if (action === "download-financial-doc") {
+      const row = state.financialDocsRows.find((item) => item.id === id);
+      if (!row) return;
+      downloadFinancialDocFile(row);
+    }
+    return;
+  }
+  const row = event.target.closest("[data-financial-doc-id]");
+  if (!row) return;
+  openFinancialDocModal(clean(row.dataset.financialDocId));
+}
+
+function handleFinancialDocsDriveCallbackQuery() {
+  try {
+    const url = new URL(window.location.href);
+    const stateValue = clean(url.searchParams.get("fd_drive"));
+    const message = clean(url.searchParams.get("message"));
+    if (!stateValue) return;
+    url.searchParams.delete("fd_drive");
+    url.searchParams.delete("message");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    if (stateValue === "connected") {
+      state.currentView = "settings";
+      if (canSettings("financial-docs")) state.settingsSection = "financial-docs";
+      loadFinancialDocsSettings({ silent: true }).catch(() => {});
+      showToast("Google Drive connected.", "success");
+      return;
+    }
+    showToast(message || "Google Drive connection failed.", "error");
+  } catch {}
+}
+
 function render() {
+  if (state.currentView === "financial-docs") {
+    renderFinancialDocs();
+    return;
+  }
   if (state.currentView === "guests") {
     renderGuests();
     return;
