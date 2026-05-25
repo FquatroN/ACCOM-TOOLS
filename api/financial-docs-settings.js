@@ -1,6 +1,7 @@
 const { parseBody, requireFeature, sendError } = require("./_supabase");
 const {
   loadFinancialDocsSettings,
+  redirectUri,
   saveFinancialDocsSettings,
   safeFinancialDocsSettings,
 } = require("./_financial-docs-service");
@@ -11,7 +12,8 @@ module.exports = async function handler(req, res) {
     await requireFeature(req, "settings", "financial-docs");
     if (req.method === "GET") {
       const settings = await loadFinancialDocsSettings();
-      res.status(200).json({ settings: safeFinancialDocsSettings(settings) });
+      const safeSettings = safeFinancialDocsSettings(settings);
+      res.status(200).json({ settings: { ...safeSettings, drive: { ...safeSettings.drive, redirectUri: redirectUri(req) } } });
       return;
     }
     if (req.method === "PUT") {
@@ -27,7 +29,8 @@ module.exports = async function handler(req, res) {
         },
       });
       const saved = await saveFinancialDocsSettings(next);
-      res.status(200).json({ settings: safeFinancialDocsSettings(saved) });
+      const safeSettings = safeFinancialDocsSettings(saved);
+      res.status(200).json({ settings: { ...safeSettings, drive: { ...safeSettings.drive, redirectUri: redirectUri(req) } } });
       return;
     }
     res.status(405).json({ error: "Method not allowed." });

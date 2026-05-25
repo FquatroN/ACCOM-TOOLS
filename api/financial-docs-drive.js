@@ -61,7 +61,7 @@ module.exports = async function handler(req, res) {
 
     if (req.method === "GET" && action === "status") {
       const settings = await loadFinancialDocsSettings();
-      res.status(200).json({ drive: { ...settings.drive, refreshToken: "", accessToken: "", tokenExpiresAt: "", oauthState: "" } });
+      res.status(200).json({ drive: { ...settings.drive, refreshToken: "", accessToken: "", tokenExpiresAt: "", oauthState: "", redirectUri: redirectUri(req) } });
       return;
     }
 
@@ -114,7 +114,7 @@ module.exports = async function handler(req, res) {
           baseFolderId: "",
         },
       });
-      res.status(200).json({ drive: saved.drive });
+      res.status(200).json({ drive: { ...saved.drive, redirectUri: redirectUri(req) } });
       return;
     }
 
@@ -130,7 +130,7 @@ module.exports = async function handler(req, res) {
           connected: true,
         },
       });
-      res.status(200).json({ drive: { ...saved.drive, refreshToken: "", accessToken: "", tokenExpiresAt: "", oauthState: "" } });
+      res.status(200).json({ drive: { ...saved.drive, refreshToken: "", accessToken: "", tokenExpiresAt: "", oauthState: "", redirectUri: redirectUri(req) } });
       return;
     }
 

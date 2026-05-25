@@ -503,6 +503,7 @@ const DEFAULT_FINANCIAL_DOCS_SETTINGS = {
     accountEmail: "",
     folderPath: "Financial Documents",
     baseFolderId: "",
+    redirectUri: "",
   },
 };
 
@@ -1153,6 +1154,7 @@ const els = {
   financialDocsDriveAccount: document.getElementById("financial-docs-drive-account"),
   financialDocsDriveFolderPath: document.getElementById("financial-docs-drive-folder-path"),
   financialDocsDriveStatus: document.getElementById("financial-docs-drive-status"),
+  financialDocsDriveRedirect: document.getElementById("financial-docs-drive-redirect"),
   financialDocsSettingsStatus: document.getElementById("financial-docs-settings-status"),
   generalEmailProvider: document.getElementById("general-email-provider"),
   generalEmailSmtpHost: document.getElementById("general-email-smtp-host"),
@@ -16168,6 +16170,7 @@ function normalizeFinancialDocsSettingsClient(input = {}) {
       accountEmail: clean(drive.accountEmail),
       folderPath: clean(drive.folderPath) || defaults.drive.folderPath,
       baseFolderId: clean(drive.baseFolderId),
+      redirectUri: clean(drive.redirectUri),
     },
   };
 }
@@ -16241,6 +16244,10 @@ function setFinancialDocsSettingsStatus(message) {
 
 function setFinancialDocsDriveStatus(message) {
   if (els.financialDocsDriveStatus) els.financialDocsDriveStatus.textContent = message || "";
+}
+
+function setFinancialDocsDriveRedirect(message) {
+  if (els.financialDocsDriveRedirect) els.financialDocsDriveRedirect.textContent = message || "";
 }
 
 function setFinancialDocsModalStatus(message) {
@@ -16500,6 +16507,7 @@ function renderFinancialDocsSettings() {
   setFinancialDocsDriveStatus(settings.drive.connected
     ? `Connected${settings.drive.connectedAt ? ` on ${formatDateTimeShort(settings.drive.connectedAt)}` : ""}.`
     : "Google Drive is not connected yet.");
+  setFinancialDocsDriveRedirect(settings.drive.redirectUri ? `Redirect URI: ${settings.drive.redirectUri}` : "");
   renderFinancialDocsFilterOptions();
   renderFinancialDocEditorOptions();
 }
@@ -16546,10 +16554,22 @@ async function saveFinancialDocsSettings() {
 async function connectFinancialDocsDrive() {
   try {
     const result = await api("/api/financial-docs-drive?action=auth-url", { method: "POST", body: {} });
+    if (result?.redirectUri) {
+      state.financialDocsSettings = normalizeFinancialDocsSettingsClient({
+        ...state.financialDocsSettings,
+        drive: {
+          ...(state.financialDocsSettings?.drive || {}),
+          redirectUri: result.redirectUri,
+        },
+      });
+      renderFinancialDocsSettings();
+    }
     if (!clean(result?.authUrl)) throw new Error("Could not build the Google Drive authorization URL.");
     window.location.href = result.authUrl;
   } catch (error) {
     setFinancialDocsDriveStatus(`Connection failed: ${error.message}`);
+    const redirectText = clean(getFinancialDocsSettingsForApp().drive.redirectUri);
+    if (redirectText) setFinancialDocsDriveRedirect(`Redirect URI: ${redirectText}`);
     showToast(`Google Drive connection failed: ${error.message}`, "error");
   }
 }
