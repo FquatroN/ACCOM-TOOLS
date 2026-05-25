@@ -36,7 +36,19 @@ function appBaseUrl(req) {
 }
 
 function redirectUri(req) {
-  return cleanText(process.env.GOOGLE_DRIVE_REDIRECT_URI) || `${appBaseUrl(req)}/api/financial-docs-drive`;
+  const driveRedirect = cleanText(process.env.GOOGLE_DRIVE_REDIRECT_URI);
+  if (driveRedirect) return driveRedirect;
+  const sharedGoogleRedirect = cleanText(process.env.GOOGLE_REDIRECT_URI);
+  if (sharedGoogleRedirect) {
+    try {
+      const url = new URL(sharedGoogleRedirect);
+      url.pathname = "/api/financial-docs-drive";
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    } catch {}
+  }
+  return `${appBaseUrl(req)}/api/financial-docs-drive`;
 }
 
 async function loadFinancialDocsSettingsRecord() {

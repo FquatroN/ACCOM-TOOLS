@@ -7,6 +7,7 @@ const {
   exchangeCodeForDriveTokens,
   loadDriveAccountEmail,
   loadFinancialDocsSettings,
+  redirectUri,
   refreshDriveAccessToken,
   saveFinancialDocsSettings,
 } = require("./_financial-docs-service");
@@ -80,17 +81,20 @@ module.exports = async function handler(req, res) {
         error.statusCode = 500;
         throw error;
       }
-      const redirectUri = cleanText(process.env.GOOGLE_DRIVE_REDIRECT_URI) || `${cleanText(req.headers["x-forwarded-proto"]) || (req.headers.host?.includes("localhost") ? "http" : "https")}://${req.headers.host}/api/financial-docs-drive`;
       const params = new URLSearchParams({
         client_id: clientId,
-        redirect_uri: redirectUri,
+        redirect_uri: redirectUri(req),
         response_type: "code",
         scope: GOOGLE_DRIVE_SCOPE,
         access_type: "offline",
         prompt: "consent",
         state: oauthState,
       });
-      res.status(200).json({ authUrl: `${GOOGLE_AUTH_URL}?${params.toString()}`, drive: saved.drive });
+      res.status(200).json({
+        authUrl: `${GOOGLE_AUTH_URL}?${params.toString()}`,
+        redirectUri: redirectUri(req),
+        drive: saved.drive,
+      });
       return;
     }
 
