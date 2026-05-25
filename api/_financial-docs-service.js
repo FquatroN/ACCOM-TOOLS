@@ -40,7 +40,7 @@ function redirectUri(req) {
   if (sharedGoogleRedirect) return sharedGoogleRedirect;
   const driveRedirect = cleanText(process.env.GOOGLE_DRIVE_REDIRECT_URI);
   if (driveRedirect) return driveRedirect;
-  return `${appBaseUrl(req)}/api/financial-docs-drive`;
+  return `${appBaseUrl(req)}/api/google-business`;
 }
 
 async function loadFinancialDocsSettingsRecord() {
