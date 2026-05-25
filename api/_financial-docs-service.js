@@ -39,15 +39,7 @@ function redirectUri(req) {
   const driveRedirect = cleanText(process.env.GOOGLE_DRIVE_REDIRECT_URI);
   if (driveRedirect) return driveRedirect;
   const sharedGoogleRedirect = cleanText(process.env.GOOGLE_REDIRECT_URI);
-  if (sharedGoogleRedirect) {
-    try {
-      const url = new URL(sharedGoogleRedirect);
-      url.pathname = "/api/financial-docs-drive";
-      url.search = "";
-      url.hash = "";
-      return url.toString();
-    } catch {}
-  }
+  if (sharedGoogleRedirect) return sharedGoogleRedirect;
   return `${appBaseUrl(req)}/api/financial-docs-drive`;
 }
 

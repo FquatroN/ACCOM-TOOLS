@@ -8,6 +8,12 @@ const {
   sanitizeReviewInput,
   sendError,
 } = require("./_supabase");
+const {
+  exchangeCodeForDriveTokens,
+  loadDriveAccountEmail,
+  loadFinancialDocsSettings,
+  saveFinancialDocsSettings,
+} = require("./_financial-docs-service");
 
 const SETTINGS_KEY = "reviews";
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage";
@@ -555,6 +561,40 @@ module.exports = async function handler(req, res) {
     if (req.method === "GET" && req.query?.code && req.query?.state) {
       const code = cleanText(req.query.code);
       const state = cleanText(req.query.state);
+      const financialDocsSettings = await loadFinancialDocsSettings();
+      if (state && state === cleanText(financialDocsSettings.drive.oauthState)) {
+        const tokenPayload = await exchangeCodeForDriveTokens(req, code);
+        const refreshToken = cleanText(tokenPayload.refresh_token || financialDocsSettings.drive.refreshToken);
+        if (!refreshToken) {
+          const error = new Error("Google did not return a refresh token. Please reconnect and approve offline access.");
+          error.statusCode = 400;
+          throw error;
+        }
+        const tempSettings = await saveFinancialDocsSettings({
+          ...financialDocsSettings,
+          drive: {
+            ...financialDocsSettings.drive,
+            oauthState: "",
+            refreshToken,
+            accessToken: cleanText(tokenPayload.access_token),
+            tokenExpiresAt: new Date(Date.now() + (Number(tokenPayload.expires_in) || 3600) * 1000).toISOString(),
+            connectedAt: new Date().toISOString(),
+            connected: true,
+          },
+        });
+        const email = await loadDriveAccountEmail(cleanText(tempSettings.drive.accessToken)).catch(() => "");
+        await saveFinancialDocsSettings({
+          ...tempSettings,
+          drive: {
+            ...tempSettings.drive,
+            accountEmail: email,
+            connected: true,
+          },
+        });
+        res.writeHead(302, { Location: "/index.html?fd_drive=connected" });
+        res.end();
+        return;
+      }
       const { payload } = await loadSettingsPayload();
       const google = payload.google && typeof payload.google === "object" ? payload.google : {};
       if (!state || state !== cleanText(google.oauthState)) {
@@ -712,6 +752,14 @@ module.exports = async function handler(req, res) {
     res.status(405).json({ error: "Method/action not allowed." });
   } catch (error) {
     if (req.query?.code && req.query?.state && !res.headersSent) {
+      try {
+        const financialDocsSettings = await loadFinancialDocsSettings();
+        if (cleanText(req.query.state) === cleanText(financialDocsSettings.drive.oauthState)) {
+          res.writeHead(302, { Location: `/index.html?fd_drive=failed&message=${encodeURIComponent(error.message || "Google Drive connection failed")}` });
+          res.end();
+          return;
+        }
+      } catch {}
       res.writeHead(302, { Location: `/index.html?google=failed&message=${encodeURIComponent(error.message || "Google connection failed")}` });
       res.end();
       return;
