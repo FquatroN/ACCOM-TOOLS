@@ -36,10 +36,10 @@ function appBaseUrl(req) {
 }
 
 function redirectUri(req) {
-  const driveRedirect = cleanText(process.env.GOOGLE_DRIVE_REDIRECT_URI);
-  if (driveRedirect) return driveRedirect;
   const sharedGoogleRedirect = cleanText(process.env.GOOGLE_REDIRECT_URI);
   if (sharedGoogleRedirect) return sharedGoogleRedirect;
+  const driveRedirect = cleanText(process.env.GOOGLE_DRIVE_REDIRECT_URI);
+  if (driveRedirect) return driveRedirect;
   return `${appBaseUrl(req)}/api/financial-docs-drive`;
 }
 
