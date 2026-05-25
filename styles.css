@@ -50,7 +50,15 @@ body {
   gap: 0.3rem;
 }
 
+.app-layout.backoffice-mode {
+  grid-template-columns: 1fr;
+}
+
 .app-layout.settings-mode .left-rail {
+  display: none !important;
+}
+
+.app-layout.backoffice-mode .left-rail {
   display: none !important;
 }
 
@@ -203,6 +211,11 @@ body {
   align-content: start;
   align-items: stretch;
   align-self: start;
+}
+
+.app-layout.backoffice-mode .app-main {
+  max-width: 100%;
+  width: 100%;
 }
 
 .app-layout.settings-mode .app-main {
@@ -4589,6 +4602,23 @@ select:disabled {
   color: var(--muted);
 }
 
+.backoffice-top-nav {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.backoffice-top-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.backoffice-top-links .nav-link {
+  width: auto;
+  min-width: 10rem;
+}
+
 .session-box .icon-btn.active {
   background: rgba(16, 37, 63, 0.12);
   color: var(--ink);
@@ -4708,5 +4738,15 @@ select:disabled {
 
   .financial-docs-preview-frame {
     min-height: 20rem;
+  }
+
+  .backoffice-top-links {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .backoffice-top-links .nav-link {
+    width: 100%;
+    min-width: 0;
   }
 }

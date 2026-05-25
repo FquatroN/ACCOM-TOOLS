@@ -935,7 +935,7 @@ const els = {
   appShell: document.getElementById("app-shell"),
   appLogoHome: document.getElementById("app-logo-home"),
   leftNav: document.getElementById("main-left-nav"),
-  backofficeLeftNav: document.getElementById("backoffice-left-nav"),
+  backofficeTopNav: document.getElementById("backoffice-top-nav"),
   sidebarReviewSummaryCard: document.getElementById("sidebar-review-summary-card"),
   sidebarReviewSummaryStatus: document.getElementById("sidebar-review-summary-status"),
   sidebarReviewSummaryBody: document.getElementById("sidebar-review-summary-body"),
@@ -3039,7 +3039,7 @@ function renderLayout() {
     els.openBackoffice.classList.toggle("active", backofficeMode);
   }
   if (els.leftNav) els.leftNav.hidden = settingsMode || backofficeMode;
-  if (els.backofficeLeftNav) els.backofficeLeftNav.hidden = settingsMode || !backofficeMode;
+  if (els.backofficeTopNav) els.backofficeTopNav.hidden = settingsMode || !backofficeMode;
   els.topbar.hidden = false;
   if (els.mobileMenuToggle) els.mobileMenuToggle.hidden = settingsMode || !isMobileNavLayout();
   els.viewCommunications.hidden = !comm;
