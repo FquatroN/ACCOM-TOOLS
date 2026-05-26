@@ -4697,28 +4697,42 @@ select:disabled {
 
 .financial-docs-table th:nth-child(3),
 .financial-docs-table td:nth-child(3) {
-  min-width: 74px;
-  width: 74px;
+  min-width: 96px;
+  width: 96px;
 }
 
 .financial-docs-table th:nth-child(4),
 .financial-docs-table td:nth-child(4) {
-  min-width: 92px;
-  width: 92px;
+  min-width: 96px;
+  width: 96px;
+}
+
+.financial-docs-table th:nth-child(6),
+.financial-docs-table td:nth-child(6) {
+  min-width: 200px;
+  width: 200px;
 }
 
 .financial-docs-table th:nth-child(7),
 .financial-docs-table td:nth-child(7),
-.financial-docs-table th:nth-child(8),
-.financial-docs-table td:nth-child(8),
-.financial-docs-table th:nth-child(9),
-.financial-docs-table td:nth-child(9),
 .financial-docs-table th:nth-child(10),
 .financial-docs-table td:nth-child(10),
 .financial-docs-table th:nth-child(13),
 .financial-docs-table td:nth-child(13) {
-  min-width: 84px;
-  width: 84px;
+  min-width: 96px;
+  width: 96px;
+}
+
+.financial-docs-table th:nth-child(8),
+.financial-docs-table td:nth-child(8) {
+  min-width: 90px;
+  width: 90px;
+}
+
+.financial-docs-table th:nth-child(9),
+.financial-docs-table td:nth-child(9) {
+  min-width: 80px;
+  width: 80px;
 }
 
 .financial-docs-table th:nth-child(11),
@@ -4737,7 +4751,7 @@ select:disabled {
 
 .financial-docs-table th:nth-child(5),
 .financial-docs-table td:nth-child(5) {
-  min-width: 290px;
+  min-width: 300px;
 }
 
 .financial-docs-table th:nth-child(3),
