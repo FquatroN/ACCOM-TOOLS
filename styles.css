@@ -4695,8 +4695,18 @@ select:disabled {
   width: 40px;
 }
 
+.financial-docs-table th:nth-child(3),
+.financial-docs-table td:nth-child(3) {
+  min-width: 74px;
+  width: 74px;
+}
+
 .financial-docs-table th:nth-child(4),
-.financial-docs-table td:nth-child(4),
+.financial-docs-table td:nth-child(4) {
+  min-width: 92px;
+  width: 92px;
+}
+
 .financial-docs-table th:nth-child(7),
 .financial-docs-table td:nth-child(7),
 .financial-docs-table th:nth-child(8),
@@ -4727,7 +4737,7 @@ select:disabled {
 
 .financial-docs-table th:nth-child(5),
 .financial-docs-table td:nth-child(5) {
-  min-width: 240px;
+  min-width: 290px;
 }
 
 .financial-docs-table th:nth-child(3),
@@ -4747,12 +4757,26 @@ select:disabled {
   background: rgba(15, 109, 138, 0.05);
 }
 
+.financial-docs-table th:nth-child(8),
+.financial-docs-table td:nth-child(8),
+.financial-docs-table th:nth-child(9),
+.financial-docs-table td:nth-child(9) {
+  text-align: right;
+}
+
 .financial-docs-table-editor input,
 .financial-docs-table-editor select {
   width: 100%;
   min-width: 0;
   font-size: 0.72rem;
   padding: 0.2rem 0.28rem;
+}
+
+.financial-docs-table-editor input[data-financial-doc-field="amount"],
+.financial-docs-table-editor input[data-financial-doc-field="vatAmount"],
+.financial-docs-inline-editor input[data-financial-doc-new-field="amount"],
+.financial-docs-inline-editor input[data-financial-doc-new-field="vatAmount"] {
+  text-align: right;
 }
 
 .financial-doc-file-button {
