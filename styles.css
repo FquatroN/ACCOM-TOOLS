@@ -4704,6 +4704,18 @@ select:disabled {
   white-space: nowrap;
 }
 
+.financial-docs-inline-editor {
+  background: rgba(15, 109, 138, 0.05);
+}
+
+.financial-docs-inline-editor input,
+.financial-docs-inline-editor select {
+  width: 100%;
+  min-width: 0;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.28rem;
+}
+
 .financial-docs-modal-card {
   width: min(1180px, 96vw);
 }

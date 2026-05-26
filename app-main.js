@@ -905,6 +905,7 @@ const state = {
   financialDocsSettingsLoaded: false,
   financialDocsSettingsTab: "attributes",
   financialDocsDraft: null,
+  financialDocsListDraft: null,
   financialDocsAttachment: null,
   financialDocsModalOpen: false,
   financialDocsPreviewUrl: "",
@@ -16139,6 +16140,11 @@ function emptyFinancialDocDraft() {
   };
 }
 
+function ensureFinancialDocListDraft() {
+  if (!state.financialDocsListDraft) state.financialDocsListDraft = emptyFinancialDocDraft();
+  return state.financialDocsListDraft;
+}
+
 function normalizeFinancialDocsSettingsClient(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const defaults = clone(DEFAULT_FINANCIAL_DOCS_SETTINGS);
@@ -16237,8 +16243,40 @@ function sortFinancialDocRows(rows) {
   });
 }
 
+function financialDocSelectMarkup(type, current = "", { blank = true } = {}) {
+  const options = getFinancialDocSelectOptions(type);
+  return `${blank ? `<option value=""></option>` : ""}${options
+    .map((item) => `<option value="${escape(item)}"${item === current ? " selected" : ""}>${escape(item)}</option>`)
+    .join("")}`;
+}
+
 function setFinancialDocsStatus(message) {
   if (els.financialDocsStatus) els.financialDocsStatus.textContent = message || "";
+}
+
+function buildFinancialDocInlineCreateRow() {
+  const draft = ensureFinancialDocListDraft();
+  return `<tr class="financial-docs-inline-editor" data-financial-doc-inline-row="new">
+    <td class="muted">New row</td>
+    <td class="center-cell"><select data-financial-doc-new-field="cc">${financialDocSelectMarkup("cc", draft.cc)}</select></td>
+    <td><input data-financial-doc-new-field="documentDate" type="date" value="${escape(draft.documentDate)}" /></td>
+    <td><input data-financial-doc-new-field="docNumber" type="text" value="${escape(draft.docNumber)}" /></td>
+    <td><input data-financial-doc-new-field="description" type="text" value="${escape(draft.description)}" /></td>
+    <td><input data-financial-doc-new-field="supplierNif" type="text" maxlength="15" value="${escape(draft.supplierNif)}" /></td>
+    <td><input data-financial-doc-new-field="supplierName" type="text" value="${escape(draft.supplierName)}" /></td>
+    <td><input data-financial-doc-new-field="amount" type="number" step="0.01" value="${draft.amount === "" ? "" : escape(String(draft.amount))}" /></td>
+    <td><input data-financial-doc-new-field="vatAmount" type="number" step="0.01" value="${draft.vatAmount === "" ? "" : escape(String(draft.vatAmount))}" /></td>
+    <td><select data-financial-doc-new-field="payment">${financialDocSelectMarkup("payment", draft.payment)}</select></td>
+    <td class="center-cell"><select data-financial-doc-new-field="docType">${financialDocSelectMarkup("docType", draft.docType)}</select></td>
+    <td class="center-cell"><select data-financial-doc-new-field="fat">${financialDocSelectMarkup("fat", draft.fat)}</select></td>
+    <td><select data-financial-doc-new-field="category">${financialDocSelectMarkup("category", draft.category)}</select></td>
+    <td><select data-financial-doc-new-field="status">${financialDocSelectMarkup("status", draft.status || "Draft", { blank: false })}</select></td>
+    <td class="center-cell">-</td>
+    <td class="row-actions">
+      <button type="button" class="ghost" data-action="save-financial-doc-inline">Add</button>
+      <button type="button" class="ghost" data-action="clear-financial-doc-inline">Clear</button>
+    </td>
+  </tr>`;
 }
 
 function setFinancialDocsSettingsStatus(message) {
@@ -16673,9 +16711,10 @@ function renderFinancialDocs() {
   const rows = getFilteredFinancialDocs();
   if (els.financialDocsCount) els.financialDocsCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   if (els.financialDocsRows) {
-    els.financialDocsRows.innerHTML = rows.length
+    const inlineRow = buildFinancialDocInlineCreateRow();
+    els.financialDocsRows.innerHTML = inlineRow + (rows.length
       ? rows.map(buildFinancialDocTableRow).join("")
-      : '<tr><td colspan="16" class="empty">No financial documents found.</td></tr>';
+      : '<tr><td colspan="16" class="empty">No financial documents found.</td></tr>');
   }
   renderFinancialDocsMobileCards(rows);
 }
@@ -16829,6 +16868,31 @@ function financialDocDraftFromInputs() {
   });
 }
 
+function financialDocListDraftFromInputs() {
+  const current = ensureFinancialDocListDraft();
+  if (!els.financialDocsRows) return current;
+  return normalizeFinancialDocRowClient({
+    ...current,
+    cc: els.financialDocsRows.querySelector('[data-financial-doc-new-field="cc"]')?.value,
+    documentDate: els.financialDocsRows.querySelector('[data-financial-doc-new-field="documentDate"]')?.value,
+    docNumber: els.financialDocsRows.querySelector('[data-financial-doc-new-field="docNumber"]')?.value,
+    description: els.financialDocsRows.querySelector('[data-financial-doc-new-field="description"]')?.value,
+    supplierNif: els.financialDocsRows.querySelector('[data-financial-doc-new-field="supplierNif"]')?.value,
+    supplierName: els.financialDocsRows.querySelector('[data-financial-doc-new-field="supplierName"]')?.value,
+    amount: clean(els.financialDocsRows.querySelector('[data-financial-doc-new-field="amount"]')?.value) === "" ? "" : normalizeNumber(els.financialDocsRows.querySelector('[data-financial-doc-new-field="amount"]')?.value),
+    vatAmount: clean(els.financialDocsRows.querySelector('[data-financial-doc-new-field="vatAmount"]')?.value) === "" ? "" : normalizeNumber(els.financialDocsRows.querySelector('[data-financial-doc-new-field="vatAmount"]')?.value),
+    payment: els.financialDocsRows.querySelector('[data-financial-doc-new-field="payment"]')?.value,
+    docType: els.financialDocsRows.querySelector('[data-financial-doc-new-field="docType"]')?.value,
+    fat: els.financialDocsRows.querySelector('[data-financial-doc-new-field="fat"]')?.value,
+    category: els.financialDocsRows.querySelector('[data-financial-doc-new-field="category"]')?.value,
+    status: els.financialDocsRows.querySelector('[data-financial-doc-new-field="status"]')?.value || "Draft",
+  });
+}
+
+function resetFinancialDocListDraft() {
+  state.financialDocsListDraft = emptyFinancialDocDraft();
+}
+
 function triggerFinancialDocParsePicker() {
   els.financialDocsParseInput?.click();
 }
@@ -16941,6 +17005,54 @@ async function saveFinancialDoc() {
   }
 }
 
+async function saveFinancialDocInline() {
+  const draft = financialDocListDraftFromInputs();
+  const payload = {
+    cc: draft.cc,
+    documentDate: draft.documentDate,
+    docNumber: draft.docNumber,
+    description: draft.description,
+    supplierNif: draft.supplierNif,
+    supplierName: draft.supplierName,
+    amount: draft.amount,
+    vatAmount: draft.vatAmount === "" ? "" : draft.vatAmount,
+    payment: draft.payment,
+    docType: draft.docType,
+    fat: draft.fat,
+    category: draft.category,
+    status: draft.status || "Draft",
+    ocrFields: draft.ocrFields || {},
+    ocrRawText: clean(draft.ocrRawText),
+  };
+  try {
+    setFinancialDocsStatus("Saving...");
+    let result;
+    try {
+      result = await saveFinancialDocRequest(payload, false, "");
+    } catch (error) {
+      if (!/Possible duplicate found/i.test(error.message)) throw error;
+      if (!window.confirm(FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT)) {
+        setFinancialDocsStatus("Save canceled.");
+        return;
+      }
+      result = await saveFinancialDocRequest({ ...payload, confirmDuplicate: true }, false, "");
+    }
+    const savedRow = normalizeFinancialDocRowClient(result?.row);
+    state.financialDocsRows = sortFinancialDocRows([
+      savedRow,
+      ...state.financialDocsRows.filter((row) => row.id !== savedRow.id),
+    ]);
+    resetFinancialDocListDraft();
+    renderFinancialDocs();
+    setFinancialDocsStatus("Financial document saved.");
+    showToast("Financial document saved.", "success");
+  } catch (error) {
+    state.financialDocsListDraft = draft;
+    setFinancialDocsStatus(`Financial document save failed: ${error.message}`);
+    showToast(`Financial document save failed: ${error.message}`, "error");
+  }
+}
+
 async function downloadFinancialDocFile(rowOverride = null) {
   const draft = rowOverride ? normalizeFinancialDocRowClient(rowOverride) : (state.financialDocsDraft || emptyFinancialDocDraft());
   try {
@@ -16957,10 +17069,24 @@ async function downloadFinancialDocFile(rowOverride = null) {
 }
 
 function onFinancialDocTableAction(event) {
+  const inlineInput = event.target.closest("[data-financial-doc-new-field]");
+  if (inlineInput) {
+    state.financialDocsListDraft = financialDocListDraftFromInputs();
+  }
   const button = event.target.closest("button[data-action]");
   if (button) {
     const action = clean(button.dataset.action);
     const id = clean(button.dataset.id);
+    if (action === "save-financial-doc-inline") {
+      saveFinancialDocInline();
+      return;
+    }
+    if (action === "clear-financial-doc-inline") {
+      resetFinancialDocListDraft();
+      renderFinancialDocs();
+      setFinancialDocsStatus("");
+      return;
+    }
     if (action === "open-financial-doc") {
       openFinancialDocModal(id);
       return;
@@ -16972,6 +17098,7 @@ function onFinancialDocTableAction(event) {
     }
     return;
   }
+  if (event.target.closest(".financial-docs-inline-editor")) return;
   const row = event.target.closest("[data-financial-doc-id]");
   if (!row) return;
   openFinancialDocModal(clean(row.dataset.financialDocId));
