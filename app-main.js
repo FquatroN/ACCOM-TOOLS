@@ -16287,26 +16287,17 @@ function financialDocFileIconButton(row) {
     : "-";
 }
 
-function financialDocInlineFileSummary() {
-  const upload = state.financialDocsListAttachment?.upload;
-  if (!upload) return '<span class="muted">No file</span>';
-  return `<span class="financial-doc-file-name" title="${escape(upload.originalFilename || "Attached file")}">${escape(upload.originalFilename || "Attached file")}</span>`;
-}
-
-function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", showDownload = false, summaryHtml = "" } = {}) {
+function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachment = false, showDownload = false } = {}) {
   const dropId = isNew ? "new" : clean(rowId);
   const action = isNew ? "pick-financial-doc-inline-file" : "pick-financial-doc-row-file";
-  const helper = isNew ? "Browse or drop to parse" : "Browse or drop to upload";
   const row = showDownload ? state.financialDocsRows.find((item) => item.id === rowId) : null;
   const downloadButton = showDownload && row && financialDocHasAttachment(row) ? financialDocFileIconButton(row) : "";
+  if (hasAttachment) {
+    return `<div class="financial-doc-file-cell financial-doc-file-cell--icon-only">${downloadButton || '<span class="financial-doc-file-icon">&#128196;</span>'}</div>`;
+  }
   return `<div class="financial-doc-file-cell">
-    <div class="financial-doc-file-summary-row">
-      ${summaryHtml || '<span class="muted">No file</span>'}
-      ${downloadButton}
-    </div>
-    <div class="file-dropzone financial-doc-file-dropzone" data-financial-doc-dropzone="${escape(dropId)}" data-financial-doc-drop-kind="${isNew ? "parse" : "upload"}">
-      <button type="button" class="ghost financial-doc-file-browse" data-action="${action}" data-id="${escape(rowId)}">Browse</button>
-      <small>${helper}</small>
+    <div class="file-dropzone financial-doc-file-dropzone" title="${isNew ? "Browse or drop to parse" : "Browse or drop to upload"}" data-financial-doc-dropzone="${escape(dropId)}" data-financial-doc-drop-kind="${isNew ? "parse" : "upload"}">
+      <button type="button" class="ghost financial-doc-file-browse" data-action="${action}" data-id="${escape(rowId)}">...</button>
     </div>
   </div>`;
 }
@@ -16314,10 +16305,8 @@ function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", showDownloa
 function buildFinancialDocTableRow(row) {
   const fileCell = financialDocFileDropzoneMarkup({
     rowId: row.id,
+    hasAttachment: financialDocHasAttachment(row),
     showDownload: true,
-    summaryHtml: financialDocHasAttachment(row)
-      ? `<span class="financial-doc-file-name" title="${escape(row.storedFilename || row.originalFilename || "Attached file")}">${escape(row.storedFilename || row.originalFilename || "Attached file")}</span>`
-      : '<span class="muted">No file</span>',
   });
   if (clean(state.financialDocsEditingId) === clean(row.id)) {
     return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row financial-docs-table-editor">
@@ -16381,7 +16370,7 @@ function buildFinancialDocInlineCreateRow() {
     <td class="center-cell"><select data-financial-doc-new-field="fat">${financialDocSelectMarkup("fat", draft.fat)}</select></td>
     <td><select data-financial-doc-new-field="category">${financialDocSelectMarkup("category", draft.category)}</select></td>
     <td><select data-financial-doc-new-field="status">${financialDocSelectMarkup("status", draft.status || "Draft", { blank: false })}</select></td>
-    <td>${financialDocFileDropzoneMarkup({ isNew: true, summaryHtml: financialDocInlineFileSummary() })}</td>
+    <td>${financialDocFileDropzoneMarkup({ isNew: true, hasAttachment: Boolean(state.financialDocsListAttachment?.upload) })}</td>
     <td class="row-actions center-cell">
       <button type="button" class="ghost" data-action="save-financial-doc-inline">Add</button>
     </td>
