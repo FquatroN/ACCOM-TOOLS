@@ -4757,8 +4757,6 @@ select:disabled {
 
 .financial-docs-table th:nth-child(3),
 .financial-docs-table td:nth-child(3),
-.financial-docs-table th:nth-child(4),
-.financial-docs-table td:nth-child(4),
 .financial-docs-table th:nth-child(8),
 .financial-docs-table td:nth-child(8),
 .financial-docs-table th:nth-child(9),
@@ -4789,15 +4787,15 @@ select:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1rem;
-  height: 1rem;
+  width: 1.18rem;
+  height: 1.18rem;
   padding: 0;
   border-radius: 0.35rem;
   min-height: 0;
   text-align: center;
   box-shadow: none;
   transform: none;
-  font-size: 0.62rem;
+  font-size: 0.68rem;
   line-height: 1;
 }
 
@@ -4807,8 +4805,8 @@ select:disabled {
 }
 
 .financial-doc-file-browse {
-  padding: 0.04rem 0.22rem;
-  font-size: 0.6rem;
+  padding: 0.08rem 0.3rem;
+  font-size: 0.66rem;
   line-height: 1.1;
   min-width: 0;
 }
