@@ -4653,6 +4653,7 @@ select:disabled {
 
 .financial-docs-filters {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.45rem 0.7rem;
 }
 
 .financial-docs-table-wrap {
@@ -4769,6 +4770,47 @@ select:disabled {
 
 .financial-docs-inline-editor {
   background: rgba(15, 109, 138, 0.05);
+}
+
+.financial-doc-file-cell {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 120px;
+}
+
+.financial-doc-file-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.22rem;
+  min-height: 1rem;
+}
+
+.financial-doc-file-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+}
+
+.financial-doc-file-dropzone {
+  padding: 0.18rem 0.22rem;
+  border-radius: 0.55rem;
+  min-height: 0;
+  gap: 0.12rem;
+  text-align: center;
+}
+
+.financial-doc-file-dropzone small {
+  font-size: 0.64rem;
+}
+
+.financial-doc-file-browse {
+  padding: 0.12rem 0.38rem;
+  font-size: 0.68rem;
+  min-width: 0;
 }
 
 .financial-docs-table th:nth-child(8),

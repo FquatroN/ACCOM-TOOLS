@@ -906,8 +906,10 @@ const state = {
   financialDocsSettingsTab: "attributes",
   financialDocsDraft: null,
   financialDocsListDraft: null,
+  financialDocsListAttachment: null,
   financialDocsEditingId: "",
   financialDocsAttachment: null,
+  financialDocsFilePickerTarget: null,
   financialDocsModalOpen: false,
   financialDocsPreviewUrl: "",
   financialDocsLastOpenedId: "",
@@ -1826,14 +1828,17 @@ function bindEvents() {
     el?.addEventListener("change", renderFinancialDocs)
   );
   els.financialDocsNew?.addEventListener("click", () => openFinancialDocModal());
-  els.financialDocsUploadParse?.addEventListener("click", triggerFinancialDocParsePicker);
+  els.financialDocsUploadParse?.addEventListener("click", () => triggerFinancialDocParsePicker({ mode: "modal-parse" }));
   els.financialDocsParseInput?.addEventListener("change", onFinancialDocParsePicked);
   els.financialDocsAttachmentInput?.addEventListener("change", onFinancialDocAttachmentPicked);
   els.financialDocsRows?.addEventListener("click", onFinancialDocTableAction);
   els.financialDocsRows?.addEventListener("change", onFinancialDocTableChange);
+  els.financialDocsRows?.addEventListener("dragover", onFinancialDocTableDragOver);
+  els.financialDocsRows?.addEventListener("dragleave", onFinancialDocTableDragLeave);
+  els.financialDocsRows?.addEventListener("drop", onFinancialDocTableDrop);
   els.financialDocsMobileCards?.addEventListener("click", onFinancialDocTableAction);
   els.financialDocsModalClose?.addEventListener("click", closeFinancialDocModal);
-  els.financialDocsChooseAttachment?.addEventListener("click", () => els.financialDocsAttachmentInput?.click());
+  els.financialDocsChooseAttachment?.addEventListener("click", () => triggerFinancialDocAttachmentPicker({ mode: "modal-attachment" }));
   els.financialDocsDownloadFile?.addEventListener("click", () => downloadFinancialDocFile());
   els.financialDocsSave?.addEventListener("click", saveFinancialDoc);
   els.financialDocsSettingsAttributesTab?.addEventListener("click", () => setFinancialDocsSettingsTab("attributes"));
@@ -16256,13 +16261,64 @@ function setFinancialDocsStatus(message) {
   if (els.financialDocsStatus) els.financialDocsStatus.textContent = message || "";
 }
 
+function financialDocBuildPayload(draft) {
+  return {
+    cc: draft.cc,
+    documentDate: draft.documentDate,
+    docNumber: draft.docNumber,
+    description: draft.description,
+    supplierNif: draft.supplierNif,
+    supplierName: draft.supplierName,
+    amount: draft.amount,
+    vatAmount: draft.vatAmount === "" ? "" : draft.vatAmount,
+    payment: draft.payment,
+    docType: draft.docType,
+    fat: draft.fat,
+    category: draft.category,
+    status: draft.status || "Draft",
+    ocrFields: draft.ocrFields || {},
+    ocrRawText: clean(draft.ocrRawText),
+  };
+}
+
 function financialDocFileIconButton(row) {
   return financialDocHasAttachment(row)
     ? `<button type="button" class="ghost financial-doc-file-button" data-action="download-financial-doc" data-id="${escape(row.id)}" title="Download file">&#128196;</button>`
     : "-";
 }
 
+function financialDocInlineFileSummary() {
+  const upload = state.financialDocsListAttachment?.upload;
+  if (!upload) return '<span class="muted">No file</span>';
+  return `<span class="financial-doc-file-name" title="${escape(upload.originalFilename || "Attached file")}">${escape(upload.originalFilename || "Attached file")}</span>`;
+}
+
+function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", showDownload = false, summaryHtml = "" } = {}) {
+  const dropId = isNew ? "new" : clean(rowId);
+  const action = isNew ? "pick-financial-doc-inline-file" : "pick-financial-doc-row-file";
+  const helper = isNew ? "Browse or drop to parse" : "Browse or drop to upload";
+  const row = showDownload ? state.financialDocsRows.find((item) => item.id === rowId) : null;
+  const downloadButton = showDownload && row && financialDocHasAttachment(row) ? financialDocFileIconButton(row) : "";
+  return `<div class="financial-doc-file-cell">
+    <div class="financial-doc-file-summary-row">
+      ${summaryHtml || '<span class="muted">No file</span>'}
+      ${downloadButton}
+    </div>
+    <div class="file-dropzone financial-doc-file-dropzone" data-financial-doc-dropzone="${escape(dropId)}" data-financial-doc-drop-kind="${isNew ? "parse" : "upload"}">
+      <button type="button" class="ghost financial-doc-file-browse" data-action="${action}" data-id="${escape(rowId)}">Browse</button>
+      <small>${helper}</small>
+    </div>
+  </div>`;
+}
+
 function buildFinancialDocTableRow(row) {
+  const fileCell = financialDocFileDropzoneMarkup({
+    rowId: row.id,
+    showDownload: true,
+    summaryHtml: financialDocHasAttachment(row)
+      ? `<span class="financial-doc-file-name" title="${escape(row.storedFilename || row.originalFilename || "Attached file")}">${escape(row.storedFilename || row.originalFilename || "Attached file")}</span>`
+      : '<span class="muted">No file</span>',
+  });
   if (clean(state.financialDocsEditingId) === clean(row.id)) {
     return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row financial-docs-table-editor">
       <td>${escape(formatFinancialDocsCreateDateList(row.createdAt))}</td>
@@ -16279,7 +16335,7 @@ function buildFinancialDocTableRow(row) {
       <td class="center-cell"><select data-financial-doc-field="fat" data-id="${escape(row.id)}">${financialDocSelectMarkup("fat", row.fat)}</select></td>
       <td><select data-financial-doc-field="category" data-id="${escape(row.id)}">${financialDocSelectMarkup("category", row.category)}</select></td>
       <td><select data-financial-doc-field="status" data-id="${escape(row.id)}">${financialDocSelectMarkup("status", row.status || "Draft", { blank: false })}</select></td>
-      <td class="center-cell">${financialDocFileIconButton(row)}</td>
+      <td>${fileCell}</td>
       <td class="row-actions center-cell">
         <button type="button" class="ghost" data-action="save-financial-doc-row" data-id="${escape(row.id)}">Save</button>
         <button type="button" class="ghost" data-action="cancel-financial-doc-row" data-id="${escape(row.id)}">Cancel</button>
@@ -16301,7 +16357,7 @@ function buildFinancialDocTableRow(row) {
     <td class="center-cell">${escape(row.fat || "-")}</td>
     <td>${escape(row.category || "-")}</td>
     <td>${escape(row.status || "-")}</td>
-    <td class="center-cell">${financialDocFileIconButton(row)}</td>
+    <td>${fileCell}</td>
     <td class="row-actions center-cell">
       <button type="button" class="ghost" data-action="edit-financial-doc-row" data-id="${escape(row.id)}">Edit</button>
     </td>
@@ -16325,7 +16381,7 @@ function buildFinancialDocInlineCreateRow() {
     <td class="center-cell"><select data-financial-doc-new-field="fat">${financialDocSelectMarkup("fat", draft.fat)}</select></td>
     <td><select data-financial-doc-new-field="category">${financialDocSelectMarkup("category", draft.category)}</select></td>
     <td><select data-financial-doc-new-field="status">${financialDocSelectMarkup("status", draft.status || "Draft", { blank: false })}</select></td>
-    <td class="center-cell">-</td>
+    <td>${financialDocFileDropzoneMarkup({ isNew: true, summaryHtml: financialDocInlineFileSummary() })}</td>
     <td class="row-actions center-cell">
       <button type="button" class="ghost" data-action="save-financial-doc-inline">Add</button>
     </td>
@@ -16923,6 +16979,7 @@ function financialDocListDraftFromInputs() {
 
 function resetFinancialDocListDraft() {
   state.financialDocsListDraft = emptyFinancialDocDraft();
+  state.financialDocsListAttachment = null;
 }
 
 function financialDocRowDraftFromInputs(id) {
@@ -16947,20 +17004,108 @@ function financialDocRowDraftFromInputs(id) {
   });
 }
 
-function triggerFinancialDocParsePicker() {
+function triggerFinancialDocParsePicker(target = { mode: "modal-parse" }) {
+  state.financialDocsFilePickerTarget = target;
   els.financialDocsParseInput?.click();
+}
+
+function triggerFinancialDocAttachmentPicker(target = { mode: "modal-attachment" }) {
+  state.financialDocsFilePickerTarget = target;
+  els.financialDocsAttachmentInput?.click();
+}
+
+async function requestFinancialDocParse(file) {
+  const upload = await fileToUploadPayload(file);
+  const result = await api("/api/financial-docs-parse", {
+    method: "POST",
+    body: { file: upload },
+  });
+  return { upload, result };
+}
+
+async function applyFinancialDocInlineParsedFile(file) {
+  setFinancialDocsStatus("Parsing document...");
+  const { upload, result } = await requestFinancialDocParse(file);
+  const current = financialDocListDraftFromInputs();
+  state.financialDocsListDraft = current;
+  const parsedRow = normalizeFinancialDocRowClient({
+    ...(result?.row || {}),
+    ocrFields: result?.ocrFields || {},
+    ocrRawText: clean(result?.ocrRawText),
+    status: clean(result?.row?.status) || current.status || "Draft",
+  });
+  state.financialDocsListAttachment = { upload };
+  state.financialDocsListDraft = normalizeFinancialDocRowClient({
+    ...current,
+    ...parsedRow,
+    cc: parsedRow.cc || current.cc,
+    documentDate: parsedRow.documentDate || current.documentDate,
+    docNumber: parsedRow.docNumber || current.docNumber,
+    description: parsedRow.description || current.description,
+    supplierNif: parsedRow.supplierNif || current.supplierNif,
+    supplierName: parsedRow.supplierName || current.supplierName,
+    amount: parsedRow.amount === "" ? current.amount : parsedRow.amount,
+    vatAmount: parsedRow.vatAmount === "" ? current.vatAmount : parsedRow.vatAmount,
+    payment: parsedRow.payment || current.payment,
+    docType: parsedRow.docType || current.docType,
+    fat: parsedRow.fat || current.fat,
+    category: parsedRow.category || current.category,
+    status: parsedRow.status || current.status || "Draft",
+  });
+  renderFinancialDocs();
+  setFinancialDocsStatus(clean(result?.notes) || "Document parsed. Draft values filled.");
+}
+
+async function uploadFinancialDocAttachmentInline(id, file) {
+  const row = state.financialDocsRows.find((item) => item.id === id);
+  if (!row) return;
+  const upload = await fileToUploadPayload(file);
+  const keepEditing = clean(state.financialDocsEditingId) === clean(id);
+  const draft = keepEditing ? financialDocRowDraftFromInputs(id) : normalizeFinancialDocRowClient(row);
+  const payload = {
+    ...financialDocBuildPayload(draft),
+    attachmentUpload: upload,
+  };
+  try {
+    setFinancialDocsStatus("Uploading file...");
+    let result;
+    try {
+      result = await saveFinancialDocRequest(payload, true, id);
+    } catch (error) {
+      if (!/Possible duplicate found/i.test(error.message)) throw error;
+      if (!window.confirm(FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT)) {
+        setFinancialDocsStatus("Upload canceled.");
+        return;
+      }
+      result = await saveFinancialDocRequest({ ...payload, confirmDuplicate: true }, true, id);
+    }
+    const savedRow = normalizeFinancialDocRowClient(result?.row);
+    state.financialDocsRows = sortFinancialDocRows([
+      savedRow,
+      ...state.financialDocsRows.filter((item) => item.id !== savedRow.id),
+    ]);
+    state.financialDocsEditingId = keepEditing ? id : "";
+    renderFinancialDocs();
+    setFinancialDocsStatus("File uploaded.");
+    showToast("Financial document file uploaded.", "success");
+  } catch (error) {
+    state.financialDocsEditingId = keepEditing ? id : state.financialDocsEditingId;
+    setFinancialDocsStatus(`File upload failed: ${error.message}`);
+    showToast(`Financial document file upload failed: ${error.message}`, "error");
+  }
 }
 
 async function onFinancialDocParsePicked(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
+    const target = state.financialDocsFilePickerTarget?.mode || "modal-parse";
+    if (target === "new-inline-parse") {
+      await applyFinancialDocInlineParsedFile(file);
+      return;
+    }
     setFinancialDocsStatus("Parsing document...");
-    const upload = await fileToUploadPayload(file);
-    const result = await api("/api/financial-docs-parse", {
-      method: "POST",
-      body: { file: upload },
-    });
+    const { upload, result } = await requestFinancialDocParse(file);
     const seedRow = normalizeFinancialDocRowClient({
       ...emptyFinancialDocDraft(),
       ...(result?.row || {}),
@@ -16977,6 +17122,7 @@ async function onFinancialDocParsePicked(event) {
     setFinancialDocsStatus(`Parse failed: ${error.message}`);
     showToast(`Financial document parse failed: ${error.message}`, "error");
   } finally {
+    state.financialDocsFilePickerTarget = null;
     if (els.financialDocsParseInput) els.financialDocsParseInput.value = "";
   }
 }
@@ -16985,6 +17131,11 @@ async function onFinancialDocAttachmentPicked(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
+    const target = state.financialDocsFilePickerTarget || { mode: "modal-attachment" };
+    if (target.mode === "row-upload" && clean(target.id)) {
+      await uploadFinancialDocAttachmentInline(clean(target.id), file);
+      return;
+    }
     const upload = await fileToUploadPayload(file);
     const previewUrl = URL.createObjectURL(file);
     if (state.financialDocsAttachment?.previewUrl) {
@@ -16996,6 +17147,7 @@ async function onFinancialDocAttachmentPicked(event) {
   } catch (error) {
     setFinancialDocsModalStatus(`Attachment failed: ${error.message}`);
   } finally {
+    state.financialDocsFilePickerTarget = null;
     if (els.financialDocsAttachmentInput) els.financialDocsAttachmentInput.value = "";
   }
 }
@@ -17061,23 +17213,8 @@ async function saveFinancialDoc() {
 
 async function saveFinancialDocInline() {
   const draft = financialDocListDraftFromInputs();
-  const payload = {
-    cc: draft.cc,
-    documentDate: draft.documentDate,
-    docNumber: draft.docNumber,
-    description: draft.description,
-    supplierNif: draft.supplierNif,
-    supplierName: draft.supplierName,
-    amount: draft.amount,
-    vatAmount: draft.vatAmount === "" ? "" : draft.vatAmount,
-    payment: draft.payment,
-    docType: draft.docType,
-    fat: draft.fat,
-    category: draft.category,
-    status: draft.status || "Draft",
-    ocrFields: draft.ocrFields || {},
-    ocrRawText: clean(draft.ocrRawText),
-  };
+  const payload = financialDocBuildPayload(draft);
+  if (state.financialDocsListAttachment?.upload) payload.attachmentUpload = state.financialDocsListAttachment.upload;
   try {
     setFinancialDocsStatus("Saving...");
     let result;
@@ -17109,23 +17246,7 @@ async function saveFinancialDocInline() {
 
 async function saveFinancialDocInlineRow(id) {
   const draft = financialDocRowDraftFromInputs(id);
-  const payload = {
-    cc: draft.cc,
-    documentDate: draft.documentDate,
-    docNumber: draft.docNumber,
-    description: draft.description,
-    supplierNif: draft.supplierNif,
-    supplierName: draft.supplierName,
-    amount: draft.amount,
-    vatAmount: draft.vatAmount === "" ? "" : draft.vatAmount,
-    payment: draft.payment,
-    docType: draft.docType,
-    fat: draft.fat,
-    category: draft.category,
-    status: draft.status || "Draft",
-    ocrFields: draft.ocrFields || {},
-    ocrRawText: clean(draft.ocrRawText),
-  };
+  const payload = financialDocBuildPayload(draft);
   state.financialDocsRows = state.financialDocsRows.map((row) => (row.id === id ? draft : row));
   try {
     setFinancialDocsStatus("Saving...");
@@ -17184,8 +17305,16 @@ function onFinancialDocTableAction(event) {
       saveFinancialDocInline();
       return;
     }
+    if (action === "pick-financial-doc-inline-file") {
+      triggerFinancialDocParsePicker({ mode: "new-inline-parse" });
+      return;
+    }
     if (action === "open-financial-doc") {
       openFinancialDocModal(id);
+      return;
+    }
+    if (action === "pick-financial-doc-row-file") {
+      triggerFinancialDocAttachmentPicker({ mode: "row-upload", id });
       return;
     }
     if (action === "edit-financial-doc-row") {
@@ -17209,6 +17338,7 @@ function onFinancialDocTableAction(event) {
     }
     return;
   }
+  if (event.target.closest("[data-financial-doc-dropzone]")) return;
   if (event.target.closest("input, select, textarea")) return;
   if (event.target.closest(".financial-docs-inline-editor")) return;
   const row = event.target.closest("[data-financial-doc-id]");
@@ -17221,6 +17351,44 @@ function onFinancialDocTableChange(event) {
   if (event.target.closest("[data-financial-doc-new-field]")) {
     state.financialDocsListDraft = financialDocListDraftFromInputs();
     return;
+  }
+}
+
+function onFinancialDocTableDragOver(event) {
+  const zone = event.target.closest("[data-financial-doc-dropzone]");
+  if (!zone) return;
+  event.preventDefault();
+  zone.classList.add("drag-over");
+}
+
+function onFinancialDocTableDragLeave(event) {
+  const zone = event.target.closest("[data-financial-doc-dropzone]");
+  if (!zone) return;
+  const related = event.relatedTarget;
+  if (related && zone.contains(related)) return;
+  zone.classList.remove("drag-over");
+}
+
+async function onFinancialDocTableDrop(event) {
+  const zone = event.target.closest("[data-financial-doc-dropzone]");
+  if (!zone) return;
+  event.preventDefault();
+  zone.classList.remove("drag-over");
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  const kind = clean(zone.dataset.financialDocDropKind);
+  const targetId = clean(zone.dataset.financialDocDropzone);
+  try {
+    if (kind === "parse") {
+      await applyFinancialDocInlineParsedFile(file);
+      return;
+    }
+    if (kind === "upload" && targetId) {
+      await uploadFinancialDocAttachmentInline(targetId, file);
+    }
+  } catch (error) {
+    setFinancialDocsStatus(`${kind === "parse" ? "Parse" : "Upload"} failed: ${error.message}`);
+    showToast(`Financial document ${kind === "parse" ? "parse" : "upload"} failed: ${error.message}`, "error");
   }
 }
 
