@@ -4666,7 +4666,7 @@ select:disabled {
 .financial-docs-table th,
 .financial-docs-table td {
   padding: 0.42rem 0.48rem;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   vertical-align: middle;
 }
 
@@ -4685,8 +4685,28 @@ select:disabled {
 
 .financial-docs-table th:nth-child(1),
 .financial-docs-table td:nth-child(1) {
-  min-width: 126px;
-  width: 126px;
+  min-width: 96px;
+  width: 96px;
+}
+
+.financial-docs-table th:nth-child(2),
+.financial-docs-table td:nth-child(2) {
+  min-width: 34px;
+  width: 34px;
+}
+
+.financial-docs-table th:nth-child(11),
+.financial-docs-table td:nth-child(11),
+.financial-docs-table th:nth-child(12),
+.financial-docs-table td:nth-child(12) {
+  min-width: 34px;
+  width: 34px;
+}
+
+.financial-docs-table th:nth-child(14),
+.financial-docs-table td:nth-child(14) {
+  min-width: 72px;
+  width: 72px;
 }
 
 .financial-docs-table th:nth-child(3),

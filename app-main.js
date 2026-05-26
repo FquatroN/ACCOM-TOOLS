@@ -16310,6 +16310,10 @@ function formatFinancialDocsCreateDate(value) {
   return formatDateTimeShort(value) || "-";
 }
 
+function formatFinancialDocsCreateDateList(value) {
+  return formatDateInLisbon(value) || "-";
+}
+
 function financialDocHasAttachment(row) {
   return !!clean(row?.driveFileId || row?.storedFilename || row?.originalFilename);
 }
@@ -16652,7 +16656,7 @@ async function disconnectFinancialDocsDrive() {
 
 function buildFinancialDocTableRow(row) {
   return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row">
-    <td>${escape(formatFinancialDocsCreateDate(row.createdAt))}</td>
+    <td>${escape(formatFinancialDocsCreateDateList(row.createdAt))}</td>
     <td class="center-cell">${escape(row.cc || "-")}</td>
     <td>${escape(formatDateOnly(row.documentDate))}</td>
     <td>${escape(row.docNumber || "-")}</td>
