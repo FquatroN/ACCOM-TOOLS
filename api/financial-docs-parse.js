@@ -96,7 +96,7 @@ async function parseFinancialDocument(file) {
     },
     body: JSON.stringify({
       model: OPENAI_MODEL,
-      reasoning: { effort: "minimal" },
+      reasoning: { effort: "low" },
       input: [{ role: "user", content }],
     }),
   });
