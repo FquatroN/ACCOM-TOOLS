@@ -75,10 +75,10 @@ function sanitizeFinancialDocsSettings(source = {}) {
       accountEmail: cleanText(rawGoogle.accountEmail || rawDrive.accountEmail),
       folderPath: cleanText(rawDrive.folderPath || rawDrive.path) || defaults.drive.folderPath,
       baseFolderId: cleanText(rawDrive.baseFolderId) || extractGoogleDriveFolderId(rawDrive.folderPath || rawDrive.path),
-      accessToken: cleanText(rawGoogle.accessToken),
-      refreshToken: cleanText(rawGoogle.refreshToken),
-      tokenExpiresAt: cleanText(rawGoogle.tokenExpiresAt),
-      oauthState: cleanText(rawGoogle.oauthState),
+      accessToken: cleanText(rawDrive.accessToken || rawGoogle.accessToken),
+      refreshToken: cleanText(rawDrive.refreshToken || rawGoogle.refreshToken),
+      tokenExpiresAt: cleanText(rawDrive.tokenExpiresAt || rawGoogle.tokenExpiresAt),
+      oauthState: cleanText(rawDrive.oauthState || rawGoogle.oauthState),
     },
   };
 }
