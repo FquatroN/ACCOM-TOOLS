@@ -4804,6 +4804,21 @@ select:disabled {
   line-height: 1;
 }
 
+.financial-doc-file-icon--pdf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.55rem;
+  height: 1.05rem;
+  padding: 0 0.2rem;
+  border-radius: 0.28rem;
+  background: #d94b4b;
+  color: #fff;
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .financial-doc-file-browse {
   padding: 0.08rem 0.3rem;
   font-size: 0.66rem;

@@ -16283,7 +16283,7 @@ function financialDocBuildPayload(draft) {
 
 function financialDocFileIconButton(row) {
   return financialDocHasAttachment(row)
-    ? `<button type="button" class="ghost financial-doc-file-button" data-action="download-financial-doc" data-id="${escape(row.id)}" title="Download file">&#128196;</button>`
+    ? `<button type="button" class="ghost financial-doc-file-button" data-action="download-financial-doc" data-id="${escape(row.id)}" title="Download file"><span class="financial-doc-file-icon financial-doc-file-icon--pdf">PDF</span></button>`
     : "-";
 }
 
@@ -16293,7 +16293,7 @@ function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachme
   const row = showDownload ? state.financialDocsRows.find((item) => item.id === rowId) : null;
   const downloadButton = showDownload && row && financialDocHasAttachment(row) ? financialDocFileIconButton(row) : "";
   if (hasAttachment) {
-    return `<div class="financial-doc-file-cell financial-doc-file-cell--icon-only">${downloadButton || '<span class="financial-doc-file-icon">&#128196;</span>'}</div>`;
+    return `<div class="financial-doc-file-cell financial-doc-file-cell--icon-only">${downloadButton || '<span class="financial-doc-file-icon financial-doc-file-icon--pdf">PDF</span>'}</div>`;
   }
   return `<div class="financial-doc-file-cell">
     <button type="button" class="ghost financial-doc-file-browse" data-action="${action}" data-id="${escape(rowId)}">...</button>
@@ -16761,7 +16761,7 @@ function renderFinancialDocsMobileCards(rows) {
     <article class="service-mobile-card financial-doc-mobile-card" data-financial-doc-id="${escape(row.id)}">
       <div class="service-mobile-head">
         <strong>${escape(row.description || "Document")}</strong>
-        <span>${financialDocHasAttachment(row) ? `<button type="button" class="ghost financial-doc-file-button" data-action="download-financial-doc" data-id="${escape(row.id)}" title="Download file">&#128196;</button>` : escape(row.status || "-")}</span>
+        <span>${financialDocHasAttachment(row) ? `<button type="button" class="ghost financial-doc-file-button" data-action="download-financial-doc" data-id="${escape(row.id)}" title="Download file"><span class="financial-doc-file-icon financial-doc-file-icon--pdf">PDF</span></button>` : escape(row.status || "-")}</span>
       </div>
       <div class="service-mobile-grid">
         <div><small>Create</small><strong>${escape(formatFinancialDocsCreateDate(row.createdAt))}</strong></div>
