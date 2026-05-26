@@ -10,10 +10,11 @@ const { extractGoogleDriveFolderId, sanitizeFinancialDocsSettings } = require(".
 module.exports = async function handler(req, res) {
   try {
     await requireFeature(req, "settings", "financial-docs");
+    const clientId = process.env.GOOGLE_CLIENT_ID || "";
     if (req.method === "GET") {
       const settings = await loadFinancialDocsSettings();
       const safeSettings = safeFinancialDocsSettings(settings);
-      res.status(200).json({ settings: { ...safeSettings, drive: { ...safeSettings.drive, redirectUri: redirectUri(req) } } });
+      res.status(200).json({ settings: { ...safeSettings, drive: { ...safeSettings.drive, redirectUri: redirectUri(req), clientId } } });
       return;
     }
     if (req.method === "PUT") {
@@ -33,7 +34,7 @@ module.exports = async function handler(req, res) {
       });
       const saved = await saveFinancialDocsSettings(next);
       const safeSettings = safeFinancialDocsSettings(saved);
-      res.status(200).json({ settings: { ...safeSettings, drive: { ...safeSettings.drive, redirectUri: redirectUri(req) } } });
+      res.status(200).json({ settings: { ...safeSettings, drive: { ...safeSettings.drive, redirectUri: redirectUri(req), clientId } } });
       return;
     }
     res.status(405).json({ error: "Method not allowed." });

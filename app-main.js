@@ -504,6 +504,7 @@ const DEFAULT_FINANCIAL_DOCS_SETTINGS = {
     folderPath: "Financial Documents",
     baseFolderId: "",
     redirectUri: "",
+    clientId: "",
   },
 };
 
@@ -1155,6 +1156,7 @@ const els = {
   financialDocsDriveFolderPath: document.getElementById("financial-docs-drive-folder-path"),
   financialDocsDriveStatus: document.getElementById("financial-docs-drive-status"),
   financialDocsDriveRedirect: document.getElementById("financial-docs-drive-redirect"),
+  financialDocsDriveClientId: document.getElementById("financial-docs-drive-client-id"),
   financialDocsSettingsStatus: document.getElementById("financial-docs-settings-status"),
   generalEmailProvider: document.getElementById("general-email-provider"),
   generalEmailSmtpHost: document.getElementById("general-email-smtp-host"),
@@ -16171,6 +16173,7 @@ function normalizeFinancialDocsSettingsClient(input = {}) {
       folderPath: clean(drive.folderPath) || defaults.drive.folderPath,
       baseFolderId: clean(drive.baseFolderId),
       redirectUri: clean(drive.redirectUri),
+      clientId: clean(drive.clientId),
     },
   };
 }
@@ -16248,6 +16251,10 @@ function setFinancialDocsDriveStatus(message) {
 
 function setFinancialDocsDriveRedirect(message) {
   if (els.financialDocsDriveRedirect) els.financialDocsDriveRedirect.textContent = message || "";
+}
+
+function setFinancialDocsDriveClientId(message) {
+  if (els.financialDocsDriveClientId) els.financialDocsDriveClientId.textContent = message || "";
 }
 
 function setFinancialDocsModalStatus(message) {
@@ -16508,6 +16515,7 @@ function renderFinancialDocsSettings() {
     ? `Connected${settings.drive.connectedAt ? ` on ${formatDateTimeShort(settings.drive.connectedAt)}` : ""}.`
     : "Google Drive is not connected yet.");
   setFinancialDocsDriveRedirect(settings.drive.redirectUri ? `Redirect URI: ${settings.drive.redirectUri}` : "");
+  setFinancialDocsDriveClientId(settings.drive.clientId ? `OAuth Client ID: ${settings.drive.clientId}` : "");
   renderFinancialDocsFilterOptions();
   renderFinancialDocEditorOptions();
 }
@@ -16560,6 +16568,7 @@ async function connectFinancialDocsDrive() {
         drive: {
           ...(state.financialDocsSettings?.drive || {}),
           redirectUri: result.redirectUri,
+          clientId: result.clientId,
         },
       });
       renderFinancialDocsSettings();
@@ -16570,6 +16579,8 @@ async function connectFinancialDocsDrive() {
     setFinancialDocsDriveStatus(`Connection failed: ${error.message}`);
     const redirectText = clean(getFinancialDocsSettingsForApp().drive.redirectUri);
     if (redirectText) setFinancialDocsDriveRedirect(`Redirect URI: ${redirectText}`);
+    const clientIdText = clean(getFinancialDocsSettingsForApp().drive.clientId);
+    if (clientIdText) setFinancialDocsDriveClientId(`OAuth Client ID: ${clientIdText}`);
     showToast(`Google Drive connection failed: ${error.message}`, "error");
   }
 }

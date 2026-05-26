@@ -58,10 +58,11 @@ module.exports = async function handler(req, res) {
 
     await requireFeature(req, "settings", "financial-docs");
     const action = cleanText(req.query?.action || "status").toLowerCase();
+    const clientId = cleanText(process.env.GOOGLE_CLIENT_ID);
 
     if (req.method === "GET" && action === "status") {
       const settings = await loadFinancialDocsSettings();
-      res.status(200).json({ drive: { ...settings.drive, refreshToken: "", accessToken: "", tokenExpiresAt: "", oauthState: "", redirectUri: redirectUri(req) } });
+      res.status(200).json({ drive: { ...settings.drive, refreshToken: "", accessToken: "", tokenExpiresAt: "", oauthState: "", redirectUri: redirectUri(req), clientId } });
       return;
     }
 
@@ -93,6 +94,7 @@ module.exports = async function handler(req, res) {
       res.status(200).json({
         authUrl: `${GOOGLE_AUTH_URL}?${params.toString()}`,
         redirectUri: redirectUri(req),
+        clientId,
         drive: saved.drive,
       });
       return;
@@ -114,7 +116,7 @@ module.exports = async function handler(req, res) {
           baseFolderId: "",
         },
       });
-      res.status(200).json({ drive: { ...saved.drive, redirectUri: redirectUri(req) } });
+      res.status(200).json({ drive: { ...saved.drive, redirectUri: redirectUri(req), clientId } });
       return;
     }
 
@@ -130,7 +132,7 @@ module.exports = async function handler(req, res) {
           connected: true,
         },
       });
-      res.status(200).json({ drive: { ...saved.drive, refreshToken: "", accessToken: "", tokenExpiresAt: "", oauthState: "", redirectUri: redirectUri(req) } });
+      res.status(200).json({ drive: { ...saved.drive, refreshToken: "", accessToken: "", tokenExpiresAt: "", oauthState: "", redirectUri: redirectUri(req), clientId } });
       return;
     }
 
