@@ -1829,6 +1829,7 @@ function bindEvents() {
   els.financialDocsParseInput?.addEventListener("change", onFinancialDocParsePicked);
   els.financialDocsAttachmentInput?.addEventListener("change", onFinancialDocAttachmentPicked);
   els.financialDocsRows?.addEventListener("click", onFinancialDocTableAction);
+  els.financialDocsRows?.addEventListener("change", onFinancialDocTableChange);
   els.financialDocsMobileCards?.addEventListener("click", onFinancialDocTableAction);
   els.financialDocsModalClose?.addEventListener("click", closeFinancialDocModal);
   els.financialDocsChooseAttachment?.addEventListener("click", () => els.financialDocsAttachmentInput?.click());
@@ -16256,7 +16257,7 @@ function setFinancialDocsStatus(message) {
 
 function buildFinancialDocInlineCreateRow() {
   const draft = ensureFinancialDocListDraft();
-  return `<tr class="financial-docs-inline-editor" data-financial-doc-inline-row="new">
+  return `<tr class="financial-docs-inline-editor financial-docs-table-editor" data-financial-doc-inline-row="new">
     <td class="muted">New row</td>
     <td class="center-cell"><select data-financial-doc-new-field="cc">${financialDocSelectMarkup("cc", draft.cc)}</select></td>
     <td><input data-financial-doc-new-field="documentDate" type="date" value="${escape(draft.documentDate)}" /></td>
@@ -16271,11 +16272,32 @@ function buildFinancialDocInlineCreateRow() {
     <td class="center-cell"><select data-financial-doc-new-field="fat">${financialDocSelectMarkup("fat", draft.fat)}</select></td>
     <td><select data-financial-doc-new-field="category">${financialDocSelectMarkup("category", draft.category)}</select></td>
     <td><select data-financial-doc-new-field="status">${financialDocSelectMarkup("status", draft.status || "Draft", { blank: false })}</select></td>
-    <td class="center-cell">-</td>
-    <td class="row-actions">
+    <td class="row-actions center-cell">
       <button type="button" class="ghost" data-action="save-financial-doc-inline">Add</button>
       <button type="button" class="ghost" data-action="clear-financial-doc-inline">Clear</button>
     </td>
+  </tr>`;
+}
+
+function buildFinancialDocExistingEditableRow(row) {
+  return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row financial-docs-table-editor">
+    <td>${escape(formatFinancialDocsCreateDateList(row.createdAt))}</td>
+    <td class="center-cell"><select data-financial-doc-field="cc" data-id="${escape(row.id)}">${financialDocSelectMarkup("cc", row.cc)}</select></td>
+    <td><input data-financial-doc-field="documentDate" data-id="${escape(row.id)}" type="date" value="${escape(row.documentDate)}" /></td>
+    <td><input data-financial-doc-field="docNumber" data-id="${escape(row.id)}" type="text" value="${escape(row.docNumber)}" /></td>
+    <td><input data-financial-doc-field="description" data-id="${escape(row.id)}" type="text" value="${escape(row.description)}" /></td>
+    <td><input data-financial-doc-field="supplierNif" data-id="${escape(row.id)}" type="text" maxlength="15" value="${escape(row.supplierNif)}" /></td>
+    <td><input data-financial-doc-field="supplierName" data-id="${escape(row.id)}" type="text" value="${escape(row.supplierName)}" /></td>
+    <td><input data-financial-doc-field="amount" data-id="${escape(row.id)}" type="number" step="0.01" value="${row.amount === "" ? "" : escape(String(row.amount))}" /></td>
+    <td><input data-financial-doc-field="vatAmount" data-id="${escape(row.id)}" type="number" step="0.01" value="${row.vatAmount === "" ? "" : escape(String(row.vatAmount))}" /></td>
+    <td><select data-financial-doc-field="payment" data-id="${escape(row.id)}">${financialDocSelectMarkup("payment", row.payment)}</select></td>
+    <td class="center-cell"><select data-financial-doc-field="docType" data-id="${escape(row.id)}">${financialDocSelectMarkup("docType", row.docType)}</select></td>
+    <td class="center-cell"><select data-financial-doc-field="fat" data-id="${escape(row.id)}">${financialDocSelectMarkup("fat", row.fat)}</select></td>
+    <td><select data-financial-doc-field="category" data-id="${escape(row.id)}">${financialDocSelectMarkup("category", row.category)}</select></td>
+    <td><select data-financial-doc-field="status" data-id="${escape(row.id)}">${financialDocSelectMarkup("status", row.status || "Draft", { blank: false })}</select></td>
+    <td class="center-cell">${financialDocHasAttachment(row)
+      ? `<button type="button" class="ghost financial-doc-file-button" data-action="download-financial-doc" data-id="${escape(row.id)}" title="Download file">📄</button>`
+      : "-"}</td>
   </tr>`;
 }
 
@@ -16654,30 +16676,6 @@ async function disconnectFinancialDocsDrive() {
   }
 }
 
-function buildFinancialDocTableRow(row) {
-  return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row">
-    <td>${escape(formatFinancialDocsCreateDateList(row.createdAt))}</td>
-    <td class="center-cell">${escape(row.cc || "-")}</td>
-    <td>${escape(formatDateOnly(row.documentDate))}</td>
-    <td>${escape(row.docNumber || "-")}</td>
-    <td>${escape(row.description || "-")}</td>
-    <td>${escape(row.supplierNif || "-")}</td>
-    <td>${escape(row.supplierName || "-")}</td>
-    <td>${escape(formatMoney(row.amount || 0))}</td>
-    <td>${row.vatAmount === "" ? "-" : escape(formatMoney(row.vatAmount || 0))}</td>
-    <td>${escape(row.payment || "-")}</td>
-    <td class="center-cell">${escape(row.docType || "-")}</td>
-    <td class="center-cell">${escape(row.fat || "-")}</td>
-    <td>${escape(row.category || "-")}</td>
-    <td>${escape(row.status || "-")}</td>
-    <td class="center-cell">${financialDocHasAttachment(row) ? "Yes" : "-"}</td>
-    <td class="row-actions">
-      <button type="button" class="ghost" data-action="open-financial-doc" data-id="${escape(row.id)}">Open</button>
-      ${financialDocHasAttachment(row) ? `<button type="button" class="ghost" data-action="download-financial-doc" data-id="${escape(row.id)}">Download</button>` : ""}
-    </td>
-  </tr>`;
-}
-
 function renderFinancialDocsMobileCards(rows) {
   if (!els.financialDocsMobileCards) return;
   if (!rows.length) {
@@ -16688,17 +16686,13 @@ function renderFinancialDocsMobileCards(rows) {
     <article class="service-mobile-card financial-doc-mobile-card" data-financial-doc-id="${escape(row.id)}">
       <div class="service-mobile-head">
         <strong>${escape(row.description || "Document")}</strong>
-        <span>${escape(row.status || "-")}</span>
+        <span>${financialDocHasAttachment(row) ? `<button type="button" class="ghost financial-doc-file-button" data-action="download-financial-doc" data-id="${escape(row.id)}" title="Download file">📄</button>` : escape(row.status || "-")}</span>
       </div>
       <div class="service-mobile-grid">
         <div><small>Create</small><strong>${escape(formatFinancialDocsCreateDate(row.createdAt))}</strong></div>
         <div><small>Date</small><strong>${escape(formatDateOnly(row.documentDate))}</strong></div>
         <div><small>Supplier</small><strong>${escape(row.supplierName || "-")}</strong></div>
         <div><small>Amount</small><strong>${escape(formatMoney(row.amount || 0))}</strong></div>
-      </div>
-      <div class="row-actions">
-        <button type="button" class="ghost" data-action="open-financial-doc" data-id="${escape(row.id)}">Open</button>
-        ${financialDocHasAttachment(row) ? `<button type="button" class="ghost" data-action="download-financial-doc" data-id="${escape(row.id)}">Download</button>` : ""}
       </div>
     </article>
   `).join("");
@@ -16707,7 +16701,7 @@ function renderFinancialDocsMobileCards(rows) {
 function renderFinancialDocs() {
   if (!canUseBackoffice()) {
     if (els.financialDocsCount) els.financialDocsCount.textContent = "0 records";
-    if (els.financialDocsRows) els.financialDocsRows.innerHTML = '<tr><td colspan="16" class="empty">Your profile has no access to Financial Documents.</td></tr>';
+    if (els.financialDocsRows) els.financialDocsRows.innerHTML = '<tr><td colspan="15" class="empty">Your profile has no access to Financial Documents.</td></tr>';
     if (els.financialDocsMobileCards) els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Financial Documents.</div>';
     return;
   }
@@ -16717,8 +16711,8 @@ function renderFinancialDocs() {
   if (els.financialDocsRows) {
     const inlineRow = buildFinancialDocInlineCreateRow();
     els.financialDocsRows.innerHTML = inlineRow + (rows.length
-      ? rows.map(buildFinancialDocTableRow).join("")
-      : '<tr><td colspan="16" class="empty">No financial documents found.</td></tr>');
+      ? rows.map(buildFinancialDocExistingEditableRow).join("")
+      : '<tr><td colspan="15" class="empty">No financial documents found.</td></tr>');
   }
   renderFinancialDocsMobileCards(rows);
 }
@@ -16897,6 +16891,28 @@ function resetFinancialDocListDraft() {
   state.financialDocsListDraft = emptyFinancialDocDraft();
 }
 
+function financialDocRowDraftFromInputs(id) {
+  const current = state.financialDocsRows.find((row) => row.id === id) || emptyFinancialDocDraft();
+  const rowEl = els.financialDocsRows?.querySelector(`[data-financial-doc-id="${id}"]`);
+  if (!rowEl) return current;
+  return normalizeFinancialDocRowClient({
+    ...current,
+    cc: rowEl.querySelector('[data-financial-doc-field="cc"]')?.value,
+    documentDate: rowEl.querySelector('[data-financial-doc-field="documentDate"]')?.value,
+    docNumber: rowEl.querySelector('[data-financial-doc-field="docNumber"]')?.value,
+    description: rowEl.querySelector('[data-financial-doc-field="description"]')?.value,
+    supplierNif: rowEl.querySelector('[data-financial-doc-field="supplierNif"]')?.value,
+    supplierName: rowEl.querySelector('[data-financial-doc-field="supplierName"]')?.value,
+    amount: clean(rowEl.querySelector('[data-financial-doc-field="amount"]')?.value) === "" ? "" : normalizeNumber(rowEl.querySelector('[data-financial-doc-field="amount"]')?.value),
+    vatAmount: clean(rowEl.querySelector('[data-financial-doc-field="vatAmount"]')?.value) === "" ? "" : normalizeNumber(rowEl.querySelector('[data-financial-doc-field="vatAmount"]')?.value),
+    payment: rowEl.querySelector('[data-financial-doc-field="payment"]')?.value,
+    docType: rowEl.querySelector('[data-financial-doc-field="docType"]')?.value,
+    fat: rowEl.querySelector('[data-financial-doc-field="fat"]')?.value,
+    category: rowEl.querySelector('[data-financial-doc-field="category"]')?.value,
+    status: rowEl.querySelector('[data-financial-doc-field="status"]')?.value || "Draft",
+  });
+}
+
 function triggerFinancialDocParsePicker() {
   els.financialDocsParseInput?.click();
 }
@@ -17057,6 +17073,53 @@ async function saveFinancialDocInline() {
   }
 }
 
+async function saveFinancialDocInlineRow(id) {
+  const draft = financialDocRowDraftFromInputs(id);
+  const payload = {
+    cc: draft.cc,
+    documentDate: draft.documentDate,
+    docNumber: draft.docNumber,
+    description: draft.description,
+    supplierNif: draft.supplierNif,
+    supplierName: draft.supplierName,
+    amount: draft.amount,
+    vatAmount: draft.vatAmount === "" ? "" : draft.vatAmount,
+    payment: draft.payment,
+    docType: draft.docType,
+    fat: draft.fat,
+    category: draft.category,
+    status: draft.status || "Draft",
+    ocrFields: draft.ocrFields || {},
+    ocrRawText: clean(draft.ocrRawText),
+  };
+  state.financialDocsRows = state.financialDocsRows.map((row) => (row.id === id ? draft : row));
+  try {
+    setFinancialDocsStatus("Saving...");
+    let result;
+    try {
+      result = await saveFinancialDocRequest(payload, true, id);
+    } catch (error) {
+      if (!/Possible duplicate found/i.test(error.message)) throw error;
+      if (!window.confirm(FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT)) {
+        setFinancialDocsStatus("Save canceled.");
+        return;
+      }
+      result = await saveFinancialDocRequest({ ...payload, confirmDuplicate: true }, true, id);
+    }
+    const savedRow = normalizeFinancialDocRowClient(result?.row);
+    state.financialDocsRows = sortFinancialDocRows([
+      savedRow,
+      ...state.financialDocsRows.filter((row) => row.id !== savedRow.id),
+    ]);
+    renderFinancialDocs();
+    setFinancialDocsStatus("Financial document saved.");
+  } catch (error) {
+    state.financialDocsRows = state.financialDocsRows.map((row) => (row.id === id ? draft : row));
+    setFinancialDocsStatus(`Financial document save failed: ${error.message}`);
+    showToast(`Financial document save failed: ${error.message}`, "error");
+  }
+}
+
 async function downloadFinancialDocFile(rowOverride = null) {
   const draft = rowOverride ? normalizeFinancialDocRowClient(rowOverride) : (state.financialDocsDraft || emptyFinancialDocDraft());
   try {
@@ -17102,10 +17165,23 @@ function onFinancialDocTableAction(event) {
     }
     return;
   }
+  if (event.target.closest("input, select, textarea")) return;
   if (event.target.closest(".financial-docs-inline-editor")) return;
   const row = event.target.closest("[data-financial-doc-id]");
   if (!row) return;
   openFinancialDocModal(clean(row.dataset.financialDocId));
+}
+
+function onFinancialDocTableChange(event) {
+  if (event.target.closest("[data-financial-doc-new-field]")) {
+    state.financialDocsListDraft = financialDocListDraftFromInputs();
+    return;
+  }
+  const field = event.target.closest("[data-financial-doc-field]");
+  if (!field) return;
+  const id = clean(field.dataset.id);
+  if (!id) return;
+  saveFinancialDocInlineRow(id);
 }
 
 function handleFinancialDocsDriveCallbackQuery() {
