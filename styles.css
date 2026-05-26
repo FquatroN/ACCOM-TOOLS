@@ -4787,15 +4787,15 @@ select:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.34rem;
-  height: 1.34rem;
+  width: 1.52rem;
+  height: 1.52rem;
   padding: 0;
   border-radius: 0.35rem;
   min-height: 0;
   text-align: center;
   box-shadow: none;
   transform: none;
-  font-size: 0.74rem;
+  font-size: 0.8rem;
   line-height: 1;
 }
 
@@ -4820,8 +4820,8 @@ select:disabled {
 }
 
 .financial-doc-file-browse {
-  padding: 0.12rem 0.38rem;
-  font-size: 0.72rem;
+  padding: 0.15rem 0.46rem;
+  font-size: 0.78rem;
   line-height: 1.1;
   min-width: 0;
 }
