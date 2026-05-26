@@ -4776,6 +4776,7 @@ select:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.18rem;
   min-width: 0;
   min-height: 1.4rem;
 }
@@ -4785,13 +4786,19 @@ select:disabled {
 }
 
 .financial-doc-file-dropzone {
-  padding: 0.06rem;
-  border-radius: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border-radius: 0.35rem;
   min-height: 0;
-  gap: 0;
   text-align: center;
   box-shadow: none;
   transform: none;
+  font-size: 0.62rem;
+  line-height: 1;
 }
 
 .financial-doc-file-icon {
@@ -4800,7 +4807,7 @@ select:disabled {
 }
 
 .financial-doc-file-browse {
-  padding: 0.05rem 0.28rem;
+  padding: 0.04rem 0.22rem;
   font-size: 0.6rem;
   line-height: 1.1;
   min-width: 0;

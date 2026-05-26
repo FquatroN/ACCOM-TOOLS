@@ -16296,9 +16296,8 @@ function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachme
     return `<div class="financial-doc-file-cell financial-doc-file-cell--icon-only">${downloadButton || '<span class="financial-doc-file-icon">&#128196;</span>'}</div>`;
   }
   return `<div class="financial-doc-file-cell">
-    <div class="file-dropzone financial-doc-file-dropzone" title="${isNew ? "Browse or drop to parse" : "Browse or drop to upload"}" data-financial-doc-dropzone="${escape(dropId)}" data-financial-doc-drop-kind="${isNew ? "parse" : "upload"}">
-      <button type="button" class="ghost financial-doc-file-browse" data-action="${action}" data-id="${escape(rowId)}">...</button>
-    </div>
+    <button type="button" class="ghost financial-doc-file-browse" data-action="${action}" data-id="${escape(rowId)}">...</button>
+    <div class="file-dropzone financial-doc-file-dropzone" title="${isNew ? "Drop file here to parse" : "Drop file here to upload"}" data-financial-doc-dropzone="${escape(dropId)}" data-financial-doc-drop-kind="${isNew ? "parse" : "upload"}">+</div>
   </div>`;
 }
 
