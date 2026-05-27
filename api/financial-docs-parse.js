@@ -49,9 +49,44 @@ function isUtilitySupplier(name) {
   return value.includes("EDP") || value.includes("EPAL");
 }
 
+function cleanUtilityAddressPart(value) {
+  return normalizeWhitespace(value)
+    .replace(/\b(andar|piso)\b/gi, "")
+    .replace(/\b(frac(?:c|ç)?(?:ao|ão)?|porta)\b/gi, "")
+    .replace(/\s*[,;]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractUtilityFloorDoor(text) {
+  const raw = normalizeWhitespace(text);
+  if (!raw) return "";
+  const floorDoorPatterns = [
+    /\b(\d+\s*(?:esq|dto|dt|frt|frente|tras|traseiras?|a|b|c))\b/i,
+    /\b(rc\s*(?:esq|dto|dt|frt|frente|tras|traseiras?)?)\b/i,
+    /\b(c\/?v\s*(?:esq|dto|dt|frt|frente|tras|traseiras?)?)\b/i,
+    /\b(loja\s*[a-z0-9-]*)\b/i,
+  ];
+  for (const pattern of floorDoorPatterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) return cleanUtilityAddressPart(match[1]);
+  }
+  return "";
+}
+
+function normalizeUtilityStreetAddress(value) {
+  const raw = normalizeWhitespace(value);
+  if (!raw) return "";
+  const primary = cleanUtilityAddressPart(raw.split(/\s*-\s*/)[0] || raw);
+  const streetMatch = primary.match(/^(.*?\b\d+[A-Z0-9/-]*)\b/i);
+  const street = cleanUtilityAddressPart(streetMatch?.[1] || primary);
+  const floorDoor = extractUtilityFloorDoor(raw);
+  return normalizeWhitespace([street, floorDoor].filter(Boolean).join(" "));
+}
+
 function buildPortugueseDescription(parsed) {
   const baseDescription = normalizeWhitespace(parsed?.description);
-  const serviceAddressShort = normalizeWhitespace(parsed?.serviceAddressShort || parsed?.service_address_short);
+  const serviceAddressShort = normalizeUtilityStreetAddress(parsed?.serviceAddressShort || parsed?.service_address_short);
   if (!isUtilitySupplier(parsed?.supplierName)) return baseDescription;
   if (!serviceAddressShort) return baseDescription;
   const normalizedBase = baseDescription.toLowerCase();
@@ -101,7 +136,7 @@ async function parseFinancialDocument(file) {
     "If a field is unknown, return an empty string or null.",
     "Description must always be written in Portuguese (Portugal).",
     "Description should be a short practical description of the expense/income document.",
-    "If the supplier is EDP or EPAL, identify the supply address and return serviceAddressShort using only the street name plus floor and door when available.",
+    "If the supplier is EDP or EPAL, identify the supply address and return serviceAddressShort using only street name with number(s), plus floor and door when available.",
     "For EDP or EPAL, the description should begin with that short supply address when available.",
     "Do not include city, postcode, country, or extra address lines in serviceAddressShort.",
   ].join(" ");
