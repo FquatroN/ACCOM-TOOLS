@@ -4787,7 +4787,7 @@ select:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.52rem;
+  width: 1.9rem;
   height: 1.52rem;
   padding: 0;
   border-radius: 0.35rem;
@@ -4820,7 +4820,7 @@ select:disabled {
 }
 
 .financial-doc-file-browse {
-  padding: 0.15rem 0.46rem;
+  padding: 0.17rem 0.52rem;
   font-size: 0.78rem;
   line-height: 1.1;
   min-width: 0;
