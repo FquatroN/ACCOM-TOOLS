@@ -9,6 +9,7 @@ const {
 const {
   attachDocumentFile,
   deleteDriveFile,
+  deleteFinancialDocumentRow,
   insertFinancialDocument,
   insertFinancialDocumentHistory,
   listFinancialDocuments,
@@ -290,6 +291,28 @@ module.exports = async function handler(req, res) {
       if (historyEntries.length) await insertFinancialDocumentHistory(historyEntries);
       const row = await loadFinancialDocumentWithHistory(id);
       res.status(200).json({ row, duplicates });
+      return;
+    }
+
+    if (req.method === "DELETE") {
+      const id = cleanText(req.query?.id || req.body?.id);
+      if (!id) {
+        res.status(400).json({ error: "Document id is required." });
+        return;
+      }
+      const existing = await loadFinancialDocumentRowById(id);
+      if (!existing) {
+        res.status(404).json({ error: "Financial document not found." });
+        return;
+      }
+      const driveFileId = cleanText(existing.drive_file_id);
+      if (driveFileId) {
+        const settings = await loadFinancialDocsSettings();
+        const refreshed = await refreshDriveAccessToken(settings);
+        await deleteDriveFile(refreshed.accessToken, driveFileId);
+      }
+      await deleteFinancialDocumentRow(id);
+      res.status(200).json({ ok: true });
       return;
     }
 

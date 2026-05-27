@@ -1122,6 +1122,7 @@ const els = {
   financialDocsModal: document.getElementById("financial-docs-modal"),
   financialDocsModalTitle: document.getElementById("financial-docs-modal-title"),
   financialDocsModalStatus: document.getElementById("financial-docs-modal-status"),
+  financialDocsDelete: document.getElementById("financial-docs-delete"),
   financialDocsModalClose: document.getElementById("financial-docs-modal-close"),
   financialDocsCreatedAt: document.getElementById("financial-docs-created-at"),
   financialDocsStatusField: document.getElementById("financial-docs-status-field"),
@@ -1849,6 +1850,10 @@ function bindEvents() {
   els.financialDocsRows?.addEventListener("drop", onFinancialDocTableDrop);
   els.financialDocsMobileCards?.addEventListener("click", onFinancialDocTableAction);
   els.financialDocsModalClose?.addEventListener("click", closeFinancialDocModal);
+  els.financialDocsDelete?.addEventListener("click", () => {
+    const id = clean(state.financialDocsDraft?.id);
+    if (id) deleteFinancialDoc(id, { fromModal: true });
+  });
   els.financialDocsChooseAttachment?.addEventListener("click", () => triggerFinancialDocAttachmentPicker({ mode: "modal-attachment" }));
   els.financialDocsDownloadFile?.addEventListener("click", () => downloadFinancialDocFile());
   els.financialDocsSave?.addEventListener("click", saveFinancialDoc);
@@ -16723,6 +16728,7 @@ function buildFinancialDocTableRow(row) {
       <td class="row-actions center-cell">
         <button type="button" class="ghost" data-action="save-financial-doc-row" data-id="${escape(row.id)}">Save</button>
         <button type="button" class="ghost" data-action="cancel-financial-doc-row" data-id="${escape(row.id)}">Cancel</button>
+        <button type="button" class="ghost" data-action="delete-financial-doc-row" data-id="${escape(row.id)}">Delete</button>
       </td>
     </tr>`;
   }
@@ -16744,6 +16750,7 @@ function buildFinancialDocTableRow(row) {
     <td>${fileCell}</td>
     <td class="row-actions center-cell">
       <button type="button" class="ghost" data-action="edit-financial-doc-row" data-id="${escape(row.id)}">Edit</button>
+      <button type="button" class="ghost" data-action="delete-financial-doc-row" data-id="${escape(row.id)}">Delete</button>
     </td>
   </tr>`;
 }
@@ -17167,6 +17174,7 @@ function renderFinancialDocsMobileCards(rows) {
       </div>
       <div class="row-actions">
         <button type="button" class="ghost" data-action="open-financial-doc" data-id="${escape(row.id)}">Open</button>
+        <button type="button" class="ghost" data-action="delete-financial-doc-row" data-id="${escape(row.id)}">Delete</button>
       </div>
     </article>
   `).join("");
@@ -17237,6 +17245,7 @@ function renderFinancialDocAttachmentSummary() {
 function renderFinancialDocEditor() {
   const draft = state.financialDocsDraft || emptyFinancialDocDraft();
   if (els.financialDocsModalTitle) els.financialDocsModalTitle.textContent = clean(draft.id) ? "Financial Document Detail" : "New Financial Document";
+  if (els.financialDocsDelete) els.financialDocsDelete.hidden = !clean(draft.id);
   if (els.financialDocsCreatedAt) els.financialDocsCreatedAt.value = clean(draft.createdAt) ? formatFinancialDocsCreateDate(draft.createdAt) : formatFinancialDocsCreateDate(new Date().toISOString());
   if (els.financialDocsDateField) els.financialDocsDateField.value = clean(draft.documentDate);
   if (els.financialDocsDocNumberField) els.financialDocsDocNumberField.value = clean(draft.docNumber);
@@ -17661,6 +17670,29 @@ async function saveFinancialDocInlineRow(id) {
   }
 }
 
+async function deleteFinancialDoc(id, options = {}) {
+  const row = state.financialDocsRows.find((item) => item.id === id) || state.financialDocsDraft || {};
+  const label = clean(row.description) || clean(row.supplierName) || "this financial document";
+  const confirmed = window.confirm(`Delete ${label}?\n\nThis will remove the record from the database and delete its file from Google Drive.`);
+  if (!confirmed) return;
+  setFinancialDocsStatus("Deleting...");
+  if (options.fromModal) setFinancialDocsModalStatus("Deleting...");
+  try {
+    await api(`/api/financial-docs?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    state.financialDocsRows = state.financialDocsRows.filter((item) => item.id !== id);
+    if (clean(state.financialDocsEditingId) === clean(id)) state.financialDocsEditingId = "";
+    if (clean(state.financialDocsLastOpenedId) === clean(id)) state.financialDocsLastOpenedId = "";
+    if (options.fromModal) closeFinancialDocModal();
+    renderFinancialDocs();
+    setFinancialDocsStatus("");
+    showToast("Financial document deleted.", "success");
+  } catch (error) {
+    setFinancialDocsStatus(`Delete failed: ${error.message}`);
+    if (options.fromModal) setFinancialDocsModalStatus(`Delete failed: ${error.message}`);
+    showToast(`Financial document delete failed: ${error.message}`, "error");
+  }
+}
+
 async function downloadFinancialDocFile(rowOverride = null) {
   const draft = rowOverride ? normalizeFinancialDocRowClient(rowOverride) : (state.financialDocsDraft || emptyFinancialDocDraft());
   try {
@@ -17713,6 +17745,10 @@ function onFinancialDocTableAction(event) {
     if (action === "cancel-financial-doc-row") {
       state.financialDocsEditingId = "";
       loadFinancialDocsData({ silent: true }).catch(() => renderFinancialDocs());
+      return;
+    }
+    if (action === "delete-financial-doc-row") {
+      deleteFinancialDoc(id);
       return;
     }
     if (action === "download-financial-doc") {

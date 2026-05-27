@@ -359,6 +359,12 @@ async function updateFinancialDocumentRow(id, body) {
   return Array.isArray(rows) && rows[0] ? rows[0] : null;
 }
 
+async function deleteFinancialDocumentRow(id) {
+  await restQuery(`financial_documents?id=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 async function insertFinancialDocumentHistory(entries) {
   const payload = (Array.isArray(entries) ? entries : [entries]).filter(Boolean);
   if (!payload.length) return;
@@ -387,5 +393,6 @@ module.exports = {
   insertFinancialDocument,
   insertFinancialDocumentHistory,
   updateFinancialDocumentRow,
+  deleteFinancialDocumentRow,
   updateFinancialDocsSettings,
 };
