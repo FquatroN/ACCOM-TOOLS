@@ -1563,6 +1563,7 @@ const els = {
   laundryResumeFilterProperty: document.getElementById("laundry-resume-filter-property"),
   laundryResumeFilterDateFrom: document.getElementById("laundry-resume-filter-date-from"),
   laundryResumeFilterDateTo: document.getElementById("laundry-resume-filter-date-to"),
+  laundryResumeExportPdf: document.getElementById("laundry-resume-export-pdf"),
   laundryResumeCount: document.getElementById("laundry-resume-count"),
   laundryResumeBody: document.getElementById("laundry-resume-body"),
   laundryAnalysisDateField: document.getElementById("laundry-analysis-date-field"),
@@ -2032,6 +2033,7 @@ function bindEvents() {
   els.laundryTabResume?.addEventListener("click", () => setLaundryScreen("resume"));
   els.laundryTabAnalysis?.addEventListener("click", () => setLaundryScreen("analysis"));
   els.laundryExportExcel?.addEventListener("click", exportLaundryToExcel);
+  els.laundryResumeExportPdf?.addEventListener("click", exportLaundryResumeToPdf);
   els.laundryCloseModal?.addEventListener("click", closeLaundryModal);
   els.laundryFilterProperty?.addEventListener("change", onLaundryFilterInput);
   [els.laundryFilterDateFrom, els.laundryFilterDateTo, els.laundryFilterSearch].forEach((el) => el?.addEventListener("input", onLaundryFilterInput));
@@ -15830,6 +15832,156 @@ function exportLaundryToExcel() {
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers.map((cell) => `<th>${escape(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${escape(cell === null || cell === undefined ? "" : String(cell))}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
   downloadBlob(`laundry_records_${formatDate(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8;");
   showToast(`Exported ${rows.length} laundry record${rows.length === 1 ? "" : "s"} to Excel.`, "success");
+}
+
+function laundryResumeFilterSummary() {
+  const filters = state.laundryResumeFilters || {};
+  const parts = [
+    `Use Date: ${clean(filters.dateField) === "received" ? "Received Date" : "Sent Date"}`,
+    `Property: ${clean(filters.property) || "All"}`,
+    `Date From: ${clean(filters.dateFrom) || "-"}`,
+    `Date To: ${clean(filters.dateTo) || "-"}`,
+    `Detail: ${filters.detail ? "Yes" : "No"}`,
+  ];
+  return parts.join(" | ");
+}
+
+function laundryResumeRowClass(totalDiff) {
+  if (Number(totalDiff || 0) > 0) return "laundry-row-positive";
+  if (Number(totalDiff || 0) < 0) return "laundry-row-negative";
+  return "laundry-row-zero";
+}
+
+function exportLaundryResumeToPdf() {
+  const rows = getLaundryResumeRows();
+  if (!rows.length) {
+    showToast("No laundry resume data to export.", "error");
+    return;
+  }
+  const detail = !!state.laundryResumeFilters.detail;
+  const detailCount = rows.reduce((sum, row) => sum + (row.records?.length || 0), 0);
+  const pricePerKg = Math.max(0, Number(state.laundrySettings?.pricePerKg || 0));
+  const overall = rows.reduce((acc, row) => {
+    acc.difSingleBaixo += Number(row.difSingleBaixo || 0);
+    acc.difSingleCima += Number(row.difSingleCima || 0);
+    acc.difCasalBaixo += Number(row.difCasalBaixo || 0);
+    acc.difCasalCima += Number(row.difCasalCima || 0);
+    acc.totalDiff += Number(row.totalDiff || 0);
+    acc.receivedWeightKg += Number(row.receivedWeightKg || 0);
+    return acc;
+  }, {
+    difSingleBaixo: 0,
+    difSingleCima: 0,
+    difCasalBaixo: 0,
+    difCasalCima: 0,
+    totalDiff: 0,
+    receivedWeightKg: 0,
+  });
+  const tableRows = [];
+  rows.forEach((row) => {
+    if (detail) {
+      (row.records || []).forEach((record) => {
+        tableRows.push(`<tr class="${laundryResumeRowClass(record.totalDiff)}">
+          <td>${escape(record.date)}</td>
+          <td>${escape(String(record.difSingleBaixo))}</td>
+          <td>${escape(String(record.difSingleCima))}</td>
+          <td>${escape(String(record.difCasalBaixo))}</td>
+          <td>${escape(String(record.difCasalCima))}</td>
+          <td>${escape(String(record.totalDiff))}</td>
+          <td>${escape(formatLaundryKg(record.receivedWeightKg))}</td>
+          <td>${escape(formatMoney(record.receivedWeightKg * pricePerKg))}</td>
+        </tr>`);
+      });
+    }
+    tableRows.push(`<tr class="laundry-resume-total-row ${laundryResumeRowClass(row.totalDiff)}">
+      <td>${escape(detail ? `Total ${formatLaundryMonthLabel(row.monthKey)}` : formatLaundryMonthLabel(row.monthKey))}</td>
+      <td>${escape(String(row.difSingleBaixo))}</td>
+      <td>${escape(String(row.difSingleCima))}</td>
+      <td>${escape(String(row.difCasalBaixo))}</td>
+      <td>${escape(String(row.difCasalCima))}</td>
+      <td>${escape(String(row.totalDiff))}</td>
+      <td>${escape(formatLaundryKg(row.receivedWeightKg))}</td>
+      <td>${escape(formatMoney(row.receivedWeightKg * pricePerKg))}</td>
+    </tr>`);
+  });
+  tableRows.push(`<tr class="laundry-resume-total-row ${laundryResumeRowClass(overall.totalDiff)}">
+    <td>Overall Total</td>
+    <td>${escape(String(overall.difSingleBaixo))}</td>
+    <td>${escape(String(overall.difSingleCima))}</td>
+    <td>${escape(String(overall.difCasalBaixo))}</td>
+    <td>${escape(String(overall.difCasalCima))}</td>
+    <td>${escape(String(overall.totalDiff))}</td>
+    <td>${escape(formatLaundryKg(Number(overall.receivedWeightKg.toFixed(2))))}</td>
+    <td>${escape(formatMoney(overall.receivedWeightKg * pricePerKg))}</td>
+  </tr>`);
+  const exportDate = formatDate(new Date());
+  const summary = detail
+    ? `${rows.length} month${rows.length === 1 ? "" : "s"} / ${detailCount} record${detailCount === 1 ? "" : "s"}`
+    : `${rows.length} month${rows.length === 1 ? "" : "s"}`;
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Laundry Resume</title>
+      <style>
+        @page { size: landscape; margin: 12mm; }
+        body { font-family: Calibri, Arial, sans-serif; color: #1f1f1f; }
+        .toolbar { display: flex; gap: 8px; align-items: center; margin: 0 0 16px; padding: 10px; background: #f6efe8; border: 1px solid #d8c8b8; border-radius: 10px; }
+        .toolbar button { background: #0a5f57; color: white; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
+        .toolbar span { color: #5f554c; font-size: 13px; }
+        h1 { margin: 0 0 4px; font-size: 22px; }
+        p { margin: 0 0 14px; color: #666; }
+        .filters { margin-top: -8px; margin-bottom: 14px; color: #5f554c; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+        th { background: #0a5f57; color: white; border: 1px solid #0a5f57; padding: 6px; text-align: left; }
+        td { border: 1px solid #cfc7bd; padding: 6px; vertical-align: top; word-wrap: break-word; }
+        tr.laundry-row-negative td { background: rgba(177, 32, 48, 0.15); }
+        tr.laundry-row-positive td { background: rgba(55, 140, 92, 0.15); }
+        tr.laundry-row-zero td { background: rgba(67, 127, 211, 0.15); }
+        tr.laundry-resume-total-row td { font-weight: 700; }
+        @media print { .toolbar { display: none; } }
+      </style>
+    </head>
+    <body>
+      <div class="toolbar">
+        <button type="button" onclick="window.print()">Print / Save PDF</button>
+        <span>If the print dialog does not open automatically, press this button and choose "Save as PDF".</span>
+      </div>
+      <h1>Laundry Resume</h1>
+      <p>Exported ${escape(exportDate)} · ${escape(summary)}</p>
+      <p class="filters"><strong>Filters:</strong> ${escape(laundryResumeFilterSummary())}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Dif Single baixo</th>
+            <th>Dif Single cima</th>
+            <th>Dif Casal baixo</th>
+            <th>Dif Casal Cima</th>
+            <th>Total Dif</th>
+            <th>Weight</th>
+            <th>€</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows.join("")}</tbody>
+      </table>
+      <script>
+        window.addEventListener("load", () => {
+          window.focus();
+          setTimeout(() => window.print(), 700);
+        });
+      </script>
+    </body>
+  </html>`;
+  const win = window.open("", "_blank");
+  if (!win) {
+    showToast("Could not open PDF print window. Please allow pop-ups for this site.", "error");
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  showToast("Laundry resume PDF opened in a print window.", "success");
 }
 
 function renderLaundry() {
