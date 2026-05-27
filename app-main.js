@@ -856,7 +856,7 @@ const state = {
   laundryScreen: "list",
   laundryFilters: { property: "", dateFrom: "", dateTo: "", search: "" },
   laundryResumeFilters: { dateField: "sent", property: "", dateFrom: `${new Date().getFullYear()}-01-01`, dateTo: "", detail: false },
-  laundryFincFilters: { property: "", dateFrom: `${new Date().getFullYear()}-01-01`, dateTo: "" },
+  laundryFincFilters: { property: "", dateFrom: `${new Date().getFullYear()}-01-01`, dateTo: "", removeZeros: false },
   laundryDraft: null,
   laundrySelectedId: "",
   serviceProviders: [],
@@ -1572,6 +1572,7 @@ const els = {
   laundryFincFilterProperty: document.getElementById("laundry-finc-filter-property"),
   laundryFincFilterDateFrom: document.getElementById("laundry-finc-filter-date-from"),
   laundryFincFilterDateTo: document.getElementById("laundry-finc-filter-date-to"),
+  laundryFincFilterRemoveZeros: document.getElementById("laundry-finc-filter-remove-zeros"),
   laundryFincExportPdf: document.getElementById("laundry-finc-export-pdf"),
   laundryFincCount: document.getElementById("laundry-finc-count"),
   laundryFincBody: document.getElementById("laundry-finc-body"),
@@ -2050,7 +2051,7 @@ function bindEvents() {
   [els.laundryFilterDateFrom, els.laundryFilterDateTo, els.laundryFilterSearch].forEach((el) => el?.addEventListener("input", onLaundryFilterInput));
   [els.laundryResumeDateField, els.laundryResumeFilterProperty, els.laundryResumeDetail].forEach((el) => el?.addEventListener("change", onLaundryResumeFilterInput));
   [els.laundryResumeFilterDateFrom, els.laundryResumeFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryResumeFilterInput));
-  els.laundryFincFilterProperty?.addEventListener("change", onLaundryFincFilterInput);
+  [els.laundryFincFilterProperty, els.laundryFincFilterRemoveZeros].forEach((el) => el?.addEventListener("change", onLaundryFincFilterInput));
   [els.laundryFincFilterDateFrom, els.laundryFincFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryFincFilterInput));
   [els.laundryAnalysisDateField, els.laundryAnalysisFilterProperty].forEach((el) => el?.addEventListener("change", onLaundryAnalysisFilterInput));
   [els.laundryAnalysisFilterDateFrom, els.laundryAnalysisFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryAnalysisFilterInput));
@@ -15312,6 +15313,7 @@ function onLaundryFincFilterInput() {
   state.laundryFincFilters.property = clean(els.laundryFincFilterProperty?.value);
   state.laundryFincFilters.dateFrom = clean(els.laundryFincFilterDateFrom?.value);
   state.laundryFincFilters.dateTo = clean(els.laundryFincFilterDateTo?.value);
+  state.laundryFincFilters.removeZeros = !!els.laundryFincFilterRemoveZeros?.checked;
   renderLaundry();
 }
 
@@ -15537,6 +15539,7 @@ function getLaundryFincRows() {
   const property = clean(filters.property);
   const dateFrom = clean(filters.dateFrom);
   const dateTo = clean(filters.dateTo);
+  const removeZeros = !!filters.removeZeros;
   const ids = getLaundryResumeColumnIds();
   const pricePerKg = Math.max(0, Number(state.laundrySettings?.pricePerKg || 0));
   return [...state.laundryRecords]
@@ -15564,6 +15567,7 @@ function getLaundryFincRows() {
         calculatedEuro: calculatedWeightKg * pricePerKg,
       };
     })
+    .filter((row) => !removeZeros || Number(row.calculatedWeightKg || 0) !== 0)
     .sort((a, b) => clean(b.date).localeCompare(clean(a.date)) || clean(a.property).localeCompare(clean(b.property)));
 }
 
@@ -15572,6 +15576,7 @@ function renderLaundryFinc() {
   if (els.laundryFincFilterProperty) els.laundryFincFilterProperty.value = clean(state.laundryFincFilters.property);
   if (els.laundryFincFilterDateFrom) els.laundryFincFilterDateFrom.value = clean(state.laundryFincFilters.dateFrom);
   if (els.laundryFincFilterDateTo) els.laundryFincFilterDateTo.value = clean(state.laundryFincFilters.dateTo);
+  if (els.laundryFincFilterRemoveZeros) els.laundryFincFilterRemoveZeros.checked = !!state.laundryFincFilters.removeZeros;
   const rows = getLaundryFincRows();
   els.laundryFincCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   els.laundryFincBody.innerHTML = "";
@@ -15629,6 +15634,7 @@ function laundryFincFilterSummary() {
     `Property: ${clean(filters.property) || "All"}`,
     `Date From: ${clean(filters.dateFrom) || "-"}`,
     `Date To: ${clean(filters.dateTo) || "-"}`,
+    `Remove zeros: ${filters.removeZeros ? "Yes" : "No"}`,
   ].join(" | ");
 }
 
