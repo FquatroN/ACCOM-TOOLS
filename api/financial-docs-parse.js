@@ -78,10 +78,15 @@ function normalizeUtilityStreetAddress(value) {
   const raw = normalizeWhitespace(value);
   if (!raw) return "";
   const primary = cleanUtilityAddressPart(raw.split(/\s*-\s*/)[0] || raw);
-  const streetMatch = primary.match(/^(.*?\b\d+[A-Z0-9/-]*)\b/i);
-  const street = cleanUtilityAddressPart(streetMatch?.[1] || primary);
+  const numberIndex = primary.search(/\b\d+[A-Z0-9/-]*\b/i);
+  const tail = numberIndex >= 0 ? cleanUtilityAddressPart(primary.slice(numberIndex)) : "";
   const floorDoor = extractUtilityFloorDoor(raw);
-  return normalizeWhitespace([street, floorDoor].filter(Boolean).join(" "));
+  const normalizedTail = normalizeWhitespace(tail);
+  if (!normalizedTail) return floorDoor;
+  if (floorDoor && !normalizedTail.toLowerCase().includes(floorDoor.toLowerCase())) {
+    return normalizeWhitespace(`${normalizedTail} ${floorDoor}`);
+  }
+  return normalizedTail;
 }
 
 function buildPortugueseDescription(parsed) {
@@ -136,7 +141,9 @@ async function parseFinancialDocument(file) {
     "If a field is unknown, return an empty string or null.",
     "Description must always be written in Portuguese (Portugal).",
     "Description should be a short practical description of the expense/income document.",
-    "If the supplier is EDP or EPAL, identify the supply address and return serviceAddressShort using only street name with number(s), plus floor and door when available.",
+    "If the supplier is EDP or EPAL, identify the supply address and return serviceAddressShort using only what comes after the street name: building number(s), plus floor and door when available.",
+    "For EPAL, prefer the address shown under 'Morada Postal (Principal)'.",
+    "Example: if the address is 'RUA RODRIGUES SAMPAIO 146 4 ESQ', return '146 4 ESQ'.",
     "For EDP or EPAL, the description should begin with that short supply address when available.",
     "Do not include city, postcode, country, or extra address lines in serviceAddressShort.",
   ].join(" ");
