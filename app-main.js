@@ -856,6 +856,7 @@ const state = {
   laundryScreen: "list",
   laundryFilters: { property: "", dateFrom: "", dateTo: "", search: "" },
   laundryResumeFilters: { dateField: "sent", property: "", dateFrom: `${new Date().getFullYear()}-01-01`, dateTo: "", detail: false },
+  laundryFincFilters: { property: "", dateFrom: `${new Date().getFullYear()}-01-01`, dateTo: "" },
   laundryDraft: null,
   laundrySelectedId: "",
   serviceProviders: [],
@@ -1544,9 +1545,11 @@ const els = {
   laundryNew: document.getElementById("laundry-new"),
   laundryTabList: document.getElementById("laundry-tab-list"),
   laundryTabResume: document.getElementById("laundry-tab-resume"),
+  laundryTabFinc: document.getElementById("laundry-tab-finc"),
   laundryTabAnalysis: document.getElementById("laundry-tab-analysis"),
   laundryPanelList: document.getElementById("laundry-panel-list"),
   laundryPanelResume: document.getElementById("laundry-panel-resume"),
+  laundryPanelFinc: document.getElementById("laundry-panel-finc"),
   laundryPanelAnalysis: document.getElementById("laundry-panel-analysis"),
   laundryExportExcel: document.getElementById("laundry-export-excel"),
   laundryRows: document.getElementById("laundry-rows"),
@@ -1566,6 +1569,12 @@ const els = {
   laundryResumeExportPdf: document.getElementById("laundry-resume-export-pdf"),
   laundryResumeCount: document.getElementById("laundry-resume-count"),
   laundryResumeBody: document.getElementById("laundry-resume-body"),
+  laundryFincFilterProperty: document.getElementById("laundry-finc-filter-property"),
+  laundryFincFilterDateFrom: document.getElementById("laundry-finc-filter-date-from"),
+  laundryFincFilterDateTo: document.getElementById("laundry-finc-filter-date-to"),
+  laundryFincExportPdf: document.getElementById("laundry-finc-export-pdf"),
+  laundryFincCount: document.getElementById("laundry-finc-count"),
+  laundryFincBody: document.getElementById("laundry-finc-body"),
   laundryAnalysisDateField: document.getElementById("laundry-analysis-date-field"),
   laundryAnalysisFilterProperty: document.getElementById("laundry-analysis-filter-property"),
   laundryAnalysisFilterDateFrom: document.getElementById("laundry-analysis-filter-date-from"),
@@ -2031,14 +2040,18 @@ function bindEvents() {
   });
   els.laundryTabList?.addEventListener("click", () => setLaundryScreen("list"));
   els.laundryTabResume?.addEventListener("click", () => setLaundryScreen("resume"));
+  els.laundryTabFinc?.addEventListener("click", () => setLaundryScreen("finc"));
   els.laundryTabAnalysis?.addEventListener("click", () => setLaundryScreen("analysis"));
   els.laundryExportExcel?.addEventListener("click", exportLaundryToExcel);
   els.laundryResumeExportPdf?.addEventListener("click", exportLaundryResumeToPdf);
+  els.laundryFincExportPdf?.addEventListener("click", exportLaundryFincToPdf);
   els.laundryCloseModal?.addEventListener("click", closeLaundryModal);
   els.laundryFilterProperty?.addEventListener("change", onLaundryFilterInput);
   [els.laundryFilterDateFrom, els.laundryFilterDateTo, els.laundryFilterSearch].forEach((el) => el?.addEventListener("input", onLaundryFilterInput));
   [els.laundryResumeDateField, els.laundryResumeFilterProperty, els.laundryResumeDetail].forEach((el) => el?.addEventListener("change", onLaundryResumeFilterInput));
   [els.laundryResumeFilterDateFrom, els.laundryResumeFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryResumeFilterInput));
+  els.laundryFincFilterProperty?.addEventListener("change", onLaundryFincFilterInput);
+  [els.laundryFincFilterDateFrom, els.laundryFincFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryFincFilterInput));
   [els.laundryAnalysisDateField, els.laundryAnalysisFilterProperty].forEach((el) => el?.addEventListener("change", onLaundryAnalysisFilterInput));
   [els.laundryAnalysisFilterDateFrom, els.laundryAnalysisFilterDateTo].forEach((el) => el?.addEventListener("input", onLaundryAnalysisFilterInput));
   [els.laundryProperty, els.laundryDate, els.laundryReceivedWeight, els.laundryNotes].forEach((el) =>
@@ -15295,6 +15308,13 @@ function onLaundryResumeFilterInput() {
   renderLaundry();
 }
 
+function onLaundryFincFilterInput() {
+  state.laundryFincFilters.property = clean(els.laundryFincFilterProperty?.value);
+  state.laundryFincFilters.dateFrom = clean(els.laundryFincFilterDateFrom?.value);
+  state.laundryFincFilters.dateTo = clean(els.laundryFincFilterDateTo?.value);
+  renderLaundry();
+}
+
 function onLaundryAnalysisFilterInput() {
   state.laundryResumeFilters.dateField = clean(els.laundryAnalysisDateField?.value) === "received" ? "received" : "sent";
   state.laundryResumeFilters.property = clean(els.laundryAnalysisFilterProperty?.value);
@@ -15304,22 +15324,26 @@ function onLaundryAnalysisFilterInput() {
 }
 
 function setLaundryScreen(screen) {
-  state.laundryScreen = screen === "resume" || screen === "analysis" ? screen : "list";
+  state.laundryScreen = screen === "resume" || screen === "analysis" || screen === "finc" ? screen : "list";
   renderLaundry();
 }
 
 function renderLaundryScreenTabs() {
   const isList = state.laundryScreen === "list";
   const isResume = state.laundryScreen === "resume";
+  const isFinc = state.laundryScreen === "finc";
   const isAnalysis = state.laundryScreen === "analysis";
   els.laundryTabList?.classList.toggle("active-tab", isList);
   els.laundryTabList?.classList.toggle("ghost", !isList);
   els.laundryTabResume?.classList.toggle("active-tab", isResume);
   els.laundryTabResume?.classList.toggle("ghost", !isResume);
+  els.laundryTabFinc?.classList.toggle("active-tab", isFinc);
+  els.laundryTabFinc?.classList.toggle("ghost", !isFinc);
   els.laundryTabAnalysis?.classList.toggle("active-tab", isAnalysis);
   els.laundryTabAnalysis?.classList.toggle("ghost", !isAnalysis);
   if (els.laundryPanelList) els.laundryPanelList.hidden = !isList;
   if (els.laundryPanelResume) els.laundryPanelResume.hidden = !isResume;
+  if (els.laundryPanelFinc) els.laundryPanelFinc.hidden = !isFinc;
   if (els.laundryPanelAnalysis) els.laundryPanelAnalysis.hidden = !isAnalysis;
 }
 
@@ -15506,6 +15530,216 @@ function getLaundryCompletedAnalysisEntries() {
     grouped.set(basisDate, current);
   });
   return [...grouped.values()].sort((a, b) => clean(a.date).localeCompare(clean(b.date)));
+}
+
+function getLaundryFincRows() {
+  const filters = state.laundryFincFilters || {};
+  const property = clean(filters.property);
+  const dateFrom = clean(filters.dateFrom);
+  const dateTo = clean(filters.dateTo);
+  const ids = getLaundryResumeColumnIds();
+  const pricePerKg = Math.max(0, Number(state.laundrySettings?.pricePerKg || 0));
+  return [...state.laundryRecords]
+    .filter((row) => laundryHasCompleteReceivedItemEntries(row))
+    .filter((row) => {
+      const basisDate = clean(row.receivedDate);
+      return /^\d{4}-\d{2}-\d{2}$/.test(basisDate);
+    })
+    .filter((row) => !property || clean(row.property) === property)
+    .filter((row) => !dateFrom || clean(row.receivedDate) >= dateFrom)
+    .filter((row) => !dateTo || clean(row.receivedDate) <= dateTo)
+    .map((row) => {
+      const receivedItems = row.receivedItems || {};
+      const calculatedWeightKg = countLaundryWeightKgClient(receivedItems);
+      const receivedWeightKg = Number(row.receivedWeightKg || 0);
+      return {
+        date: clean(row.receivedDate),
+        property: clean(row.property),
+        singleBaixo: Number(receivedItems?.[ids.singleBaixo] || 0),
+        singleCima: Number(receivedItems?.[ids.singleCima] || 0),
+        casalBaixo: Number(receivedItems?.[ids.casalBaixo] || 0),
+        casalCima: Number(receivedItems?.[ids.casalCima] || 0),
+        calculatedWeightKg,
+        receivedWeightKg,
+        calculatedEuro: calculatedWeightKg * pricePerKg,
+      };
+    })
+    .sort((a, b) => clean(b.date).localeCompare(clean(a.date)) || clean(a.property).localeCompare(clean(b.property)));
+}
+
+function renderLaundryFinc() {
+  if (!els.laundryFincBody || !els.laundryFincCount) return;
+  if (els.laundryFincFilterProperty) els.laundryFincFilterProperty.value = clean(state.laundryFincFilters.property);
+  if (els.laundryFincFilterDateFrom) els.laundryFincFilterDateFrom.value = clean(state.laundryFincFilters.dateFrom);
+  if (els.laundryFincFilterDateTo) els.laundryFincFilterDateTo.value = clean(state.laundryFincFilters.dateTo);
+  const rows = getLaundryFincRows();
+  els.laundryFincCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  els.laundryFincBody.innerHTML = "";
+  if (!rows.length) {
+    els.laundryFincBody.innerHTML = '<tr><td colspan="9" class="empty">No finc control data found.</td></tr>';
+    return;
+  }
+  const overall = rows.reduce((acc, row) => {
+    acc.singleBaixo += Number(row.singleBaixo || 0);
+    acc.singleCima += Number(row.singleCima || 0);
+    acc.casalBaixo += Number(row.casalBaixo || 0);
+    acc.casalCima += Number(row.casalCima || 0);
+    acc.calculatedWeightKg += Number(row.calculatedWeightKg || 0);
+    acc.receivedWeightKg += Number(row.receivedWeightKg || 0);
+    acc.calculatedEuro += Number(row.calculatedEuro || 0);
+    return acc;
+  }, {
+    singleBaixo: 0,
+    singleCima: 0,
+    casalBaixo: 0,
+    casalCima: 0,
+    calculatedWeightKg: 0,
+    receivedWeightKg: 0,
+    calculatedEuro: 0,
+  });
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escape(row.date)}</td>
+      <td>${escape(row.property)}</td>
+      <td>${escape(String(row.singleBaixo))}</td>
+      <td>${escape(String(row.singleCima))}</td>
+      <td>${escape(String(row.casalBaixo))}</td>
+      <td>${escape(String(row.casalCima))}</td>
+      <td>${escape(formatLaundryKg(row.calculatedWeightKg))}</td>
+      <td>${escape(formatLaundryKg(row.receivedWeightKg))}</td>
+      <td>${escape(formatMoney(row.calculatedEuro))}</td>`;
+    els.laundryFincBody.appendChild(tr);
+  });
+  const totalTr = document.createElement("tr");
+  totalTr.className = "laundry-resume-total-row";
+  totalTr.innerHTML = `<td colspan="2">Overall Total</td>
+    <td>${escape(String(overall.singleBaixo))}</td>
+    <td>${escape(String(overall.singleCima))}</td>
+    <td>${escape(String(overall.casalBaixo))}</td>
+    <td>${escape(String(overall.casalCima))}</td>
+    <td>${escape(formatLaundryKg(Number(overall.calculatedWeightKg.toFixed(2))))}</td>
+    <td>${escape(formatLaundryKg(Number(overall.receivedWeightKg.toFixed(2))))}</td>
+    <td>${escape(formatMoney(overall.calculatedEuro))}</td>`;
+  els.laundryFincBody.appendChild(totalTr);
+}
+
+function laundryFincFilterSummary() {
+  const filters = state.laundryFincFilters || {};
+  return [
+    `Property: ${clean(filters.property) || "All"}`,
+    `Date From: ${clean(filters.dateFrom) || "-"}`,
+    `Date To: ${clean(filters.dateTo) || "-"}`,
+  ].join(" | ");
+}
+
+function exportLaundryFincToPdf() {
+  const rows = getLaundryFincRows();
+  if (!rows.length) {
+    showToast("No laundry finc control data to export.", "error");
+    return;
+  }
+  const overall = rows.reduce((acc, row) => {
+    acc.singleBaixo += Number(row.singleBaixo || 0);
+    acc.singleCima += Number(row.singleCima || 0);
+    acc.casalBaixo += Number(row.casalBaixo || 0);
+    acc.casalCima += Number(row.casalCima || 0);
+    acc.calculatedWeightKg += Number(row.calculatedWeightKg || 0);
+    acc.receivedWeightKg += Number(row.receivedWeightKg || 0);
+    acc.calculatedEuro += Number(row.calculatedEuro || 0);
+    return acc;
+  }, {
+    singleBaixo: 0,
+    singleCima: 0,
+    casalBaixo: 0,
+    casalCima: 0,
+    calculatedWeightKg: 0,
+    receivedWeightKg: 0,
+    calculatedEuro: 0,
+  });
+  const tableRows = rows.map((row) => `<tr>
+    <td>${escape(row.date)}</td>
+    <td>${escape(row.property)}</td>
+    <td>${escape(String(row.singleBaixo))}</td>
+    <td>${escape(String(row.singleCima))}</td>
+    <td>${escape(String(row.casalBaixo))}</td>
+    <td>${escape(String(row.casalCima))}</td>
+    <td>${escape(formatLaundryKg(row.calculatedWeightKg))}</td>
+    <td>${escape(formatLaundryKg(row.receivedWeightKg))}</td>
+    <td>${escape(formatMoney(row.calculatedEuro))}</td>
+  </tr>`);
+  tableRows.push(`<tr class="laundry-resume-total-row">
+    <td colspan="2">Overall Total</td>
+    <td>${escape(String(overall.singleBaixo))}</td>
+    <td>${escape(String(overall.singleCima))}</td>
+    <td>${escape(String(overall.casalBaixo))}</td>
+    <td>${escape(String(overall.casalCima))}</td>
+    <td>${escape(formatLaundryKg(Number(overall.calculatedWeightKg.toFixed(2))))}</td>
+    <td>${escape(formatLaundryKg(Number(overall.receivedWeightKg.toFixed(2))))}</td>
+    <td>${escape(formatMoney(overall.calculatedEuro))}</td>
+  </tr>`);
+  const exportDate = formatDate(new Date());
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Laundry Finc Control</title>
+      <style>
+        @page { size: landscape; margin: 12mm; }
+        body { font-family: Calibri, Arial, sans-serif; color: #1f1f1f; }
+        .toolbar { display: flex; gap: 8px; align-items: center; margin: 0 0 16px; padding: 10px; background: #f6efe8; border: 1px solid #d8c8b8; border-radius: 10px; }
+        .toolbar button { background: #0a5f57; color: white; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
+        .toolbar span { color: #5f554c; font-size: 13px; }
+        h1 { margin: 0 0 4px; font-size: 22px; }
+        p { margin: 0 0 14px; color: #666; }
+        .filters { margin-top: -8px; margin-bottom: 14px; color: #5f554c; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+        th { background: #0a5f57; color: white; border: 1px solid #0a5f57; padding: 6px; text-align: left; }
+        td { border: 1px solid #cfc7bd; padding: 6px; vertical-align: top; word-wrap: break-word; }
+        tr.laundry-resume-total-row td { font-weight: 700; background: rgba(67, 127, 211, 0.08); }
+        @media print { .toolbar { display: none; } }
+      </style>
+    </head>
+    <body>
+      <div class="toolbar">
+        <button type="button" onclick="window.print()">Print / Save PDF</button>
+        <span>If the print dialog does not open automatically, press this button and choose "Save as PDF".</span>
+      </div>
+      <h1>Laundry Finc Control</h1>
+      <p>Exported ${escape(exportDate)} · ${escape(String(rows.length))} record${rows.length === 1 ? "" : "s"}</p>
+      <p class="filters"><strong>Filters:</strong> ${escape(laundryFincFilterSummary())}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Property</th>
+            <th>Single baixo</th>
+            <th>Single cima</th>
+            <th>Casal baixo</th>
+            <th>Casal cima</th>
+            <th>Calculated Weight</th>
+            <th>Received Weight</th>
+            <th>Calculated €</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows.join("")}</tbody>
+      </table>
+      <script>
+        window.addEventListener("load", () => {
+          window.focus();
+          setTimeout(() => window.print(), 700);
+        });
+      </script>
+    </body>
+  </html>`;
+  const win = window.open("", "_blank");
+  if (!win) {
+    showToast("Could not open PDF print window. Please allow pop-ups for this site.", "error");
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  showToast("Laundry finc control PDF opened in a print window.", "success");
 }
 
 const LAUNDRY_ANALYSIS_COLORS = ["#2563eb", "#ef4444", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#be185d", "#4b5563"];
@@ -15997,6 +16231,10 @@ function renderLaundry() {
   renderLaundryScreenTabs();
   if (state.laundryScreen === "resume") {
     renderLaundryResume();
+    return;
+  }
+  if (state.laundryScreen === "finc") {
+    renderLaundryFinc();
     return;
   }
   if (state.laundryScreen === "analysis") {

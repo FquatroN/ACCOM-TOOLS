@@ -1767,6 +1767,7 @@
                 <button id="laundry-new" type="button" class="ghost">New record</button>
                 <button id="laundry-tab-list" type="button" class="active-tab">List</button>
                 <button id="laundry-tab-resume" type="button" class="ghost">Resume</button>
+                <button id="laundry-tab-finc" type="button" class="ghost">Finc Control</button>
                 <button id="laundry-tab-analysis" type="button" class="ghost">Analysis</button>
               </div>
             </div>
@@ -1911,6 +1912,51 @@
                 <div id="laundry-analysis-chart" class="review-analysis-chart"></div>
                 <div id="laundry-analysis-legend" class="review-analysis-legend"></div>
               </section>
+            </section>
+            <section id="laundry-panel-finc" hidden>
+              <div class="bar services-subbar">
+                <h3>Finc Control</h3>
+                <div class="actions">
+                  <button id="laundry-finc-export-pdf" type="button" class="ghost">Export PDF</button>
+                  <p id="laundry-finc-count">0 records</p>
+                </div>
+              </div>
+              <div class="grid filters laundry-resume-filters">
+                <label>
+                  Property
+                  <select id="laundry-finc-filter-property">
+                    <option value="">All</option>
+                    <option value="Hostel">Hostel</option>
+                    <option value="Cruz">Cruz</option>
+                  </select>
+                </label>
+                <label>
+                  Date From
+                  <input id="laundry-finc-filter-date-from" type="date" />
+                </label>
+                <label>
+                  Date To
+                  <input id="laundry-finc-filter-date-to" type="date" />
+                </label>
+              </div>
+              <div class="table-wrap services-resume-table-wrap">
+                <table class="settings-table laundry-resume-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Property</th>
+                      <th>Single baixo</th>
+                      <th>Single cima</th>
+                      <th>Casal baixo</th>
+                      <th>Casal cima</th>
+                      <th>Calculated Weight</th>
+                      <th>Received Weight</th>
+                      <th>Calculated €</th>
+                    </tr>
+                  </thead>
+                  <tbody id="laundry-finc-body"></tbody>
+                </table>
+              </div>
             </section>
           </section>
         </section>
