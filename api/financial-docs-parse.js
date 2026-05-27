@@ -99,7 +99,7 @@ function buildPortugueseDescription(parsed) {
   const postalAddressPrincipalShort = normalizeUtilityStreetAddress(parsed?.postalAddressPrincipalShort || parsed?.postal_address_principal_short);
   const supplyAddressShort = normalizeUtilityStreetAddress(parsed?.supplyAddressShort || parsed?.supply_address_short);
   const preferredAddress = isEpalSupplier(parsed?.supplierName)
-    ? (postalAddressPrincipalShort || serviceAddressShort || supplyAddressShort)
+    ? postalAddressPrincipalShort
     : (serviceAddressShort || supplyAddressShort || postalAddressPrincipalShort);
   if (!isUtilitySupplier(parsed?.supplierName)) return baseDescription;
   if (!preferredAddress) return baseDescription;
@@ -155,8 +155,9 @@ async function parseFinancialDocument(file) {
     "Use supplyAddressShort for 'Morada Abastecimento'.",
     "Use serviceAddressShort only as a fallback short address if the wording is different.",
     "For utility addresses, return only what comes after the street name: building number(s), plus floor and door when available.",
-    "For EPAL, prefer the address shown under 'Morada Postal (Principal)'.",
+    "For EPAL, use ONLY the address shown under 'Morada Postal (Principal)' for the description prefix. Do NOT use 'Morada Abastecimento' for the description prefix.",
     "Example: if the address is 'RUA RODRIGUES SAMPAIO 146 5 ESQ', return '146 5 ESQ'.",
+    "EPAL example with both fields present: if 'Morada Postal (Principal)' is 'RUA RODRIGUES SAMPAIO 146 5 ESQ' and 'Morada Abastecimento' is 'RUA CAMILO CASTELO BRANCO 9-A 5 ESQ', then postalAddressPrincipalShort must be '146 5 ESQ' and the description prefix must also be '146 5 ESQ'.",
     "For EDP or EPAL, the description should begin with that short supply address when available.",
     "Do not include city, postcode, country, or extra address lines in any returned short address.",
   ].join(" ");
