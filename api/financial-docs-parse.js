@@ -49,6 +49,10 @@ function isUtilitySupplier(name) {
   return value.includes("EDP") || value.includes("EPAL");
 }
 
+function isEpalSupplier(name) {
+  return normalizeWhitespace(name).toUpperCase().includes("EPAL");
+}
+
 function cleanUtilityAddressPart(value) {
   return normalizeWhitespace(value)
     .replace(/\b(andar|piso)\b/gi, "")
@@ -92,13 +96,18 @@ function normalizeUtilityStreetAddress(value) {
 function buildPortugueseDescription(parsed) {
   const baseDescription = normalizeWhitespace(parsed?.description);
   const serviceAddressShort = normalizeUtilityStreetAddress(parsed?.serviceAddressShort || parsed?.service_address_short);
+  const postalAddressPrincipalShort = normalizeUtilityStreetAddress(parsed?.postalAddressPrincipalShort || parsed?.postal_address_principal_short);
+  const supplyAddressShort = normalizeUtilityStreetAddress(parsed?.supplyAddressShort || parsed?.supply_address_short);
+  const preferredAddress = isEpalSupplier(parsed?.supplierName)
+    ? (postalAddressPrincipalShort || serviceAddressShort || supplyAddressShort)
+    : (serviceAddressShort || supplyAddressShort || postalAddressPrincipalShort);
   if (!isUtilitySupplier(parsed?.supplierName)) return baseDescription;
-  if (!serviceAddressShort) return baseDescription;
+  if (!preferredAddress) return baseDescription;
   const normalizedBase = baseDescription.toLowerCase();
-  const normalizedAddress = serviceAddressShort.toLowerCase();
-  if (!baseDescription) return serviceAddressShort;
+  const normalizedAddress = preferredAddress.toLowerCase();
+  if (!baseDescription) return preferredAddress;
   if (normalizedBase.startsWith(normalizedAddress)) return baseDescription;
-  return `${serviceAddressShort} - ${baseDescription}`;
+  return `${preferredAddress} - ${baseDescription}`;
 }
 
 async function uploadOpenAiFile(file) {
@@ -135,17 +144,21 @@ async function parseFinancialDocument(file) {
   const prompt = [
     "Analyze this financial document and extract likely fields.",
     "Return only JSON with these keys:",
-    "documentDate, docNumber, description, supplierNif, supplierName, amount, vatAmount, serviceAddressShort, notes.",
+    "documentDate, docNumber, description, supplierNif, supplierName, amount, vatAmount, serviceAddressShort, postalAddressPrincipalShort, supplyAddressShort, notes.",
     "Use ISO date format YYYY-MM-DD when possible.",
     "Use numbers for amount and vatAmount when possible, otherwise null.",
     "If a field is unknown, return an empty string or null.",
     "Description must always be written in Portuguese (Portugal).",
     "Description should be a short practical description of the expense/income document.",
-    "If the supplier is EDP or EPAL, identify the supply address and return serviceAddressShort using only what comes after the street name: building number(s), plus floor and door when available.",
+    "If the supplier is EDP or EPAL, extract utility addresses separately.",
+    "Use postalAddressPrincipalShort for 'Morada Postal (Principal)'.",
+    "Use supplyAddressShort for 'Morada Abastecimento'.",
+    "Use serviceAddressShort only as a fallback short address if the wording is different.",
+    "For utility addresses, return only what comes after the street name: building number(s), plus floor and door when available.",
     "For EPAL, prefer the address shown under 'Morada Postal (Principal)'.",
-    "Example: if the address is 'RUA RODRIGUES SAMPAIO 146 4 ESQ', return '146 4 ESQ'.",
+    "Example: if the address is 'RUA RODRIGUES SAMPAIO 146 5 ESQ', return '146 5 ESQ'.",
     "For EDP or EPAL, the description should begin with that short supply address when available.",
-    "Do not include city, postcode, country, or extra address lines in serviceAddressShort.",
+    "Do not include city, postcode, country, or extra address lines in any returned short address.",
   ].join(" ");
   const content = [{ type: "input_text", text: prompt }];
   if ((file.mimeType || "").startsWith("image/")) {
