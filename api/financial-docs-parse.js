@@ -40,6 +40,27 @@ function parseJsonText(text) {
   return {};
 }
 
+function normalizeWhitespace(value) {
+  return cleanText(String(value || "").replace(/\s+/g, " "));
+}
+
+function isUtilitySupplier(name) {
+  const value = normalizeWhitespace(name).toUpperCase();
+  return value.includes("EDP") || value.includes("EPAL");
+}
+
+function buildPortugueseDescription(parsed) {
+  const baseDescription = normalizeWhitespace(parsed?.description);
+  const serviceAddressShort = normalizeWhitespace(parsed?.serviceAddressShort || parsed?.service_address_short);
+  if (!isUtilitySupplier(parsed?.supplierName)) return baseDescription;
+  if (!serviceAddressShort) return baseDescription;
+  const normalizedBase = baseDescription.toLowerCase();
+  const normalizedAddress = serviceAddressShort.toLowerCase();
+  if (!baseDescription) return serviceAddressShort;
+  if (normalizedBase.startsWith(normalizedAddress)) return baseDescription;
+  return `${serviceAddressShort} - ${baseDescription}`;
+}
+
 async function uploadOpenAiFile(file) {
   const apiKey = cleanText(process.env.OPENAI_API_KEY);
   if (!apiKey) {
@@ -74,11 +95,15 @@ async function parseFinancialDocument(file) {
   const prompt = [
     "Analyze this financial document and extract likely fields.",
     "Return only JSON with these keys:",
-    "documentDate, docNumber, description, supplierNif, supplierName, amount, vatAmount, notes.",
+    "documentDate, docNumber, description, supplierNif, supplierName, amount, vatAmount, serviceAddressShort, notes.",
     "Use ISO date format YYYY-MM-DD when possible.",
     "Use numbers for amount and vatAmount when possible, otherwise null.",
     "If a field is unknown, return an empty string or null.",
+    "Description must always be written in Portuguese (Portugal).",
     "Description should be a short practical description of the expense/income document.",
+    "If the supplier is EDP or EPAL, identify the supply address and return serviceAddressShort using only the street name plus floor and door when available.",
+    "For EDP or EPAL, the description should begin with that short supply address when available.",
+    "Do not include city, postcode, country, or extra address lines in serviceAddressShort.",
   ].join(" ");
   const content = [{ type: "input_text", text: prompt }];
   if ((file.mimeType || "").startsWith("image/")) {
@@ -129,7 +154,7 @@ module.exports = async function handler(req, res) {
       cc: "",
       documentDate: cleanText(parsed.documentDate),
       docNumber: cleanText(parsed.docNumber),
-      description: cleanText(parsed.description),
+      description: buildPortugueseDescription(parsed),
       supplierNif: cleanText(parsed.supplierNif).slice(0, 15),
       supplierName: cleanText(parsed.supplierName),
       amount: parsed.amount === null || parsed.amount === undefined || cleanText(parsed.amount) === "" ? "" : Number(parsed.amount),
