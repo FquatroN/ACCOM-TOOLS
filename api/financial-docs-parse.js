@@ -44,6 +44,11 @@ function normalizeWhitespace(value) {
   return cleanText(String(value || "").replace(/\s+/g, " "));
 }
 
+function normalizeUploadFilename(value, fallback = "document.pdf") {
+  const raw = cleanText(value) || fallback;
+  return raw.replace(/(\.[a-z0-9]{1,8})$/i, (match) => match.toLowerCase());
+}
+
 function isUtilitySupplier(name) {
   const value = normalizeWhitespace(name).toUpperCase();
   return value.includes("EDP") || value.includes("EPAL");
@@ -119,7 +124,11 @@ async function uploadOpenAiFile(file) {
   }
   const form = new FormData();
   form.append("purpose", "user_data");
-  form.append("file", new Blob([Buffer.from(String(file.base64Content || ""), "base64")], { type: file.mimeType || "application/pdf" }), file.originalFilename || "document.pdf");
+  form.append(
+    "file",
+    new Blob([Buffer.from(String(file.base64Content || ""), "base64")], { type: file.mimeType || "application/pdf" }),
+    normalizeUploadFilename(file.originalFilename, "document.pdf")
+  );
   const response = await fetch("https://api.openai.com/v1/files", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
