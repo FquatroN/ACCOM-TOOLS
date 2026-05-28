@@ -1225,9 +1225,11 @@ const els = {
   settingEmailEnabled: document.getElementById("setting-email-enabled"),
   settingEmailFrequency: document.getElementById("setting-email-frequency"),
   settingEmailTime: document.getElementById("setting-email-time"),
+  settingEmailForce1: document.getElementById("setting-email-force-1"),
   settingEmailRecipients: document.getElementById("setting-email-recipients"),
   settingEmailFrequency2: document.getElementById("setting-email-frequency-2"),
   settingEmailTime2: document.getElementById("setting-email-time-2"),
+  settingEmailForce2: document.getElementById("setting-email-force-2"),
   settingEmailRecipients2: document.getElementById("setting-email-recipients-2"),
   settingEmailPreview: document.getElementById("setting-email-preview"),
   settingEmailNextPreview: document.getElementById("setting-email-next-preview"),
@@ -2136,6 +2138,8 @@ function bindEvents() {
     el.addEventListener("input", updateEmailSettings)
   );
   els.testEmailNow.addEventListener("click", triggerEmailNow);
+  els.settingEmailForce1?.addEventListener("click", () => triggerCommunicationScheduleNow("schedule1"));
+  els.settingEmailForce2?.addEventListener("click", () => triggerCommunicationScheduleNow("schedule2"));
   els.saveSettings.addEventListener("click", saveSettings);
   els.groupsNew.addEventListener("click", async () => {
     await refreshGroupSettingsForEditor();
@@ -5554,6 +5558,28 @@ async function triggerEmailNow() {
     setSettingsStatus(`Test email failed: ${e.message}`);
   } finally {
     els.testEmailNow.disabled = false;
+  }
+}
+
+async function triggerCommunicationScheduleNow(scheduleKey) {
+  const label = scheduleKey === "schedule2" ? "schedule 2" : "schedule 1";
+  const button = scheduleKey === "schedule2" ? els.settingEmailForce2 : els.settingEmailForce1;
+  if (button) button.disabled = true;
+  setSettingsStatus(`Sending communications email for ${label}...`);
+  try {
+    const result = await api("/api/email-automation?force=1", {
+      method: "POST",
+      body: { forceScheduleKey: scheduleKey },
+    });
+    if (result?.status === "sent") {
+      setSettingsStatus(`Communications email for ${label} sent successfully.`);
+    } else {
+      setSettingsStatus(`Communications email for ${label} was not sent: ${result?.reason || "unknown reason"}.`);
+    }
+  } catch (e) {
+    setSettingsStatus(`Communications email for ${label} failed: ${e.message}`);
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 

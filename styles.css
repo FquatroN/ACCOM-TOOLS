@@ -442,6 +442,23 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.settings-inline-action {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.settings-inline-action > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-inline-action > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 0.45rem 0.7rem;
+}
+
 #settings-view-laundry .settings-block > .grid.settings-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: start;

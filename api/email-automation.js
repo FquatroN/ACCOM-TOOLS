@@ -52,6 +52,13 @@ function normalizeSchedule(raw, suffix = "") {
   };
 }
 
+function normalizeForceScheduleKey(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "schedule2") return "schedule2";
+  if (raw === "schedule1") return "schedule1";
+  return "";
+}
+
 function normalizeHex(value) {
   const raw = String(value || "").trim();
   if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
@@ -486,6 +493,7 @@ module.exports = async function handler(req, res) {
     const force = String(req.query?.force || "") === "1";
     const body = req.method === "POST" ? await parseBody(req) : {};
     const testRecipient = String(body?.testRecipient || "").trim().toLowerCase();
+    const forceScheduleKey = normalizeForceScheduleKey(body?.forceScheduleKey || body?.scheduleKey || req.query?.scheduleKey);
     if (testRecipient && !isValidEmail(testRecipient)) {
       const err = new Error("Invalid test recipient email.");
       err.statusCode = 400;
@@ -495,7 +503,12 @@ module.exports = async function handler(req, res) {
     const now = new Date();
     const allRows = await fetchRecentCommunications();
     const autoClosedCount = await autoCloseExpiredRows(allRows, emailAutomation.categories, now);
-    const dueCheck = dueSchedules(emailAutomation, now, DEFAULT_TZ);
+    const dueCheck = forceScheduleKey
+      ? {
+          schedules: emailAutomation[forceScheduleKey] ? [{ ...emailAutomation[forceScheduleKey], key: forceScheduleKey, slotKey: `manual:${forceScheduleKey}` }] : [],
+          reason: emailAutomation[forceScheduleKey] ? "" : "invalid_schedule",
+        }
+      : dueSchedules(emailAutomation, now, DEFAULT_TZ);
 
     if (!force && !dueCheck.schedules.length) {
       res.status(200).json({ ok: true, status: "skipped", reason: dueCheck.reason, autoClosedCount });
@@ -504,7 +517,7 @@ module.exports = async function handler(req, res) {
 
     const slotKeys = Object.fromEntries(dueCheck.schedules.map((schedule) => [schedule.key, schedule.slotKey]));
     let lastSent = { id: null, schedule1: "", schedule2: "" };
-    if (!testRecipient) {
+    if (!testRecipient && !forceScheduleKey) {
       lastSent = await loadLastSentSlot();
       const unsentSchedules = dueCheck.schedules.filter((schedule) => lastSent[schedule.key] !== schedule.slotKey);
       if (!force && !unsentSchedules.length) {
@@ -542,7 +555,7 @@ module.exports = async function handler(req, res) {
       text: content.text,
     });
 
-    if (!testRecipient) {
+    if (!testRecipient && !forceScheduleKey) {
       await saveLastSentSlot(lastSent.id, {
         schedule1: dueCheck.schedules.some((schedule) => schedule.key === "schedule1") ? slotKeys.schedule1 : lastSent.schedule1,
         schedule2: dueCheck.schedules.some((schedule) => schedule.key === "schedule2") ? slotKeys.schedule2 : lastSent.schedule2,
