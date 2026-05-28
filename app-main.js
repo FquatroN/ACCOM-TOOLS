@@ -910,6 +910,9 @@ const state = {
   financialDocsDraft: null,
   financialDocsListDraft: null,
   financialDocsListAttachment: null,
+  financialDocsListDuplicateWarning: "",
+  financialDocsDuplicateWarning: "",
+  financialDocsRowDuplicateWarnings: {},
   financialDocsEditingId: "",
   financialDocEntitiesEditingId: "",
   financialDocsAttachment: null,
@@ -1137,6 +1140,7 @@ const els = {
   financialDocsCcField: document.getElementById("financial-docs-cc-field"),
   financialDocsDateField: document.getElementById("financial-docs-date-field"),
   financialDocsDocNumberField: document.getElementById("financial-docs-doc-number-field"),
+  financialDocsDuplicateWarning: document.getElementById("financial-docs-duplicate-warning"),
   financialDocsDescriptionField: document.getElementById("financial-docs-description-field"),
   financialDocsSupplierNifField: document.getElementById("financial-docs-supplier-nif-field"),
   financialDocsSupplierNameField: document.getElementById("financial-docs-supplier-name-field"),
@@ -1869,6 +1873,13 @@ function bindEvents() {
   els.financialDocsRows?.addEventListener("drop", onFinancialDocTableDrop);
   els.financialDocsMobileCards?.addEventListener("click", onFinancialDocTableAction);
   els.financialDocsModalClose?.addEventListener("click", closeFinancialDocModal);
+  [
+    els.financialDocsDocNumberField,
+    els.financialDocsDateField,
+    els.financialDocsSupplierNifField,
+    els.financialDocsSupplierNameField,
+    els.financialDocsAmountField,
+  ].forEach((el) => el?.addEventListener("input", () => setFinancialDocsDuplicateWarning("")));
   els.financialDocsEntitiesClose?.addEventListener("click", closeFinancialDocEntitiesModal);
   els.financialDocsEntitiesRows?.addEventListener("click", onFinancialDocEntitiesAction);
   [els.financialDocsEntitiesFilterSearch, els.financialDocsEntitiesFilterAddress].forEach((el) =>
@@ -16967,6 +16978,14 @@ function setFinancialDocsStatus(message) {
   if (els.financialDocsStatus) els.financialDocsStatus.textContent = message || "";
 }
 
+function renderFinancialDocsDuplicateWarning() {
+  if (els.financialDocsDuplicateWarning) {
+    const message = clean(state.financialDocsDuplicateWarning);
+    els.financialDocsDuplicateWarning.textContent = message;
+    els.financialDocsDuplicateWarning.hidden = !message;
+  }
+}
+
 function setFinancialDocsEntitiesStatus(message) {
   if (els.financialDocsEntitiesStatus) els.financialDocsEntitiesStatus.textContent = message || "";
 }
@@ -17017,6 +17036,7 @@ function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachme
 }
 
 function buildFinancialDocTableRow(row) {
+  const rowDuplicateWarning = clean(state.financialDocsRowDuplicateWarnings?.[clean(row.id)]);
   const statusClass = (() => {
     const normalized = clean(row.status).toLowerCase();
     if (normalized === "confirmed") return "financial-doc-row--confirmed";
@@ -17034,7 +17054,7 @@ function buildFinancialDocTableRow(row) {
       <td>${escape(formatFinancialDocsCreateDateList(row.createdAt))}</td>
       <td class="center-cell"><select data-financial-doc-field="cc" data-id="${escape(row.id)}">${financialDocSelectMarkup("cc", row.cc)}</select></td>
       <td><input data-financial-doc-field="documentDate" data-id="${escape(row.id)}" type="date" value="${escape(row.documentDate)}" /></td>
-      <td><input data-financial-doc-field="docNumber" data-id="${escape(row.id)}" type="text" value="${escape(row.docNumber)}" /></td>
+      <td><input data-financial-doc-field="docNumber" data-id="${escape(row.id)}" type="text" value="${escape(row.docNumber)}" />${rowDuplicateWarning ? `<small class="financial-docs-duplicate-warning">${escape(rowDuplicateWarning)}</small>` : ""}</td>
       <td><input data-financial-doc-field="description" data-id="${escape(row.id)}" type="text" value="${escape(row.description)}" /></td>
       <td><input data-financial-doc-field="supplierName" data-id="${escape(row.id)}" type="text" list="financial-docs-entity-name-list" autocomplete="off" value="${escape(row.supplierName)}" /></td>
       <td><input data-financial-doc-field="supplierNif" data-id="${escape(row.id)}" type="text" maxlength="15" list="financial-docs-entity-nif-list" autocomplete="off" value="${escape(row.supplierNif)}" /></td>
@@ -17076,11 +17096,12 @@ function buildFinancialDocTableRow(row) {
 
 function buildFinancialDocInlineCreateRow() {
   const draft = ensureFinancialDocListDraft();
+  const duplicateWarning = clean(state.financialDocsListDuplicateWarning);
   return `<tr class="financial-docs-inline-editor financial-docs-table-editor" data-financial-doc-inline-row="new">
     <td class="muted">New row</td>
     <td class="center-cell"><select data-financial-doc-new-field="cc">${financialDocSelectMarkup("cc", draft.cc)}</select></td>
     <td><input data-financial-doc-new-field="documentDate" type="date" value="${escape(draft.documentDate)}" /></td>
-    <td><input data-financial-doc-new-field="docNumber" type="text" value="${escape(draft.docNumber)}" /></td>
+    <td><input data-financial-doc-new-field="docNumber" type="text" value="${escape(draft.docNumber)}" />${duplicateWarning ? `<small class="financial-docs-duplicate-warning">${escape(duplicateWarning)}</small>` : ""}</td>
     <td><input data-financial-doc-new-field="description" type="text" value="${escape(draft.description)}" /></td>
     <td><input data-financial-doc-new-field="supplierName" type="text" list="financial-docs-entity-name-list" autocomplete="off" value="${escape(draft.supplierName)}" /></td>
     <td><input data-financial-doc-new-field="supplierNif" type="text" maxlength="15" list="financial-docs-entity-nif-list" autocomplete="off" value="${escape(draft.supplierNif)}" /></td>
@@ -17116,6 +17137,11 @@ function setFinancialDocsDriveClientId(message) {
 
 function setFinancialDocsModalStatus(message) {
   if (els.financialDocsModalStatus) els.financialDocsModalStatus.textContent = message || "";
+}
+
+function setFinancialDocsDuplicateWarning(message) {
+  state.financialDocsDuplicateWarning = clean(message);
+  renderFinancialDocsDuplicateWarning();
 }
 
 function parseFinancialDocsCsvList(value) {
@@ -17608,6 +17634,7 @@ function renderFinancialDocEditor() {
   if (els.financialDocsSupplierNameField) els.financialDocsSupplierNameField.value = clean(draft.supplierName);
   if (els.financialDocsAmountField) els.financialDocsAmountField.value = draft.amount === "" ? "" : String(draft.amount);
   if (els.financialDocsVatAmountField) els.financialDocsVatAmountField.value = draft.vatAmount === "" ? "" : String(draft.vatAmount);
+  renderFinancialDocsDuplicateWarning();
   renderFinancialDocEntityLists();
   renderFinancialDocEditorOptions();
   renderFinancialDocAttachmentSummary();
@@ -17654,6 +17681,7 @@ async function openFinancialDocModal(id = "", options = {}) {
   try {
     const { seedRow = null, preserveAttachment = false } = options || {};
     setFinancialDocsModalStatus("");
+    setFinancialDocsDuplicateWarning("");
     if (!preserveAttachment) state.financialDocsAttachment = null;
     state.financialDocsLastOpenedId = clean(id);
     state.financialDocsDraft = clean(id)
@@ -17671,6 +17699,7 @@ async function openFinancialDocModal(id = "", options = {}) {
 
 function closeFinancialDocModal() {
   state.financialDocsModalOpen = false;
+  setFinancialDocsDuplicateWarning("");
   if (state.financialDocsAttachment?.previewUrl) {
     try {
       URL.revokeObjectURL(state.financialDocsAttachment.previewUrl);
@@ -17728,6 +17757,7 @@ function financialDocListDraftFromInputs() {
 function resetFinancialDocListDraft() {
   state.financialDocsListDraft = emptyFinancialDocDraft();
   state.financialDocsListAttachment = null;
+  state.financialDocsListDuplicateWarning = "";
 }
 
 function financialDocRowDraftFromInputs(id) {
@@ -17915,6 +17945,7 @@ async function refreshFinancialDocEntitiesAfterSave() {
 async function saveFinancialDoc() {
   const draft = financialDocDraftFromInputs();
   const isUpdate = !!clean(draft.id);
+  setFinancialDocsDuplicateWarning("");
   const payload = {
     cc: draft.cc,
     documentDate: draft.documentDate,
@@ -17940,6 +17971,7 @@ async function saveFinancialDoc() {
       result = await saveFinancialDocRequest(payload, isUpdate, draft.id);
     } catch (error) {
       if (!/Possible duplicate found/i.test(error.message)) throw error;
+      setFinancialDocsDuplicateWarning(clean(error.message) || FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT);
       if (!window.confirm(FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT)) {
         setFinancialDocsModalStatus("Save canceled.");
         return;
@@ -17968,6 +18000,7 @@ async function saveFinancialDoc() {
 
 async function saveFinancialDocInline() {
   const draft = financialDocListDraftFromInputs();
+  state.financialDocsListDuplicateWarning = "";
   const payload = financialDocBuildPayload(draft);
   if (state.financialDocsListAttachment?.upload) payload.attachmentUpload = state.financialDocsListAttachment.upload;
   try {
@@ -17977,6 +18010,8 @@ async function saveFinancialDocInline() {
       result = await saveFinancialDocRequest(payload, false, "");
     } catch (error) {
       if (!/Possible duplicate found/i.test(error.message)) throw error;
+      state.financialDocsListDuplicateWarning = clean(error.message) || FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT;
+      renderFinancialDocs();
       if (!window.confirm(FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT)) {
         setFinancialDocsStatus("Save canceled.");
         return;
@@ -17988,6 +18023,7 @@ async function saveFinancialDocInline() {
       savedRow,
       ...state.financialDocsRows.filter((row) => row.id !== savedRow.id),
     ]);
+    state.financialDocsListDuplicateWarning = "";
     resetFinancialDocListDraft();
     await refreshFinancialDocEntitiesAfterSave();
     renderFinancialDocs();
@@ -18002,6 +18038,10 @@ async function saveFinancialDocInline() {
 
 async function saveFinancialDocInlineRow(id) {
   const draft = financialDocRowDraftFromInputs(id);
+  state.financialDocsRowDuplicateWarnings = {
+    ...state.financialDocsRowDuplicateWarnings,
+    [id]: "",
+  };
   const payload = financialDocBuildPayload(draft);
   state.financialDocsRows = state.financialDocsRows.map((row) => (row.id === id ? draft : row));
   try {
@@ -18011,6 +18051,11 @@ async function saveFinancialDocInlineRow(id) {
       result = await saveFinancialDocRequest(payload, true, id);
     } catch (error) {
       if (!/Possible duplicate found/i.test(error.message)) throw error;
+      state.financialDocsRowDuplicateWarnings = {
+        ...state.financialDocsRowDuplicateWarnings,
+        [id]: clean(error.message) || FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT,
+      };
+      renderFinancialDocs();
       if (!window.confirm(FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT)) {
         setFinancialDocsStatus("Save canceled.");
         return;
@@ -18022,6 +18067,10 @@ async function saveFinancialDocInlineRow(id) {
       savedRow,
       ...state.financialDocsRows.filter((row) => row.id !== savedRow.id),
     ]);
+    state.financialDocsRowDuplicateWarnings = {
+      ...state.financialDocsRowDuplicateWarnings,
+      [id]: "",
+    };
     state.financialDocsEditingId = "";
     await refreshFinancialDocEntitiesAfterSave();
     renderFinancialDocs();
@@ -18098,6 +18147,10 @@ function onFinancialDocTableAction(event) {
       return;
     }
     if (action === "edit-financial-doc-row") {
+      state.financialDocsRowDuplicateWarnings = {
+        ...state.financialDocsRowDuplicateWarnings,
+        [id]: "",
+      };
       state.financialDocsEditingId = id;
       renderFinancialDocs();
       return;
@@ -18107,6 +18160,10 @@ function onFinancialDocTableAction(event) {
       return;
     }
     if (action === "cancel-financial-doc-row") {
+      state.financialDocsRowDuplicateWarnings = {
+        ...state.financialDocsRowDuplicateWarnings,
+        [id]: "",
+      };
       state.financialDocsEditingId = "";
       loadFinancialDocsData({ silent: true }).catch(() => renderFinancialDocs());
       return;
@@ -18130,15 +18187,36 @@ function onFinancialDocTableAction(event) {
 function onFinancialDocTableChange(event) {
   syncFinancialDocTableEntityFields(event.target);
   if (event.target.closest("[data-financial-doc-new-field]")) {
+    state.financialDocsListDuplicateWarning = "";
+    event.target.closest("[data-financial-doc-inline-row]")?.querySelector(".financial-docs-duplicate-warning")?.remove();
     state.financialDocsListDraft = financialDocListDraftFromInputs();
     return;
+  }
+  const rowId = clean(event.target?.dataset?.id || event.target.closest("[data-financial-doc-id]")?.dataset?.financialDocId);
+  if (rowId) {
+    state.financialDocsRowDuplicateWarnings = {
+      ...state.financialDocsRowDuplicateWarnings,
+      [rowId]: "",
+    };
+    event.target.closest("[data-financial-doc-id]")?.querySelector(".financial-docs-duplicate-warning")?.remove();
   }
 }
 
 function onFinancialDocTableInput(event) {
   syncFinancialDocTableEntityFields(event.target);
   if (event.target.closest("[data-financial-doc-new-field]")) {
+    state.financialDocsListDuplicateWarning = "";
     state.financialDocsListDraft = financialDocListDraftFromInputs();
+    event.target.closest("[data-financial-doc-inline-row]")?.querySelector(".financial-docs-duplicate-warning")?.remove();
+    return;
+  }
+  const rowId = clean(event.target?.dataset?.id || event.target.closest("[data-financial-doc-id]")?.dataset?.financialDocId);
+  if (rowId && clean(state.financialDocsRowDuplicateWarnings?.[rowId])) {
+    state.financialDocsRowDuplicateWarnings = {
+      ...state.financialDocsRowDuplicateWarnings,
+      [rowId]: "",
+    };
+    event.target.closest("[data-financial-doc-id]")?.querySelector(".financial-docs-duplicate-warning")?.remove();
   }
 }
 

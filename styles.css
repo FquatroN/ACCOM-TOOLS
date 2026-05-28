@@ -4904,6 +4904,14 @@ select:disabled {
   text-align: right;
 }
 
+.financial-docs-duplicate-warning {
+  display: block;
+  margin-top: 0.18rem;
+  color: #b42318;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
 .financial-doc-file-button {
   padding: 0.1rem 0.25rem;
   min-width: 0;
