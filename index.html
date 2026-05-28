@@ -3186,6 +3186,9 @@
           <section class="card">
             <div class="bar">
               <h2>Filters</h2>
+              <div class="row-actions">
+                <button id="financial-docs-open-entities" type="button" class="ghost financial-docs-entities-link">Entities</button>
+              </div>
             </div>
             <div class="grid filters financial-docs-filters">
               <label>
@@ -3271,6 +3274,8 @@
 
           <input id="financial-docs-parse-input" class="sr-only-file" type="file" accept=".pdf,image/*,application/pdf" />
           <input id="financial-docs-attachment-input" class="sr-only-file" type="file" accept=".pdf,image/*,application/pdf" />
+          <datalist id="financial-docs-entity-name-list"></datalist>
+          <datalist id="financial-docs-entity-nif-list"></datalist>
 
           <section id="financial-docs-modal" class="modal-backdrop" hidden>
             <section class="card modal-card financial-docs-modal-card">
@@ -3310,11 +3315,11 @@
                 </label>
                 <label>
                   Supplier NIF
-                  <input id="financial-docs-supplier-nif-field" type="text" maxlength="15" />
+                  <input id="financial-docs-supplier-nif-field" type="text" maxlength="15" list="financial-docs-entity-nif-list" autocomplete="off" />
                 </label>
                 <label>
                   Name *
-                  <input id="financial-docs-supplier-name-field" type="text" />
+                  <input id="financial-docs-supplier-name-field" type="text" list="financial-docs-entity-name-list" autocomplete="off" />
                 </label>
                 <label>
                   Amount *
@@ -3376,6 +3381,51 @@
               <div class="actions">
                 <button id="financial-docs-save" type="button">Save</button>
               </div>
+            </section>
+          </section>
+
+          <section id="financial-docs-entities-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card financial-doc-entities-modal-card">
+              <div class="bar">
+                <h2>Entities</h2>
+                <div class="actions">
+                  <p id="financial-docs-entities-status" class="auth-status"></p>
+                  <button id="financial-docs-entities-close" type="button" class="ghost">Close</button>
+                </div>
+              </div>
+
+              <section class="settings-block">
+                <div class="grid filters financial-doc-entities-filters">
+                  <label>
+                    NIF / Name
+                    <input id="financial-docs-entities-filter-search" type="search" placeholder="NIF or entity name" />
+                  </label>
+                  <label>
+                    Address
+                    <input id="financial-docs-entities-filter-address" type="search" placeholder="Address" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="settings-block">
+                <div class="bar">
+                  <h3>Entity List</h3>
+                  <p id="financial-docs-entities-count">0 records</p>
+                </div>
+                <div class="table-wrap compact-table-wrap financial-doc-entities-table-wrap">
+                  <table class="compact-table financial-doc-entities-table">
+                    <thead>
+                      <tr>
+                        <th>NIF</th>
+                        <th>Name</th>
+                        <th>Address</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="financial-docs-entities-rows"></tbody>
+                  </table>
+                </div>
+              </section>
             </section>
           </section>
         </section>

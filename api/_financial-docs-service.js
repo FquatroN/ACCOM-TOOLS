@@ -6,6 +6,7 @@ const {
   sanitizeFinancialDocsSettings,
   safeFinancialDocsSettings,
   toClientDocument,
+  toClientEntity,
   toClientHistory,
   monthlyFolderKey,
   buildStoredFileName,
@@ -371,6 +372,37 @@ async function insertFinancialDocumentHistory(entries) {
   await restQuery("financial_document_history", { method: "POST", body: payload });
 }
 
+async function listFinancialDocumentEntities() {
+  const rows = await restQuery("financial_document_entities?select=*&order=name.asc", { method: "GET" });
+  return Array.isArray(rows) ? rows.map(toClientEntity) : [];
+}
+
+async function loadFinancialDocumentEntityRowById(id) {
+  const rows = await restQuery(`financial_document_entities?select=*&id=eq.${encodeURIComponent(id)}&limit=1`, { method: "GET" });
+  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+}
+
+async function insertFinancialDocumentEntity(body) {
+  const payload = Array.isArray(body) ? body : [body];
+  const rows = await restQuery("financial_document_entities", { method: "POST", body: payload, preferRepresentation: true });
+  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+}
+
+async function updateFinancialDocumentEntityRow(id, body) {
+  const rows = await restQuery(`financial_document_entities?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body,
+    preferRepresentation: true,
+  });
+  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+}
+
+async function deleteFinancialDocumentEntityRow(id) {
+  await restQuery(`financial_document_entities?id=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 module.exports = {
   GOOGLE_AUTH_URL,
   GOOGLE_DRIVE_SCOPE,
@@ -380,10 +412,12 @@ module.exports = {
   downloadDriveFile,
   exchangeCodeForDriveTokens,
   loadDriveAccountEmail,
+  loadFinancialDocumentEntityRowById,
   loadFinancialDocumentRowById,
   loadFinancialDocumentWithHistory,
   loadFinancialDocsSettings,
   loadFinancialDocsSettingsRecord,
+  listFinancialDocumentEntities,
   listFinancialDocuments,
   redirectUri,
   refreshDriveAccessToken,
@@ -391,8 +425,11 @@ module.exports = {
   saveFinancialDocsSettings,
   safeFinancialDocsSettings,
   insertFinancialDocument,
+  insertFinancialDocumentEntity,
   insertFinancialDocumentHistory,
   updateFinancialDocumentRow,
+  updateFinancialDocumentEntityRow,
   deleteFinancialDocumentRow,
+  deleteFinancialDocumentEntityRow,
   updateFinancialDocsSettings,
 };

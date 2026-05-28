@@ -97,6 +97,25 @@ function safeFinancialDocsSettings(settings = DEFAULT_FINANCIAL_DOCS_SETTINGS) {
   };
 }
 
+function normalizeEntityNif(value) {
+  return cleanText(value).replace(/\D+/g, "");
+}
+
+function normalizeEntityName(value) {
+  return cleanText(value).replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function sanitizeFinancialDocumentEntityInput(input = {}) {
+  const entity = {
+    nif: cleanText(input.nif),
+    name: cleanText(input.name).replace(/\s+/g, " ").trim(),
+    address: cleanText(input.address),
+  };
+  if (!normalizeEntityNif(entity.nif)) throw badRequest("NIF is required.");
+  if (!normalizeEntityName(entity.name)) throw badRequest("Name is required.");
+  return entity;
+}
+
 function normalizeStatus(value, settings = DEFAULT_FINANCIAL_DOCS_SETTINGS) {
   const raw = cleanText(value);
   if (raw) {
@@ -331,19 +350,34 @@ function toClientHistory(row = {}) {
   };
 }
 
+function toClientEntity(row = {}) {
+  return {
+    id: cleanText(row.id),
+    nif: cleanText(row.nif),
+    name: cleanText(row.name).replace(/\s+/g, " ").trim(),
+    address: cleanText(row.address),
+    createdAt: cleanText(row.created_at || row.createdAt),
+    updatedAt: cleanText(row.updated_at || row.updatedAt),
+  };
+}
+
 module.exports = {
   DEFAULT_FINANCIAL_DOCS_SETTINGS,
   FINANCIAL_DOCS_SETTINGS_KEY,
   buildStoredFileName,
   clone,
   diceCoefficient,
+  normalizeEntityName,
+  normalizeEntityNif,
   findPossibleDuplicates,
   monthlyFolderKey,
   safeFinancialDocsSettings,
+  sanitizeFinancialDocumentEntityInput,
   sanitizeFinancialDocumentInput,
   sanitizeFinancialDocsSettings,
   extractGoogleDriveFolderId,
   sha256Base64Content,
   toClientDocument,
+  toClientEntity,
   toClientHistory,
 };
