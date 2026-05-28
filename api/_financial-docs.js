@@ -19,6 +19,7 @@ const DEFAULT_FINANCIAL_DOCS_SETTINGS = {
     accountEmail: "",
     folderPath: "Financial Documents",
   },
+  rules: [],
 };
 
 function extractGoogleDriveFolderId(value) {
@@ -60,6 +61,7 @@ function sanitizeFinancialDocsSettings(source = {}) {
   const rawAttributes = settings.attributes && typeof settings.attributes === "object" ? settings.attributes : {};
   const rawDrive = settings.drive && typeof settings.drive === "object" ? settings.drive : {};
   const rawGoogle = settings.google && typeof settings.google === "object" ? settings.google : {};
+  const rawRules = Array.isArray(settings.rules) ? settings.rules : defaults.rules;
   return {
     attributes: {
       cc: uniqueList(rawAttributes.cc, defaults.attributes.cc),
@@ -80,6 +82,18 @@ function sanitizeFinancialDocsSettings(source = {}) {
       tokenExpiresAt: cleanText(rawDrive.tokenExpiresAt || rawGoogle.tokenExpiresAt),
       oauthState: cleanText(rawDrive.oauthState || rawGoogle.oauthState),
     },
+    rules: rawRules
+      .map((rule, index) => ({
+        id: cleanText(rule?.id) || `rule-${index + 1}`,
+        nif: cleanText(rule?.nif),
+        name: cleanText(rule?.name).replace(/\s+/g, " ").trim(),
+        cc: cleanText(rule?.cc),
+        payment: cleanText(rule?.payment),
+        docType: cleanText(rule?.docType || rule?.type),
+        fat: cleanText(rule?.fat),
+        category: cleanText(rule?.category),
+      }))
+      .filter((rule) => normalizeEntityNif(rule.nif) && normalizeEntityName(rule.name)),
   };
 }
 
@@ -94,6 +108,7 @@ function safeFinancialDocsSettings(settings = DEFAULT_FINANCIAL_DOCS_SETTINGS) {
       folderPath: safe.drive.folderPath,
       baseFolderId: safe.drive.baseFolderId,
     },
+    rules: safe.rules,
   };
 }
 

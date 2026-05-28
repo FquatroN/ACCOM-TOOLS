@@ -2369,6 +2369,7 @@
                 <div class="actions">
                   <button id="close-settings-financial-docs" type="button" class="ghost">Back To App</button>
                   <button id="financial-docs-settings-attributes-tab" type="button" class="active-tab">Attributes</button>
+                  <button id="financial-docs-settings-rules-tab" type="button" class="ghost">Rules</button>
                   <button id="financial-docs-settings-drive-tab" type="button" class="ghost">Drive settings</button>
                   <button id="financial-docs-save-settings" type="button" class="ghost">Save Configuration</button>
                 </div>
@@ -2404,6 +2405,30 @@
                     </label>
                   </div>
                   <p class="field-hint">Separate values with commas. These lists are used in the Financial Documents form.</p>
+                </section>
+
+                <section id="financial-docs-settings-rules-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Rules</h3>
+                  </div>
+                  <div class="table-wrap compact-table-wrap financial-doc-rules-table-wrap">
+                    <table class="compact-table financial-doc-rules-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>NIF</th>
+                          <th>CC</th>
+                          <th>Payment</th>
+                          <th>Type</th>
+                          <th>Fat</th>
+                          <th>Category</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="financial-docs-settings-rules-body"></tbody>
+                    </table>
+                  </div>
+                  <p class="field-hint">Rules fill only empty fields when the selected entity matches a configured rule.</p>
                 </section>
 
                 <section id="financial-docs-settings-drive-panel" class="settings-block" hidden>

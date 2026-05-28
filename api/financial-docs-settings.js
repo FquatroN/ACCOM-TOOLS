@@ -31,6 +31,7 @@ module.exports = async function handler(req, res) {
             extractGoogleDriveFolderId(body?.drive?.folderPath) ??
             current.drive.baseFolderId,
         },
+        rules: body?.rules ?? current.rules,
       });
       const saved = await saveFinancialDocsSettings(next);
       const safeSettings = safeFinancialDocsSettings(saved);

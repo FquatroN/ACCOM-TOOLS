@@ -919,6 +919,7 @@ const state = {
   financialDocsFilePickerTarget: null,
   financialDocsModalOpen: false,
   financialDocEntitiesModalOpen: false,
+  financialDocsRulesDraft: [],
   financialDocsPreviewUrl: "",
   financialDocsLastOpenedId: "",
   lastMainView: "communications",
@@ -1164,8 +1165,10 @@ const els = {
   financialDocsEntitiesRows: document.getElementById("financial-docs-entities-rows"),
   financialDocsEntitiesStatus: document.getElementById("financial-docs-entities-status"),
   financialDocsSettingsAttributesTab: document.getElementById("financial-docs-settings-attributes-tab"),
+  financialDocsSettingsRulesTab: document.getElementById("financial-docs-settings-rules-tab"),
   financialDocsSettingsDriveTab: document.getElementById("financial-docs-settings-drive-tab"),
   financialDocsSettingsAttributesPanel: document.getElementById("financial-docs-settings-attributes-panel"),
+  financialDocsSettingsRulesPanel: document.getElementById("financial-docs-settings-rules-panel"),
   financialDocsSettingsDrivePanel: document.getElementById("financial-docs-settings-drive-panel"),
   financialDocsSaveSettings: document.getElementById("financial-docs-save-settings"),
   financialDocsSettingsCc: document.getElementById("financial-docs-settings-cc"),
@@ -1174,6 +1177,7 @@ const els = {
   financialDocsSettingsFat: document.getElementById("financial-docs-settings-fat"),
   financialDocsSettingsCategory: document.getElementById("financial-docs-settings-category"),
   financialDocsSettingsStatusValues: document.getElementById("financial-docs-settings-status-values"),
+  financialDocsSettingsRulesBody: document.getElementById("financial-docs-settings-rules-body"),
   financialDocsDriveConnect: document.getElementById("financial-docs-drive-connect"),
   financialDocsDriveRefresh: document.getElementById("financial-docs-drive-refresh"),
   financialDocsDriveDisconnect: document.getElementById("financial-docs-drive-disconnect"),
@@ -1897,8 +1901,12 @@ function bindEvents() {
   els.financialDocsDownloadFile?.addEventListener("click", () => downloadFinancialDocFile());
   els.financialDocsSave?.addEventListener("click", saveFinancialDoc);
   els.financialDocsSettingsAttributesTab?.addEventListener("click", () => setFinancialDocsSettingsTab("attributes"));
+  els.financialDocsSettingsRulesTab?.addEventListener("click", () => setFinancialDocsSettingsTab("rules"));
   els.financialDocsSettingsDriveTab?.addEventListener("click", () => setFinancialDocsSettingsTab("drive"));
   els.financialDocsSaveSettings?.addEventListener("click", saveFinancialDocsSettings);
+  els.financialDocsSettingsRulesBody?.addEventListener("click", onFinancialDocRulesAction);
+  els.financialDocsSettingsRulesBody?.addEventListener("input", onFinancialDocRulesInput);
+  els.financialDocsSettingsRulesBody?.addEventListener("change", onFinancialDocRulesInput);
   els.financialDocsDriveConnect?.addEventListener("click", connectFinancialDocsDrive);
   els.financialDocsDriveRefresh?.addEventListener("click", refreshFinancialDocsDrive);
   els.financialDocsDriveDisconnect?.addEventListener("click", disconnectFinancialDocsDrive);
@@ -16621,11 +16629,43 @@ function ensureFinancialDocListDraft() {
   return state.financialDocsListDraft;
 }
 
+function makeFinancialDocRuleId() {
+  return `rule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function emptyFinancialDocRuleDraft() {
+  return {
+    id: makeFinancialDocRuleId(),
+    nif: "",
+    name: "",
+    cc: "",
+    payment: "",
+    docType: "",
+    fat: "",
+    category: "",
+  };
+}
+
+function normalizeFinancialDocRuleClient(input = {}) {
+  return {
+    ...emptyFinancialDocRuleDraft(),
+    id: clean(input.id) || makeFinancialDocRuleId(),
+    nif: clean(input.nif),
+    name: clean(input.name).replace(/\s+/g, " ").trim(),
+    cc: clean(input.cc),
+    payment: clean(input.payment),
+    docType: clean(input.docType || input.type),
+    fat: clean(input.fat),
+    category: clean(input.category),
+  };
+}
+
 function normalizeFinancialDocsSettingsClient(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const defaults = clone(DEFAULT_FINANCIAL_DOCS_SETTINGS);
   const attr = source.attributes && typeof source.attributes === "object" ? source.attributes : {};
   const drive = source.drive && typeof source.drive === "object" ? source.drive : {};
+  const rules = Array.isArray(source.rules) ? source.rules : defaults.rules;
   const unique = (values, fallback) => {
     const list = Array.isArray(values) ? values : fallback;
     const seen = new Set();
@@ -16657,6 +16697,7 @@ function normalizeFinancialDocsSettingsClient(input = {}) {
       redirectUri: clean(drive.redirectUri),
       clientId: clean(drive.clientId),
     },
+    rules: rules.map(normalizeFinancialDocRuleClient).filter((rule) => clean(rule.name) && clean(rule.nif)),
   };
 }
 
@@ -16773,6 +16814,129 @@ function renderFinancialDocEntityLists() {
   }
 }
 
+function getFinancialDocRulesDraft() {
+  if (!Array.isArray(state.financialDocsRulesDraft)) state.financialDocsRulesDraft = [];
+  return state.financialDocsRulesDraft;
+}
+
+function loadFinancialDocRulesDraftFromSettings() {
+  state.financialDocsRulesDraft = getFinancialDocsSettingsForApp().rules.map(normalizeFinancialDocRuleClient);
+}
+
+function getFinancialDocRuleOptions(type) {
+  if (type === "cc") return getFinancialDocSelectOptions("cc");
+  if (type === "payment") return getFinancialDocSelectOptions("payment");
+  if (type === "docType") return getFinancialDocSelectOptions("docType");
+  if (type === "fat") return getFinancialDocSelectOptions("fat");
+  if (type === "category") return getFinancialDocSelectOptions("category");
+  return [];
+}
+
+function buildFinancialDocRuleSelect(type, current = "") {
+  const currentValue = clean(current);
+  const options = getFinancialDocRuleOptions(type);
+  return [`<option value=""></option>`, ...options.map((item) => `<option value="${escape(item)}"${item === currentValue ? " selected" : ""}>${escape(item)}</option>`)].join("");
+}
+
+function buildFinancialDocRuleRow(rule) {
+  return `<tr data-financial-doc-rule-id="${escape(rule.id)}">
+    <td><input data-financial-doc-rule-field="name" type="text" list="financial-docs-entity-name-list" autocomplete="off" value="${escape(rule.name)}" /></td>
+    <td><input data-financial-doc-rule-field="nif" type="text" list="financial-docs-entity-nif-list" autocomplete="off" maxlength="15" value="${escape(rule.nif)}" /></td>
+    <td><select data-financial-doc-rule-field="cc">${buildFinancialDocRuleSelect("cc", rule.cc)}</select></td>
+    <td><select data-financial-doc-rule-field="payment">${buildFinancialDocRuleSelect("payment", rule.payment)}</select></td>
+    <td><select data-financial-doc-rule-field="docType">${buildFinancialDocRuleSelect("docType", rule.docType)}</select></td>
+    <td><select data-financial-doc-rule-field="fat">${buildFinancialDocRuleSelect("fat", rule.fat)}</select></td>
+    <td><select data-financial-doc-rule-field="category">${buildFinancialDocRuleSelect("category", rule.category)}</select></td>
+    <td class="row-actions center-cell"><button type="button" class="ghost" data-action="remove-financial-doc-rule" data-id="${escape(rule.id)}">Remove</button></td>
+  </tr>`;
+}
+
+function renderFinancialDocRulesSettings() {
+  if (!els.financialDocsSettingsRulesBody) return;
+  const rows = getFinancialDocRulesDraft();
+  const markup = rows.length
+    ? rows.map(buildFinancialDocRuleRow).join("")
+    : '<tr><td colspan="8" class="muted">No rules configured yet.</td></tr>';
+  els.financialDocsSettingsRulesBody.innerHTML = `${markup}
+    <tr class="financial-doc-rules-add-row">
+      <td colspan="8" class="center-cell"><button type="button" class="ghost" data-action="add-financial-doc-rule">Add rule</button></td>
+    </tr>`;
+}
+
+function syncFinancialDocRuleRowEntityFields(rowEl, mode) {
+  if (!rowEl) return;
+  const nameInput = rowEl.querySelector('[data-financial-doc-rule-field="name"]');
+  const nifInput = rowEl.querySelector('[data-financial-doc-rule-field="nif"]');
+  if (mode === "nif") {
+    syncFinancialDocEntityInputs(nifInput, nameInput, "nif");
+    return;
+  }
+  syncFinancialDocEntityInputs(nameInput, nifInput, "name");
+}
+
+function onFinancialDocRulesAction(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const action = clean(button.dataset.action);
+  const id = clean(button.dataset.id);
+  if (action === "add-financial-doc-rule") {
+    getFinancialDocRulesDraft().push(emptyFinancialDocRuleDraft());
+    renderFinancialDocRulesSettings();
+    return;
+  }
+  if (action === "remove-financial-doc-rule") {
+    state.financialDocsRulesDraft = getFinancialDocRulesDraft().filter((rule) => clean(rule.id) !== id);
+    renderFinancialDocRulesSettings();
+  }
+}
+
+function onFinancialDocRulesInput(event) {
+  const rowEl = event.target.closest("[data-financial-doc-rule-id]");
+  if (!rowEl) return;
+  const id = clean(rowEl.dataset.financialDocRuleId);
+  if (!id) return;
+  const field = clean(event.target.dataset.financialDocRuleField);
+  if (field === "name" || field === "nif") {
+    syncFinancialDocRuleRowEntityFields(rowEl, field === "nif" ? "nif" : "name");
+  }
+  const nextRule = normalizeFinancialDocRuleClient({
+    id,
+    name: rowEl.querySelector('[data-financial-doc-rule-field="name"]')?.value,
+    nif: rowEl.querySelector('[data-financial-doc-rule-field="nif"]')?.value,
+    cc: rowEl.querySelector('[data-financial-doc-rule-field="cc"]')?.value,
+    payment: rowEl.querySelector('[data-financial-doc-rule-field="payment"]')?.value,
+    docType: rowEl.querySelector('[data-financial-doc-rule-field="docType"]')?.value,
+    fat: rowEl.querySelector('[data-financial-doc-rule-field="fat"]')?.value,
+    category: rowEl.querySelector('[data-financial-doc-rule-field="category"]')?.value,
+  });
+  state.financialDocsRulesDraft = getFinancialDocRulesDraft().map((rule) => (clean(rule.id) === id ? nextRule : rule));
+}
+
+function findFinancialDocRuleByEntity(nameValue, nifValue) {
+  const normalizedName = normalizeFinancialDocEntityNameClient(nameValue);
+  const normalizedNif = normalizeFinancialDocEntityNifClient(nifValue);
+  if (!normalizedName && !normalizedNif) return null;
+  return getFinancialDocsSettingsForApp().rules.find((rule) => {
+    const ruleName = normalizeFinancialDocEntityNameClient(rule.name);
+    const ruleNif = normalizeFinancialDocEntityNifClient(rule.nif);
+    return (
+      (normalizedNif && ruleNif === normalizedNif) ||
+      (normalizedName && ruleName === normalizedName)
+    );
+  }) || null;
+}
+
+function applyFinancialDocRuleToDraft(draft, rule) {
+  const next = normalizeFinancialDocRowClient(draft || {});
+  if (!rule) return next;
+  if (!clean(next.cc) && clean(rule.cc)) next.cc = clean(rule.cc);
+  if (!clean(next.payment) && clean(rule.payment)) next.payment = clean(rule.payment);
+  if (!clean(next.docType) && clean(rule.docType)) next.docType = clean(rule.docType);
+  if (!clean(next.fat) && clean(rule.fat)) next.fat = clean(rule.fat);
+  if (!clean(next.category) && clean(rule.category)) next.category = clean(rule.category);
+  return next;
+}
+
 function findFinancialDocEntityByName(value) {
   const normalized = normalizeFinancialDocEntityNameClient(value);
   if (!normalized) return null;
@@ -16797,9 +16961,25 @@ function syncFinancialDocEntityInputs(inputA, inputB, mode) {
 function syncFinancialDocModalEntityFields(mode) {
   if (mode === "nif") {
     syncFinancialDocEntityInputs(els.financialDocsSupplierNifField, els.financialDocsSupplierNameField, "nif");
-    return;
+  } else {
+    syncFinancialDocEntityInputs(els.financialDocsSupplierNameField, els.financialDocsSupplierNifField, "name");
   }
-  syncFinancialDocEntityInputs(els.financialDocsSupplierNameField, els.financialDocsSupplierNifField, "name");
+  const current = state.financialDocsDraft || emptyFinancialDocDraft();
+  if (clean(current.id)) return;
+  const rule = findFinancialDocRuleByEntity(els.financialDocsSupplierNameField?.value, els.financialDocsSupplierNifField?.value);
+  if (!rule) return;
+  const nextDraft = applyFinancialDocRuleToDraft({
+    ...current,
+    cc: els.financialDocsCcField?.value,
+    supplierNif: els.financialDocsSupplierNifField?.value,
+    supplierName: els.financialDocsSupplierNameField?.value,
+    payment: els.financialDocsPaymentField?.value,
+    docType: els.financialDocsTypeField?.value,
+    fat: els.financialDocsFatField?.value,
+    category: els.financialDocsCategoryField?.value,
+  }, rule);
+  state.financialDocsDraft = nextDraft;
+  renderFinancialDocEditor();
 }
 
 function syncFinancialDocTableEntityFields(target) {
@@ -16816,6 +16996,15 @@ function syncFinancialDocTableEntityFields(target) {
     : `${prefix}="supplierNif"]`;
   const counterpart = rowEl.querySelector(counterpartSelector);
   syncFinancialDocEntityInputs(target, counterpart, field === "supplierNif" ? "nif" : "name");
+  if (!newField) return;
+  const rule = findFinancialDocRuleByEntity(
+    rowEl.querySelector('[data-financial-doc-new-field="supplierName"]')?.value,
+    rowEl.querySelector('[data-financial-doc-new-field="supplierNif"]')?.value
+  );
+  if (!rule) return;
+  const nextDraft = applyFinancialDocRuleToDraft(financialDocListDraftFromInputs(), rule);
+  state.financialDocsListDraft = nextDraft;
+  renderFinancialDocs();
 }
 
 function buildFinancialDocEntityRow(entity) {
@@ -17286,6 +17475,7 @@ async function loadFinancialDocsData({ silent = false } = {}) {
     state.financialDocsRows = sortFinancialDocRows((Array.isArray(result?.rows) ? result.rows : []).map(normalizeFinancialDocRowClient));
     if (result?.settings) {
       state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result.settings);
+      loadFinancialDocRulesDraftFromSettings();
       state.financialDocsSettingsLoaded = true;
     }
     state.financialDocsLoaded = true;
@@ -17330,6 +17520,7 @@ async function loadFinancialDocsSettings({ silent = false } = {}) {
   try {
     const result = await api("/api/financial-docs-settings");
     state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result?.settings);
+    loadFinancialDocRulesDraftFromSettings();
     state.financialDocsSettingsLoaded = true;
     renderFinancialDocsSettings();
     if (!silent) setFinancialDocsSettingsStatus("Financial documents settings loaded.");
@@ -17399,21 +17590,27 @@ function renderFinancialDocsFilterOptions() {
 
 function renderFinancialDocsSettingsTabs() {
   const isAttributes = state.financialDocsSettingsTab === "attributes";
+  const isRules = state.financialDocsSettingsTab === "rules";
   const isDrive = state.financialDocsSettingsTab === "drive";
   if (els.financialDocsSettingsAttributesTab) {
     els.financialDocsSettingsAttributesTab.classList.toggle("active-tab", isAttributes);
     els.financialDocsSettingsAttributesTab.classList.toggle("ghost", !isAttributes);
+  }
+  if (els.financialDocsSettingsRulesTab) {
+    els.financialDocsSettingsRulesTab.classList.toggle("active-tab", isRules);
+    els.financialDocsSettingsRulesTab.classList.toggle("ghost", !isRules);
   }
   if (els.financialDocsSettingsDriveTab) {
     els.financialDocsSettingsDriveTab.classList.toggle("active-tab", isDrive);
     els.financialDocsSettingsDriveTab.classList.toggle("ghost", !isDrive);
   }
   if (els.financialDocsSettingsAttributesPanel) els.financialDocsSettingsAttributesPanel.hidden = !isAttributes;
+  if (els.financialDocsSettingsRulesPanel) els.financialDocsSettingsRulesPanel.hidden = !isRules;
   if (els.financialDocsSettingsDrivePanel) els.financialDocsSettingsDrivePanel.hidden = !isDrive;
 }
 
 function setFinancialDocsSettingsTab(tab) {
-  state.financialDocsSettingsTab = tab === "drive" ? "drive" : "attributes";
+  state.financialDocsSettingsTab = tab === "drive" ? "drive" : tab === "rules" ? "rules" : "attributes";
   renderFinancialDocsSettingsTabs();
 }
 
@@ -17428,6 +17625,10 @@ function renderFinancialDocsSettings() {
   if (els.financialDocsSettingsStatusValues) els.financialDocsSettingsStatusValues.value = settings.attributes.status.join(", ");
   if (els.financialDocsDriveAccount) els.financialDocsDriveAccount.value = settings.drive.connected ? (settings.drive.accountEmail || "Connected") : "Not connected";
   if (els.financialDocsDriveFolderPath) els.financialDocsDriveFolderPath.value = settings.drive.folderPath || DEFAULT_FINANCIAL_DOCS_SETTINGS.drive.folderPath;
+  if (!Array.isArray(state.financialDocsRulesDraft) || !state.financialDocsRulesDraft.length) {
+    loadFinancialDocRulesDraftFromSettings();
+  }
+  renderFinancialDocRulesSettings();
   setFinancialDocsDriveStatus(settings.drive.connected
     ? `Connected${settings.drive.connectedAt ? ` on ${formatDateTimeShort(settings.drive.connectedAt)}` : ""}.`
     : "Google Drive is not connected yet.");
@@ -17451,6 +17652,7 @@ function currentFinancialDocsSettingsPayload() {
       ...state.financialDocsSettings.drive,
       folderPath: clean(els.financialDocsDriveFolderPath?.value),
     },
+    rules: getFinancialDocRulesDraft(),
   });
 }
 
@@ -17462,9 +17664,11 @@ async function saveFinancialDocsSettings() {
       body: {
         attributes: payload.attributes,
         drive: { folderPath: payload.drive.folderPath },
+        rules: payload.rules,
       },
     });
     state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result?.settings);
+    loadFinancialDocRulesDraftFromSettings();
     state.financialDocsSettingsLoaded = true;
     renderFinancialDocsSettings();
     renderFinancialDocs();
@@ -17818,7 +18022,7 @@ async function applyFinancialDocInlineParsedFile(file) {
     status: clean(result?.row?.status) || current.status || "Draft",
   });
   state.financialDocsListAttachment = { upload };
-  state.financialDocsListDraft = normalizeFinancialDocRowClient({
+  state.financialDocsListDraft = applyFinancialDocRuleToDraft(normalizeFinancialDocRowClient({
     ...current,
     ...parsedRow,
     cc: parsedRow.cc || current.cc,
@@ -17834,7 +18038,7 @@ async function applyFinancialDocInlineParsedFile(file) {
     fat: parsedRow.fat || current.fat,
     category: parsedRow.category || current.category,
     status: parsedRow.status || current.status || "Draft",
-  });
+  }), findFinancialDocRuleByEntity(parsedRow.supplierName || current.supplierName, parsedRow.supplierNif || current.supplierNif));
   renderFinancialDocs();
   setFinancialDocsStatus(clean(result?.notes) || "Document parsed. Draft values filled.");
 }
@@ -17889,13 +18093,13 @@ async function onFinancialDocParsePicked(event) {
     }
     setFinancialDocsStatus("Parsing document...");
     const { upload, result } = await requestFinancialDocParse(file);
-    const seedRow = normalizeFinancialDocRowClient({
+    const seedRow = applyFinancialDocRuleToDraft(normalizeFinancialDocRowClient({
       ...emptyFinancialDocDraft(),
       ...(result?.row || {}),
       ocrFields: result?.ocrFields || {},
       ocrRawText: clean(result?.ocrRawText),
       status: clean(result?.row?.status) || "Draft",
-    });
+    }), findFinancialDocRuleByEntity(result?.row?.supplierName, result?.row?.supplierNif));
     const previewUrl = URL.createObjectURL(file);
     state.financialDocsAttachment = { file, upload, previewUrl };
     await openFinancialDocModal("", { seedRow, preserveAttachment: true });
@@ -17948,7 +18152,10 @@ async function refreshFinancialDocEntitiesAfterSave() {
 }
 
 async function saveFinancialDoc() {
-  const draft = financialDocDraftFromInputs();
+  const rawDraft = financialDocDraftFromInputs();
+  const draft = clean(rawDraft.id)
+    ? rawDraft
+    : applyFinancialDocRuleToDraft(rawDraft, findFinancialDocRuleByEntity(rawDraft.supplierName, rawDraft.supplierNif));
   const isUpdate = !!clean(draft.id);
   setFinancialDocsDuplicateWarning("");
   const payload = {
@@ -18004,7 +18211,8 @@ async function saveFinancialDoc() {
 }
 
 async function saveFinancialDocInline() {
-  const draft = financialDocListDraftFromInputs();
+  const rawDraft = financialDocListDraftFromInputs();
+  const draft = applyFinancialDocRuleToDraft(rawDraft, findFinancialDocRuleByEntity(rawDraft.supplierName, rawDraft.supplierNif));
   state.financialDocsListDuplicateWarning = "";
   const payload = financialDocBuildPayload(draft);
   if (state.financialDocsListAttachment?.upload) payload.attachmentUpload = state.financialDocsListAttachment.upload;
