@@ -16755,7 +16755,6 @@ function buildFinancialDocTableRow(row) {
       <td class="row-actions center-cell">
         <button type="button" class="ghost" data-action="save-financial-doc-row" data-id="${escape(row.id)}">Save</button>
         <button type="button" class="ghost" data-action="cancel-financial-doc-row" data-id="${escape(row.id)}">Cancel</button>
-        <button type="button" class="ghost" data-action="delete-financial-doc-row" data-id="${escape(row.id)}">Delete</button>
       </td>
     </tr>`;
   }
@@ -16777,7 +16776,6 @@ function buildFinancialDocTableRow(row) {
     <td>${fileCell}</td>
     <td class="row-actions center-cell">
       <button type="button" class="ghost" data-action="edit-financial-doc-row" data-id="${escape(row.id)}">Edit</button>
-      <button type="button" class="ghost" data-action="delete-financial-doc-row" data-id="${escape(row.id)}">Delete</button>
     </td>
   </tr>`;
 }
@@ -17201,7 +17199,6 @@ function renderFinancialDocsMobileCards(rows) {
       </div>
       <div class="row-actions">
         <button type="button" class="ghost" data-action="open-financial-doc" data-id="${escape(row.id)}">Open</button>
-        <button type="button" class="ghost" data-action="delete-financial-doc-row" data-id="${escape(row.id)}">Delete</button>
       </div>
     </article>
   `).join("");
@@ -17772,10 +17769,6 @@ function onFinancialDocTableAction(event) {
     if (action === "cancel-financial-doc-row") {
       state.financialDocsEditingId = "";
       loadFinancialDocsData({ silent: true }).catch(() => renderFinancialDocs());
-      return;
-    }
-    if (action === "delete-financial-doc-row") {
-      deleteFinancialDoc(id);
       return;
     }
     if (action === "download-financial-doc") {
