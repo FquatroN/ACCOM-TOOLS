@@ -1,6 +1,7 @@
 const { cleanText, parseBody, requireFeature, sendError } = require("./_supabase");
 
 const OPENAI_MODEL = cleanText(process.env.OPENAI_MODEL) || "gpt-5";
+const OWN_COMPANY_NIF = "508459893";
 
 function extractResponseText(payload) {
   const direct = cleanText(payload?.output_text);
@@ -42,6 +43,14 @@ function parseJsonText(text) {
 
 function normalizeWhitespace(value) {
   return cleanText(String(value || "").replace(/\s+/g, " "));
+}
+
+function normalizeParsedSupplierNif(value) {
+  const raw = cleanText(value).slice(0, 15);
+  if (!raw) return "";
+  const normalized = raw.replace(/^PT/i, "").replace(/\D+/g, "");
+  if (normalized === OWN_COMPANY_NIF) return "";
+  return raw;
 }
 
 function normalizeUploadFilename(value, fallback = "document.pdf") {
@@ -159,6 +168,8 @@ async function parseFinancialDocument(file) {
     "If a field is unknown, return an empty string or null.",
     "Description must always be written in Portuguese (Portugal).",
     "Description should be a short practical description of the expense/income document.",
+    `Never use ${OWN_COMPANY_NIF} or PT${OWN_COMPANY_NIF} as supplierNif. That is the client/company NIF, not the supplier NIF.`,
+    "If the only visible NIF is the client/company NIF, return supplierNif as an empty string.",
     "If the supplier is EDP or EPAL, extract utility addresses separately.",
     "Use postalAddressPrincipalShort for 'Morada Postal (Principal)'.",
     "Use supplyAddressShort for 'Morada Abastecimento'.",
@@ -220,7 +231,7 @@ module.exports = async function handler(req, res) {
       documentDate: cleanText(parsed.documentDate),
       docNumber: cleanText(parsed.docNumber),
       description: buildPortugueseDescription(parsed),
-      supplierNif: cleanText(parsed.supplierNif).slice(0, 15),
+      supplierNif: normalizeParsedSupplierNif(parsed.supplierNif),
       supplierName: cleanText(parsed.supplierName),
       amount: parsed.amount === null || parsed.amount === undefined || cleanText(parsed.amount) === "" ? "" : Number(parsed.amount),
       vatAmount: parsed.vatAmount === null || parsed.vatAmount === undefined || cleanText(parsed.vatAmount) === "" ? "" : Number(parsed.vatAmount),
