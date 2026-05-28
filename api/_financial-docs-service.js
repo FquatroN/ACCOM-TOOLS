@@ -328,7 +328,18 @@ async function renameExistingDriveFileIfNeeded(req, documentRecord, settings) {
 
 async function listFinancialDocuments() {
   const rows = await restQuery("financial_documents?select=*&order=created_at.desc", { method: "GET" });
-  return Array.isArray(rows) ? rows.map(toClientDocument) : [];
+  if (!Array.isArray(rows) || !rows.length) return [];
+  const warningRows = await restQuery("financial_document_history?select=document_id,message,created_at&action_type=eq.duplicate_warning&order=created_at.desc", { method: "GET" });
+  const warningByDocumentId = new Map();
+  (Array.isArray(warningRows) ? warningRows : []).forEach((item) => {
+    const documentId = cleanText(item.document_id || item.documentId);
+    if (!documentId || warningByDocumentId.has(documentId)) return;
+    warningByDocumentId.set(documentId, cleanText(item.message));
+  });
+  return rows.map((row) => toClientDocument({
+    ...row,
+    duplicate_warning_message: warningByDocumentId.get(cleanText(row.id)) || "",
+  }));
 }
 
 async function loadFinancialDocumentRowById(id) {

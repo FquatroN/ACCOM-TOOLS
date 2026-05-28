@@ -302,6 +302,10 @@ function findPossibleDuplicates(candidate, existingRows, { currentId = "", check
 }
 
 function toClientDocument(row = {}) {
+  const history = Array.isArray(row.history) ? row.history.map(toClientHistory) : [];
+  const duplicateWarningMessage =
+    cleanText(row.duplicate_warning_message || row.duplicateWarningMessage) ||
+    cleanText(history.find((item) => cleanText(item.actionType || item.action_type) === "duplicate_warning")?.message);
   return {
     id: cleanText(row.id),
     createdAt: cleanText(row.created_at || row.createdAt),
@@ -331,7 +335,8 @@ function toClientDocument(row = {}) {
     uploadedAt: cleanText(row.uploaded_at || row.uploadedAt),
     ocrFields: row.ocr_fields && typeof row.ocr_fields === "object" ? row.ocr_fields : (row.ocrFields && typeof row.ocrFields === "object" ? row.ocrFields : {}),
     ocrRawText: cleanText(row.ocr_raw_text || row.ocrRawText),
-    history: Array.isArray(row.history) ? row.history.map(toClientHistory) : [],
+    duplicateWarningMessage,
+    history,
   };
 }
 

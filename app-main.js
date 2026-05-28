@@ -16611,6 +16611,7 @@ function emptyFinancialDocDraft() {
     uploadedAt: "",
     ocrFields: {},
     ocrRawText: "",
+    duplicateWarningMessage: "",
     history: [],
   };
 }
@@ -16705,8 +16706,12 @@ function normalizeFinancialDocRowClient(input = {}) {
     uploadedAt: clean(input.uploadedAt || input.uploaded_at),
     ocrFields: input.ocrFields && typeof input.ocrFields === "object" ? input.ocrFields : (input.ocr_fields && typeof input.ocr_fields === "object" ? input.ocr_fields : {}),
     ocrRawText: clean(input.ocrRawText || input.ocr_raw_text),
+    duplicateWarningMessage: clean(input.duplicateWarningMessage || input.duplicate_warning_message),
     history: Array.isArray(input.history) ? input.history.map(normalizeFinancialDocHistoryClient) : [],
   };
+  if (!row.duplicateWarningMessage) {
+    row.duplicateWarningMessage = clean(row.history.find((item) => clean(item.actionType) === "duplicate_warning")?.message);
+  }
   return row;
 }
 
@@ -17076,7 +17081,7 @@ function buildFinancialDocTableRow(row) {
     <td>${escape(formatFinancialDocsCreateDateList(row.createdAt))}</td>
     <td class="center-cell">${escape(row.cc || "-")}</td>
     <td>${escape(formatDateOnly(row.documentDate))}</td>
-    <td>${escape(row.docNumber || "-")}</td>
+    <td>${escape(row.docNumber || "-")}${clean(row.duplicateWarningMessage) ? `<small class="financial-docs-duplicate-warning">${escape(row.duplicateWarningMessage)}</small>` : ""}</td>
     <td>${escape(row.description || "-")}</td>
     <td>${escape(row.supplierName || "-")}</td>
     <td>${escape(row.supplierNif || "-")}</td>
