@@ -89,15 +89,36 @@ function createBufferedConnection(socket) {
 
   bindSocket(socket);
 
+  function waitForReadable() {
+    return new Promise((resolve, reject) => {
+      const onData = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (error) => {
+        cleanup();
+        reject(error);
+      };
+      const onClose = () => {
+        cleanup();
+        reject(new Error("SMTP connection closed unexpectedly."));
+      };
+      function cleanup() {
+        emitter.off("data", onData);
+        emitter.off("error", onError);
+        emitter.off("close", onClose);
+      }
+      emitter.once("data", onData);
+      emitter.once("error", onError);
+      emitter.once("close", onClose);
+    });
+  }
+
   async function readResponse() {
     while (true) {
       const response = tryExtractResponse();
       if (response) return response;
-      await Promise.race([
-        once(emitter, "data"),
-        once(emitter, "error").then(([error]) => Promise.reject(error)),
-        once(emitter, "close").then(() => Promise.reject(new Error("SMTP connection closed unexpectedly."))),
-      ]);
+      await waitForReadable();
     }
   }
 
