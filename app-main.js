@@ -1110,6 +1110,7 @@ const els = {
   closeSettingsLaundry: document.getElementById("close-settings-laundry"),
   generalSaveSettings: document.getElementById("general-save-settings"),
   financialDocsOpenEntities: document.getElementById("financial-docs-open-entities"),
+  financialDocsExportExcel: document.getElementById("financial-docs-export-excel"),
   financialDocsNew: document.getElementById("financial-docs-new"),
   financialDocsUploadParse: document.getElementById("financial-docs-upload-parse"),
   financialDocsFilterCreatedFrom: document.getElementById("financial-docs-filter-created-from"),
@@ -1864,6 +1865,7 @@ function bindEvents() {
   [els.financialDocsFilterPayment, els.financialDocsFilterType, els.financialDocsFilterFat, els.financialDocsFilterCategory, els.financialDocsFilterStatus].forEach((el) =>
     el?.addEventListener("change", renderFinancialDocs)
   );
+  els.financialDocsExportExcel?.addEventListener("click", exportFinancialDocsToExcel);
   els.financialDocsOpenEntities?.addEventListener("click", openFinancialDocEntitiesModal);
   els.financialDocsNew?.addEventListener("click", () => openFinancialDocModal());
   els.financialDocsUploadParse?.addEventListener("click", () => triggerFinancialDocParsePicker({ mode: "modal-parse" }));
@@ -17572,6 +17574,57 @@ function getFilteredFinancialDocs() {
     if (status && clean(row.status) !== status) return false;
     return true;
   });
+}
+
+function buildFinancialDocsExportRows() {
+  return getFilteredFinancialDocs().map((row) => ({
+    createdAt: formatDateInLisbon(row.createdAt) || clean(row.createdAt),
+    cc: clean(row.cc),
+    documentDate: clean(row.documentDate),
+    docNumber: clean(row.docNumber),
+    duplicateWarning: clean(row.duplicateWarningMessage),
+    description: clean(row.description),
+    supplierName: clean(row.supplierName),
+    supplierNif: clean(row.supplierNif),
+    amount: row.amount === "" ? "" : formatMoney(row.amount || 0),
+    vatAmount: row.vatAmount === "" ? "" : formatMoney(row.vatAmount || 0),
+    payment: clean(row.payment),
+    docType: clean(row.docType),
+    fat: clean(row.fat),
+    category: clean(row.category),
+    status: clean(row.status),
+    hasFile: financialDocHasAttachment(row) ? "Yes" : "",
+  }));
+}
+
+function exportFinancialDocsToExcel() {
+  const rows = buildFinancialDocsExportRows();
+  if (!rows.length) {
+    showToast("No financial documents to export.", "error");
+    return;
+  }
+  const headers = ["Create Date", "CC", "Date", "Doc Number", "Duplicate Warning", "Description", "Name", "Supplier NIF", "Amount", "VAT Amount", "Payment", "Type", "Fat", "Category", "Status", "File"];
+  const bodyRows = rows.map((row) => [
+    row.createdAt,
+    row.cc,
+    row.documentDate,
+    row.docNumber,
+    row.duplicateWarning,
+    row.description,
+    row.supplierName,
+    row.supplierNif,
+    row.amount,
+    row.vatAmount,
+    row.payment,
+    row.docType,
+    row.fat,
+    row.category,
+    row.status,
+    row.hasFile,
+  ]);
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers.map((cell) => `<th>${escape(cell)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${escape(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+  downloadBlob(`financial_documents_${formatDate(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8;");
+  showToast(`Exported ${rows.length} financial document${rows.length === 1 ? "" : "s"} to Excel.`, "success");
 }
 
 function renderFinancialDocsFilterOptions() {
