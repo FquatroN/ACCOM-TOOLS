@@ -1113,6 +1113,7 @@ const els = {
   financialDocsFilterType: document.getElementById("financial-docs-filter-type"),
   financialDocsFilterFat: document.getElementById("financial-docs-filter-fat"),
   financialDocsFilterCategory: document.getElementById("financial-docs-filter-category"),
+  financialDocsFilterStatus: document.getElementById("financial-docs-filter-status"),
   financialDocsCount: document.getElementById("financial-docs-count"),
   financialDocsRows: document.getElementById("financial-docs-rows"),
   financialDocsMobileCards: document.getElementById("financial-docs-mobile-cards"),
@@ -1838,7 +1839,7 @@ function bindEvents() {
   [els.financialDocsFilterCreatedFrom, els.financialDocsFilterCreatedTo, els.financialDocsFilterDateFrom, els.financialDocsFilterDateTo, els.financialDocsFilterSupplier, els.financialDocsFilterDescription].forEach((el) =>
     el?.addEventListener("input", renderFinancialDocs)
   );
-  [els.financialDocsFilterPayment, els.financialDocsFilterType, els.financialDocsFilterFat, els.financialDocsFilterCategory].forEach((el) =>
+  [els.financialDocsFilterPayment, els.financialDocsFilterType, els.financialDocsFilterFat, els.financialDocsFilterCategory, els.financialDocsFilterStatus].forEach((el) =>
     el?.addEventListener("change", renderFinancialDocs)
   );
   els.financialDocsNew?.addEventListener("click", () => openFinancialDocModal());
@@ -17015,6 +17016,7 @@ function getFilteredFinancialDocs() {
   const docType = clean(els.financialDocsFilterType?.value);
   const fat = clean(els.financialDocsFilterFat?.value);
   const category = clean(els.financialDocsFilterCategory?.value);
+  const status = clean(els.financialDocsFilterStatus?.value);
   return state.financialDocsRows.filter((row) => {
     const createdDate = formatDateInLisbon(row.createdAt);
     if (createdFrom && createdDate && createdDate < createdFrom) return false;
@@ -17030,6 +17032,7 @@ function getFilteredFinancialDocs() {
     if (docType && clean(row.docType) !== docType) return false;
     if (fat && clean(row.fat) !== fat) return false;
     if (category && clean(row.category) !== category) return false;
+    if (status && clean(row.status) !== status) return false;
     return true;
   });
 }
@@ -17045,6 +17048,7 @@ function renderFinancialDocsFilterOptions() {
   setFilterOptions(els.financialDocsFilterType, getFinancialDocSelectOptions("docType"));
   setFilterOptions(els.financialDocsFilterFat, getFinancialDocSelectOptions("fat"));
   setFilterOptions(els.financialDocsFilterCategory, getFinancialDocSelectOptions("category"));
+  setFilterOptions(els.financialDocsFilterStatus, getFinancialDocSelectOptions("status"));
 }
 
 function renderFinancialDocsSettingsTabs() {

@@ -4669,8 +4669,20 @@ select:disabled {
 }
 
 .financial-docs-filters {
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.45rem 0.7rem;
+  grid-template-columns:
+    105px
+    105px
+    105px
+    105px
+    minmax(150px, 1fr)
+    minmax(170px, 1.15fr)
+    90px
+    70px
+    64px
+    90px
+    90px;
+  gap: 0.4rem 0.55rem;
+  align-items: end;
 }
 
 .financial-docs-table-wrap {
