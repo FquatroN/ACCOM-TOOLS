@@ -4674,8 +4674,8 @@ select:disabled {
     105px
     105px
     105px
-    minmax(84px, 0.58fr)
-    minmax(98px, 0.68fr)
+    minmax(76px, 0.52fr)
+    minmax(88px, 0.6fr)
     90px
     70px
     64px
@@ -4683,6 +4683,13 @@ select:disabled {
     90px;
   gap: 0.4rem 0.45rem;
   align-items: end;
+}
+
+.financial-docs-filters label,
+.financial-docs-filters input,
+.financial-docs-filters select {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .financial-docs-table-wrap {
