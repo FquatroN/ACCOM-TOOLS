@@ -129,16 +129,18 @@ function sanitizeFinancialDocumentInput(input = {}, settings = DEFAULT_FINANCIAL
     category: cleanText(input.category),
     status: normalizeStatus(input.status, safeSettings),
   };
+  const isDraft = cleanText(doc.status).toLowerCase() === "draft";
 
-  if (!doc.cc) throw badRequest("CC is required.");
   if (!doc.documentDate) throw badRequest("Date is required.");
   if (!doc.description) throw badRequest("Description is required.");
   if (!doc.supplierName) throw badRequest("Name is required.");
   if (!Number.isFinite(doc.amount)) throw badRequest("Amount is required.");
-  if (!doc.payment) throw badRequest("Payment is required.");
-  if (!doc.docType) throw badRequest("Type is required.");
-  if (!doc.fat) throw badRequest("Fat is required.");
-  if (!doc.category) throw badRequest("Category is required.");
+  if (!isDraft && !doc.cc) throw badRequest("CC is required.");
+  if (!isDraft && !doc.supplierNif) throw badRequest("Supplier NIF is required.");
+  if (!isDraft && !doc.payment) throw badRequest("Payment is required.");
+  if (!isDraft && !doc.docType) throw badRequest("Type is required.");
+  if (!isDraft && !doc.fat) throw badRequest("Fat is required.");
+  if (!isDraft && !doc.category) throw badRequest("Category is required.");
   if (doc.vatAmount !== null && !Number.isFinite(doc.vatAmount)) throw badRequest("VAT Amount is invalid.");
   return doc;
 }
