@@ -4926,12 +4926,44 @@ select:disabled {
   width: min(1180px, 96vw);
 }
 
+.financial-docs-modal-main {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.financial-docs-editor-panel,
+.financial-docs-attachment-panel {
+  min-height: 100%;
+}
+
 .financial-docs-editor-grid {
-  align-items: end;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+  align-items: start;
+}
+
+.financial-docs-editor-grid label {
+  gap: 0.18rem;
+  font-size: 0.79rem;
+}
+
+.financial-docs-editor-grid input,
+.financial-docs-editor-grid select {
+  min-height: 2rem;
+  padding: 0.34rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.financial-docs-attachment-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 .financial-docs-preview {
-  min-height: 18rem;
+  min-height: 26rem;
+  flex: 1 1 auto;
   border: 1px solid rgba(16, 37, 63, 0.12);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.92);
@@ -5116,6 +5148,10 @@ select:disabled {
 
   .financial-docs-modal-card {
     width: min(96vw, 96vw);
+  }
+
+  .financial-docs-modal-main {
+    grid-template-columns: 1fr;
   }
 
   .financial-doc-entities-filters {

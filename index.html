@@ -3313,77 +3313,81 @@
                 </div>
               </div>
 
-              <div class="grid settings-grid financial-docs-editor-grid">
-                <label>
-                  Create Date
-                  <input id="financial-docs-created-at" type="text" readonly />
-                </label>
-                <label>
-                  Status
-                  <select id="financial-docs-status-field"></select>
-                </label>
-                <label>
-                  CC *
-                  <select id="financial-docs-cc-field"></select>
-                </label>
-                <label>
-                  Date *
-                  <input id="financial-docs-date-field" type="date" />
-                </label>
-                <label>
-                  Doc Number
-                  <input id="financial-docs-doc-number-field" type="text" />
-                  <small id="financial-docs-duplicate-warning" class="financial-docs-duplicate-warning" hidden></small>
-                </label>
-                <label>
-                  Description *
-                  <input id="financial-docs-description-field" type="text" />
-                </label>
-                <label>
-                  Supplier NIF
-                  <input id="financial-docs-supplier-nif-field" type="text" maxlength="15" list="financial-docs-entity-nif-list" autocomplete="off" />
-                </label>
-                <label>
-                  Name *
-                  <input id="financial-docs-supplier-name-field" type="text" list="financial-docs-entity-name-list" autocomplete="off" />
-                </label>
-                <label>
-                  Amount *
-                  <input id="financial-docs-amount-field" type="number" step="0.01" />
-                </label>
-                <label>
-                  VAT Amount
-                  <input id="financial-docs-vat-amount-field" type="number" step="0.01" />
-                </label>
-                <label>
-                  Payment *
-                  <select id="financial-docs-payment-field"></select>
-                </label>
-                <label>
-                  Type *
-                  <select id="financial-docs-type-field"></select>
-                </label>
-                <label>
-                  Fat *
-                  <select id="financial-docs-fat-field"></select>
-                </label>
-                <label>
-                  Category *
-                  <select id="financial-docs-category-field"></select>
-                </label>
-              </div>
-
-              <section class="settings-block">
-                <div class="bar">
-                  <h3>Attachment</h3>
-                  <div class="row-actions">
-                    <button id="financial-docs-choose-attachment" type="button" class="ghost">Choose File</button>
-                    <button id="financial-docs-download-file" type="button" class="ghost">Download</button>
+              <div class="financial-docs-modal-main">
+                <section class="settings-block financial-docs-editor-panel">
+                  <div class="grid settings-grid financial-docs-editor-grid">
+                    <label>
+                      Create Date
+                      <input id="financial-docs-created-at" type="text" readonly />
+                    </label>
+                    <label>
+                      Status
+                      <select id="financial-docs-status-field"></select>
+                    </label>
+                    <label>
+                      CC *
+                      <select id="financial-docs-cc-field"></select>
+                    </label>
+                    <label>
+                      Date *
+                      <input id="financial-docs-date-field" type="date" />
+                    </label>
+                    <label>
+                      Doc Number
+                      <input id="financial-docs-doc-number-field" type="text" />
+                      <small id="financial-docs-duplicate-warning" class="financial-docs-duplicate-warning" hidden></small>
+                    </label>
+                    <label>
+                      Description *
+                      <input id="financial-docs-description-field" type="text" />
+                    </label>
+                    <label>
+                      Supplier NIF
+                      <input id="financial-docs-supplier-nif-field" type="text" maxlength="15" list="financial-docs-entity-nif-list" autocomplete="off" />
+                    </label>
+                    <label>
+                      Name *
+                      <input id="financial-docs-supplier-name-field" type="text" list="financial-docs-entity-name-list" autocomplete="off" />
+                    </label>
+                    <label>
+                      Amount *
+                      <input id="financial-docs-amount-field" type="number" step="0.01" />
+                    </label>
+                    <label>
+                      VAT Amount
+                      <input id="financial-docs-vat-amount-field" type="number" step="0.01" />
+                    </label>
+                    <label>
+                      Payment *
+                      <select id="financial-docs-payment-field"></select>
+                    </label>
+                    <label>
+                      Type *
+                      <select id="financial-docs-type-field"></select>
+                    </label>
+                    <label>
+                      Fat *
+                      <select id="financial-docs-fat-field"></select>
+                    </label>
+                    <label>
+                      Category *
+                      <select id="financial-docs-category-field"></select>
+                    </label>
                   </div>
-                </div>
-                <p id="financial-docs-file-summary" class="auth-status">No file attached.</p>
-                <div id="financial-docs-preview" class="financial-docs-preview muted">No document preview available.</div>
-              </section>
+                </section>
+
+                <section class="settings-block financial-docs-attachment-panel">
+                  <div class="bar">
+                    <h3>Attachment</h3>
+                    <div class="row-actions">
+                      <button id="financial-docs-choose-attachment" type="button" class="ghost">Choose File</button>
+                      <button id="financial-docs-download-file" type="button" class="ghost">Download</button>
+                    </div>
+                  </div>
+                  <p id="financial-docs-file-summary" class="auth-status">No file attached.</p>
+                  <div id="financial-docs-preview" class="financial-docs-preview muted">No document preview available.</div>
+                </section>
+              </div>
 
               <section class="settings-block">
                 <div class="bar">
