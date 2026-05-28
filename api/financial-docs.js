@@ -2,6 +2,8 @@ const { cleanText, parseBody, requireFeature, sendError } = require("./_supabase
 const {
   buildStoredFileName,
   findPossibleDuplicates,
+  normalizeEntityName,
+  normalizeEntityNif,
   safeFinancialDocsSettings,
   sanitizeFinancialDocumentInput,
   sha256Base64Content,
@@ -11,7 +13,9 @@ const {
   deleteDriveFile,
   deleteFinancialDocumentRow,
   insertFinancialDocument,
+  insertFinancialDocumentEntity,
   insertFinancialDocumentHistory,
+  listFinancialDocumentEntities,
   listFinancialDocuments,
   loadFinancialDocumentRowById,
   loadFinancialDocumentWithHistory,
@@ -95,6 +99,49 @@ function trackFieldChanges(before, after) {
     .filter(Boolean);
 }
 
+function findMatchingEntity(entities, doc) {
+  const targetNif = normalizeEntityNif(doc?.supplierNif || doc?.supplier_nif);
+  const targetName = normalizeEntityName(doc?.supplierName || doc?.supplier_name);
+  return (Array.isArray(entities) ? entities : []).find((row) => {
+    const rowNif = normalizeEntityNif(row?.nif);
+    const rowName = normalizeEntityName(row?.name);
+    return (
+      (targetNif && rowNif === targetNif) ||
+      (targetName && rowName === targetName)
+    );
+  }) || null;
+}
+
+async function ensureFinancialDocumentEntityForDoc(doc) {
+  const supplierName = cleanText(doc?.supplierName || doc?.supplier_name);
+  const supplierNif = cleanText(doc?.supplierNif || doc?.supplier_nif);
+  if (!supplierName || !supplierNif) {
+    return { entity: null, created: false };
+  }
+
+  const entities = await listFinancialDocumentEntities();
+  const existing = findMatchingEntity(entities, { supplierName, supplierNif });
+  if (existing) {
+    return { entity: existing, created: false };
+  }
+
+  try {
+    const created = await insertFinancialDocumentEntity({
+      nif: supplierNif,
+      name: supplierName,
+      address: "",
+    });
+    return { entity: created, created: true };
+  } catch (error) {
+    if (error?.statusCode === 409) {
+      const retryEntities = await listFinancialDocumentEntities();
+      const matched = findMatchingEntity(retryEntities, { supplierName, supplierNif });
+      if (matched) return { entity: matched, created: false };
+    }
+    throw error;
+  }
+}
+
 module.exports = async function handler(req, res) {
   try {
     const auth = await requireFeature(req, "app", "financial-docs");
@@ -132,6 +179,7 @@ module.exports = async function handler(req, res) {
         ocr_fields: body?.ocrFields && typeof body.ocrFields === "object" ? body.ocrFields : {},
         ocr_raw_text: cleanText(body?.ocrRawText),
       });
+      const entitySync = await ensureFinancialDocumentEntityForDoc(created);
 
       const historyEntries = [{
         document_id: cleanText(created?.id),
@@ -153,6 +201,22 @@ module.exports = async function handler(req, res) {
           old_value: null,
           new_value: null,
           metadata: { duplicates },
+          created_by: userEmail,
+        });
+      }
+
+      if (entitySync.created) {
+        historyEntries.push({
+          document_id: cleanText(created?.id),
+          action_type: "entity_created",
+          field_name: "",
+          message: "Entity created automatically from document data.",
+          old_value: null,
+          new_value: entitySync.entity?.name || sanitized.supplierName,
+          metadata: {
+            nif: entitySync.entity?.nif || sanitized.supplierNif,
+            name: entitySync.entity?.name || sanitized.supplierName,
+          },
           created_by: userEmail,
         });
       }
@@ -217,6 +281,7 @@ module.exports = async function handler(req, res) {
         ocr_fields: body?.ocrFields && typeof body.ocrFields === "object" ? body.ocrFields : (existing.ocr_fields || {}),
         ocr_raw_text: cleanText(body?.ocrRawText) || cleanText(existing.ocr_raw_text),
       });
+      const entitySync = await ensureFinancialDocumentEntityForDoc(updated);
 
       const historyEntries = trackFieldChanges(existing, updated).map((item) => ({
         document_id: id,
@@ -234,6 +299,22 @@ module.exports = async function handler(req, res) {
           old_value: null,
           new_value: null,
           metadata: { duplicates },
+          created_by: userEmail,
+        });
+      }
+
+      if (entitySync.created) {
+        historyEntries.push({
+          document_id: id,
+          action_type: "entity_created",
+          field_name: "",
+          message: "Entity created automatically from document data.",
+          old_value: null,
+          new_value: entitySync.entity?.name || sanitized.supplierName,
+          metadata: {
+            nif: entitySync.entity?.nif || sanitized.supplierNif,
+            name: entitySync.entity?.name || sanitized.supplierName,
+          },
           created_by: userEmail,
         });
       }
