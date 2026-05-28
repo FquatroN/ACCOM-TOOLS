@@ -17906,6 +17906,12 @@ async function saveFinancialDocRequest(payload, isUpdate, id) {
     : api("/api/financial-docs", { method: "POST", body: payload });
 }
 
+async function refreshFinancialDocEntitiesAfterSave() {
+  await loadFinancialDocEntitiesData({ silent: true });
+  renderFinancialDocEntityLists();
+  if (state.financialDocsModalOpen) renderFinancialDocEditor();
+}
+
 async function saveFinancialDoc() {
   const draft = financialDocDraftFromInputs();
   const isUpdate = !!clean(draft.id);
@@ -17947,6 +17953,7 @@ async function saveFinancialDoc() {
     ]);
     state.financialDocsDraft = savedRow;
     state.financialDocsAttachment = null;
+    await refreshFinancialDocEntitiesAfterSave();
     renderFinancialDocs();
     renderFinancialDocEditor();
     await renderFinancialDocPreview();
@@ -17982,6 +17989,7 @@ async function saveFinancialDocInline() {
       ...state.financialDocsRows.filter((row) => row.id !== savedRow.id),
     ]);
     resetFinancialDocListDraft();
+    await refreshFinancialDocEntitiesAfterSave();
     renderFinancialDocs();
     setFinancialDocsStatus("Financial document saved.");
     showToast("Financial document saved.", "success");
@@ -18015,6 +18023,7 @@ async function saveFinancialDocInlineRow(id) {
       ...state.financialDocsRows.filter((row) => row.id !== savedRow.id),
     ]);
     state.financialDocsEditingId = "";
+    await refreshFinancialDocEntitiesAfterSave();
     renderFinancialDocs();
     setFinancialDocsStatus("Financial document saved.");
   } catch (error) {
