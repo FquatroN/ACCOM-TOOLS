@@ -16731,13 +16731,20 @@ function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachme
 }
 
 function buildFinancialDocTableRow(row) {
+  const statusClass = (() => {
+    const normalized = clean(row.status).toLowerCase();
+    if (normalized === "confirmed") return "financial-doc-row--confirmed";
+    if (normalized === "paid") return "financial-doc-row--paid";
+    if (normalized === "draft") return "financial-doc-row--draft";
+    return "";
+  })();
   const fileCell = financialDocFileDropzoneMarkup({
     rowId: row.id,
     hasAttachment: financialDocHasAttachment(row),
     showDownload: true,
   });
   if (clean(state.financialDocsEditingId) === clean(row.id)) {
-    return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row financial-docs-table-editor">
+    return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row financial-docs-table-editor ${statusClass}">
       <td>${escape(formatFinancialDocsCreateDateList(row.createdAt))}</td>
       <td class="center-cell"><select data-financial-doc-field="cc" data-id="${escape(row.id)}">${financialDocSelectMarkup("cc", row.cc)}</select></td>
       <td><input data-financial-doc-field="documentDate" data-id="${escape(row.id)}" type="date" value="${escape(row.documentDate)}" /></td>
@@ -16759,7 +16766,7 @@ function buildFinancialDocTableRow(row) {
       </td>
     </tr>`;
   }
-  return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row">
+  return `<tr data-financial-doc-id="${escape(row.id)}" class="financial-doc-row ${statusClass}">
     <td>${escape(formatFinancialDocsCreateDateList(row.createdAt))}</td>
     <td class="center-cell">${escape(row.cc || "-")}</td>
     <td>${escape(formatDateOnly(row.documentDate))}</td>
@@ -17189,8 +17196,17 @@ function renderFinancialDocsMobileCards(rows) {
     els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">No financial documents found.</div>';
     return;
   }
-  els.financialDocsMobileCards.innerHTML = rows.map((row) => `
-    <article class="service-mobile-card financial-doc-mobile-card" data-financial-doc-id="${escape(row.id)}">
+  els.financialDocsMobileCards.innerHTML = rows.map((row) => {
+    const normalizedStatus = clean(row.status).toLowerCase();
+    const statusClass = normalizedStatus === "confirmed"
+      ? "financial-doc-row--confirmed"
+      : normalizedStatus === "paid"
+        ? "financial-doc-row--paid"
+        : normalizedStatus === "draft"
+          ? "financial-doc-row--draft"
+          : "";
+    return `
+    <article class="service-mobile-card financial-doc-mobile-card ${statusClass}" data-financial-doc-id="${escape(row.id)}">
       <div class="service-mobile-head">
         <strong>${escape(row.description || "Document")}</strong>
         <span>${financialDocHasAttachment(row) ? `<button type="button" class="ghost financial-doc-file-button" data-action="download-financial-doc" data-id="${escape(row.id)}" title="Download file"><span class="financial-doc-file-icon financial-doc-file-icon--pdf">PDF</span></button>` : escape(row.status || "-")}</span>
@@ -17205,7 +17221,8 @@ function renderFinancialDocsMobileCards(rows) {
         <button type="button" class="ghost" data-action="open-financial-doc" data-id="${escape(row.id)}">Open</button>
       </div>
     </article>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function renderFinancialDocs() {

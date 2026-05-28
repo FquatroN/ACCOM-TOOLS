@@ -4805,6 +4805,21 @@ select:disabled {
   background: rgba(15, 109, 138, 0.05);
 }
 
+.financial-doc-row--confirmed td,
+.financial-doc-mobile-card.financial-doc-row--confirmed {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.financial-doc-row--paid td,
+.financial-doc-mobile-card.financial-doc-row--paid {
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.financial-doc-row--draft td,
+.financial-doc-mobile-card.financial-doc-row--draft {
+  background: rgba(250, 204, 21, 0.15);
+}
+
 .financial-doc-file-cell {
   display: flex;
   align-items: center;
