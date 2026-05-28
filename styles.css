@@ -4958,9 +4958,27 @@ select:disabled {
   width: min(980px, 100%);
 }
 
+.financial-doc-entities-modal-card .bar h2,
+.financial-doc-entities-modal-card .bar h3 {
+  font-size: 1rem;
+}
+
+.financial-doc-entities-modal-card label,
+.financial-doc-entities-modal-card small,
+.financial-doc-entities-modal-card p,
+.financial-doc-entities-modal-card .auth-status {
+  font-size: 0.78rem;
+}
+
 .financial-doc-entities-filters {
   grid-template-columns: minmax(200px, 1.1fr) minmax(180px, 1fr);
   gap: 0.5rem 0.7rem;
+}
+
+.financial-doc-entities-filters input {
+  min-height: 2rem;
+  padding: 0.38rem 0.55rem;
+  font-size: 0.8rem;
 }
 
 .financial-doc-entities-table-wrap {
@@ -4969,7 +4987,7 @@ select:disabled {
 
 .financial-doc-entities-table th,
 .financial-doc-entities-table td {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   vertical-align: middle;
 }
 
@@ -5000,10 +5018,20 @@ select:disabled {
 .financial-doc-entities-table input {
   width: 100%;
   min-width: 0;
+  min-height: 1.95rem;
+  padding: 0.32rem 0.45rem;
+  font-size: 0.78rem;
 }
 
 .financial-doc-entities-table .row-actions {
   justify-content: center;
+}
+
+.financial-doc-entities-table .row-actions button,
+.financial-doc-entities-modal-card .actions button {
+  min-height: 1.95rem;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.78rem;
 }
 
 @media (max-width: 768px) {
