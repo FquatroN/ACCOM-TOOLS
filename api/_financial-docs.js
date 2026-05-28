@@ -136,7 +136,6 @@ function sanitizeFinancialDocumentInput(input = {}, settings = DEFAULT_FINANCIAL
   if (!doc.supplierName) throw badRequest("Name is required.");
   if (!Number.isFinite(doc.amount)) throw badRequest("Amount is required.");
   if (!isDraft && !doc.cc) throw badRequest("CC is required.");
-  if (!isDraft && !doc.supplierNif) throw badRequest("Supplier NIF is required.");
   if (!isDraft && !doc.payment) throw badRequest("Payment is required.");
   if (!isDraft && !doc.docType) throw badRequest("Type is required.");
   if (!isDraft && !doc.fat) throw badRequest("Fat is required.");
