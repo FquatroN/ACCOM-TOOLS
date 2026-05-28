@@ -4674,14 +4674,14 @@ select:disabled {
     105px
     105px
     105px
-    minmax(98px, 0.66fr)
-    minmax(116px, 0.78fr)
+    minmax(84px, 0.58fr)
+    minmax(98px, 0.68fr)
     90px
     70px
     64px
     90px
     90px;
-  gap: 0.4rem 0.55rem;
+  gap: 0.4rem 0.45rem;
   align-items: end;
 }
 
