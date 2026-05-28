@@ -3077,6 +3077,7 @@ function renderLayout() {
     els.openBackoffice.hidden = !canFinancialDocs;
     els.openBackoffice.classList.toggle("active", backofficeMode);
   }
+  if (els.backofficeBackToApp) els.backofficeBackToApp.hidden = !backofficeMode;
   if (els.leftNav) els.leftNav.hidden = settingsMode || backofficeMode;
   if (els.backofficeTopNav) els.backofficeTopNav.hidden = settingsMode || !backofficeMode;
   els.topbar.hidden = false;
