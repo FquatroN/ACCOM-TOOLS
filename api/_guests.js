@@ -104,26 +104,21 @@ function buildCountryLookups() {
 }
 
 const COUNTRY_LOOKUPS = buildCountryLookups();
+const COUNTRY_CODE_ALIASES = new Map([
+  // Some manually-entered guest records use this typo for Portugal.
+  ["PTR", "PRT"],
+]);
 
 function resolveCountry(value) {
   const raw = normalizeGuestText(value, 140);
   const key = normalizeCountryLookupKey(raw);
-  const entry = COUNTRY_LOOKUPS.exact.get(key) || null;
+  const entry = COUNTRY_LOOKUPS.exact.get(key) || COUNTRY_LOOKUPS.exact.get(COUNTRY_CODE_ALIASES.get(key) || "") || null;
   if (entry) {
     return {
       input: raw,
       code: entry.code,
       name: entry.name,
       abbr: entry.abbr,
-      isValid: true,
-    };
-  }
-  if (/^[A-Z]{3}$/.test(key)) {
-    return {
-      input: raw || key,
-      code: key,
-      name: raw,
-      abbr: raw,
       isValid: true,
     };
   }
