@@ -13525,6 +13525,13 @@ function validateGuestsBlacklistDraftClient(draft) {
   return "";
 }
 
+function guestNeedsLongStayConfirmation(draft) {
+  const checkIn = normalizeGuestDateClient(draft?.checkIn);
+  const checkOut = normalizeGuestDateClient(draft?.checkOut);
+  if (!checkIn || !checkOut) return false;
+  return dateDiffDays(checkIn, checkOut) > 25;
+}
+
 async function saveGuestRecord(mode = "new", id = "", options = {}) {
   const isEdit = mode === "edit";
   const draft = isEdit ? state.guestsEditDraft : state.guestsDraft;
@@ -13532,6 +13539,9 @@ async function saveGuestRecord(mode = "new", id = "", options = {}) {
   if (validationError) {
     setGuestsStatus(validationError);
     showToast(validationError, "error");
+    return;
+  }
+  if (!isEdit && guestNeedsLongStayConfirmation(draft) && !window.confirm("The difference between check-in and check-out is more than 25 days. Do you want to confirm these dates?")) {
     return;
   }
   try {
