@@ -12954,6 +12954,8 @@ function normalizeGuestsBlacklistRecordClient(input = {}) {
 
 function sortGuestsRowsClient(rows) {
   return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+    const checkInCompare = clean(b.checkIn).localeCompare(clean(a.checkIn));
+    if (checkInCompare) return checkInCompare;
     const at = new Date(clean(a.createdAt)).getTime() || 0;
     const bt = new Date(clean(b.createdAt)).getTime() || 0;
     return bt - at || clean(a.name).localeCompare(clean(b.name));
