@@ -167,6 +167,14 @@ async function loadGuestTableRows() {
   return (Array.isArray(rows) ? rows : []).map(mapGuestTableRow);
 }
 
+async function loadSendableGuestTableRows(todayIso) {
+  const safeToday = cleanText(todayIso || lisbonTodayIso());
+  const rows = await restQuery(`guest_records?select=*&sent_status=neq.sent&check_in=lte.${encodeURIComponent(safeToday)}&order=check_in.desc,created_at.desc,name.asc&limit=10000`, {
+    method: "GET",
+  });
+  return (Array.isArray(rows) ? rows : []).map(mapGuestTableRow);
+}
+
 async function updateGuestSendStatuses(rows, { ok, nextFileNumber, message, timestamp }) {
   const updates = rows.map((row) => restQuery(`guest_records?id=eq.${encodeURIComponent(cleanId(row.id))}`, {
     method: "PATCH",
@@ -320,7 +328,9 @@ module.exports = async function handler(req, res) {
 
     const current = await loadRowsAndSettings();
     const today = lisbonTodayIso();
-    const sendable = current.rows.filter((row) => cleanText(row.sentStatus) !== "sent" && cleanText(row.checkIn) && cleanText(row.checkIn) <= today);
+    const sendable = current.mode === "table"
+      ? await loadSendableGuestTableRows(today)
+      : current.rows.filter((row) => cleanText(row.sentStatus) !== "sent" && cleanText(row.checkIn) && cleanText(row.checkIn) <= today);
     if (!sendable.length) {
       res.status(200).json({ rows: current.rows, settings: current.settings, sent: 0, message: "No pending guest records ready to send." });
       return;
