@@ -458,7 +458,13 @@ module.exports = async function handler(req, res) {
       res.status(502).json({ error: result.message, rows: savedRows, settings: savedSettings, sent: 0 });
       return;
     }
-    res.status(200).json({ rows: savedRows, settings: savedSettings, sent: sendableMapped.length, message: "Guests sent successfully." });
+    const sentCount = sendableMapped.length;
+    res.status(200).json({
+      rows: savedRows,
+      settings: savedSettings,
+      sent: sentCount,
+      message: `${sentCount} Guest${sentCount === 1 ? "" : "s"} sent successfully.`,
+    });
   } catch (error) {
     sendError(res, error);
   }
