@@ -113,11 +113,24 @@ const COUNTRY_CODE_ALIASES = new Map([
   // Some manually-entered guest records use this typo for Portugal.
   ["PTR", "PRT"],
 ]);
+const COUNTRY_NAME_ALIASES = new Map([
+  ["HOLANDA", "NLD"],
+  ["TAILANDA", "THA"],
+  ["ESLOVACA", "SVK"],
+  ["COREIA NORTE", "PRK"],
+  ["BIELORRUSSIA", "BLR"],
+  ["AZERBEIJAO", "AZE"],
+  ["AFRICA SUL", "ZAF"],
+  ["MACEDONIA", "MKD"],
+]);
 
 function resolveCountry(value) {
   const raw = normalizeGuestText(value, 140);
   const key = normalizeCountryLookupKey(raw);
-  const entry = COUNTRY_LOOKUPS.exact.get(key) || COUNTRY_LOOKUPS.exact.get(COUNTRY_CODE_ALIASES.get(key) || "") || null;
+  const entry = COUNTRY_LOOKUPS.exact.get(key)
+    || COUNTRY_LOOKUPS.exact.get(COUNTRY_CODE_ALIASES.get(key) || "")
+    || COUNTRY_LOOKUPS.exact.get(COUNTRY_NAME_ALIASES.get(key) || "")
+    || null;
   if (entry) {
     return {
       input: raw,

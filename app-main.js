@@ -12830,14 +12830,30 @@ function guestCountryLookupKeyClient(value) {
     .trim();
 }
 
+const GUEST_COUNTRY_CODE_ALIASES_CLIENT = new Map([
+  ["PTR", "PRT"],
+]);
+
+const GUEST_COUNTRY_NAME_ALIASES_CLIENT = new Map([
+  ["HOLANDA", "NLD"],
+  ["TAILANDA", "THA"],
+  ["ESLOVACA", "SVK"],
+  ["COREIA NORTE", "PRK"],
+  ["BIELORRUSSIA", "BLR"],
+  ["AZERBEIJAO", "AZE"],
+  ["AFRICA SUL", "ZAF"],
+  ["MACEDONIA", "MKD"],
+]);
+
 function resolveGuestCountryClient(value) {
   const raw = clean(value);
   const key = guestCountryLookupKeyClient(raw);
+  const candidateKeys = [key, GUEST_COUNTRY_CODE_ALIASES_CLIENT.get(key), GUEST_COUNTRY_NAME_ALIASES_CLIENT.get(key)].filter(Boolean);
   const entry = (state.guestsCountries || []).find((item) => {
     const code = clean(item.code).toUpperCase();
     const name = clean(item.name);
     const abbr = clean(item.abbr);
-    return [code, name, abbr].some((candidate) => guestCountryLookupKeyClient(candidate) === key);
+    return [code, name, abbr].some((candidate) => candidateKeys.includes(guestCountryLookupKeyClient(candidate)));
   });
   if (entry) {
     return {
@@ -12849,7 +12865,7 @@ function resolveGuestCountryClient(value) {
   }
   return {
     input: raw,
-    code: /^[A-Z]{3}$/.test(key) ? key : "",
+    code: "",
     name: raw,
     abbr: raw,
   };
