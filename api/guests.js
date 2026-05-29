@@ -153,7 +153,7 @@ function validateGuestSave(existingRows, record, { excludeId = "" } = {}) {
     cleanId(item.checkIn) === cleanId(record.checkIn)
   );
   if (duplicate) {
-    const error = new Error("A guest with the same document number and check-in already exists.");
+    const error = new Error(`A guest with the same document number and check-in already exists: ${duplicate.name || "Unknown guest"} (${duplicate.docNumber}, ${duplicate.checkIn}).`);
     error.statusCode = 400;
     throw error;
   }
