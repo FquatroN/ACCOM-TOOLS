@@ -240,10 +240,6 @@ module.exports = async function handler(req, res) {
           res.status(404).json({ error: "Guest record not found." });
           return;
         }
-        if (cleanId(existing.sentStatus).toLowerCase() === "sent") {
-          res.status(400).json({ error: "Sent guest records cannot be modified." });
-          return;
-        }
         const nextRows = mergeLegacyRows(payload.rows, { ...existing, ...body, id: existing.id }, id);
         const saved = await saveGuestsPayload(rowId, { ...payload, rows: nextRows });
         res.status(200).json({ rows: saved.rows, settings: saved.settings, countries: COUNTRIES });
@@ -252,10 +248,6 @@ module.exports = async function handler(req, res) {
       const existing = current.rows.find((item) => cleanId(item.id) === id);
       if (!existing) {
         res.status(404).json({ error: "Guest record not found." });
-        return;
-      }
-      if (cleanId(existing.sentStatus).toLowerCase() === "sent") {
-        res.status(400).json({ error: "Sent guest records cannot be modified." });
         return;
       }
       const nextRecord = sanitizeGuestRecord({ ...existing, ...body, id }, existing);
@@ -276,20 +268,12 @@ module.exports = async function handler(req, res) {
       if (current.mode === "legacy") {
         const { rowId, payload } = await loadGuestsPayloadRow();
         const existing = payload.rows.find((item) => cleanId(item.id) === id);
-        if (cleanId(existing?.sentStatus).toLowerCase() === "sent") {
-          res.status(400).json({ error: "Sent guest records cannot be modified." });
-          return;
-        }
         const nextRows = payload.rows.filter((item) => cleanId(item.id) !== id);
         const saved = await saveGuestsPayload(rowId, { ...payload, rows: nextRows });
         res.status(200).json({ rows: saved.rows, settings: saved.settings, countries: COUNTRIES });
         return;
       }
       const existing = current.rows.find((item) => cleanId(item.id) === id);
-      if (cleanId(existing?.sentStatus).toLowerCase() === "sent") {
-        res.status(400).json({ error: "Sent guest records cannot be modified." });
-        return;
-      }
       await deleteGuestTableRow(id);
       const rows = await loadGuestTableRows();
       res.status(200).json({ rows, settings: current.settings, countries: COUNTRIES });
