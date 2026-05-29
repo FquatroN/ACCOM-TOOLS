@@ -1905,6 +1905,16 @@ select:disabled {
   display: none;
 }
 
+#guests-panel-list table {
+  border-collapse: separate;
+  border-spacing: 0.2rem;
+}
+
+#guests-panel-list th,
+#guests-panel-list td {
+  padding: 0.2rem;
+}
+
 .maintenance-mobile-cards {
   display: none;
 }
