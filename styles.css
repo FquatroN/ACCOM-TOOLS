@@ -2811,8 +2811,8 @@ select:disabled {
 
 .guests-table th:nth-child(1),
 .guests-table td:nth-child(1) {
-  min-width: 44px;
-  width: 44px;
+  min-width: 42px;
+  width: 42px;
 }
 
 .guests-table td:nth-child(1),
@@ -2832,14 +2832,14 @@ select:disabled {
 
 .guests-table th:nth-child(3),
 .guests-table td:nth-child(3) {
-  min-width: 120px;
-  width: 120px;
+  min-width: 115px;
+  width: 115px;
 }
 
 .guests-table th:nth-child(4),
 .guests-table td:nth-child(4) {
-  min-width: 125px;
-  width: 125px;
+  min-width: 120px;
+  width: 120px;
 }
 
 .guests-table th:nth-child(5),
@@ -2850,26 +2850,26 @@ select:disabled {
 
 .guests-table th:nth-child(6),
 .guests-table td:nth-child(6) {
-  min-width: 42px;
-  width: 42px;
+  min-width: 40px;
+  width: 40px;
 }
 
 .guests-table th:nth-child(7),
 .guests-table td:nth-child(7) {
-  min-width: 120px;
-  width: 120px;
+  min-width: 115px;
+  width: 115px;
 }
 
 .guests-table th:nth-child(8),
 .guests-table td:nth-child(8) {
-  min-width: 125px;
-  width: 125px;
+  min-width: 120px;
+  width: 120px;
 }
 
 .guests-table th:nth-child(9),
 .guests-table td:nth-child(9) {
-  min-width: 125px;
-  width: 125px;
+  min-width: 120px;
+  width: 120px;
 }
 
 .guests-table th:nth-child(10),
@@ -2890,8 +2890,8 @@ select:disabled {
 
 .guests-table th:nth-child(12),
 .guests-table td:nth-child(12) {
-  min-width: 120px;
-  width: 120px;
+  min-width: 150px;
+  width: 150px;
 }
 
 .guests-table td:nth-child(12),
