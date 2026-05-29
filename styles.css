@@ -3140,6 +3140,7 @@ select:disabled {
 
 .guest-status-note {
   font-size: 0.68rem;
+  font-weight: 400;
 }
 
 .guest-status-pending {
