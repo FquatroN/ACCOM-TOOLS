@@ -12932,7 +12932,7 @@ function normalizeGuestDateClient(value) {
 }
 
 function guestIsLocked(record) {
-  return clean(record?.sentStatus).toLowerCase() === "sent";
+  return false;
 }
 
 function normalizeGuestsBlacklistRecordClient(input = {}) {
