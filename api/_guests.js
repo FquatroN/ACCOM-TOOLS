@@ -68,7 +68,12 @@ function normalizeGuestName(value) {
 
 function normalizeDocType(value) {
   const normalized = cleanText(value).toUpperCase();
-  return ["P", "O", "B"].includes(normalized) ? normalized : "O";
+  return ["P", "O", "B", "I"].includes(normalized) ? normalized : "O";
+}
+
+function sefDocType(value) {
+  const normalized = normalizeDocType(value);
+  return normalized === "I" ? "B" : normalized;
 }
 
 function normalizeHA(value) {
@@ -455,7 +460,7 @@ function buildBalXml(records, fileNumber, settings = {}) {
     ${record.birthPlace ? `<Local_Nascimento>${escapeXml(record.birthPlace.slice(0, 30))}</Local_Nascimento>` : ""}
     <Documento_Identificacao>${escapeXml(record.docNumber.slice(0, 16))}</Documento_Identificacao>
     <Pais_Emissor_Documento>${escapeXml(record.issuerCountryCode)}</Pais_Emissor_Documento>
-    <Tipo_Documento>${escapeXml(record.docType)}</Tipo_Documento>
+    <Tipo_Documento>${escapeXml(sefDocType(record.docType))}</Tipo_Documento>
     <Data_Entrada>${escapeXml(xmlDateTime(record.checkIn))}</Data_Entrada>
     ${record.checkOut ? `<Data_Saida>${escapeXml(xmlDateTime(record.checkOut))}</Data_Saida>` : ""}
     <Pais_Residencia_Origem>${escapeXml(record.residenceCountryCode)}</Pais_Residencia_Origem>

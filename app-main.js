@@ -12861,7 +12861,7 @@ function normalizeGuestDocTypeClient(value) {
 
 function coerceGuestDocTypeClient(value) {
   const normalized = normalizeGuestDocTypeClient(value);
-  return ["P", "O", "B"].includes(normalized) ? normalized : "O";
+  return ["P", "O", "B", "I"].includes(normalized) ? normalized : "O";
 }
 
 function normalizeGuestHAClient(value) {
