@@ -3,12 +3,105 @@ const {
   COUNTRIES,
   DEFAULT_GUESTS_SETTINGS,
   GUESTS_SETTING_KEY,
+  lisbonTodayIso,
   sanitizeGuestRecord,
   sanitizeGuestsPayload,
 } = require("./_guests");
 
 function cleanId(value) {
   return String(value || "").trim();
+}
+
+function cleanQueryValue(value) {
+  return Array.isArray(value) ? cleanId(value[0]) : cleanId(value);
+}
+
+function shiftIsoDate(isoDate, days) {
+  const raw = cleanId(isoDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
+  const date = new Date(`${raw}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeGuestListFilters(query = {}) {
+  return {
+    ha: cleanQueryValue(query.ha).toUpperCase(),
+    search: cleanQueryValue(query.search),
+    nationality: cleanQueryValue(query.nationality),
+    checkInFrom: cleanQueryValue(query.checkInFrom || query.check_in_from),
+    checkInTo: cleanQueryValue(query.checkInTo || query.check_in_to),
+    checkOutFrom: cleanQueryValue(query.checkOutFrom || query.check_out_from),
+    checkOutTo: cleanQueryValue(query.checkOutTo || query.check_out_to),
+  };
+}
+
+function hasExplicitGuestListFilters(filters = {}) {
+  return !!(
+    cleanId(filters.ha) ||
+    cleanId(filters.search) ||
+    cleanId(filters.nationality) ||
+    cleanId(filters.checkInFrom) ||
+    cleanId(filters.checkInTo) ||
+    cleanId(filters.checkOutFrom) ||
+    cleanId(filters.checkOutTo)
+  );
+}
+
+function normalizeGuestCountryKey(value) {
+  return cleanId(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+}
+
+function guestNationalityMatchesFilter(record, filter) {
+  const normalizedFilter = normalizeGuestCountryKey(filter);
+  if (!normalizedFilter) return true;
+  return [record?.nationality, record?.nationalityCode]
+    .map((value) => normalizeGuestCountryKey(value))
+    .some((value) => value === normalizedFilter || value.includes(normalizedFilter));
+}
+
+function sortGuestListRows(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+    const checkInCompare = cleanId(b?.checkIn).localeCompare(cleanId(a?.checkIn));
+    if (checkInCompare) return checkInCompare;
+    const at = new Date(cleanId(a?.createdAt)).getTime() || 0;
+    const bt = new Date(cleanId(b?.createdAt)).getTime() || 0;
+    return bt - at || cleanId(a?.name).localeCompare(cleanId(b?.name));
+  });
+}
+
+function applyGuestListFilters(rows, filters = {}) {
+  const safe = normalizeGuestListFilters(filters);
+  const ha = cleanId(safe.ha).toUpperCase();
+  const search = cleanId(safe.search).toLowerCase();
+  const checkInFrom = cleanId(safe.checkInFrom);
+  const checkInTo = cleanId(safe.checkInTo);
+  const checkOutFrom = cleanId(safe.checkOutFrom);
+  const checkOutTo = cleanId(safe.checkOutTo);
+  return sortGuestListRows(rows)
+    .filter((row) => !ha || cleanId(row?.ha).toUpperCase() === ha)
+    .filter((row) => !search || cleanId(row?.name).toLowerCase().includes(search) || cleanId(row?.docNumber).toLowerCase().includes(search))
+    .filter((row) => guestNationalityMatchesFilter(row, safe.nationality))
+    .filter((row) => !checkInFrom || cleanId(row?.checkIn) >= checkInFrom)
+    .filter((row) => !checkInTo || cleanId(row?.checkIn) <= checkInTo)
+    .filter((row) => !checkOutFrom || cleanId(row?.checkOut) >= checkOutFrom)
+    .filter((row) => !checkOutTo || cleanId(row?.checkOut) <= checkOutTo);
+}
+
+function scopeGuestListRows(rows, filters = {}, { includeDefaultRecent = true } = {}) {
+  const safe = normalizeGuestListFilters(filters);
+  if (hasExplicitGuestListFilters(safe)) return applyGuestListFilters(rows, safe);
+  const sorted = sortGuestListRows(rows);
+  if (!includeDefaultRecent) return sorted;
+  const cutoff = shiftIsoDate(lisbonTodayIso(), -60);
+  if (!cutoff) return sorted;
+  return sorted.filter((row) => !cleanId(row?.checkOut) || cleanId(row?.checkOut) >= cutoff);
 }
 
 async function loadGuestsPayloadRow() {
@@ -88,11 +181,29 @@ function mapGuestTableRow(row) {
   });
 }
 
-async function loadGuestTableRows() {
-  const rows = await restQuery("guest_records?select=*&order=created_at.desc,name.asc&limit=10000", {
+function buildGuestTableQuery({ recentOnly = false } = {}) {
+  const params = new URLSearchParams();
+  params.set("select", "*");
+  params.set("order", "check_in.desc,created_at.desc,name.asc");
+  params.set("limit", "10000");
+
+  if (recentOnly) {
+    const cutoff = shiftIsoDate(lisbonTodayIso(), -60);
+    if (cutoff) params.set("or", `(check_out.gte.${cutoff},check_out.is.null)`);
+  }
+  return `guest_records?${params.toString()}`;
+}
+
+async function loadGuestTableRows(filters = {}, options = {}) {
+  const safe = normalizeGuestListFilters(filters);
+  const mode = cleanId(options?.mode).toLowerCase();
+  const recentOnly = mode !== "all" && !hasExplicitGuestListFilters(safe);
+  const rows = await restQuery(buildGuestTableQuery({ recentOnly }), {
     method: "GET",
   });
-  return (Array.isArray(rows) ? rows : []).map(mapGuestTableRow);
+  const mapped = (Array.isArray(rows) ? rows : []).map(mapGuestTableRow);
+  if (mode === "all") return sortGuestListRows(mapped);
+  return recentOnly ? sortGuestListRows(mapped) : scopeGuestListRows(mapped, safe, { includeDefaultRecent: false });
 }
 
 function buildGuestTableBody(record, existing = {}) {
@@ -182,35 +293,36 @@ function mergeLegacyRows(existingRows, input, id = "") {
   return sanitizeGuestsPayload({ rows: nextRows }).rows;
 }
 
-async function loadRowsAndSettings() {
+async function loadRowsAndSettings(filters = {}, options = {}) {
   const { payload } = await loadGuestsPayloadRow();
   try {
-    const rows = await loadGuestTableRows();
+    const rows = await loadGuestTableRows(filters, options);
     return { mode: "table", settings: payload.settings, rows };
   } catch (error) {
     if (!isMissingGuestsTableError(error)) throw error;
-    return { mode: "legacy", settings: payload.settings, rows: payload.rows };
+    return { mode: "legacy", settings: payload.settings, rows: scopeGuestListRows(payload.rows, filters, { includeDefaultRecent: cleanId(options?.mode).toLowerCase() !== "all" }) };
   }
 }
 
 module.exports = async function handler(req, res) {
   try {
     await requireFeature(req, "app", "guests");
+    const responseFilters = normalizeGuestListFilters(req.query);
 
     if (req.method === "GET") {
-      const current = await loadRowsAndSettings();
+      const current = await loadRowsAndSettings(responseFilters);
       res.status(200).json({ rows: current.rows, settings: current.settings, countries: COUNTRIES });
       return;
     }
 
     if (req.method === "POST") {
       const body = await parseBody(req);
-      const current = await loadRowsAndSettings();
+      const current = await loadRowsAndSettings({}, { mode: "all" });
       if (current.mode === "legacy") {
         const { rowId, payload } = await loadGuestsPayloadRow();
         const nextRows = mergeLegacyRows(payload.rows, body);
         const saved = await saveGuestsPayload(rowId, { ...payload, rows: nextRows });
-        res.status(200).json({ rows: saved.rows, settings: saved.settings, countries: COUNTRIES });
+        res.status(200).json({ rows: scopeGuestListRows(saved.rows, responseFilters), settings: saved.settings, countries: COUNTRIES });
         return;
       }
       const nextRecord = sanitizeGuestRecord(body);
@@ -220,7 +332,7 @@ module.exports = async function handler(req, res) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
-      const rows = await loadGuestTableRows();
+      const rows = await loadGuestTableRows(responseFilters);
       res.status(200).json({ rows, settings: current.settings, countries: COUNTRIES });
       return;
     }
@@ -232,7 +344,7 @@ module.exports = async function handler(req, res) {
         return;
       }
       const body = await parseBody(req);
-      const current = await loadRowsAndSettings();
+      const current = await loadRowsAndSettings({}, { mode: "all" });
       if (current.mode === "legacy") {
         const { rowId, payload } = await loadGuestsPayloadRow();
         const existing = payload.rows.find((item) => cleanId(item.id) === id);
@@ -242,7 +354,7 @@ module.exports = async function handler(req, res) {
         }
         const nextRows = mergeLegacyRows(payload.rows, { ...existing, ...body, id: existing.id }, id);
         const saved = await saveGuestsPayload(rowId, { ...payload, rows: nextRows });
-        res.status(200).json({ rows: saved.rows, settings: saved.settings, countries: COUNTRIES });
+        res.status(200).json({ rows: scopeGuestListRows(saved.rows, responseFilters), settings: saved.settings, countries: COUNTRIES });
         return;
       }
       const existing = current.rows.find((item) => cleanId(item.id) === id);
@@ -253,7 +365,7 @@ module.exports = async function handler(req, res) {
       const nextRecord = sanitizeGuestRecord({ ...existing, ...body, id }, existing);
       validateGuestSave(current.rows, nextRecord, { excludeId: id });
       await updateGuestTableRow(id, nextRecord, existing);
-      const rows = await loadGuestTableRows();
+      const rows = await loadGuestTableRows(responseFilters);
       res.status(200).json({ rows, settings: current.settings, countries: COUNTRIES });
       return;
     }
@@ -264,18 +376,16 @@ module.exports = async function handler(req, res) {
         res.status(400).json({ error: "Guest id is required." });
         return;
       }
-      const current = await loadRowsAndSettings();
+      const current = await loadRowsAndSettings({}, { mode: "all" });
       if (current.mode === "legacy") {
         const { rowId, payload } = await loadGuestsPayloadRow();
-        const existing = payload.rows.find((item) => cleanId(item.id) === id);
         const nextRows = payload.rows.filter((item) => cleanId(item.id) !== id);
         const saved = await saveGuestsPayload(rowId, { ...payload, rows: nextRows });
-        res.status(200).json({ rows: saved.rows, settings: saved.settings, countries: COUNTRIES });
+        res.status(200).json({ rows: scopeGuestListRows(saved.rows, responseFilters), settings: saved.settings, countries: COUNTRIES });
         return;
       }
-      const existing = current.rows.find((item) => cleanId(item.id) === id);
       await deleteGuestTableRow(id);
-      const rows = await loadGuestTableRows();
+      const rows = await loadGuestTableRows(responseFilters);
       res.status(200).json({ rows, settings: current.settings, countries: COUNTRIES });
       return;
     }

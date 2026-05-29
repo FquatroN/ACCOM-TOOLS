@@ -821,6 +821,8 @@ const state = {
   guestsSettingsTab: "config",
   guestsScreen: "list",
   guestsFilters: { showActive: true, ha: "", search: "", nationality: "", checkInFrom: "", checkInTo: "", checkOutFrom: "", checkOutTo: "" },
+  guestsRowsRequestToken: 0,
+  guestsRowsReloadTimer: 0,
   guestsDescriptionsFilters: { room: "", description: "" },
   guestsBlacklistFilters: { search: "", whoReported: "", nationality: "" },
   guestsDraft: null,
@@ -12998,6 +13000,36 @@ function setGuestsSettingsStatus(message) {
   if (els.guestsSettingsStatus) els.guestsSettingsStatus.textContent = message || "";
 }
 
+function buildGuestsApiQueryClient(filters = {}) {
+  const params = new URLSearchParams();
+  if (clean(filters.ha)) params.set("ha", clean(filters.ha));
+  if (clean(filters.search)) params.set("search", clean(filters.search));
+  if (clean(filters.nationality)) params.set("nationality", clean(filters.nationality));
+  if (clean(filters.checkInFrom)) params.set("checkInFrom", clean(filters.checkInFrom));
+  if (clean(filters.checkInTo)) params.set("checkInTo", clean(filters.checkInTo));
+  if (clean(filters.checkOutFrom)) params.set("checkOutFrom", clean(filters.checkOutFrom));
+  if (clean(filters.checkOutTo)) params.set("checkOutTo", clean(filters.checkOutTo));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function buildGuestsApiPathClient(basePath = "/api/guests", filters = state.guestsFilters, id = "") {
+  const query = buildGuestsApiQueryClient(filters);
+  if (!id) return `${basePath}${query}`;
+  return `${basePath}?id=${encodeURIComponent(id)}${query ? `&${query.slice(1)}` : ""}`;
+}
+
+function applyGuestsRecordsResultClient(recordsResult = {}, countriesFallback = state.guestsCountries) {
+  state.guestsSettings = normalizeGuestsSettingsClient(recordsResult?.settings || state.guestsSettings);
+  state.guestsCountries = Array.isArray(recordsResult?.countries) ? recordsResult.countries : countriesFallback;
+  if (Array.isArray(recordsResult?.apiCalls)) state.guestsApiCalls = recordsResult.apiCalls.map(normalizeGuestApiCallClient);
+  if (typeof recordsResult?.apiCallsEnabled === "boolean") state.guestsApiCallsEnabled = recordsResult.apiCallsEnabled;
+  state.guestsRows = sortGuestsRowsClient((Array.isArray(recordsResult?.rows) ? recordsResult.rows : []).map(normalizeGuestRecordClient));
+  state.guestsLoaded = true;
+  state.guestsSettingsLoaded = true;
+  if (!state.guestsEditingId) state.guestsDraft = emptyGuestDraft();
+}
+
 async function loadGuestsSettings({ silent = false } = {}) {
   try {
     const result = await api("/api/guests-settings");
@@ -13018,23 +13050,42 @@ async function loadGuestsSettings({ silent = false } = {}) {
   }
 }
 
+async function loadGuestsRows({ silent = false } = {}) {
+  const requestToken = Number(state.guestsRowsRequestToken || 0) + 1;
+  state.guestsRowsRequestToken = requestToken;
+  try {
+    const recordsResult = await api(buildGuestsApiPathClient("/api/guests", state.guestsFilters));
+    if (requestToken !== state.guestsRowsRequestToken) return;
+    applyGuestsRecordsResultClient(recordsResult);
+    renderGuestsCountryOptions();
+    renderGuests();
+    renderGuestsSettings();
+    if (!silent) setGuestsStatus("Guest records loaded.");
+  } catch (e) {
+    if (requestToken !== state.guestsRowsRequestToken) return;
+    state.guestsRows = [];
+    state.guestsDraft = emptyGuestDraft();
+    renderGuestsCountryOptions();
+    renderGuests();
+    renderGuestsSettings();
+    if (!silent) setGuestsStatus(`Using default guests data (${e.message}).`);
+    throw e;
+  }
+}
+
 async function loadGuestsData({ silent = false } = {}) {
   try {
     const [recordsResult, blacklistResult, descriptionsResult] = await Promise.all([
-      api("/api/guests"),
+      api(buildGuestsApiPathClient("/api/guests", state.guestsFilters)),
       api("/api/guests-blacklist"),
       api("/api/guests-descriptions"),
     ]);
-    state.guestsSettings = normalizeGuestsSettingsClient(recordsResult?.settings || state.guestsSettings);
-    state.guestsCountries = Array.isArray(recordsResult?.countries) ? recordsResult.countries : Array.isArray(blacklistResult?.countries) ? blacklistResult.countries : state.guestsCountries;
-    if (Array.isArray(recordsResult?.apiCalls)) state.guestsApiCalls = recordsResult.apiCalls.map(normalizeGuestApiCallClient);
-    if (typeof recordsResult?.apiCallsEnabled === "boolean") state.guestsApiCallsEnabled = recordsResult.apiCallsEnabled;
-    state.guestsRows = sortGuestsRowsClient((Array.isArray(recordsResult?.rows) ? recordsResult.rows : []).map(normalizeGuestRecordClient));
+    applyGuestsRecordsResultClient(
+      recordsResult,
+      Array.isArray(blacklistResult?.countries) ? blacklistResult.countries : state.guestsCountries
+    );
     state.guestDescriptionRows = sortGuestDescriptionRowsClient((Array.isArray(descriptionsResult?.rows) ? descriptionsResult.rows : []).map(normalizeGuestDescriptionRowClient));
     state.guestsBlacklist = sortGuestsBlacklistRowsClient((Array.isArray(blacklistResult?.rows) ? blacklistResult.rows : []).map(normalizeGuestsBlacklistRecordClient));
-    state.guestsLoaded = true;
-    state.guestsSettingsLoaded = true;
-    if (!state.guestsEditingId) state.guestsDraft = emptyGuestDraft();
     if (!state.guestsBlacklistEditingId) state.guestsBlacklistDraft = emptyGuestsBlacklistDraft();
     renderGuestsCountryOptions();
     renderGuests();
@@ -13224,6 +13275,14 @@ function setGuestsScreen(screen) {
   renderGuests();
 }
 
+function scheduleGuestsRowsReload({ silent = true } = {}) {
+  if (state.guestsRowsReloadTimer) window.clearTimeout(state.guestsRowsReloadTimer);
+  state.guestsRowsReloadTimer = window.setTimeout(() => {
+    state.guestsRowsReloadTimer = 0;
+    loadGuestsRows({ silent }).catch(() => {});
+  }, 250);
+}
+
 function onGuestsFilterInput(event) {
   if (event?.target === els.guestsShowActive) state.guestsFilters.showActive = !!els.guestsShowActive?.checked;
   state.guestsFilters.ha = clean(els.guestsFilterHa?.value);
@@ -13233,7 +13292,12 @@ function onGuestsFilterInput(event) {
   state.guestsFilters.checkInTo = clean(els.guestsFilterCheckinTo?.value);
   state.guestsFilters.checkOutFrom = clean(els.guestsFilterCheckoutFrom?.value);
   state.guestsFilters.checkOutTo = clean(els.guestsFilterCheckoutTo?.value);
+  if (event?.target === els.guestsShowActive) {
+    renderGuests();
+    return;
+  }
   renderGuests();
+  scheduleGuestsRowsReload({ silent: true });
 }
 
 function guestAgeClient(birthDate, todayIso = lisbonTodayIsoClient()) {
@@ -13547,7 +13611,7 @@ async function saveGuestRecord(mode = "new", id = "", options = {}) {
   }
   if (!isEdit) state.guestsSavingNew = true;
   try {
-    const result = await api(isEdit ? `/api/guests?id=${encodeURIComponent(id)}` : "/api/guests", {
+    const result = await api(isEdit ? buildGuestsApiPathClient("/api/guests", state.guestsFilters, id) : buildGuestsApiPathClient("/api/guests", state.guestsFilters), {
       method: isEdit ? "PUT" : "POST",
       body: buildGuestPayload(draft, { isEdit }),
     });
@@ -13590,7 +13654,7 @@ async function saveGuestRecord(mode = "new", id = "", options = {}) {
 async function deleteGuestRecord(id) {
   if (!window.confirm("Delete this guest record?")) return;
   try {
-    const result = await api(`/api/guests?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const result = await api(buildGuestsApiPathClient("/api/guests", state.guestsFilters, id), { method: "DELETE" });
     state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
     state.guestsEditingId = "";
     state.guestsEditDraft = null;
@@ -13609,7 +13673,7 @@ async function copyGuestRecord(id) {
   const record = state.guestsRows.find((item) => item.id === id);
   if (!record) return;
   try {
-    const result = await api("/api/guests", {
+    const result = await api(buildGuestsApiPathClient("/api/guests", state.guestsFilters), {
       method: "POST",
       body: buildGuestPayload(buildGuestCopyDraft(record)),
     });
@@ -13680,8 +13744,8 @@ async function deleteGuestsBlacklistRecord(id) {
 async function sendPendingGuests() {
   try {
     const result = await api("/api/guests-send", { method: "POST" });
-    state.guestsRows = sortGuestsRowsClient((Array.isArray(result?.rows) ? result.rows : []).map(normalizeGuestRecordClient));
     state.guestsSettings = normalizeGuestsSettingsClient(result?.settings || state.guestsSettings);
+    await loadGuestsRows({ silent: true });
     await loadGuestsSettings({ silent: true });
     renderGuests();
     renderLayout();
@@ -13781,7 +13845,7 @@ async function saveGuestQuickEdit(id, field, rawValue) {
   };
   const validationError = validateGuestDraftClient(draft);
   if (validationError) throw new Error(validationError);
-  const result = await api(`/api/guests?id=${encodeURIComponent(id)}`, {
+  const result = await api(buildGuestsApiPathClient("/api/guests", state.guestsFilters, id), {
     method: "PUT",
     body: buildGuestPayload(draft),
   });
