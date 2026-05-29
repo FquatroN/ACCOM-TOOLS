@@ -13534,6 +13534,7 @@ function guestNeedsLongStayConfirmation(draft) {
 
 async function saveGuestRecord(mode = "new", id = "", options = {}) {
   const isEdit = mode === "edit";
+  if (!isEdit && state.guestsSavingNew) return;
   const draft = isEdit ? state.guestsEditDraft : state.guestsDraft;
   const validationError = validateGuestDraftClient(draft);
   if (validationError) {
@@ -13544,6 +13545,7 @@ async function saveGuestRecord(mode = "new", id = "", options = {}) {
   if (!isEdit && guestNeedsLongStayConfirmation(draft) && !window.confirm("The difference between check-in and check-out is more than 25 days. Do you want to confirm these dates?")) {
     return;
   }
+  if (!isEdit) state.guestsSavingNew = true;
   try {
     const result = await api(isEdit ? `/api/guests?id=${encodeURIComponent(id)}` : "/api/guests", {
       method: isEdit ? "PUT" : "POST",
@@ -13580,6 +13582,8 @@ async function saveGuestRecord(mode = "new", id = "", options = {}) {
   } catch (e) {
     setGuestsStatus(`Save failed: ${e.message}`);
     showToast(`Guest save failed: ${e.message}`, "error");
+  } finally {
+    if (!isEdit) state.guestsSavingNew = false;
   }
 }
 
