@@ -4,6 +4,7 @@ const {
   DEFAULT_GUESTS_SETTINGS,
   GUESTS_SETTING_KEY,
   lisbonTodayIso,
+  sefDocType,
   sanitizeGuestRecord,
   sanitizeGuestsPayload,
 } = require("./_guests");
@@ -216,7 +217,7 @@ function buildGuestTableBody(record, existing = {}) {
     birth_date: record.birthDate,
     birth_place: record.birthPlace || "",
     doc_number: record.docNumber,
-    doc_type: record.docType,
+    doc_type: sefDocType(record.docType),
     issuer_country: record.issuerCountry || "",
     issuer_country_code: record.issuerCountryCode || "",
     residence_country: record.residenceCountry || "",
