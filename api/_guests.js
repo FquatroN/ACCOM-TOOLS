@@ -540,6 +540,7 @@ module.exports = {
   sanitizeGuestDescriptionRecord,
   sanitizeGuestRecord,
   sanitizeGuestsPayload,
+  sefDocType,
   shouldShowGuestsAlert,
   mergeGuestDescriptionRows,
 };
