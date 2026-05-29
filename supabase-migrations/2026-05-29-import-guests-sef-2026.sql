@@ -5213,7 +5213,7 @@ insert into public.guest_records (
   check_in,
   check_out,
   sent_status,
-  sent_at,
+  sent_at::timestamptz as sent_at,
   send_error,
   send_batch_number,
   created_at,
