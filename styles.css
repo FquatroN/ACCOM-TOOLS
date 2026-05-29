@@ -3128,6 +3128,10 @@ select:disabled {
   display: inline-block;
 }
 
+.guest-alert-birthday-today .guest-alert-text {
+  font-weight: 700;
+}
+
 .guest-alert-missing-co {
   color: var(--danger);
 }
