@@ -327,7 +327,35 @@ async function renameExistingDriveFileIfNeeded(req, documentRecord, settings) {
 }
 
 async function listFinancialDocuments() {
-  const rows = await restQuery("financial_documents?select=*&order=created_at.desc", { method: "GET" });
+  const listSelect = [
+    "id",
+    "created_at",
+    "updated_at",
+    "cc",
+    "document_date",
+    "doc_number",
+    "description",
+    "supplier_nif",
+    "supplier_name",
+    "amount",
+    "vat_amount",
+    "payment",
+    "document_type",
+    "fat",
+    "category",
+    "status",
+    "drive_file_id",
+    "drive_folder_id",
+    "drive_file_url",
+    "original_filename",
+    "stored_filename",
+    "mime_type",
+    "file_size",
+    "file_hash",
+    "uploaded_by",
+    "uploaded_at",
+  ].join(",");
+  const rows = await restQuery(`financial_documents?select=${listSelect}&order=created_at.desc`, { method: "GET" });
   if (!Array.isArray(rows) || !rows.length) return [];
   const warningRows = await restQuery("financial_document_history?select=document_id,message,created_at&action_type=eq.duplicate_warning&order=created_at.desc", { method: "GET" });
   const warningByDocumentId = new Map();

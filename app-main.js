@@ -17602,14 +17602,12 @@ async function loadFinancialDocEntitiesData({ silent = false } = {}) {
     state.financialDocEntities = (Array.isArray(result?.rows) ? result.rows : []).map(normalizeFinancialDocEntityClient);
     state.financialDocEntitiesLoaded = true;
     renderFinancialDocEntityLists();
-    renderFinancialDocs();
     renderFinancialDocEntities();
     if (!silent) setFinancialDocsEntitiesStatus("Entities loaded.");
   } catch (error) {
     state.financialDocEntities = [];
     state.financialDocEntitiesLoaded = false;
     renderFinancialDocEntityLists();
-    renderFinancialDocs();
     renderFinancialDocEntities();
     if (!silent) setFinancialDocsEntitiesStatus(`Failed to load entities: ${error.message}`);
   }
