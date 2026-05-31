@@ -2895,8 +2895,13 @@ select:disabled {
 }
 
 .guests-table td:nth-child(12),
+.guests-blacklist-table td:nth-child(4),
 .guests-blacklist-table td:nth-child(5) {
   white-space: normal;
+}
+
+.guests-blacklist-table td:nth-child(4) {
+  overflow-wrap: anywhere;
 }
 
 .guests-blacklist-table td:nth-child(5) {
