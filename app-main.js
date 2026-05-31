@@ -906,6 +906,7 @@ const state = {
   financialDocsRows: [],
   financialDocEntities: [],
   financialDocsLoaded: false,
+  financialDocsLoading: false,
   financialDocEntitiesLoaded: false,
   financialDocsSettingsLoaded: false,
   financialDocsSettingsTab: "attributes",
@@ -17571,6 +17572,7 @@ async function fileToUploadPayload(file) {
 }
 
 async function loadFinancialDocsData({ silent = false } = {}) {
+  state.financialDocsLoading = true;
   try {
     ensureFinancialDocsDefaultFilters();
     const result = await api(buildFinancialDocsListUrlClient());
@@ -17596,6 +17598,8 @@ async function loadFinancialDocsData({ silent = false } = {}) {
     renderFinancialDocsSettings();
     renderFinancialDocs();
     if (!silent) setFinancialDocsStatus(`Failed to load financial documents: ${error.message}`);
+  } finally {
+    state.financialDocsLoading = false;
   }
 }
 
@@ -17981,6 +17985,9 @@ function renderFinancialDocs() {
     if (els.financialDocsRows) els.financialDocsRows.innerHTML = '<tr><td colspan="16" class="empty">Your profile has no access to Financial Documents.</td></tr>';
     if (els.financialDocsMobileCards) els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Financial Documents.</div>';
     return;
+  }
+  if (!state.financialDocsLoaded && !state.financialDocsLoading) {
+    loadFinancialDocsData({ silent: true }).catch(() => {});
   }
   ensureFinancialDocsDefaultFilters();
   renderFinancialDocEntityLists();
