@@ -159,7 +159,19 @@ module.exports = async function handler(req, res) {
         res.status(200).json({ row: document, settings: safeFinancialDocsSettings(settings) });
         return;
       }
-      const rows = await listFinancialDocuments();
+      const rows = await listFinancialDocuments({
+        createdFrom: cleanText(req.query?.created_from),
+        createdTo: cleanText(req.query?.created_to),
+        dateFrom: cleanText(req.query?.date_from),
+        dateTo: cleanText(req.query?.date_to),
+        supplierSearch: cleanText(req.query?.supplier),
+        descriptionSearch: cleanText(req.query?.description),
+        payment: cleanText(req.query?.payment),
+        docType: cleanText(req.query?.doc_type),
+        fat: cleanText(req.query?.fat),
+        category: cleanText(req.query?.category),
+        status: cleanText(req.query?.status),
+      });
       res.status(200).json({ rows, settings: safeFinancialDocsSettings(settings) });
       return;
     }

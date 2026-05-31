@@ -909,6 +909,8 @@ const state = {
   financialDocEntitiesLoaded: false,
   financialDocsSettingsLoaded: false,
   financialDocsSettingsTab: "attributes",
+  financialDocsFiltersInitialized: false,
+  financialDocsReloadTimer: 0,
   financialDocsDraft: null,
   financialDocsListDraft: null,
   financialDocsListAttachment: null,
@@ -1862,10 +1864,10 @@ function bindEvents() {
   els.shoppingSettingsCategoryColors?.addEventListener("change", onShoppingSettingsInput);
   els.shoppingSettingsWeekdays?.addEventListener("change", onShoppingSettingsAction);
   [els.financialDocsFilterCreatedFrom, els.financialDocsFilterCreatedTo, els.financialDocsFilterDateFrom, els.financialDocsFilterDateTo, els.financialDocsFilterSupplier, els.financialDocsFilterDescription].forEach((el) =>
-    el?.addEventListener("input", renderFinancialDocs)
+    el?.addEventListener("input", onFinancialDocsFilterChanged)
   );
   [els.financialDocsFilterPayment, els.financialDocsFilterType, els.financialDocsFilterFat, els.financialDocsFilterCategory, els.financialDocsFilterStatus].forEach((el) =>
-    el?.addEventListener("change", renderFinancialDocs)
+    el?.addEventListener("change", onFinancialDocsFilterChanged)
   );
   els.financialDocsExportExcel?.addEventListener("click", exportFinancialDocsToExcel);
   els.financialDocsOpenEntities?.addEventListener("click", openFinancialDocEntitiesModal);
@@ -17570,7 +17572,8 @@ async function fileToUploadPayload(file) {
 
 async function loadFinancialDocsData({ silent = false } = {}) {
   try {
-    const result = await api("/api/financial-docs");
+    ensureFinancialDocsDefaultFilters();
+    const result = await api(buildFinancialDocsListUrlClient());
     state.financialDocsRows = sortFinancialDocRows((Array.isArray(result?.rows) ? result.rows : []).map(normalizeFinancialDocRowClient));
     if (result?.settings) {
       state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result.settings);
@@ -17594,6 +17597,62 @@ async function loadFinancialDocsData({ silent = false } = {}) {
     renderFinancialDocs();
     if (!silent) setFinancialDocsStatus(`Failed to load financial documents: ${error.message}`);
   }
+}
+
+function ensureFinancialDocsDefaultFilters() {
+  if (state.financialDocsFiltersInitialized) return;
+  if (els.financialDocsFilterCreatedFrom && !clean(els.financialDocsFilterCreatedFrom.value)) {
+    els.financialDocsFilterCreatedFrom.value = firstDayOfPreviousMonthIsoClient();
+  }
+  state.financialDocsFiltersInitialized = true;
+}
+
+function currentFinancialDocsServerFilters() {
+  ensureFinancialDocsDefaultFilters();
+  return {
+    createdFrom: clean(els.financialDocsFilterCreatedFrom?.value),
+    createdTo: clean(els.financialDocsFilterCreatedTo?.value),
+    dateFrom: clean(els.financialDocsFilterDateFrom?.value),
+    dateTo: clean(els.financialDocsFilterDateTo?.value),
+    supplier: clean(els.financialDocsFilterSupplier?.value),
+    description: clean(els.financialDocsFilterDescription?.value),
+    payment: clean(els.financialDocsFilterPayment?.value),
+    docType: clean(els.financialDocsFilterType?.value),
+    fat: clean(els.financialDocsFilterFat?.value),
+    category: clean(els.financialDocsFilterCategory?.value),
+    status: clean(els.financialDocsFilterStatus?.value),
+  };
+}
+
+function buildFinancialDocsListUrlClient() {
+  const filters = currentFinancialDocsServerFilters();
+  const params = new URLSearchParams();
+  if (filters.createdFrom) params.set("created_from", filters.createdFrom);
+  if (filters.createdTo) params.set("created_to", filters.createdTo);
+  if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+  if (filters.dateTo) params.set("date_to", filters.dateTo);
+  if (filters.supplier) params.set("supplier", filters.supplier);
+  if (filters.description) params.set("description", filters.description);
+  if (filters.payment) params.set("payment", filters.payment);
+  if (filters.docType) params.set("doc_type", filters.docType);
+  if (filters.fat) params.set("fat", filters.fat);
+  if (filters.category) params.set("category", filters.category);
+  if (filters.status) params.set("status", filters.status);
+  const query = params.toString();
+  return `/api/financial-docs${query ? `?${query}` : ""}`;
+}
+
+function scheduleFinancialDocsReload({ silent = true } = {}) {
+  if (state.financialDocsReloadTimer) window.clearTimeout(state.financialDocsReloadTimer);
+  state.financialDocsReloadTimer = window.setTimeout(() => {
+    state.financialDocsReloadTimer = 0;
+    loadFinancialDocsData({ silent }).catch(() => {});
+  }, 250);
+}
+
+function onFinancialDocsFilterChanged() {
+  renderFinancialDocs();
+  scheduleFinancialDocsReload({ silent: true });
 }
 
 async function loadFinancialDocEntitiesData({ silent = false } = {}) {
@@ -17923,6 +17982,7 @@ function renderFinancialDocs() {
     if (els.financialDocsMobileCards) els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Financial Documents.</div>';
     return;
   }
+  ensureFinancialDocsDefaultFilters();
   renderFinancialDocEntityLists();
   renderFinancialDocsSettings();
   const rows = getFilteredFinancialDocs();
@@ -21628,6 +21688,16 @@ function formatDateInLisbon(value) {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+function firstDayOfPreviousMonthIsoClient(todayIso = lisbonTodayIsoClient()) {
+  const raw = clean(todayIso);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
+  const year = Number(raw.slice(0, 4));
+  const month = Number(raw.slice(5, 7));
+  const previousMonth = month === 1 ? 12 : month - 1;
+  const previousYear = month === 1 ? year - 1 : year;
+  return `${String(previousYear).padStart(4, "0")}-${String(previousMonth).padStart(2, "0")}-01`;
 }
 
 function findHeaderIndex(header, candidates) {

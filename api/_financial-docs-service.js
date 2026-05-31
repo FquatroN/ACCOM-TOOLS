@@ -326,7 +326,16 @@ async function renameExistingDriveFileIfNeeded(req, documentRecord, settings) {
   return nextName;
 }
 
-async function listFinancialDocuments() {
+function nextIsoDate(value) {
+  const raw = cleanText(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
+  const date = new Date(`${raw}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildFinancialDocumentsListPath(filters = {}) {
   const listSelect = [
     "id",
     "created_at",
@@ -355,9 +364,42 @@ async function listFinancialDocuments() {
     "uploaded_by",
     "uploaded_at",
   ].join(",");
-  const rows = await restQuery(`financial_documents?select=${listSelect}&order=created_at.desc`, { method: "GET" });
+  const params = [`select=${listSelect}`, "order=created_at.desc"];
+  const createdFrom = cleanText(filters.createdFrom);
+  const createdTo = cleanText(filters.createdTo);
+  const dateFrom = cleanText(filters.dateFrom);
+  const dateTo = cleanText(filters.dateTo);
+  const supplierSearch = cleanText(filters.supplierSearch);
+  const descriptionSearch = cleanText(filters.descriptionSearch);
+  const payment = cleanText(filters.payment);
+  const docType = cleanText(filters.docType);
+  const fat = cleanText(filters.fat);
+  const category = cleanText(filters.category);
+  const status = cleanText(filters.status);
+  if (createdFrom) params.push(`created_at=gte.${encodeURIComponent(`${createdFrom}T00:00:00.000Z`)}`);
+  if (createdTo) {
+    const nextDate = nextIsoDate(createdTo);
+    if (nextDate) params.push(`created_at=lt.${encodeURIComponent(`${nextDate}T00:00:00.000Z`)}`);
+  }
+  if (dateFrom) params.push(`document_date=gte.${encodeURIComponent(dateFrom)}`);
+  if (dateTo) params.push(`document_date=lte.${encodeURIComponent(dateTo)}`);
+  if (supplierSearch) params.push(`or=${encodeURIComponent(`(supplier_nif.ilike.*${supplierSearch}*,supplier_name.ilike.*${supplierSearch}*)`)}`);
+  if (descriptionSearch) params.push(`description=ilike.${encodeURIComponent(`*${descriptionSearch}*`)}`);
+  if (payment) params.push(`payment=eq.${encodeURIComponent(payment)}`);
+  if (docType) params.push(`document_type=eq.${encodeURIComponent(docType)}`);
+  if (fat) params.push(`fat=eq.${encodeURIComponent(fat)}`);
+  if (category) params.push(`category=eq.${encodeURIComponent(category)}`);
+  if (status) params.push(`status=eq.${encodeURIComponent(status)}`);
+  return `financial_documents?${params.join("&")}`;
+}
+
+async function listFinancialDocuments(filters = {}) {
+  const rows = await restQuery(buildFinancialDocumentsListPath(filters), { method: "GET" });
   if (!Array.isArray(rows) || !rows.length) return [];
-  const warningRows = await restQuery("financial_document_history?select=document_id,message,created_at&action_type=eq.duplicate_warning&order=created_at.desc", { method: "GET" });
+  const ids = rows.map((row) => cleanText(row.id)).filter(Boolean);
+  const warningRows = ids.length
+    ? await restQuery(`financial_document_history?select=document_id,message,created_at&action_type=eq.duplicate_warning&document_id=in.(${ids.map((id) => encodeURIComponent(id)).join(",")})&order=created_at.desc`, { method: "GET" })
+    : [];
   const warningByDocumentId = new Map();
   (Array.isArray(warningRows) ? warningRows : []).forEach((item) => {
     const documentId = cleanText(item.document_id || item.documentId);
