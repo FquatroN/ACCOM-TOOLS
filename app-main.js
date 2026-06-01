@@ -13348,12 +13348,14 @@ function guestBirthdayAlertClient(record, todayIso = lisbonTodayIsoClient()) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)) return "";
   const birthdayMd = birthDate.slice(5);
   if (todayIso >= checkIn && todayIso <= checkOut && todayIso.slice(5) === birthdayMd) return "Birthday Today";
+  const tomorrowIso = shiftGuestIsoClient(todayIso, 1);
+  if (tomorrowIso && tomorrowIso >= checkIn && tomorrowIso <= checkOut && tomorrowIso.slice(5) === birthdayMd) return "Birthday Tomorrow";
   const cursor = new Date(`${checkIn}T00:00:00`);
   const limit = new Date(`${checkOut}T00:00:00`);
   let guard = 0;
   while (!Number.isNaN(cursor.getTime()) && !Number.isNaN(limit.getTime()) && cursor <= limit && guard < 400) {
     const dateIso = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit" }).format(cursor);
-    if (dateIso.slice(5) === birthdayMd) return "Birthday During Stay";
+    if (dateIso !== todayIso && dateIso !== tomorrowIso && dateIso.slice(5) === birthdayMd) return "Birthday During Stay";
     cursor.setDate(cursor.getDate() + 1);
     guard += 1;
   }
