@@ -17,7 +17,7 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "business-intelligence", "guests-bi"];
 const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
@@ -522,6 +522,8 @@ const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
   { label: "App: Backoffice", kind: "app", key: "backoffice" },
   { label: "App: Financial Documents", kind: "app", key: "financial-docs" },
+  { label: "App: Business Intelligence", kind: "app", key: "business-intelligence" },
+  { label: "App: Guests BI", kind: "app", key: "guests-bi" },
   { label: "App: Communications", kind: "app", key: "communications" },
   { label: "App: Guests", kind: "app", key: "guests" },
   { label: "App: Cash Control", kind: "app", key: "cash" },
@@ -927,6 +929,12 @@ const state = {
   financialDocsRulesDraft: [],
   financialDocsPreviewUrl: "",
   financialDocsLastOpenedId: "",
+  guestsBiRows: [],
+  guestsBiYears: [],
+  guestsBiTotals: { totalNights: 0, exempt7Days: 0, exempt13Year: 0 },
+  guestsBiLoaded: false,
+  guestsBiLoading: false,
+  guestsBiYear: "",
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -956,6 +964,7 @@ const els = {
   appLogoHome: document.getElementById("app-logo-home"),
   leftNav: document.getElementById("main-left-nav"),
   backofficeTopNav: document.getElementById("backoffice-top-nav"),
+  businessIntelligenceTopNav: document.getElementById("business-intelligence-top-nav"),
   backofficeBackToApp: document.getElementById("backoffice-back-to-app"),
   sidebarReviewSummaryCard: document.getElementById("sidebar-review-summary-card"),
   sidebarReviewSummaryStatus: document.getElementById("sidebar-review-summary-status"),
@@ -964,6 +973,7 @@ const els = {
   mobileMenuToggle: document.getElementById("mobile-menu-toggle"),
   navCommunications: document.getElementById("nav-communications"),
   navFinancialDocs: document.getElementById("nav-financial-docs"),
+  navGuestsBi: document.getElementById("nav-guests-bi"),
   navGuests: document.getElementById("nav-guests"),
   navCash: document.getElementById("nav-cash"),
   navLostFound: document.getElementById("nav-lost-found"),
@@ -977,9 +987,11 @@ const els = {
   navLaundry: document.getElementById("nav-laundry"),
   openSettings: document.getElementById("open-settings"),
   openBackoffice: document.getElementById("open-backoffice"),
+  openBusinessIntelligence: document.getElementById("open-business-intelligence"),
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
   viewFinancialDocs: document.getElementById("view-financial-docs"),
+  viewGuestsBi: document.getElementById("view-guests-bi"),
   viewGuests: document.getElementById("view-guests"),
   viewCash: document.getElementById("view-cash"),
   viewLostFound: document.getElementById("view-lost-found"),
@@ -1163,6 +1175,12 @@ const els = {
   financialDocsPreview: document.getElementById("financial-docs-preview"),
   financialDocsHistoryRows: document.getElementById("financial-docs-history-rows"),
   financialDocsSave: document.getElementById("financial-docs-save"),
+  guestsBiTabTmt: document.getElementById("guests-bi-tab-tmt"),
+  guestsBiFilterYear: document.getElementById("guests-bi-filter-year"),
+  guestsBiCount: document.getElementById("guests-bi-count"),
+  guestsBiRows: document.getElementById("guests-bi-rows"),
+  guestsBiTotals: document.getElementById("guests-bi-totals"),
+  guestsBiStatus: document.getElementById("guests-bi-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
   financialDocsEntitiesFilterSearch: document.getElementById("financial-docs-entities-filter-search"),
@@ -1747,6 +1765,7 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = "financial-docs";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = "guests-bi";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   handleFinancialDocsDriveCallbackQuery();
@@ -1771,6 +1790,7 @@ async function init() {
   await ensureCurrentViewData();
   if (canApp("guests")) loadGuestsData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canUseBackoffice()) loadFinancialDocsData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canUseBusinessIntelligence()) loadGuestsBiData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("cash")) loadCashData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("maintenance")) loadMaintenanceData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
@@ -1784,6 +1804,7 @@ function bindEvents() {
   els.appLogoHome?.addEventListener("click", onLogoHomeClick);
   els.navCommunications.addEventListener("click", () => setView("communications"));
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
+  els.navGuestsBi?.addEventListener("click", () => setView("guests-bi"));
   els.backofficeBackToApp?.addEventListener("click", onLogoHomeClick);
   els.navGuests?.addEventListener("click", () => setView("guests"));
   els.navCash?.addEventListener("click", () => setView("cash"));
@@ -1803,6 +1824,7 @@ function bindEvents() {
   });
   els.mobileMenuToggle?.addEventListener("click", toggleMobileNav);
   els.openBackoffice?.addEventListener("click", openBackofficeHome);
+  els.openBusinessIntelligence?.addEventListener("click", openBusinessIntelligenceHome);
   els.openSettings.addEventListener("click", openSettingsFromCurrentContext);
   els.closeSettingsGeneral?.addEventListener("click", () => setView("communications"));
   els.closeSettings.addEventListener("click", () => setView("communications"));
@@ -1832,6 +1854,7 @@ function bindEvents() {
   els.settingsMenuBakery.addEventListener("click", () => setSettingsSection("bakery"));
   els.settingsMenuLaundry.addEventListener("click", () => setSettingsSection("laundry"));
   els.settingsMenuAdminUsers.addEventListener("click", () => setSettingsSection("admin-users"));
+  els.guestsBiFilterYear?.addEventListener("change", onGuestsBiYearChange);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -2410,6 +2433,10 @@ function canUseBackoffice() {
   return canApp("backoffice") && canApp("financial-docs");
 }
 
+function canUseBusinessIntelligence() {
+  return canApp("business-intelligence") && canApp("guests-bi");
+}
+
 function canAccessGeneralSettings() {
   return canSettings("general") || canSettings("communications");
 }
@@ -2478,6 +2505,9 @@ function applyInitialRouteFromUrl() {
     if (view === "financial-docs" && canUseBackoffice()) {
       state.currentView = "financial-docs";
     }
+    if (view === "guests-bi" && canUseBusinessIntelligence()) {
+      state.currentView = "guests-bi";
+    }
     if (view === "hours" && canApp("hours")) {
       state.currentView = "hours";
     }
@@ -2510,6 +2540,9 @@ function syncAppRoute() {
     } else if (state.currentView === "financial-docs") {
       url.searchParams.set("view", "financial-docs");
       url.searchParams.delete("service");
+    } else if (state.currentView === "guests-bi") {
+      url.searchParams.set("view", "guests-bi");
+      url.searchParams.delete("service");
     } else if (state.currentView === "hours") {
       url.searchParams.set("view", "hours");
       url.searchParams.delete("service");
@@ -2525,6 +2558,7 @@ function syncAppRoute() {
 async function setView(view) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
   if (view === "financial-docs" && !canUseBackoffice()) return showToast("No financial documents access.", "error");
+  if (view === "guests-bi" && !canUseBusinessIntelligence()) return showToast("No Guests BI access.", "error");
   if (view === "guests" && !canApp("guests")) return showToast("No guests access.", "error");
   if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
@@ -2537,7 +2571,7 @@ async function setView(view) {
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
-  if (state.currentView !== "settings" && state.currentView !== "financial-docs") {
+  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "guests-bi") {
     state.lastMainView = state.currentView;
   }
   const previousView = state.currentView;
@@ -2584,6 +2618,9 @@ async function setView(view) {
   if (view !== "financial-docs" && state.financialDocEntitiesModalOpen) {
     closeFinancialDocEntitiesModal();
   }
+  if (view !== "guests-bi") {
+    state.guestsBiLoading = false;
+  }
   syncAppRoute();
   renderLayout();
   renderSettingsSection();
@@ -2624,6 +2661,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "financial-docs") {
     await ensureFinancialDocsData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "guests-bi") {
+    await ensureGuestsBiData();
     renderSettingsSection();
     render();
     return;
@@ -3063,6 +3106,7 @@ async function ensureSettingsSectionData() {
 function renderLayout() {
   const comm = state.currentView === "communications";
   const financialDocs = state.currentView === "financial-docs";
+  const guestsBi = state.currentView === "guests-bi";
   const backofficeSettings = state.currentView === "settings" && state.settingsSection === "financial-docs";
   const guests = state.currentView === "guests";
   const cash = state.currentView === "cash";
@@ -3077,8 +3121,11 @@ function renderLayout() {
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
   const backofficeMode = financialDocs || backofficeSettings;
+  const businessIntelligenceMode = guestsBi;
+  const workspaceMode = backofficeMode || businessIntelligenceMode;
   const canComm = canApp("communications");
   const canFinancialDocs = canUseBackoffice();
+  const canGuestsBi = canUseBusinessIntelligence();
   const canGuests = canApp("guests");
   const canCash = canApp("cash");
   const canLostFound = canApp("lost-found");
@@ -3090,12 +3137,14 @@ function renderLayout() {
   const canHours = canApp("hours");
   const canBakery = canApp("bakery");
   const canLaundry = canApp("laundry");
-  if (els.sidebarReviewSummaryCard) els.sidebarReviewSummaryCard.hidden = !canComm || backofficeMode || settingsMode;
+  if (els.sidebarReviewSummaryCard) els.sidebarReviewSummaryCard.hidden = !canComm || workspaceMode || settingsMode;
 
   els.appShell.classList.toggle("settings-mode", settingsMode);
   els.appShell.classList.toggle("backoffice-mode", backofficeMode);
+  els.appShell.classList.toggle("business-intelligence-mode", businessIntelligenceMode);
   els.navCommunications.classList.toggle("active", comm);
   els.navFinancialDocs?.classList.toggle("active", financialDocs);
+  els.navGuestsBi?.classList.toggle("active", guestsBi);
   els.navGuests?.classList.toggle("active", guests);
   els.navCash?.classList.toggle("active", cash);
   els.navLostFound.classList.toggle("active", lostFound);
@@ -3109,6 +3158,7 @@ function renderLayout() {
   els.navLaundry.classList.toggle("active", laundry);
   els.navCommunications.hidden = !canComm;
   if (els.navFinancialDocs) els.navFinancialDocs.hidden = !canFinancialDocs;
+  if (els.navGuestsBi) els.navGuestsBi.hidden = !canGuestsBi;
   if (els.navGuests) els.navGuests.hidden = !canGuests;
   if (els.navCash) els.navCash.hidden = !canCash;
   els.navLostFound.hidden = !canLostFound;
@@ -3132,13 +3182,19 @@ function renderLayout() {
     els.openBackoffice.hidden = !canFinancialDocs;
     els.openBackoffice.classList.toggle("active", backofficeMode);
   }
+  if (els.openBusinessIntelligence) {
+    els.openBusinessIntelligence.hidden = !canGuestsBi;
+    els.openBusinessIntelligence.classList.toggle("active", businessIntelligenceMode);
+  }
   if (els.backofficeBackToApp) els.backofficeBackToApp.hidden = !(backofficeMode || settingsMode);
-  if (els.leftNav) els.leftNav.hidden = settingsMode || backofficeMode;
+  if (els.leftNav) els.leftNav.hidden = settingsMode || workspaceMode;
   if (els.backofficeTopNav) els.backofficeTopNav.hidden = settingsMode || !backofficeMode;
+  if (els.businessIntelligenceTopNav) els.businessIntelligenceTopNav.hidden = settingsMode || !businessIntelligenceMode;
   els.topbar.hidden = false;
   if (els.mobileMenuToggle) els.mobileMenuToggle.hidden = settingsMode || !isMobileNavLayout();
   els.viewCommunications.hidden = !comm;
   if (els.viewFinancialDocs) els.viewFinancialDocs.hidden = !financialDocs;
+  if (els.viewGuestsBi) els.viewGuestsBi.hidden = !guestsBi;
   if (els.viewGuests) els.viewGuests.hidden = !guests;
   if (els.viewCash) els.viewCash.hidden = !cash;
   els.viewLostFound.hidden = !lostFound;
@@ -3557,6 +3613,8 @@ function collectProfilePayload(id) {
   const appFeatures = [];
   if (els.profilesBody.querySelector(`[data-profile-app-backoffice="${id}"]`)?.checked) appFeatures.push("backoffice");
   if (els.profilesBody.querySelector(`[data-profile-app-financial-docs="${id}"]`)?.checked) appFeatures.push("financial-docs");
+  if (els.profilesBody.querySelector(`[data-profile-app-business-intelligence="${id}"]`)?.checked) appFeatures.push("business-intelligence");
+  if (els.profilesBody.querySelector(`[data-profile-app-guests-bi="${id}"]`)?.checked) appFeatures.push("guests-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-communications="${id}"]`)?.checked) appFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-app-guests="${id}"]`)?.checked) appFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-app-cash="${id}"]`)?.checked) appFeatures.push("cash");
@@ -17553,7 +17611,7 @@ function isBackofficeSettingsContext() {
 }
 
 function onLogoHomeClick() {
-  if (state.currentView === "financial-docs" || state.currentView === "settings" || isBackofficeSettingsContext()) {
+  if (state.currentView === "financial-docs" || state.currentView === "guests-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
   }
@@ -17565,6 +17623,14 @@ function openBackofficeHome() {
     return;
   }
   setView("financial-docs");
+}
+
+function openBusinessIntelligenceHome() {
+  if (!canUseBusinessIntelligence()) {
+    showToast("No Guests BI access.", "error");
+    return;
+  }
+  setView("guests-bi");
 }
 
 function preferredMainAppView() {
@@ -17764,6 +17830,94 @@ async function ensureFinancialDocsData() {
   if (loads.length) await Promise.all(loads);
   if ((state.currentView === "settings" && state.settingsSection === "financial-docs") && !state.financialDocsSettingsLoaded) {
     await loadFinancialDocsSettings({ silent: true });
+  }
+}
+
+function setGuestsBiStatus(message = "", tone = "") {
+  if (!els.guestsBiStatus) return;
+  els.guestsBiStatus.textContent = message;
+  els.guestsBiStatus.classList.toggle("status-error", tone === "error");
+}
+
+function currentGuestsBiYear() {
+  return clean(els.guestsBiFilterYear?.value || state.guestsBiYear);
+}
+
+function buildGuestsBiUrlClient() {
+  const params = new URLSearchParams();
+  const year = currentGuestsBiYear();
+  if (year) params.set("year", year);
+  const query = params.toString();
+  return `/api/guests-bi${query ? `?${query}` : ""}`;
+}
+
+async function loadGuestsBiData({ silent = false } = {}) {
+  state.guestsBiLoading = true;
+  try {
+    const result = await api(buildGuestsBiUrlClient());
+    state.guestsBiRows = Array.isArray(result?.rows) ? result.rows : [];
+    state.guestsBiYears = Array.isArray(result?.years) ? result.years : [];
+    state.guestsBiYear = clean(result?.year);
+    state.guestsBiTotals = {
+      totalNights: Number(result?.totals?.totalNights || 0),
+      exempt7Days: Number(result?.totals?.exempt7Days || 0),
+      exempt13Year: Number(result?.totals?.exempt13Year || 0),
+    };
+    state.guestsBiLoaded = true;
+    renderGuestsBi();
+    if (!silent) setGuestsBiStatus("Guests BI loaded.");
+  } catch (error) {
+    state.guestsBiRows = [];
+    state.guestsBiYears = [];
+    state.guestsBiTotals = { totalNights: 0, exempt7Days: 0, exempt13Year: 0 };
+    state.guestsBiLoaded = false;
+    renderGuestsBi();
+    if (!silent) setGuestsBiStatus(`Failed to load Guests BI: ${error.message}`, "error");
+  } finally {
+    state.guestsBiLoading = false;
+  }
+}
+
+async function ensureGuestsBiData() {
+  if (!state.guestsBiLoaded) await loadGuestsBiData({ silent: true });
+}
+
+function onGuestsBiYearChange() {
+  state.guestsBiYear = clean(els.guestsBiFilterYear?.value);
+  loadGuestsBiData({ silent: true }).catch(() => {});
+}
+
+function renderGuestsBi() {
+  if (!canUseBusinessIntelligence()) {
+    if (els.guestsBiRows) els.guestsBiRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Guests BI.</td></tr>';
+    if (els.guestsBiTotals) els.guestsBiTotals.innerHTML = "";
+    if (els.guestsBiCount) els.guestsBiCount.textContent = "0 rows";
+    return;
+  }
+  const years = state.guestsBiYears.length ? state.guestsBiYears : [state.guestsBiYear || String(new Date().getFullYear())];
+  if (els.guestsBiFilterYear) {
+    els.guestsBiFilterYear.innerHTML = years.map((year) => `<option value="${escape(year)}">${escape(year)}</option>`).join("");
+    if (clean(state.guestsBiYear)) els.guestsBiFilterYear.value = state.guestsBiYear;
+  }
+  const rows = Array.isArray(state.guestsBiRows) ? state.guestsBiRows : [];
+  if (els.guestsBiCount) els.guestsBiCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
+  if (els.guestsBiRows) {
+    els.guestsBiRows.innerHTML = rows.length
+      ? rows.map((row) => `<tr>
+        <td>${escape(row.yearMonth || "-")}</td>
+        <td>${escape(String(Number(row.totalNights || 0)))}</td>
+        <td>${escape(String(Number(row.exempt7Days || 0)))}</td>
+        <td>${escape(String(Number(row.exempt13Year || 0)))}</td>
+      </tr>`).join("")
+      : '<tr><td colspan="4" class="empty">No Guests BI rows found.</td></tr>';
+  }
+  if (els.guestsBiTotals) {
+    els.guestsBiTotals.innerHTML = `<tr class="summary-row">
+      <th>Total</th>
+      <th>${escape(String(Number(state.guestsBiTotals.totalNights || 0)))}</th>
+      <th>${escape(String(Number(state.guestsBiTotals.exempt7Days || 0)))}</th>
+      <th>${escape(String(Number(state.guestsBiTotals.exempt13Year || 0)))}</th>
+    </tr>`;
   }
 }
 
@@ -18774,6 +18928,10 @@ function handleFinancialDocsDriveCallbackQuery() {
 function render() {
   if (state.currentView === "financial-docs") {
     renderFinancialDocs();
+    return;
+  }
+  if (state.currentView === "guests-bi") {
+    renderGuestsBi();
     return;
   }
   if (state.currentView === "guests") {

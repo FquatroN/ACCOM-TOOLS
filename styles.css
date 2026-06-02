@@ -54,11 +54,19 @@ body {
   grid-template-columns: 1fr;
 }
 
+.app-layout.business-intelligence-mode {
+  grid-template-columns: 1fr;
+}
+
 .app-layout.settings-mode .left-rail {
   display: none !important;
 }
 
 .app-layout.backoffice-mode .left-rail {
+  display: none !important;
+}
+
+.app-layout.business-intelligence-mode .left-rail {
   display: none !important;
 }
 
@@ -4673,6 +4681,10 @@ select:disabled {
   display: grid;
 }
 
+.app-layout.business-intelligence-mode .bi-top-nav {
+  display: grid;
+}
+
 .backoffice-top-head {
   display: flex;
   align-items: center;
@@ -4709,6 +4721,20 @@ button[id^="close-settings"] {
 .backoffice-top-links .nav-link {
   width: auto;
   min-width: 10rem;
+}
+
+.guests-bi-filters {
+  grid-template-columns: 140px;
+}
+
+.guests-bi-table th,
+.guests-bi-table td {
+  text-align: right;
+}
+
+.guests-bi-table th:first-child,
+.guests-bi-table td:first-child {
+  text-align: left;
 }
 
 .session-box .icon-btn.active {

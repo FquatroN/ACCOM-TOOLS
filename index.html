@@ -67,6 +67,14 @@
                 <path d="M3.5 10.2h17" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
               </svg>
             </button>
+            <button id="open-business-intelligence" type="button" class="ghost icon-btn" aria-label="Business Intelligence" title="Business Intelligence">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 18.5h14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+                <path d="M7.5 16V11.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+                <path d="M12 16V8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+                <path d="M16.5 16V5.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+              </svg>
+            </button>
             <button id="open-settings" type="button" class="ghost icon-btn" aria-label="Settings" title="Settings">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -84,6 +92,15 @@
           </div>
           <div class="backoffice-top-links">
             <button id="nav-financial-docs" type="button" class="nav-link">Financial Documents</button>
+          </div>
+        </section>
+
+        <section id="business-intelligence-top-nav" class="card backoffice-top-nav bi-top-nav" hidden>
+          <div class="backoffice-top-head">
+            <p class="eyebrow sidebar-eyebrow">Business Intelligence</p>
+          </div>
+          <div class="backoffice-top-links">
+            <button id="nav-guests-bi" type="button" class="nav-link">Guests BI</button>
           </div>
         </section>
 
@@ -3459,6 +3476,52 @@
                 </div>
               </section>
             </section>
+          </section>
+        </section>
+
+        <section id="view-guests-bi" class="view" hidden>
+          <section class="feature-title">
+            <h2>Guests BI</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Guests BI</h2>
+              <div class="actions">
+                <button id="guests-bi-tab-tmt" type="button" class="active-tab">TMT</button>
+              </div>
+            </div>
+
+            <div class="grid filters guests-bi-filters">
+              <label>
+                Year
+                <select id="guests-bi-filter-year"></select>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>TMT</h2>
+              <div class="actions">
+                <p id="guests-bi-count">0 rows</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="compact-table guests-bi-table">
+                <thead>
+                  <tr>
+                    <th>YearMonth</th>
+                    <th>Total Nights</th>
+                    <th>Exempt 7days</th>
+                    <th>Exempt 13 year</th>
+                  </tr>
+                </thead>
+                <tbody id="guests-bi-rows"></tbody>
+                <tfoot id="guests-bi-totals"></tfoot>
+              </table>
+            </div>
+            <p id="guests-bi-status" class="auth-status"></p>
           </section>
         </section>
       </section>
