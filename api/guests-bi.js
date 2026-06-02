@@ -51,6 +51,20 @@ function buildMonthRows(year) {
   });
 }
 
+async function loadAllGuestBiRows(basePath) {
+  const pageSize = 5000;
+  const rows = [];
+  let offset = 0;
+  while (true) {
+    const page = await restQuery(`${basePath}&limit=${pageSize}&offset=${offset}`, { method: "GET" });
+    const batch = Array.isArray(page) ? page : [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    offset += batch.length;
+  }
+  return rows;
+}
+
 module.exports = async function handler(req, res) {
   try {
     await requireFeature(req, "app", "guests-bi");
@@ -60,9 +74,8 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const yearRows = await restQuery(
-      "guest_records?select=check_in&check_in=not.is.null&order=check_in.desc&limit=10000",
-      { method: "GET" }
+    const yearRows = await loadAllGuestBiRows(
+      "guest_records?select=check_in&check_in=not.is.null&order=check_in.desc"
     );
     const availableYears = [...new Set((Array.isArray(yearRows) ? yearRows : [])
       .map((row) => clean(row?.check_in).slice(0, 4))
@@ -75,9 +88,8 @@ module.exports = async function handler(req, res) {
       : (availableYears[0] || String(new Date().getUTCFullYear()));
 
     const nextYear = String(Number(selectedYear) + 1);
-    const rows = await restQuery(
-      `guest_records?select=check_in,check_out,birth_date&check_in=gte.${selectedYear}-01-01&check_in=lt.${nextYear}-01-01&order=check_in.asc&limit=10000`,
-      { method: "GET" }
+    const rows = await loadAllGuestBiRows(
+      `guest_records?select=check_in,check_out,birth_date&check_in=gte.${selectedYear}-01-01&check_in=lt.${nextYear}-01-01&order=check_in.asc`
     );
 
     const monthRows = buildMonthRows(selectedYear);
