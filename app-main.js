@@ -13824,6 +13824,15 @@ function guestCheckoutEditMarkup(record, draft, previousRecord) {
   return `<div class="guest-checkout-stack"><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" />${copyLink}</div>`;
 }
 
+function guestCheckoutNewMarkup(draft, sourceRecord) {
+  const copyValue = guestPreviousCheckoutValue(draft, sourceRecord);
+  const copyLink = guestCheckoutCopyLinkMarkup(copyValue, `data-scope="new"`);
+  if (!copyLink) {
+    return `<input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" />`;
+  }
+  return `<div class="guest-checkout-stack"><input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" />${copyLink}</div>`;
+}
+
 function startGuestsQuickEdit(id, field) {
   const row = state.guestsRows.find((item) => item.id === id);
   if (!row || guestIsLocked(row)) return;
@@ -13940,6 +13949,11 @@ async function onGuestsAction(event) {
     const value = clean(button.dataset.value);
     const scope = clean(button.dataset.scope);
     if (!value) return;
+    if (scope === "new" && state.guestsDraft) {
+      state.guestsDraft.checkOut = value;
+      renderGuests();
+      return;
+    }
     if (scope === "edit" && id && state.guestsEditingId === id && state.guestsEditDraft) {
       state.guestsEditDraft.checkOut = value;
       renderGuests();
@@ -14070,7 +14084,7 @@ function guestStatusMarkup(record, meta) {
   return `<div class="guest-status-stack ${guestStatusClass(record)}">${guestStatusText(record, meta).map((line, index) => `<span${index > 0 ? ' class="guest-status-note"' : ""}>${escape(line)}</span>`).join("")}</div>`;
 }
 
-function buildGuestsInlineRow() {
+function buildGuestsInlineRow(sourceRecord = null) {
   const draft = state.guestsDraft || emptyGuestDraft();
   const tr = document.createElement("tr");
   tr.className = "inline-editor sticky-new-row";
@@ -14082,7 +14096,7 @@ function buildGuestsInlineRow() {
     <td><input data-field="docType" data-scope="new" type="text" value="${escape(draft.docType)}" /></td>
     <td><input data-field="issuerCountry" data-scope="new" list="guests-country-list" autocomplete="new-password" readonly value="${escape(draft.issuerCountry)}" /></td>
     <td><input data-field="checkIn" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkIn)}" /></td>
-    <td><input data-field="checkOut" data-scope="new" type="date" tabindex="-1" value="${escape(draft.checkOut)}" /></td>
+    <td>${guestCheckoutNewMarkup(draft, sourceRecord)}</td>
     <td>${escape(guestAgeClient(draft.birthDate))}</td>
     <td class="row-actions"><button type="button" data-guests-action="save-inline">Add</button></td>
     <td>${guestStatusMarkup({ sentStatus: "pending", sendError: "" }, { blacklistMatch: null, birthdayAlert: "" })}</td>`;
@@ -14580,7 +14594,7 @@ function renderGuests() {
   if (els.guestsRows) els.guestsRows.innerHTML = "";
   renderGuestsMobileCards(rows);
   if (!els.guestsRows) return;
-  els.guestsRows.appendChild(buildGuestsInlineRow());
+  els.guestsRows.appendChild(buildGuestsInlineRow(rows[0] || null));
   if (!rows.length) {
     const tr = document.createElement("tr");
     tr.innerHTML = '<td colspan="12" class="empty">No guest records found.</td>';
