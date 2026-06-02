@@ -4676,6 +4676,10 @@ select:disabled {
   display: block;
 }
 
+button[id^="close-settings"] {
+  display: none !important;
+}
+
 .backoffice-top-links {
   display: flex;
   flex-wrap: wrap;

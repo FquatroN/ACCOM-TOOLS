@@ -3132,7 +3132,7 @@ function renderLayout() {
     els.openBackoffice.hidden = !canFinancialDocs;
     els.openBackoffice.classList.toggle("active", backofficeMode);
   }
-  if (els.backofficeBackToApp) els.backofficeBackToApp.hidden = !backofficeMode;
+  if (els.backofficeBackToApp) els.backofficeBackToApp.hidden = !(backofficeMode || settingsMode);
   if (els.leftNav) els.leftNav.hidden = settingsMode || backofficeMode;
   if (els.backofficeTopNav) els.backofficeTopNav.hidden = settingsMode || !backofficeMode;
   els.topbar.hidden = false;
@@ -17490,7 +17490,7 @@ function isBackofficeSettingsContext() {
 }
 
 function onLogoHomeClick() {
-  if (state.currentView === "financial-docs" || isBackofficeSettingsContext()) {
+  if (state.currentView === "financial-docs" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
   }
