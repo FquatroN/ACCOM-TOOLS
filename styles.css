@@ -3013,6 +3013,26 @@ select:disabled {
   text-align: center;
 }
 
+.guest-checkout-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.08rem;
+}
+
+.guest-copy-link {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  color: var(--brand);
+  font-size: 0.56rem;
+  line-height: 1;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .guests-blacklist-table.inline-editor input,
 .guests-blacklist-table.inline-editor select,
 .guests-blacklist-table.inline-editor textarea,

@@ -13797,6 +13797,33 @@ function guestQuickFieldMarkup(record, field) {
   return `<input data-guests-quick-input="${escape(field)}" data-id="${escape(record.id)}" type="date" value="${escape(record[field])}" />`;
 }
 
+function guestPreviousCheckoutValue(record, previousRecord) {
+  if (clean(record?.checkOut)) return "";
+  return clean(previousRecord?.checkOut);
+}
+
+function guestCheckoutCopyLinkMarkup(value, attributes = "") {
+  const normalized = clean(value);
+  if (!normalized) return "";
+  return `<button type="button" class="guest-copy-link" data-guests-action="copy-checkout" data-value="${escape(normalized)}"${attributes ? ` ${attributes}` : ""}>copy</button>`;
+}
+
+function guestCheckoutReadOnlyMarkup(record, previousRecord) {
+  const copyValue = guestPreviousCheckoutValue(record, previousRecord);
+  const copyLink = guestCheckoutCopyLinkMarkup(copyValue, `data-id="${escape(record.id)}"`);
+  if (!copyLink) return guestQuickFieldMarkup(record, "checkOut");
+  return `<div class="guest-checkout-stack">${guestQuickFieldMarkup(record, "checkOut")}${copyLink}</div>`;
+}
+
+function guestCheckoutEditMarkup(record, draft, previousRecord) {
+  const copyValue = guestPreviousCheckoutValue(draft, previousRecord);
+  const copyLink = guestCheckoutCopyLinkMarkup(copyValue, `data-id="${escape(record.id)}" data-scope="edit"`);
+  if (!copyLink) {
+    return `<input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" />`;
+  }
+  return `<div class="guest-checkout-stack"><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" />${copyLink}</div>`;
+}
+
 function startGuestsQuickEdit(id, field) {
   const row = state.guestsRows.find((item) => item.id === id);
   if (!row || guestIsLocked(row)) return;
@@ -13909,6 +13936,29 @@ async function onGuestsAction(event) {
   if (!button) return;
   const action = clean(button.dataset.guestsAction);
   const id = clean(button.dataset.id);
+  if (action === "copy-checkout") {
+    const value = clean(button.dataset.value);
+    const scope = clean(button.dataset.scope);
+    if (!value) return;
+    if (scope === "edit" && id && state.guestsEditingId === id && state.guestsEditDraft) {
+      state.guestsEditDraft.checkOut = value;
+      renderGuests();
+      return;
+    }
+    if (!id) return;
+    try {
+      await saveGuestQuickEdit(id, "checkOut", value);
+      clearGuestsQuickEdit();
+      renderGuests();
+      setGuestsStatus("Check-out copied from previous record.");
+    } catch (e) {
+      clearGuestsQuickEdit();
+      renderGuests();
+      setGuestsStatus(`Save failed: ${e.message}`);
+      showToast(`Guest save failed: ${e.message}`, "error");
+    }
+    return;
+  }
   if (action === "save-inline") {
     await saveGuestRecord("new");
     return;
@@ -14040,7 +14090,7 @@ function buildGuestsInlineRow() {
   return tr;
 }
 
-function buildGuestsReadOnlyRow(record) {
+function buildGuestsReadOnlyRow(record, previousRecord = null) {
   const meta = guestRowMetaClient(record);
   const locked = guestIsLocked(record);
   const canCopy = guestCanCopyRecord(record);
@@ -14059,7 +14109,7 @@ function buildGuestsReadOnlyRow(record) {
     <td>${escape(record.docType || "-")}</td>
     <td>${escape(record.issuerCountry || record.issuerCountryCode || "-")}</td>
     <td>${guestQuickFieldMarkup(record, "checkIn")}</td>
-    <td>${guestQuickFieldMarkup(record, "checkOut")}</td>
+    <td>${guestCheckoutReadOnlyMarkup(record, previousRecord)}</td>
     <td>${escape(meta.age || "-")}</td>
     <td class="row-actions">${actions || "-"}</td>
     <td>${guestStatusMarkup(record, meta)}</td>`;
@@ -14067,7 +14117,7 @@ function buildGuestsReadOnlyRow(record) {
   return tr;
 }
 
-function buildGuestsEditableRow(record) {
+function buildGuestsEditableRow(record, previousRecord = null) {
   const draft = state.guestsEditDraft || record;
   const meta = guestRowMetaClient(draft);
   const tr = document.createElement("tr");
@@ -14081,7 +14131,7 @@ function buildGuestsEditableRow(record) {
     <td><input data-field="docType" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.docType)}" /></td>
     <td><input data-field="issuerCountry" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.issuerCountry)}" /></td>
     <td><input data-field="checkIn" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkIn)}" /></td>
-    <td><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" /></td>
+    <td>${guestCheckoutEditMarkup(record, draft, previousRecord)}</td>
     <td>${escape(guestAgeClient(draft.birthDate) || "-")}</td>
     <td class="row-actions"><button type="button" data-guests-action="save-edit" data-id="${escape(record.id)}">Save</button><button type="button" class="ghost" data-guests-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>
     <td>${guestStatusMarkup(draft, meta)}</td>`;
@@ -14537,8 +14587,9 @@ function renderGuests() {
     els.guestsRows.appendChild(tr);
     return;
   }
-  rows.forEach((record) => {
-    els.guestsRows.appendChild(state.guestsEditingId === record.id ? buildGuestsEditableRow(record) : buildGuestsReadOnlyRow(record));
+  rows.forEach((record, index) => {
+    const previousRecord = index > 0 ? rows[index - 1] : null;
+    els.guestsRows.appendChild(state.guestsEditingId === record.id ? buildGuestsEditableRow(record, previousRecord) : buildGuestsReadOnlyRow(record, previousRecord));
   });
 }
 
