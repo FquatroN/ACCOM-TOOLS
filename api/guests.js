@@ -67,6 +67,13 @@ function guestNationalityMatchesFilter(record, filter) {
     .some((value) => value === normalizedFilter || value.includes(normalizedFilter));
 }
 
+function sanitizeGuestFilterTerm(value) {
+  return cleanId(value)
+    .replace(/[(),]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function sortGuestListRows(rows) {
   return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
     const checkInCompare = cleanId(b?.checkIn).localeCompare(cleanId(a?.checkIn));
@@ -182,16 +189,32 @@ function mapGuestTableRow(row) {
   });
 }
 
-function buildGuestTableQuery({ recentOnly = false } = {}) {
+function buildGuestTableQuery(filters = {}, { recentOnly = false } = {}) {
+  const safe = normalizeGuestListFilters(filters);
   const params = new URLSearchParams();
   params.set("select", "*");
   params.set("order", "check_in.desc,created_at.desc,name.asc");
   params.set("limit", "10000");
 
+  const expressions = [];
+  if (cleanId(safe.ha)) expressions.push(`ha.eq.${sanitizeGuestFilterTerm(safe.ha).toUpperCase()}`);
+  if (cleanId(safe.checkInFrom)) expressions.push(`check_in.gte.${sanitizeGuestFilterTerm(safe.checkInFrom)}`);
+  if (cleanId(safe.checkInTo)) expressions.push(`check_in.lte.${sanitizeGuestFilterTerm(safe.checkInTo)}`);
+  if (cleanId(safe.checkOutFrom)) expressions.push(`check_out.gte.${sanitizeGuestFilterTerm(safe.checkOutFrom)}`);
+  if (cleanId(safe.checkOutTo)) expressions.push(`check_out.lte.${sanitizeGuestFilterTerm(safe.checkOutTo)}`);
+  if (cleanId(safe.search)) {
+    const search = sanitizeGuestFilterTerm(safe.search);
+    if (search) expressions.push(`or(name.ilike.*${search}*,doc_number.ilike.*${search}*)`);
+  }
+  if (cleanId(safe.nationality)) {
+    const nationality = sanitizeGuestFilterTerm(safe.nationality);
+    if (nationality) expressions.push(`or(nationality.ilike.*${nationality}*,nationality_code.ilike.*${nationality}*)`);
+  }
   if (recentOnly) {
     const cutoff = shiftIsoDate(lisbonTodayIso(), -60);
-    if (cutoff) params.set("or", `(check_out.gte.${cutoff},check_out.is.null)`);
+    if (cutoff) expressions.push(`or(check_out.gte.${cutoff},check_out.is.null)`);
   }
+  if (expressions.length) params.set("and", `(${expressions.join(",")})`);
   return `guest_records?${params.toString()}`;
 }
 
@@ -199,12 +222,12 @@ async function loadGuestTableRows(filters = {}, options = {}) {
   const safe = normalizeGuestListFilters(filters);
   const mode = cleanId(options?.mode).toLowerCase();
   const recentOnly = mode !== "all" && !hasExplicitGuestListFilters(safe);
-  const rows = await restQuery(buildGuestTableQuery({ recentOnly }), {
+  const rows = await restQuery(buildGuestTableQuery(safe, { recentOnly }), {
     method: "GET",
   });
   const mapped = (Array.isArray(rows) ? rows : []).map(mapGuestTableRow);
   if (mode === "all") return sortGuestListRows(mapped);
-  return recentOnly ? sortGuestListRows(mapped) : scopeGuestListRows(mapped, safe, { includeDefaultRecent: false });
+  return sortGuestListRows(mapped);
 }
 
 function buildGuestTableBody(record, existing = {}) {
