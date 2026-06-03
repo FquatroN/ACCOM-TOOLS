@@ -37,12 +37,16 @@ module.exports = async function handler(req, res) {
       method: "POST",
       body: { p_year: selectedYear },
     });
-    const [pieRows, lineRows] = await Promise.all([
+    const [pieRows, lineRows, monthLineRows] = await Promise.all([
       restQuery("rpc/guests_bi_nationality_pies", {
         method: "POST",
         body: {},
       }),
       restQuery("rpc/guests_bi_nationality_line", {
+        method: "POST",
+        body: {},
+      }),
+      restQuery("rpc/guests_bi_nationality_month_line", {
         method: "POST",
         body: {},
       }),
@@ -63,6 +67,12 @@ module.exports = async function handler(req, res) {
     }));
     const mappedLineRows = (Array.isArray(lineRows) ? lineRows : []).map((row) => ({
       chartYear: clean(row?.chart_year),
+      countryLabel: clean(row?.country_label) || "Unknown",
+      guestCount: Number(row?.guest_count || 0),
+      sortOrder: Number(row?.sort_order || 999),
+    }));
+    const mappedMonthLineRows = (Array.isArray(monthLineRows) ? monthLineRows : []).map((row) => ({
+      chartMonth: clean(row?.chart_month),
       countryLabel: clean(row?.country_label) || "Unknown",
       guestCount: Number(row?.guest_count || 0),
       sortOrder: Number(row?.sort_order || 999),
@@ -107,6 +117,31 @@ module.exports = async function handler(req, res) {
         values: lineYears.map((year) => Number(item.valueByYear[year] || 0)),
       }));
 
+    const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthSeriesMap = new Map();
+    mappedMonthLineRows.forEach((row) => {
+      const key = row.countryLabel;
+      if (!monthSeriesMap.has(key)) {
+        monthSeriesMap.set(key, {
+          countryLabel: row.countryLabel,
+          valueByMonth: {},
+        });
+      }
+      monthSeriesMap.get(key).valueByMonth[row.chartMonth] = row.guestCount;
+    });
+    const monthSeries = [...monthSeriesMap.values()]
+      .sort((a, b) => {
+        const totalA = Object.values(a.valueByMonth).reduce((sum, value) => sum + Number(value || 0), 0);
+        const totalB = Object.values(b.valueByMonth).reduce((sum, value) => sum + Number(value || 0), 0);
+        if (a.countryLabel === "Others" && b.countryLabel !== "Others") return 1;
+        if (b.countryLabel === "Others" && a.countryLabel !== "Others") return -1;
+        return totalB - totalA || a.countryLabel.localeCompare(b.countryLabel);
+      })
+      .map((item) => ({
+        countryLabel: item.countryLabel,
+        values: monthLabels.map((_, index) => Number(item.valueByMonth[String(index + 1)] || 0)),
+      }));
+
     const totals = mappedRows.reduce((acc, row) => ({
       totalNights: acc.totalNights + row.totalNights,
       exempt7Days: acc.exempt7Days + row.exempt7Days,
@@ -123,6 +158,8 @@ module.exports = async function handler(req, res) {
         pieCharts,
         lineYears,
         lineSeries,
+        monthLabels,
+        monthSeries,
       },
     });
   } catch (error) {

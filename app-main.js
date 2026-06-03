@@ -940,6 +940,8 @@ const state = {
   guestsBiNationalityPieCharts: [],
   guestsBiNationalityLineYears: [],
   guestsBiNationalityLineSeries: [],
+  guestsBiNationalityMonthLabels: [],
+  guestsBiNationalityMonthSeries: [],
   guestsBiLoaded: false,
   guestsBiLoading: false,
   guestsBiYear: "",
@@ -1196,6 +1198,7 @@ const els = {
   guestsBiNationalitiesCount: document.getElementById("guests-bi-nationalities-count"),
   guestsBiNationalitiesPies: document.getElementById("guests-bi-nationalities-pies"),
   guestsBiNationalitiesLine: document.getElementById("guests-bi-nationalities-line"),
+  guestsBiNationalitiesMonthLine: document.getElementById("guests-bi-nationalities-month-line"),
   guestsBiNationalitiesStatus: document.getElementById("guests-bi-nationalities-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
@@ -17953,6 +17956,8 @@ async function loadGuestsBiData({ silent = false } = {}) {
     state.guestsBiNationalityPieCharts = Array.isArray(result?.nationalities?.pieCharts) ? result.nationalities.pieCharts : [];
     state.guestsBiNationalityLineYears = Array.isArray(result?.nationalities?.lineYears) ? result.nationalities.lineYears : [];
     state.guestsBiNationalityLineSeries = Array.isArray(result?.nationalities?.lineSeries) ? result.nationalities.lineSeries : [];
+    state.guestsBiNationalityMonthLabels = Array.isArray(result?.nationalities?.monthLabels) ? result.nationalities.monthLabels : [];
+    state.guestsBiNationalityMonthSeries = Array.isArray(result?.nationalities?.monthSeries) ? result.nationalities.monthSeries : [];
     state.guestsBiLoaded = true;
     renderGuestsBi();
     if (!silent) setGuestsBiStatus("Guests BI loaded.");
@@ -17964,6 +17969,8 @@ async function loadGuestsBiData({ silent = false } = {}) {
     state.guestsBiNationalityPieCharts = [];
     state.guestsBiNationalityLineYears = [];
     state.guestsBiNationalityLineSeries = [];
+    state.guestsBiNationalityMonthLabels = [];
+    state.guestsBiNationalityMonthSeries = [];
     state.guestsBiLoaded = false;
     renderGuestsBi();
     if (!silent) setGuestsBiStatus(`Failed to load Guests BI: ${error.message}`, "error");
@@ -18062,25 +18069,23 @@ function renderGuestsBiNationalityPies() {
     : '<div class="empty">No nationality distribution found.</div>';
 }
 
-function renderGuestsBiNationalityLine() {
-  if (!els.guestsBiNationalitiesLine) return;
-  const years = Array.isArray(state.guestsBiNationalityLineYears) ? state.guestsBiNationalityLineYears : [];
-  const series = Array.isArray(state.guestsBiNationalityLineSeries) ? state.guestsBiNationalityLineSeries : [];
-  if (!years.length || !series.length) {
-    els.guestsBiNationalitiesLine.innerHTML = '<div class="empty">No nationality trend found.</div>';
-    return;
+function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel) {
+  const xLabels = Array.isArray(labels) ? labels : [];
+  const lineSeries = Array.isArray(series) ? series : [];
+  if (!xLabels.length || !lineSeries.length) {
+    return `<div class="empty">${escape(emptyMessage)}</div>`;
   }
   const width = 920;
   const height = 360;
   const margin = { top: 20, right: 18, bottom: 42, left: 42 };
   const innerWidth = width - margin.left - margin.right;
   const innerHeight = height - margin.top - margin.bottom;
-  const maxValue = Math.max(1, ...series.flatMap((item) => Array.isArray(item.values) ? item.values.map((value) => Number(value || 0)) : [0]));
+  const maxValue = Math.max(1, ...lineSeries.flatMap((item) => Array.isArray(item.values) ? item.values.map((value) => Number(value || 0)) : [0]));
   const palette = guestsBiColorPalette();
-  const xFor = (index) => years.length === 1 ? margin.left + (innerWidth / 2) : margin.left + ((innerWidth * index) / (years.length - 1));
+  const xFor = (index) => xLabels.length === 1 ? margin.left + (innerWidth / 2) : margin.left + ((innerWidth * index) / (xLabels.length - 1));
   const yFor = (value) => margin.top + innerHeight - ((innerHeight * Number(value || 0)) / maxValue);
   const gridValues = Array.from({ length: 5 }, (_, index) => Math.round((maxValue * index) / 4));
-  const paths = series.map((item, index) => {
+  const paths = lineSeries.map((item, index) => {
     const values = Array.isArray(item.values) ? item.values : [];
     const d = values.map((value, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${xFor(pointIndex)} ${yFor(value)}`).join(" ");
     return {
@@ -18090,14 +18095,14 @@ function renderGuestsBiNationalityLine() {
       values,
     };
   });
-  els.guestsBiNationalitiesLine.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="guests-bi-line-svg" aria-label="Nationality trend by year">
+  return `<svg viewBox="0 0 ${width} ${height}" class="guests-bi-line-svg" aria-label="${escape(ariaLabel)}">
       ${gridValues.map((value) => `<g>
         <line x1="${margin.left}" y1="${yFor(value)}" x2="${width - margin.right}" y2="${yFor(value)}" class="guests-bi-grid-line"></line>
         <text x="${margin.left - 8}" y="${yFor(value) + 4}" text-anchor="end" class="guests-bi-axis-text">${escape(String(value))}</text>
       </g>`).join("")}
       <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + innerHeight}" class="guests-bi-axis-line"></line>
       <line x1="${margin.left}" y1="${margin.top + innerHeight}" x2="${width - margin.right}" y2="${margin.top + innerHeight}" class="guests-bi-axis-line"></line>
-      ${years.map((year, index) => `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="guests-bi-axis-text">${escape(year)}</text>`).join("")}
+      ${xLabels.map((label, index) => `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="guests-bi-axis-text">${escape(label)}</text>`).join("")}
       ${paths.map((path) => `<path d="${path.d}" fill="none" stroke="${path.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>`).join("")}
       ${paths.map((path) => path.values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${path.color}"></circle>`).join("")).join("")}
     </svg>
@@ -18109,6 +18114,20 @@ function renderGuestsBiNationalityLine() {
     </div>`;
 }
 
+function renderGuestsBiNationalityLine() {
+  if (!els.guestsBiNationalitiesLine) return;
+  const years = Array.isArray(state.guestsBiNationalityLineYears) ? state.guestsBiNationalityLineYears : [];
+  const series = Array.isArray(state.guestsBiNationalityLineSeries) ? state.guestsBiNationalityLineSeries : [];
+  els.guestsBiNationalitiesLine.innerHTML = buildGuestsBiLineChartMarkup(years, series, "No nationality trend found.", "Nationality trend by year");
+}
+
+function renderGuestsBiNationalityMonthLine() {
+  if (!els.guestsBiNationalitiesMonthLine) return;
+  const labels = Array.isArray(state.guestsBiNationalityMonthLabels) ? state.guestsBiNationalityMonthLabels : [];
+  const series = Array.isArray(state.guestsBiNationalityMonthSeries) ? state.guestsBiNationalityMonthSeries : [];
+  els.guestsBiNationalitiesMonthLine.innerHTML = buildGuestsBiLineChartMarkup(labels, series, "No monthly nationality trend found.", "Nationality trend by month");
+}
+
 function renderGuestsBi() {
   if (!canUseBusinessIntelligence()) {
     if (els.guestsBiRows) els.guestsBiRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Guests BI.</td></tr>';
@@ -18116,6 +18135,7 @@ function renderGuestsBi() {
     if (els.guestsBiCount) els.guestsBiCount.textContent = "0 rows";
     if (els.guestsBiNationalitiesPies) els.guestsBiNationalitiesPies.innerHTML = '<div class="empty">Your profile has no access to Guests BI.</div>';
     if (els.guestsBiNationalitiesLine) els.guestsBiNationalitiesLine.innerHTML = "";
+    if (els.guestsBiNationalitiesMonthLine) els.guestsBiNationalitiesMonthLine.innerHTML = "";
     if (els.guestsBiNationalitiesCount) els.guestsBiNationalitiesCount.textContent = "0 countries";
     return;
   }
@@ -18158,6 +18178,7 @@ function renderGuestsBi() {
   }
   renderGuestsBiNationalityPies();
   renderGuestsBiNationalityLine();
+  renderGuestsBiNationalityMonthLine();
   if (els.guestsBiNationalitiesStatus) {
     els.guestsBiNationalitiesStatus.textContent = lineSeries.length ? "Nationality graphs loaded." : "No nationality distribution found.";
     els.guestsBiNationalitiesStatus.classList.remove("status-error");
