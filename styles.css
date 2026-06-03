@@ -1802,6 +1802,17 @@ select:disabled {
   overflow-wrap: anywhere;
 }
 
+.guests-bi-legend-metric {
+  display: grid;
+  justify-items: end;
+  line-height: 1.1;
+}
+
+.guests-bi-legend-metric small {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
 .guests-bi-line-card {
   margin-top: 1rem;
 }

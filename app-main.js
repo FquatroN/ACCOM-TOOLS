@@ -18050,7 +18050,10 @@ function renderGuestsBiNationalityPies() {
               ${slices.map((slice) => `<div class="guests-bi-legend-item">
                   <span class="guests-bi-legend-dot" style="background:${slice.color}"></span>
                   <span class="guests-bi-legend-label">${escape(slice.label)}</span>
-                  <strong>${escape(String(slice.value))}</strong>
+                  <span class="guests-bi-legend-metric">
+                    <strong>${escape(String(slice.value))}</strong>
+                    <small>${escape(`${slice.percent.toFixed(1)}%`)}</small>
+                  </span>
                 </div>`).join("")}
             </div>
           </div>
