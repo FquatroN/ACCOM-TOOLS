@@ -3507,10 +3507,11 @@
               <h2>Guests BI</h2>
               <div class="actions">
                 <button id="guests-bi-tab-tmt" type="button" class="active-tab">TMT</button>
+                <button id="guests-bi-tab-nationalities" type="button" class="ghost">Nationalities</button>
               </div>
             </div>
 
-            <div class="grid filters guests-bi-filters">
+            <div id="guests-bi-filters" class="grid filters guests-bi-filters">
               <label>
                 Year
                 <select id="guests-bi-filter-year"></select>
@@ -3518,7 +3519,7 @@
             </div>
           </section>
 
-          <section class="card">
+          <section id="guests-bi-panel-tmt" class="card">
             <div class="bar">
               <h2>TMT</h2>
               <div class="actions">
@@ -3540,6 +3541,21 @@
               </table>
             </div>
             <p id="guests-bi-status" class="auth-status"></p>
+          </section>
+
+          <section id="guests-bi-panel-nationalities" class="card" hidden>
+            <div class="bar">
+              <h2>Nationalities</h2>
+              <div class="actions">
+                <p id="guests-bi-nationalities-count">0 countries</p>
+              </div>
+            </div>
+            <div id="guests-bi-nationalities-pies" class="guests-bi-pies"></div>
+            <div class="guests-bi-line-card">
+              <h3>Nationality Trend by Year</h3>
+              <div id="guests-bi-nationalities-line" class="guests-bi-line-wrap"></div>
+            </div>
+            <p id="guests-bi-nationalities-status" class="auth-status"></p>
           </section>
         </section>
       </section>

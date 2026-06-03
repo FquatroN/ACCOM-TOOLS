@@ -37,6 +37,16 @@ module.exports = async function handler(req, res) {
       method: "POST",
       body: { p_year: selectedYear },
     });
+    const [pieRows, lineRows] = await Promise.all([
+      restQuery("rpc/guests_bi_nationality_pies", {
+        method: "POST",
+        body: {},
+      }),
+      restQuery("rpc/guests_bi_nationality_line", {
+        method: "POST",
+        body: {},
+      }),
+    ]);
 
     const mappedRows = (Array.isArray(rows) ? rows : []).map((row) => ({
       yearMonth: clean(row?.year_month),
@@ -44,6 +54,58 @@ module.exports = async function handler(req, res) {
       exempt7Days: Number(row?.exempt_7days || 0),
       exempt13Year: Number(row?.exempt_13_year || 0),
     }));
+
+    const mappedPieRows = (Array.isArray(pieRows) ? pieRows : []).map((row) => ({
+      chartYear: clean(row?.chart_year),
+      countryLabel: clean(row?.country_label) || "Unknown",
+      guestCount: Number(row?.guest_count || 0),
+      sortOrder: Number(row?.sort_order || 999),
+    }));
+    const mappedLineRows = (Array.isArray(lineRows) ? lineRows : []).map((row) => ({
+      chartYear: clean(row?.chart_year),
+      countryLabel: clean(row?.country_label) || "Unknown",
+      guestCount: Number(row?.guest_count || 0),
+      sortOrder: Number(row?.sort_order || 999),
+    }));
+
+    const currentCalendarYear = new Date().getFullYear();
+    const pieYears = [0, 1, 2].map((offset) => String(currentCalendarYear - offset));
+    const pieCharts = pieYears.map((year) => ({
+      year,
+      rows: mappedPieRows
+        .filter((row) => row.chartYear === year)
+        .sort((a, b) => (a.sortOrder - b.sortOrder) || b.guestCount - a.guestCount || a.countryLabel.localeCompare(b.countryLabel))
+        .map((row) => ({
+          countryLabel: row.countryLabel,
+          guestCount: row.guestCount,
+        })),
+    }));
+
+    const lineYears = [...new Set(mappedLineRows.map((row) => row.chartYear).filter((year) => /^\d{4}$/.test(year)))].sort((a, b) => a.localeCompare(b));
+    const lineSeriesMap = new Map();
+    mappedLineRows.forEach((row) => {
+      const key = row.countryLabel;
+      if (!lineSeriesMap.has(key)) {
+        lineSeriesMap.set(key, {
+          countryLabel: row.countryLabel,
+          sortOrder: row.sortOrder,
+          valueByYear: {},
+        });
+      }
+      lineSeriesMap.get(key).valueByYear[row.chartYear] = row.guestCount;
+    });
+    const lineSeries = [...lineSeriesMap.values()]
+      .sort((a, b) => {
+        const totalA = Object.values(a.valueByYear).reduce((sum, value) => sum + Number(value || 0), 0);
+        const totalB = Object.values(b.valueByYear).reduce((sum, value) => sum + Number(value || 0), 0);
+        if (a.countryLabel === "Others" && b.countryLabel !== "Others") return 1;
+        if (b.countryLabel === "Others" && a.countryLabel !== "Others") return -1;
+        return totalB - totalA || a.countryLabel.localeCompare(b.countryLabel);
+      })
+      .map((item) => ({
+        countryLabel: item.countryLabel,
+        values: lineYears.map((year) => Number(item.valueByYear[year] || 0)),
+      }));
 
     const totals = mappedRows.reduce((acc, row) => ({
       totalNights: acc.totalNights + row.totalNights,
@@ -56,6 +118,12 @@ module.exports = async function handler(req, res) {
       years: availableYears.length ? availableYears : [String(selectedYear)],
       rows: mappedRows,
       totals,
+      nationalities: {
+        pieYears,
+        pieCharts,
+        lineYears,
+        lineSeries,
+      },
     });
   } catch (error) {
     sendError(res, error);

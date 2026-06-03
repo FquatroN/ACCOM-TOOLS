@@ -935,6 +935,11 @@ const state = {
   guestsBiRows: [],
   guestsBiYears: [],
   guestsBiTotals: { totalNights: 0, exempt7Days: 0, exempt13Year: 0 },
+  guestsBiTab: "tmt",
+  guestsBiNationalityPieYears: [],
+  guestsBiNationalityPieCharts: [],
+  guestsBiNationalityLineYears: [],
+  guestsBiNationalityLineSeries: [],
   guestsBiLoaded: false,
   guestsBiLoading: false,
   guestsBiYear: "",
@@ -1179,11 +1184,19 @@ const els = {
   financialDocsHistoryRows: document.getElementById("financial-docs-history-rows"),
   financialDocsSave: document.getElementById("financial-docs-save"),
   guestsBiTabTmt: document.getElementById("guests-bi-tab-tmt"),
+  guestsBiTabNationalities: document.getElementById("guests-bi-tab-nationalities"),
+  guestsBiFilters: document.getElementById("guests-bi-filters"),
   guestsBiFilterYear: document.getElementById("guests-bi-filter-year"),
+  guestsBiPanelTmt: document.getElementById("guests-bi-panel-tmt"),
+  guestsBiPanelNationalities: document.getElementById("guests-bi-panel-nationalities"),
   guestsBiCount: document.getElementById("guests-bi-count"),
   guestsBiRows: document.getElementById("guests-bi-rows"),
   guestsBiTotals: document.getElementById("guests-bi-totals"),
   guestsBiStatus: document.getElementById("guests-bi-status"),
+  guestsBiNationalitiesCount: document.getElementById("guests-bi-nationalities-count"),
+  guestsBiNationalitiesPies: document.getElementById("guests-bi-nationalities-pies"),
+  guestsBiNationalitiesLine: document.getElementById("guests-bi-nationalities-line"),
+  guestsBiNationalitiesStatus: document.getElementById("guests-bi-nationalities-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
   financialDocsEntitiesFilterSearch: document.getElementById("financial-docs-entities-filter-search"),
@@ -1862,6 +1875,8 @@ function bindEvents() {
   els.settingsMenuLaundry.addEventListener("click", () => setSettingsSection("laundry"));
   els.settingsMenuAdminUsers.addEventListener("click", () => setSettingsSection("admin-users"));
   els.guestsBiFilterYear?.addEventListener("change", onGuestsBiYearChange);
+  els.guestsBiTabTmt?.addEventListener("click", () => setGuestsBiTab("tmt"));
+  els.guestsBiTabNationalities?.addEventListener("click", () => setGuestsBiTab("nationalities"));
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -17894,10 +17909,24 @@ function setGuestsBiStatus(message = "", tone = "") {
   if (!els.guestsBiStatus) return;
   els.guestsBiStatus.textContent = message;
   els.guestsBiStatus.classList.toggle("status-error", tone === "error");
+  if (els.guestsBiNationalitiesStatus) {
+    els.guestsBiNationalitiesStatus.textContent = message;
+    els.guestsBiNationalitiesStatus.classList.toggle("status-error", tone === "error");
+  }
 }
 
 function currentGuestsBiYear() {
   return clean(els.guestsBiFilterYear?.value || state.guestsBiYear);
+}
+
+function guestsBiColorPalette() {
+  return [
+    "#0f766e", "#2563eb", "#ea580c", "#7c3aed", "#dc2626",
+    "#0891b2", "#65a30d", "#d97706", "#9333ea", "#db2777",
+    "#1d4ed8", "#15803d", "#b45309", "#475569", "#c2410c",
+    "#0e7490", "#4d7c0f", "#7e22ce", "#be123c", "#374151",
+    "#94a3b8",
+  ];
 }
 
 function buildGuestsBiUrlClient() {
@@ -17920,6 +17949,10 @@ async function loadGuestsBiData({ silent = false } = {}) {
       exempt7Days: Number(result?.totals?.exempt7Days || 0),
       exempt13Year: Number(result?.totals?.exempt13Year || 0),
     };
+    state.guestsBiNationalityPieYears = Array.isArray(result?.nationalities?.pieYears) ? result.nationalities.pieYears : [];
+    state.guestsBiNationalityPieCharts = Array.isArray(result?.nationalities?.pieCharts) ? result.nationalities.pieCharts : [];
+    state.guestsBiNationalityLineYears = Array.isArray(result?.nationalities?.lineYears) ? result.nationalities.lineYears : [];
+    state.guestsBiNationalityLineSeries = Array.isArray(result?.nationalities?.lineSeries) ? result.nationalities.lineSeries : [];
     state.guestsBiLoaded = true;
     renderGuestsBi();
     if (!silent) setGuestsBiStatus("Guests BI loaded.");
@@ -17927,6 +17960,10 @@ async function loadGuestsBiData({ silent = false } = {}) {
     state.guestsBiRows = [];
     state.guestsBiYears = [];
     state.guestsBiTotals = { totalNights: 0, exempt7Days: 0, exempt13Year: 0 };
+    state.guestsBiNationalityPieYears = [];
+    state.guestsBiNationalityPieCharts = [];
+    state.guestsBiNationalityLineYears = [];
+    state.guestsBiNationalityLineSeries = [];
     state.guestsBiLoaded = false;
     renderGuestsBi();
     if (!silent) setGuestsBiStatus(`Failed to load Guests BI: ${error.message}`, "error");
@@ -17944,13 +17981,149 @@ function onGuestsBiYearChange() {
   loadGuestsBiData({ silent: true }).catch(() => {});
 }
 
+function setGuestsBiTab(tab) {
+  state.guestsBiTab = tab === "nationalities" ? "nationalities" : "tmt";
+  renderGuestsBi();
+}
+
+function guestsBiPieSlices(chart) {
+  const rows = Array.isArray(chart?.rows) ? chart.rows : [];
+  const total = rows.reduce((sum, row) => sum + Number(row?.guestCount || 0), 0);
+  const palette = guestsBiColorPalette();
+  let offset = 0;
+  return rows.map((row, index) => {
+    const value = Number(row?.guestCount || 0);
+    const fraction = total > 0 ? value / total : 0;
+    const start = offset;
+    const end = start + fraction;
+    offset = end;
+    return {
+      label: clean(row?.countryLabel) || "Unknown",
+      value,
+      color: palette[index % palette.length],
+      start,
+      end,
+      percent: fraction * 100,
+    };
+  });
+}
+
+function describePieSlice(slice) {
+  const cx = 70;
+  const cy = 70;
+  const r = 58;
+  const fullCircle = slice.end - slice.start >= 0.9999;
+  if (fullCircle) return `M ${cx} ${cy} m -${r} 0 a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 -${r * 2} 0`;
+  const startAngle = (slice.start * Math.PI * 2) - (Math.PI / 2);
+  const endAngle = (slice.end * Math.PI * 2) - (Math.PI / 2);
+  const x1 = cx + (Math.cos(startAngle) * r);
+  const y1 = cy + (Math.sin(startAngle) * r);
+  const x2 = cx + (Math.cos(endAngle) * r);
+  const y2 = cy + (Math.sin(endAngle) * r);
+  const largeArc = slice.end - slice.start > 0.5 ? 1 : 0;
+  return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+}
+
+function renderGuestsBiNationalityPies() {
+  if (!els.guestsBiNationalitiesPies) return;
+  const charts = Array.isArray(state.guestsBiNationalityPieCharts) ? state.guestsBiNationalityPieCharts : [];
+  els.guestsBiNationalitiesPies.innerHTML = charts.length
+    ? charts.map((chart) => {
+      const slices = guestsBiPieSlices(chart);
+      const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+      const svg = total > 0
+        ? `<svg viewBox="0 0 140 140" class="guests-bi-pie-svg" aria-label="${escape(chart.year)} nationality distribution">
+            ${slices.map((slice) => `<path d="${describePieSlice(slice)}" fill="${slice.color}"></path>`).join("")}
+            <circle cx="70" cy="70" r="26" fill="#fff8f0"></circle>
+            <text x="70" y="66" text-anchor="middle" class="guests-bi-pie-total">${escape(String(total))}</text>
+            <text x="70" y="82" text-anchor="middle" class="guests-bi-pie-total-label">guests</text>
+          </svg>`
+        : `<div class="guests-bi-pie-empty">No data</div>`;
+      return `<article class="guests-bi-pie-card">
+          <div class="bar">
+            <h3>${escape(chart.year || "-")}</h3>
+            <p>${escape(String(total))} guests</p>
+          </div>
+          <div class="guests-bi-pie-body">
+            <div class="guests-bi-pie-chart">${svg}</div>
+            <div class="guests-bi-pie-legend">
+              ${slices.map((slice) => `<div class="guests-bi-legend-item">
+                  <span class="guests-bi-legend-dot" style="background:${slice.color}"></span>
+                  <span class="guests-bi-legend-label">${escape(slice.label)}</span>
+                  <strong>${escape(String(slice.value))}</strong>
+                </div>`).join("")}
+            </div>
+          </div>
+        </article>`;
+    }).join("")
+    : '<div class="empty">No nationality distribution found.</div>';
+}
+
+function renderGuestsBiNationalityLine() {
+  if (!els.guestsBiNationalitiesLine) return;
+  const years = Array.isArray(state.guestsBiNationalityLineYears) ? state.guestsBiNationalityLineYears : [];
+  const series = Array.isArray(state.guestsBiNationalityLineSeries) ? state.guestsBiNationalityLineSeries : [];
+  if (!years.length || !series.length) {
+    els.guestsBiNationalitiesLine.innerHTML = '<div class="empty">No nationality trend found.</div>';
+    return;
+  }
+  const width = 920;
+  const height = 360;
+  const margin = { top: 20, right: 18, bottom: 42, left: 42 };
+  const innerWidth = width - margin.left - margin.right;
+  const innerHeight = height - margin.top - margin.bottom;
+  const maxValue = Math.max(1, ...series.flatMap((item) => Array.isArray(item.values) ? item.values.map((value) => Number(value || 0)) : [0]));
+  const palette = guestsBiColorPalette();
+  const xFor = (index) => years.length === 1 ? margin.left + (innerWidth / 2) : margin.left + ((innerWidth * index) / (years.length - 1));
+  const yFor = (value) => margin.top + innerHeight - ((innerHeight * Number(value || 0)) / maxValue);
+  const gridValues = Array.from({ length: 5 }, (_, index) => Math.round((maxValue * index) / 4));
+  const paths = series.map((item, index) => {
+    const values = Array.isArray(item.values) ? item.values : [];
+    const d = values.map((value, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${xFor(pointIndex)} ${yFor(value)}`).join(" ");
+    return {
+      label: clean(item.countryLabel) || "Unknown",
+      color: palette[index % palette.length],
+      d,
+      values,
+    };
+  });
+  els.guestsBiNationalitiesLine.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="guests-bi-line-svg" aria-label="Nationality trend by year">
+      ${gridValues.map((value) => `<g>
+        <line x1="${margin.left}" y1="${yFor(value)}" x2="${width - margin.right}" y2="${yFor(value)}" class="guests-bi-grid-line"></line>
+        <text x="${margin.left - 8}" y="${yFor(value) + 4}" text-anchor="end" class="guests-bi-axis-text">${escape(String(value))}</text>
+      </g>`).join("")}
+      <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + innerHeight}" class="guests-bi-axis-line"></line>
+      <line x1="${margin.left}" y1="${margin.top + innerHeight}" x2="${width - margin.right}" y2="${margin.top + innerHeight}" class="guests-bi-axis-line"></line>
+      ${years.map((year, index) => `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="guests-bi-axis-text">${escape(year)}</text>`).join("")}
+      ${paths.map((path) => `<path d="${path.d}" fill="none" stroke="${path.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>`).join("")}
+      ${paths.map((path) => path.values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${path.color}"></circle>`).join("")).join("")}
+    </svg>
+    <div class="guests-bi-line-legend">
+      ${paths.map((path) => `<div class="guests-bi-legend-item">
+          <span class="guests-bi-legend-dot" style="background:${path.color}"></span>
+          <span class="guests-bi-legend-label">${escape(path.label)}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
 function renderGuestsBi() {
   if (!canUseBusinessIntelligence()) {
     if (els.guestsBiRows) els.guestsBiRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Guests BI.</td></tr>';
     if (els.guestsBiTotals) els.guestsBiTotals.innerHTML = "";
     if (els.guestsBiCount) els.guestsBiCount.textContent = "0 rows";
+    if (els.guestsBiNationalitiesPies) els.guestsBiNationalitiesPies.innerHTML = '<div class="empty">Your profile has no access to Guests BI.</div>';
+    if (els.guestsBiNationalitiesLine) els.guestsBiNationalitiesLine.innerHTML = "";
+    if (els.guestsBiNationalitiesCount) els.guestsBiNationalitiesCount.textContent = "0 countries";
     return;
   }
+  const isTmt = state.guestsBiTab !== "nationalities";
+  els.guestsBiTabTmt?.classList.toggle("active-tab", isTmt);
+  els.guestsBiTabTmt?.classList.toggle("ghost", !isTmt);
+  els.guestsBiTabNationalities?.classList.toggle("active-tab", !isTmt);
+  els.guestsBiTabNationalities?.classList.toggle("ghost", isTmt);
+  if (els.guestsBiFilters) els.guestsBiFilters.hidden = !isTmt;
+  if (els.guestsBiPanelTmt) els.guestsBiPanelTmt.hidden = !isTmt;
+  if (els.guestsBiPanelNationalities) els.guestsBiPanelNationalities.hidden = isTmt;
   const years = state.guestsBiYears.length ? state.guestsBiYears : [state.guestsBiYear || String(new Date().getFullYear())];
   if (els.guestsBiFilterYear) {
     els.guestsBiFilterYear.innerHTML = years.map((year) => `<option value="${escape(year)}">${escape(year)}</option>`).join("");
@@ -17975,6 +18148,16 @@ function renderGuestsBi() {
       <th>${escape(String(Number(state.guestsBiTotals.exempt7Days || 0)))}</th>
       <th>${escape(String(Number(state.guestsBiTotals.exempt13Year || 0)))}</th>
     </tr>`;
+  }
+  const lineSeries = Array.isArray(state.guestsBiNationalityLineSeries) ? state.guestsBiNationalityLineSeries : [];
+  if (els.guestsBiNationalitiesCount) {
+    els.guestsBiNationalitiesCount.textContent = `${lineSeries.length} countr${lineSeries.length === 1 ? "y" : "ies"}`;
+  }
+  renderGuestsBiNationalityPies();
+  renderGuestsBiNationalityLine();
+  if (els.guestsBiNationalitiesStatus) {
+    els.guestsBiNationalitiesStatus.textContent = lineSeries.length ? "Nationality graphs loaded." : "No nationality distribution found.";
+    els.guestsBiNationalitiesStatus.classList.remove("status-error");
   }
 }
 
