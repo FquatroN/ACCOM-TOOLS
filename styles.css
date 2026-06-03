@@ -4677,11 +4677,15 @@ select:disabled {
   padding: 0.75rem 0.9rem;
 }
 
-.app-layout.backoffice-mode .backoffice-top-nav {
+.backoffice-top-nav[hidden] {
+  display: none !important;
+}
+
+.app-layout.backoffice-mode .backoffice-top-nav:not([hidden]) {
   display: grid;
 }
 
-.app-layout.business-intelligence-mode .bi-top-nav {
+.app-layout.business-intelligence-mode .bi-top-nav:not([hidden]) {
   display: grid;
 }
 
