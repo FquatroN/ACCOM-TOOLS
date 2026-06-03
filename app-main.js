@@ -942,6 +942,8 @@ const state = {
   guestsBiNationalityLineSeries: [],
   guestsBiNationalityMonthLabels: [],
   guestsBiNationalityMonthSeries: [],
+  guestsBiNationalityLineMode: "absolute",
+  guestsBiNationalityMonthLineMode: "absolute",
   guestsBiLoaded: false,
   guestsBiLoading: false,
   guestsBiYear: "",
@@ -1199,6 +1201,10 @@ const els = {
   guestsBiNationalitiesPies: document.getElementById("guests-bi-nationalities-pies"),
   guestsBiNationalitiesLine: document.getElementById("guests-bi-nationalities-line"),
   guestsBiNationalitiesMonthLine: document.getElementById("guests-bi-nationalities-month-line"),
+  guestsBiLineModeAbsolute: document.getElementById("guests-bi-line-mode-absolute"),
+  guestsBiLineModePercent: document.getElementById("guests-bi-line-mode-percent"),
+  guestsBiMonthLineModeAbsolute: document.getElementById("guests-bi-month-line-mode-absolute"),
+  guestsBiMonthLineModePercent: document.getElementById("guests-bi-month-line-mode-percent"),
   guestsBiNationalitiesStatus: document.getElementById("guests-bi-nationalities-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
@@ -1880,6 +1886,10 @@ function bindEvents() {
   els.guestsBiFilterYear?.addEventListener("change", onGuestsBiYearChange);
   els.guestsBiTabTmt?.addEventListener("click", () => setGuestsBiTab("tmt"));
   els.guestsBiTabNationalities?.addEventListener("click", () => setGuestsBiTab("nationalities"));
+  els.guestsBiLineModeAbsolute?.addEventListener("click", () => setGuestsBiLineMode("absolute"));
+  els.guestsBiLineModePercent?.addEventListener("click", () => setGuestsBiLineMode("percent"));
+  els.guestsBiMonthLineModeAbsolute?.addEventListener("click", () => setGuestsBiMonthLineMode("absolute"));
+  els.guestsBiMonthLineModePercent?.addEventListener("click", () => setGuestsBiMonthLineMode("percent"));
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -17993,6 +18003,16 @@ function setGuestsBiTab(tab) {
   renderGuestsBi();
 }
 
+function setGuestsBiLineMode(mode) {
+  state.guestsBiNationalityLineMode = mode === "percent" ? "percent" : "absolute";
+  renderGuestsBi();
+}
+
+function setGuestsBiMonthLineMode(mode) {
+  state.guestsBiNationalityMonthLineMode = mode === "percent" ? "percent" : "absolute";
+  renderGuestsBi();
+}
+
 function guestsBiPieSlices(chart) {
   const rows = Array.isArray(chart?.rows) ? chart.rows : [];
   const total = rows.reduce((sum, row) => sum + Number(row?.guestCount || 0), 0);
@@ -18069,23 +18089,38 @@ function renderGuestsBiNationalityPies() {
     : '<div class="empty">No nationality distribution found.</div>';
 }
 
-function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel) {
+function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel, mode = "absolute") {
   const xLabels = Array.isArray(labels) ? labels : [];
   const lineSeries = Array.isArray(series) ? series : [];
   if (!xLabels.length || !lineSeries.length) {
     return `<div class="empty">${escape(emptyMessage)}</div>`;
   }
+  const normalizedMode = mode === "percent" ? "percent" : "absolute";
+  const totalsByIndex = xLabels.map((_, index) => lineSeries.reduce((sum, item) => sum + Number(item?.values?.[index] || 0), 0));
+  const chartSeries = lineSeries.map((item) => ({
+    countryLabel: item.countryLabel,
+    values: (Array.isArray(item.values) ? item.values : []).map((value, index) => {
+      const numeric = Number(value || 0);
+      if (normalizedMode !== "percent") return numeric;
+      const total = Number(totalsByIndex[index] || 0);
+      return total > 0 ? (numeric / total) * 100 : 0;
+    }),
+  }));
   const width = 920;
   const height = 360;
   const margin = { top: 20, right: 18, bottom: 42, left: 42 };
   const innerWidth = width - margin.left - margin.right;
   const innerHeight = height - margin.top - margin.bottom;
-  const maxValue = Math.max(1, ...lineSeries.flatMap((item) => Array.isArray(item.values) ? item.values.map((value) => Number(value || 0)) : [0]));
+  const maxValue = Math.max(1, ...chartSeries.flatMap((item) => Array.isArray(item.values) ? item.values.map((value) => Number(value || 0)) : [0]));
   const palette = guestsBiColorPalette();
   const xFor = (index) => xLabels.length === 1 ? margin.left + (innerWidth / 2) : margin.left + ((innerWidth * index) / (xLabels.length - 1));
   const yFor = (value) => margin.top + innerHeight - ((innerHeight * Number(value || 0)) / maxValue);
-  const gridValues = Array.from({ length: 5 }, (_, index) => Math.round((maxValue * index) / 4));
-  const paths = lineSeries.map((item, index) => {
+  const gridValues = Array.from({ length: 5 }, (_, index) => (maxValue * index) / 4);
+  const formatAxisValue = (value) => {
+    if (normalizedMode === "percent") return `${Number(value || 0).toFixed(1)}%`;
+    return String(Math.round(Number(value || 0)));
+  };
+  const paths = chartSeries.map((item, index) => {
     const values = Array.isArray(item.values) ? item.values : [];
     const d = values.map((value, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${xFor(pointIndex)} ${yFor(value)}`).join(" ");
     return {
@@ -18098,7 +18133,7 @@ function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel) {
   return `<svg viewBox="0 0 ${width} ${height}" class="guests-bi-line-svg" aria-label="${escape(ariaLabel)}">
       ${gridValues.map((value) => `<g>
         <line x1="${margin.left}" y1="${yFor(value)}" x2="${width - margin.right}" y2="${yFor(value)}" class="guests-bi-grid-line"></line>
-        <text x="${margin.left - 8}" y="${yFor(value) + 4}" text-anchor="end" class="guests-bi-axis-text">${escape(String(value))}</text>
+        <text x="${margin.left - 8}" y="${yFor(value) + 4}" text-anchor="end" class="guests-bi-axis-text">${escape(formatAxisValue(value))}</text>
       </g>`).join("")}
       <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + innerHeight}" class="guests-bi-axis-line"></line>
       <line x1="${margin.left}" y1="${margin.top + innerHeight}" x2="${width - margin.right}" y2="${margin.top + innerHeight}" class="guests-bi-axis-line"></line>
@@ -18118,14 +18153,26 @@ function renderGuestsBiNationalityLine() {
   if (!els.guestsBiNationalitiesLine) return;
   const years = Array.isArray(state.guestsBiNationalityLineYears) ? state.guestsBiNationalityLineYears : [];
   const series = Array.isArray(state.guestsBiNationalityLineSeries) ? state.guestsBiNationalityLineSeries : [];
-  els.guestsBiNationalitiesLine.innerHTML = buildGuestsBiLineChartMarkup(years, series, "No nationality trend found.", "Nationality trend by year");
+  els.guestsBiNationalitiesLine.innerHTML = buildGuestsBiLineChartMarkup(
+    years,
+    series,
+    "No nationality trend found.",
+    "Nationality trend by year",
+    state.guestsBiNationalityLineMode
+  );
 }
 
 function renderGuestsBiNationalityMonthLine() {
   if (!els.guestsBiNationalitiesMonthLine) return;
   const labels = Array.isArray(state.guestsBiNationalityMonthLabels) ? state.guestsBiNationalityMonthLabels : [];
   const series = Array.isArray(state.guestsBiNationalityMonthSeries) ? state.guestsBiNationalityMonthSeries : [];
-  els.guestsBiNationalitiesMonthLine.innerHTML = buildGuestsBiLineChartMarkup(labels, series, "No monthly nationality trend found.", "Nationality trend by month");
+  els.guestsBiNationalitiesMonthLine.innerHTML = buildGuestsBiLineChartMarkup(
+    labels,
+    series,
+    "No monthly nationality trend found.",
+    "Nationality trend by month",
+    state.guestsBiNationalityMonthLineMode
+  );
 }
 
 function renderGuestsBi() {
@@ -18144,6 +18191,14 @@ function renderGuestsBi() {
   els.guestsBiTabTmt?.classList.toggle("ghost", !isTmt);
   els.guestsBiTabNationalities?.classList.toggle("active-tab", !isTmt);
   els.guestsBiTabNationalities?.classList.toggle("ghost", isTmt);
+  els.guestsBiLineModeAbsolute?.classList.toggle("active-tab", state.guestsBiNationalityLineMode !== "percent");
+  els.guestsBiLineModeAbsolute?.classList.toggle("ghost", state.guestsBiNationalityLineMode === "percent");
+  els.guestsBiLineModePercent?.classList.toggle("active-tab", state.guestsBiNationalityLineMode === "percent");
+  els.guestsBiLineModePercent?.classList.toggle("ghost", state.guestsBiNationalityLineMode !== "percent");
+  els.guestsBiMonthLineModeAbsolute?.classList.toggle("active-tab", state.guestsBiNationalityMonthLineMode !== "percent");
+  els.guestsBiMonthLineModeAbsolute?.classList.toggle("ghost", state.guestsBiNationalityMonthLineMode === "percent");
+  els.guestsBiMonthLineModePercent?.classList.toggle("active-tab", state.guestsBiNationalityMonthLineMode === "percent");
+  els.guestsBiMonthLineModePercent?.classList.toggle("ghost", state.guestsBiNationalityMonthLineMode !== "percent");
   if (els.guestsBiFilters) els.guestsBiFilters.hidden = !isTmt;
   if (els.guestsBiPanelTmt) els.guestsBiPanelTmt.hidden = !isTmt;
   if (els.guestsBiPanelNationalities) els.guestsBiPanelNationalities.hidden = isTmt;
