@@ -467,6 +467,41 @@ h3 {
   padding: 0.45rem 0.7rem;
 }
 
+.services-approval-reminder-row {
+  grid-template-columns: 0.9fr 0.9fr 1.2fr auto;
+  gap: 0.45rem 0.65rem;
+  align-items: end;
+}
+
+.services-approval-reminder-row label {
+  gap: 0.22rem;
+  font-size: 0.8rem;
+}
+
+.services-approval-reminder-row input,
+.services-approval-reminder-row select {
+  padding: 0.38rem 0.52rem;
+  font-size: 0.8rem;
+}
+
+.services-approval-reminder-row .filter-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.services-approval-reminder-row .filter-checkbox input[type="checkbox"] {
+  width: auto;
+  margin-top: 0;
+}
+
+.services-approval-reminder-row button {
+  font-size: 0.78rem;
+  padding: 0.36rem 0.56rem;
+  white-space: nowrap;
+  margin-top: 0;
+}
+
 #settings-view-laundry .settings-block > .grid.settings-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: start;
@@ -4139,6 +4174,10 @@ select:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .services-approval-reminder-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .review-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4247,6 +4286,7 @@ select:disabled {
   .settings-grid,
   .kpi-grid,
   .lost-found-filters,
+  .services-approval-reminder-row,
   .service-form-grid,
   .service-return-grid-top,
   .service-return-grid-bottom,
@@ -4533,6 +4573,10 @@ select:disabled {
   .filters,
   .settings-grid,
   .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .services-approval-reminder-row {
     grid-template-columns: 1fr;
   }
 
