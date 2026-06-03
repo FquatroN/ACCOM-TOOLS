@@ -18014,7 +18014,13 @@ function setGuestsBiMonthLineMode(mode) {
 }
 
 function guestsBiPieSlices(chart) {
-  const rows = Array.isArray(chart?.rows) ? chart.rows : [];
+  const rows = (Array.isArray(chart?.rows) ? [...chart.rows] : []).sort((a, b) => {
+    const labelA = clean(a?.countryLabel) || "Unknown";
+    const labelB = clean(b?.countryLabel) || "Unknown";
+    if (labelA === "Others" && labelB !== "Others") return 1;
+    if (labelB === "Others" && labelA !== "Others") return -1;
+    return Number(b?.guestCount || 0) - Number(a?.guestCount || 0) || labelA.localeCompare(labelB);
+  });
   const total = rows.reduce((sum, row) => sum + Number(row?.guestCount || 0), 0);
   const palette = guestsBiColorPalette();
   let offset = 0;

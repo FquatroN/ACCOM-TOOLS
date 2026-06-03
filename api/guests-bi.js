@@ -84,7 +84,11 @@ module.exports = async function handler(req, res) {
       year,
       rows: mappedPieRows
         .filter((row) => row.chartYear === year)
-        .sort((a, b) => (a.sortOrder - b.sortOrder) || b.guestCount - a.guestCount || a.countryLabel.localeCompare(b.countryLabel))
+        .sort((a, b) => {
+          if (a.countryLabel === "Others" && b.countryLabel !== "Others") return 1;
+          if (b.countryLabel === "Others" && a.countryLabel !== "Others") return -1;
+          return b.guestCount - a.guestCount || a.countryLabel.localeCompare(b.countryLabel);
+        })
         .map((row) => ({
           countryLabel: row.countryLabel,
           guestCount: row.guestCount,
