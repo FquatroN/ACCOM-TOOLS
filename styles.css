@@ -1826,12 +1826,21 @@ select:disabled {
 
 .guests-bi-line-wrap {
   display: grid;
-  gap: 0.8rem;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 0.9rem;
+  align-items: start;
 }
 
 .guests-bi-line-svg {
   width: 100%;
   min-height: 360px;
+}
+
+.guests-bi-line-legend {
+  align-content: start;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 0.15rem;
 }
 
 .guests-bi-grid-line {
@@ -4329,6 +4338,10 @@ select:disabled {
     grid-template-columns: 1fr;
   }
 
+  .guests-bi-line-wrap {
+    grid-template-columns: 1fr;
+  }
+
   .laundry-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4728,6 +4741,10 @@ select:disabled {
   }
 
   .guests-bi-pie-body {
+    grid-template-columns: 1fr;
+  }
+
+  .guests-bi-line-wrap {
     grid-template-columns: 1fr;
   }
 
