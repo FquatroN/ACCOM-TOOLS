@@ -2557,6 +2557,24 @@
                     <textarea id="services-automatic-email-recipients" rows="3" placeholder="email1@example.com, email2@example.com"></textarea>
                     <small class="field-hint">Used on automatic create/update service emails. Separate addresses with commas or new lines.</small>
                   </label>
+                  <div class="grid settings-grid">
+                    <label class="filter-checkbox">
+                      Approval reminder emails
+                      <input type="checkbox" id="services-approval-reminder-enabled" />
+                    </label>
+                    <label>
+                      Approval reminder time
+                      <input id="services-approval-reminder-time" type="time" />
+                    </label>
+                    <label>
+                      Approval reminder test email
+                      <input id="services-approval-reminder-test-email" type="email" placeholder="name@example.com" />
+                    </label>
+                    <label style="align-self:end;">
+                      &nbsp;
+                      <button id="services-approval-reminder-test" type="button" class="ghost">Send Test</button>
+                    </label>
+                  </div>
                   <label class="filter-checkbox">
                     Live flight status
                     <input type="checkbox" id="services-live-flight-status-enabled" checked />

@@ -2,7 +2,8 @@
   "crons": [
     { "path": "/api/email-automation", "schedule": "* * * * *" },
     { "path": "/api/laundry-email-automation", "schedule": "* * * * *" },
-    { "path": "/api/maintenance-overdue-email-automation", "schedule": "* * * * *" }
+    { "path": "/api/maintenance-overdue-email-automation", "schedule": "* * * * *" },
+    { "path": "/api/services-approval-reminder-automation", "schedule": "* * * * *" }
   ],
   "redirects": [
     { "source": "/", "destination": "/gate.html", "permanent": false },

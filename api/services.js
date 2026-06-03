@@ -89,10 +89,27 @@ function normalizeRecipients(value) {
     });
 }
 
+function normalizeBool(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  const raw = cleanText(value).toLowerCase();
+  if (!raw) return fallback;
+  if (["true", "1", "yes", "on"].includes(raw)) return true;
+  if (["false", "0", "no", "off"].includes(raw)) return false;
+  return fallback;
+}
+
+function normalizeTime(value, fallback = "09:00") {
+  const raw = cleanText(value);
+  return /^\d{2}:\d{2}$/.test(raw) ? raw : fallback;
+}
+
 function normalizeServiceSettingsPayload(payload) {
   const source = payload && typeof payload === "object" ? payload : {};
   return {
     automaticEmailRecipients: normalizeRecipients(source.automaticEmailRecipients || source.automatic_email_recipients),
+    approvalReminderEnabled: normalizeBool(source.approvalReminderEnabled ?? source.approval_reminder_enabled, false),
+    approvalReminderTime: normalizeTime(source.approvalReminderTime ?? source.approval_reminder_time, "09:00"),
+    approvalReminderTestEmail: cleanText(source.approvalReminderTestEmail ?? source.approval_reminder_test_email).toLowerCase(),
     serviceConfigs: normalizeServiceConfigs(source),
   };
 }

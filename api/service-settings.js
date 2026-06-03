@@ -160,6 +160,11 @@ function normalizeRecipients(value) {
     });
 }
 
+function normalizeTime(value, fallback = "09:00") {
+  const raw = cleanText(value);
+  return /^\d{2}:\d{2}$/.test(raw) ? raw : fallback;
+}
+
 function normalizeBool(value, fallback = false) {
   if (typeof value === "boolean") return value;
   const raw = cleanText(value).toLowerCase();
@@ -237,6 +242,9 @@ function sanitizeSettings(input = {}) {
     });
   return {
     automaticEmailRecipients: normalizeRecipients(source.automaticEmailRecipients || source.automatic_email_recipients),
+    approvalReminderEnabled: normalizeBool(source.approvalReminderEnabled ?? source.approval_reminder_enabled, false),
+    approvalReminderTime: normalizeTime(source.approvalReminderTime ?? source.approval_reminder_time, "09:00"),
+    approvalReminderTestEmail: cleanText(source.approvalReminderTestEmail ?? source.approval_reminder_test_email).toLowerCase(),
     liveFlightStatusEnabled: normalizeBool(source.liveFlightStatusEnabled ?? source.live_flight_status_enabled, true),
     serviceConfigs: normalized.length ? normalized : DEFAULT_SERVICE_TYPES,
   };
@@ -247,6 +255,9 @@ function filterSettingsForProvider(settings, user) {
   const userEmail = cleanText(user?.email).toLowerCase();
   return {
     automaticEmailRecipients: normalizeRecipients(settings?.automaticEmailRecipients),
+    approvalReminderEnabled: normalizeBool(settings?.approvalReminderEnabled, false),
+    approvalReminderTime: normalizeTime(settings?.approvalReminderTime, "09:00"),
+    approvalReminderTestEmail: cleanText(settings?.approvalReminderTestEmail).toLowerCase(),
     liveFlightStatusEnabled: normalizeBool(settings?.liveFlightStatusEnabled, true),
     serviceConfigs: (Array.isArray(settings?.serviceConfigs) ? settings.serviceConfigs : []).filter(
       (item) => cleanText(item.providerUserId) === userId || cleanText(item.providerEmail).toLowerCase() === userEmail

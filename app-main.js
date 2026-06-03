@@ -261,6 +261,9 @@ Lisboa Central Hostel`,
 
 const DEFAULT_SERVICE_SETTINGS = {
   automaticEmailRecipients: [],
+  approvalReminderEnabled: false,
+  approvalReminderTime: "09:00",
+  approvalReminderTestEmail: "",
   liveFlightStatusEnabled: true,
   serviceConfigs: [
     {
@@ -1484,6 +1487,10 @@ const els = {
   servicesSettingsConfirmationPanel: document.getElementById("services-settings-confirmation-panel"),
   servicesConfigsBody: document.getElementById("services-configs-body"),
   servicesAutomaticEmailRecipients: document.getElementById("services-automatic-email-recipients"),
+  servicesApprovalReminderEnabled: document.getElementById("services-approval-reminder-enabled"),
+  servicesApprovalReminderTime: document.getElementById("services-approval-reminder-time"),
+  servicesApprovalReminderTestEmail: document.getElementById("services-approval-reminder-test-email"),
+  servicesApprovalReminderTest: document.getElementById("services-approval-reminder-test"),
   servicesLiveFlightStatusEnabled: document.getElementById("services-live-flight-status-enabled"),
   servicesTemplateServiceType: document.getElementById("services-template-service-type"),
   servicesTemplateLanguage: document.getElementById("services-template-language"),
@@ -2313,6 +2320,10 @@ function bindEvents() {
   els.servicesSettingsConfirmationTab.addEventListener("click", () => setServiceSettingsTab("confirmation"));
   els.servicesConfigsBody.addEventListener("input", onServiceSettingsInput);
   els.servicesAutomaticEmailRecipients.addEventListener("input", onServiceSettingsInput);
+  els.servicesApprovalReminderEnabled?.addEventListener("input", onServiceSettingsInput);
+  els.servicesApprovalReminderTime?.addEventListener("input", onServiceSettingsInput);
+  els.servicesApprovalReminderTestEmail?.addEventListener("input", onServiceSettingsInput);
+  els.servicesApprovalReminderTest?.addEventListener("click", sendServiceApprovalReminderTest);
   els.servicesLiveFlightStatusEnabled?.addEventListener("input", onServiceSettingsInput);
   [els.servicesPriceOneWay13, els.servicesPriceOneWay47, els.servicesPriceOneWay811, els.servicesPriceOneWay1216, els.servicesPriceReturn13, els.servicesPriceReturn47, els.servicesPriceReturn811, els.servicesPriceReturn1216].forEach((el) =>
     el.addEventListener("input", onServiceSettingsInput)
@@ -6424,6 +6435,13 @@ function sanitizeServiceConfigClient(item = {}) {
 function sanitizeServiceSettingsClient(settings) {
   const output = clone(DEFAULT_SERVICE_SETTINGS);
   output.automaticEmailRecipients = parseEmailList(settings?.automaticEmailRecipients || settings?.automatic_email_recipients);
+  const approvalReminderEnabled = settings?.approvalReminderEnabled ?? settings?.approval_reminder_enabled;
+  output.approvalReminderEnabled = typeof approvalReminderEnabled === "boolean"
+    ? approvalReminderEnabled
+    : ["true", "1", "yes", "on"].includes(clean(approvalReminderEnabled).toLowerCase());
+  const approvalReminderTime = clean(settings?.approvalReminderTime ?? settings?.approval_reminder_time);
+  output.approvalReminderTime = /^\d{2}:\d{2}$/.test(approvalReminderTime) ? approvalReminderTime : DEFAULT_SERVICE_SETTINGS.approvalReminderTime;
+  output.approvalReminderTestEmail = clean(settings?.approvalReminderTestEmail ?? settings?.approval_reminder_test_email).toLowerCase();
   const liveFlightStatusEnabled = settings?.liveFlightStatusEnabled ?? settings?.live_flight_status_enabled;
   output.liveFlightStatusEnabled = typeof liveFlightStatusEnabled === "boolean"
     ? liveFlightStatusEnabled
@@ -7560,6 +7578,15 @@ function renderServiceSettings() {
   if (els.servicesAutomaticEmailRecipients) {
     els.servicesAutomaticEmailRecipients.value = (state.serviceSettings?.automaticEmailRecipients || []).join("\n");
   }
+  if (els.servicesApprovalReminderEnabled) {
+    els.servicesApprovalReminderEnabled.checked = !!state.serviceSettings?.approvalReminderEnabled;
+  }
+  if (els.servicesApprovalReminderTime) {
+    els.servicesApprovalReminderTime.value = clean(state.serviceSettings?.approvalReminderTime) || DEFAULT_SERVICE_SETTINGS.approvalReminderTime;
+  }
+  if (els.servicesApprovalReminderTestEmail) {
+    els.servicesApprovalReminderTestEmail.value = clean(state.serviceSettings?.approvalReminderTestEmail).toLowerCase();
+  }
   if (els.servicesLiveFlightStatusEnabled) {
     els.servicesLiveFlightStatusEnabled.checked = serviceLiveFlightStatusEnabled();
   }
@@ -7592,6 +7619,12 @@ function renderServiceSettings() {
 
 function onServiceSettingsInput() {
   state.serviceSettings.automaticEmailRecipients = parseEmailList(els.servicesAutomaticEmailRecipients?.value);
+  state.serviceSettings.approvalReminderEnabled = !!els.servicesApprovalReminderEnabled?.checked;
+  const approvalReminderTime = clean(els.servicesApprovalReminderTime?.value);
+  state.serviceSettings.approvalReminderTime = /^\d{2}:\d{2}$/.test(approvalReminderTime)
+    ? approvalReminderTime
+    : DEFAULT_SERVICE_SETTINGS.approvalReminderTime;
+  state.serviceSettings.approvalReminderTestEmail = clean(els.servicesApprovalReminderTestEmail?.value).toLowerCase();
   state.serviceSettings.liveFlightStatusEnabled = !!els.servicesLiveFlightStatusEnabled?.checked;
   state.serviceSettings.serviceConfigs = serviceConfigs().map((config, index) => {
     const providerId = clean(els.servicesConfigsBody.querySelector(`[data-service-setting-provider="${index}"]`)?.value);
@@ -17614,6 +17647,30 @@ function onLogoHomeClick() {
   if (state.currentView === "financial-docs" || state.currentView === "guests-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
+  }
+}
+
+async function sendServiceApprovalReminderTest() {
+  onServiceSettingsInput();
+  const email = clean(state.serviceSettings?.approvalReminderTestEmail).toLowerCase();
+  if (!email) {
+    setServicesSettingsStatus("Approval reminder test email is required.");
+    showToast("Approval reminder test email is required.", "error");
+    return;
+  }
+  try {
+    setServicesSettingsStatus("Sending approval reminder test...");
+    const result = await api("/api/services-approval-reminder-automation?force=1&test=1", {
+      method: "POST",
+      body: { email },
+    });
+    const count = Number(result?.serviceCount || 0);
+    const message = `Approval reminder test sent to ${email} (${count} submitted service${count === 1 ? "" : "s"}).`;
+    setServicesSettingsStatus(message);
+    showToast(message, "success");
+  } catch (error) {
+    setServicesSettingsStatus(`Approval reminder test failed: ${error.message}`);
+    showToast(`Approval reminder test failed: ${error.message}`, "error");
   }
 }
 
