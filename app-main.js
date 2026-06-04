@@ -18142,6 +18142,7 @@ function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel, m
     if (normalizedMode === "percent") return `${Number(value || 0).toFixed(1)}%`;
     return String(Math.round(Number(value || 0)));
   };
+  const formatPointTooltip = (countryLabel, label, value) => `${countryLabel} - ${label}: ${formatAxisValue(value)}`;
   const paths = chartSeries.map((item, index) => {
     const values = Array.isArray(item.values) ? item.values : [];
     const d = values.map((value, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${xFor(pointIndex)} ${yFor(value)}`).join(" ");
@@ -18161,7 +18162,7 @@ function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel, m
       <line x1="${margin.left}" y1="${margin.top + innerHeight}" x2="${width - margin.right}" y2="${margin.top + innerHeight}" class="guests-bi-axis-line"></line>
       ${xLabels.map((label, index) => `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="guests-bi-axis-text">${escape(label)}</text>`).join("")}
       ${paths.map((path) => `<path d="${path.d}" fill="none" stroke="${path.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>`).join("")}
-      ${paths.map((path) => path.values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${path.color}"></circle>`).join("")).join("")}
+      ${paths.map((path) => path.values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${path.color}"><title>${escape(formatPointTooltip(path.label, xLabels[index] || "", value))}</title></circle>`).join("")).join("")}
     </svg>
     <div class="guests-bi-line-legend">
       ${paths.map((path) => `<div class="guests-bi-legend-item">
