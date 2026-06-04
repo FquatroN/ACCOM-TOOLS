@@ -51,13 +51,13 @@ function normalizeCountryLabel(value, fallbackCode = "") {
 
 async function fetchAllGuestsBiSourceRows(selectedHa = "") {
   const rows = [];
-  const pageSize = 5000;
+  const pageSize = 1000;
   let offset = 0;
   while (true) {
     const query = [
       "guest_records?select=check_in,check_out,birth_date,ha,nationality,nationality_code",
       "check_in=not.is.null",
-      "order=check_in.asc",
+      "order=check_in.desc",
       `limit=${pageSize}`,
       `offset=${offset}`,
       selectedHa ? `ha=eq.${encodeURIComponent(selectedHa)}` : "",
@@ -78,6 +78,7 @@ function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
       .map((row) => clean(row?.check_in).slice(0, 4))
       .filter((value) => /^\d{4}$/.test(value))
   )].sort((a, b) => b.localeCompare(a));
+  const yearsForFilter = [...new Set([...availableYears, String(selectedYear)])].sort((a, b) => b.localeCompare(a));
 
   const monthMap = new Map();
   for (let month = 1; month <= 12; month += 1) {
@@ -197,7 +198,7 @@ function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
 
   return {
     year: String(selectedYear),
-    years: availableYears.length ? availableYears : [String(selectedYear)],
+    years: yearsForFilter.length ? yearsForFilter : [String(selectedYear)],
     rows: mappedRows,
     totals,
     nationalities: {
@@ -228,8 +229,7 @@ module.exports = async function handler(req, res) {
         .filter((year) => /^\d{4}$/.test(year))
     )].sort((a, b) => b.localeCompare(a));
     const requestedYear = parseYearValue(req.query?.year);
-    const fallbackYear = parseYearValue(availableYears[0]) || new Date().getUTCFullYear();
-    const selectedYear = requestedYear || fallbackYear;
+    const selectedYear = requestedYear || new Date().getUTCFullYear();
     const payload = buildGuestsBiFallbackPayload(fallbackSourceRows, selectedYear);
     res.status(200).json({
       ...payload,
