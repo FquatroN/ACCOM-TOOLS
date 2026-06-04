@@ -947,6 +947,7 @@ const state = {
   guestsBiLoaded: false,
   guestsBiLoading: false,
   guestsBiYear: "",
+  guestsBiHa: "",
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -1191,6 +1192,7 @@ const els = {
   guestsBiTabNationalities: document.getElementById("guests-bi-tab-nationalities"),
   guestsBiFilters: document.getElementById("guests-bi-filters"),
   guestsBiFilterYear: document.getElementById("guests-bi-filter-year"),
+  guestsBiFilterHa: document.getElementById("guests-bi-filter-ha"),
   guestsBiPanelTmt: document.getElementById("guests-bi-panel-tmt"),
   guestsBiPanelNationalities: document.getElementById("guests-bi-panel-nationalities"),
   guestsBiCount: document.getElementById("guests-bi-count"),
@@ -1884,6 +1886,7 @@ function bindEvents() {
   els.settingsMenuLaundry.addEventListener("click", () => setSettingsSection("laundry"));
   els.settingsMenuAdminUsers.addEventListener("click", () => setSettingsSection("admin-users"));
   els.guestsBiFilterYear?.addEventListener("change", onGuestsBiYearChange);
+  els.guestsBiFilterHa?.addEventListener("change", onGuestsBiHaChange);
   els.guestsBiTabTmt?.addEventListener("click", () => setGuestsBiTab("tmt"));
   els.guestsBiTabNationalities?.addEventListener("click", () => setGuestsBiTab("nationalities"));
   els.guestsBiLineModeAbsolute?.addEventListener("click", () => setGuestsBiLineMode("absolute"));
@@ -17932,6 +17935,11 @@ function currentGuestsBiYear() {
   return clean(els.guestsBiFilterYear?.value || state.guestsBiYear);
 }
 
+function currentGuestsBiHa() {
+  const value = clean(els.guestsBiFilterHa?.value || state.guestsBiHa).toUpperCase();
+  return value === "H" || value === "A" ? value : "";
+}
+
 function guestsBiColorPalette() {
   return [
     "#0f766e", "#2563eb", "#ea580c", "#7c3aed", "#dc2626",
@@ -17946,6 +17954,8 @@ function buildGuestsBiUrlClient() {
   const params = new URLSearchParams();
   const year = currentGuestsBiYear();
   if (year) params.set("year", year);
+  const ha = currentGuestsBiHa();
+  if (ha) params.set("ha", ha);
   const query = params.toString();
   return `/api/guests-bi${query ? `?${query}` : ""}`;
 }
@@ -17957,6 +17967,7 @@ async function loadGuestsBiData({ silent = false } = {}) {
     state.guestsBiRows = Array.isArray(result?.rows) ? result.rows : [];
     state.guestsBiYears = Array.isArray(result?.years) ? result.years : [];
     state.guestsBiYear = clean(result?.year);
+    state.guestsBiHa = clean(result?.ha).toUpperCase();
     state.guestsBiTotals = {
       totalNights: Number(result?.totals?.totalNights || 0),
       exempt7Days: Number(result?.totals?.exempt7Days || 0),
@@ -17995,6 +18006,11 @@ async function ensureGuestsBiData() {
 
 function onGuestsBiYearChange() {
   state.guestsBiYear = clean(els.guestsBiFilterYear?.value);
+  loadGuestsBiData({ silent: true }).catch(() => {});
+}
+
+function onGuestsBiHaChange() {
+  state.guestsBiHa = clean(els.guestsBiFilterHa?.value).toUpperCase();
   loadGuestsBiData({ silent: true }).catch(() => {});
 }
 
@@ -18205,13 +18221,16 @@ function renderGuestsBi() {
   els.guestsBiMonthLineModeAbsolute?.classList.toggle("ghost", state.guestsBiNationalityMonthLineMode === "percent");
   els.guestsBiMonthLineModePercent?.classList.toggle("active-tab", state.guestsBiNationalityMonthLineMode === "percent");
   els.guestsBiMonthLineModePercent?.classList.toggle("ghost", state.guestsBiNationalityMonthLineMode !== "percent");
-  if (els.guestsBiFilters) els.guestsBiFilters.hidden = !isTmt;
+  if (els.guestsBiFilters) els.guestsBiFilters.hidden = false;
   if (els.guestsBiPanelTmt) els.guestsBiPanelTmt.hidden = !isTmt;
   if (els.guestsBiPanelNationalities) els.guestsBiPanelNationalities.hidden = isTmt;
   const years = state.guestsBiYears.length ? state.guestsBiYears : [state.guestsBiYear || String(new Date().getFullYear())];
   if (els.guestsBiFilterYear) {
     els.guestsBiFilterYear.innerHTML = years.map((year) => `<option value="${escape(year)}">${escape(year)}</option>`).join("");
     if (clean(state.guestsBiYear)) els.guestsBiFilterYear.value = state.guestsBiYear;
+  }
+  if (els.guestsBiFilterHa) {
+    els.guestsBiFilterHa.value = currentGuestsBiHa();
   }
   const rows = Array.isArray(state.guestsBiRows) ? state.guestsBiRows : [];
   if (els.guestsBiCount) els.guestsBiCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;

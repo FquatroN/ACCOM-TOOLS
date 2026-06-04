@@ -11,6 +11,11 @@ function parseYearValue(value) {
   return Number.isFinite(year) ? year : null;
 }
 
+function parseHaValue(value) {
+  const raw = clean(value).toUpperCase();
+  return raw === "H" || raw === "A" ? raw : "";
+}
+
 module.exports = async function handler(req, res) {
   try {
     await requireFeature(req, "app", "guests-bi");
@@ -20,9 +25,11 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    const selectedHa = parseHaValue(req.query?.ha);
+
     const yearRows = await restQuery("rpc/guests_bi_years", {
       method: "POST",
-      body: {},
+      body: { p_ha: selectedHa || null },
     });
     const availableYears = [...new Set((Array.isArray(yearRows) ? yearRows : [])
       .map((row) => clean(row?.year))
@@ -35,20 +42,20 @@ module.exports = async function handler(req, res) {
 
     const rows = await restQuery("rpc/guests_bi_tmt", {
       method: "POST",
-      body: { p_year: selectedYear },
+      body: { p_year: selectedYear, p_ha: selectedHa || null },
     });
     const [pieRows, lineRows, monthLineRows] = await Promise.all([
       restQuery("rpc/guests_bi_nationality_pies", {
         method: "POST",
-        body: {},
+        body: { p_ha: selectedHa || null },
       }),
       restQuery("rpc/guests_bi_nationality_line", {
         method: "POST",
-        body: {},
+        body: { p_ha: selectedHa || null },
       }),
       restQuery("rpc/guests_bi_nationality_month_line", {
         method: "POST",
-        body: {},
+        body: { p_ha: selectedHa || null },
       }),
     ]);
 
@@ -154,6 +161,7 @@ module.exports = async function handler(req, res) {
 
     res.status(200).json({
       year: String(selectedYear),
+      ha: selectedHa,
       years: availableYears.length ? availableYears : [String(selectedYear)],
       rows: mappedRows,
       totals,

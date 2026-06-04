@@ -4931,7 +4931,7 @@ button[id^="close-settings"] {
 }
 
 .guests-bi-filters {
-  grid-template-columns: 140px;
+  grid-template-columns: 140px 110px;
 }
 
 .guests-bi-table th,
