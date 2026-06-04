@@ -257,8 +257,7 @@ module.exports = async function handler(req, res) {
       }),
     ]);
 
-    const rpcLooksEmpty = (!Array.isArray(yearRows) || !yearRows.length)
-      && (!Array.isArray(rows) || !rows.length)
+    const rpcLooksEmpty = (!Array.isArray(rows) || !rows.length)
       && (!Array.isArray(pieRows) || !pieRows.length)
       && (!Array.isArray(lineRows) || !lineRows.length)
       && (!Array.isArray(monthLineRows) || !monthLineRows.length);
