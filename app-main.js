@@ -18212,7 +18212,8 @@ function renderGuestsBiNationalityMonthLine() {
 }
 
 function renderGuestsBiNationalityPivot() {
-  const years = Array.isArray(state.guestsBiNationalityPivotYears) ? state.guestsBiNationalityPivotYears : [];
+  const years = (Array.isArray(state.guestsBiNationalityPivotYears) ? [...state.guestsBiNationalityPivotYears] : [])
+    .sort((a, b) => a.localeCompare(b));
   const rows = Array.isArray(state.guestsBiNationalityPivotRows) ? state.guestsBiNationalityPivotRows : [];
   if (els.guestsBiNationalitiesPivotHead) {
     els.guestsBiNationalitiesPivotHead.innerHTML = `<tr>

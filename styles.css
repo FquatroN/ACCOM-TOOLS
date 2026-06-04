@@ -4944,6 +4944,15 @@ button[id^="close-settings"] {
   text-align: left;
 }
 
+.guests-bi-nationalities-table {
+  font-size: 0.84rem;
+}
+
+.guests-bi-nationalities-table th,
+.guests-bi-nationalities-table td {
+  padding: 0.3rem 0.4rem;
+}
+
 .session-box .icon-btn.active {
   background: rgba(16, 37, 63, 0.12);
   color: var(--ink);
