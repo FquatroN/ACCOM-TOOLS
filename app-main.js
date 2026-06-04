@@ -17976,13 +17976,15 @@ function guestsBiFilterElements(tab = state.guestsBiTab) {
 function currentGuestsBiYear(tab = state.guestsBiTab) {
   const filters = guestsBiFilterState(tab);
   const elements = guestsBiFilterElements(tab);
-  return clean(elements.year?.value || filters.year || state.guestsBiYear);
+  if (elements.year) return clean(elements.year.value);
+  return clean(filters.year || state.guestsBiYear);
 }
 
 function currentGuestsBiHa(tab = state.guestsBiTab) {
   const filters = guestsBiFilterState(tab);
   const elements = guestsBiFilterElements(tab);
-  const value = clean(elements.ha?.value || filters.ha || state.guestsBiHa).toUpperCase();
+  const rawValue = elements.ha ? elements.ha.value : (filters.ha || state.guestsBiHa);
+  const value = clean(rawValue).toUpperCase();
   return value === "H" || value === "A" ? value : "";
 }
 
