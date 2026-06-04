@@ -79,7 +79,7 @@ module.exports = async function handler(req, res) {
     }));
 
     const currentCalendarYear = new Date().getFullYear();
-    const pieYears = [0, 1, 2].map((offset) => String(currentCalendarYear - offset));
+    const pieYears = [0, 1, 2, 3].map((offset) => String(currentCalendarYear - offset));
     const pieCharts = pieYears.map((year) => ({
       year,
       rows: mappedPieRows
