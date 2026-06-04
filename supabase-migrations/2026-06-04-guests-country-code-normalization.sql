@@ -888,13 +888,11 @@ language sql
 immutable
 as $$
   select nullif(
-    upper(
-      regexp_replace(
-        trim(unaccent(public.guest_country_fix_text(coalesce(p_value, '')))),
-        '[^A-Z0-9]+',
-        ' ',
-        'g'
-      )
+    regexp_replace(
+      upper(trim(unaccent(public.guest_country_fix_text(coalesce(p_value, ''))))),
+      '[^A-Z0-9]+',
+      ' ',
+      'g'
     ),
     ''
   );
