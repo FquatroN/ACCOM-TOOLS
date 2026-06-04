@@ -18227,7 +18227,7 @@ function renderGuestsBiNationalityPivot() {
       ? rows.map((row) => `<tr>
         <td>${escape(row.countryLabel || "-")}</td>
         ${years.map((year) => `<td>${escape(String(Number(row.values?.[year] || 0)))}</td>`).join("")}
-        <td>${escape(String(Number(row.total || 0)))}</td>
+        <td class="guests-bi-total-cell">${escape(String(Number(row.total || 0)))}</td>
       </tr>`).join("")
       : '<tr><td colspan="99" class="empty">No nationalities found.</td></tr>';
   }

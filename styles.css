@@ -4945,12 +4945,17 @@ button[id^="close-settings"] {
 }
 
 .guests-bi-nationalities-table {
-  font-size: 0.84rem;
+  font-size: 0.78rem;
 }
 
 .guests-bi-nationalities-table th,
 .guests-bi-nationalities-table td {
-  padding: 0.3rem 0.4rem;
+  padding: 0.26rem 0.36rem;
+}
+
+.guests-bi-nationalities-table .guests-bi-total-cell,
+.guests-bi-nationalities-table tfoot th {
+  font-weight: 700;
 }
 
 .session-box .icon-btn.active {
