@@ -864,6 +864,78 @@ values
 on conflict (lookup_key) do update
 set country_code = excluded.country_code;
 
+-- Final long-tail aliases from the remaining unresolved nationality and
+-- issuer_country values after the main normalization passes.
+insert into public.guest_country_code_map (lookup_key, country_code)
+values
+  ('AUTRIA', 'AUT'),
+  ('BAN', 'BGD'),
+  ('BR', 'BRA'),
+  ('CG MEXICO', 'MEX'),
+  ('CHI', 'CHL'),
+  ('CHINA', 'CHN'),
+  ('COLOMBA', 'COL'),
+  ('COMBIA', 'COL'),
+  ('CROATIA', 'HRV'),
+  ('CZ', 'CZE'),
+  ('DANMARK', 'DNK'),
+  ('DEUTSLAND', 'D'),
+  ('DOS UNIDOS DA AMERICA', 'USA'),
+  ('ESPAHA', 'ESP'),
+  ('ESPAMHA', 'ESP'),
+  ('ESPANNHA', 'ESP'),
+  ('FILANDIA', 'FIN'),
+  ('FINLADIA', 'FIN'),
+  ('FINLANIA', 'FIN'),
+  ('FRANCIA', 'FRA'),
+  ('GERGIA', 'GEO'),
+  ('GRE', 'GRC'),
+  ('GUINE', 'GIN'),
+  ('HLANDA', 'NLD'),
+  ('HOLANDA', 'NLD'),
+  ('HUNGARY', 'HUN'),
+  ('IRAN', 'IRN'),
+  ('IRLAND', 'IRL'),
+  ('JAP', 'JPN'),
+  ('JAPAAO', 'JPN'),
+  ('JAPAP', 'JPN'),
+  ('JHOLANDA', 'NLD'),
+  ('JNP', 'JPN'),
+  ('KAZAQUISTAO', 'KAZ'),
+  ('LETONIA', 'LVA'),
+  ('MAL', 'MYS'),
+  ('MALASYA', 'MYS'),
+  ('MALAYSIA', 'MYS'),
+  ('MAROCCO', 'MAR'),
+  ('MYANMAR BIRMANIA', 'MMR'),
+  ('N ZELAND', 'NZL'),
+  ('NORUEGUESA', 'NOR'),
+  ('OSTERREICH', 'AUT'),
+  ('PAKISTAN', 'PAK'),
+  ('REP DEMOC CONGO ZAIRE', 'COD'),
+  ('REPUBLICA DA BIELORRUSSIA', 'BLR'),
+  ('REPUBLICA UCRANIA', 'UKR'),
+  ('REINO UNIDO E IRALNDA', 'GBR'),
+  ('REINO UNIDO E IRLANDA', 'GBR'),
+  ('RUSSIAN', 'RUS'),
+  ('SANTA LUCIA', 'LCA'),
+  ('SERBIA', 'SRB'),
+  ('SWEDEN SUEDE', 'SWE'),
+  ('TRINIDAD E TOBACO', 'TTO'),
+  ('TRINIDAD TOBAGO', 'TTO'),
+  ('U K', 'GBR'),
+  ('VISEU', 'PRT'),
+  ('LISBOA', 'PRT'),
+  ('MADRID', 'ESP'),
+  ('VALENCIA', 'ESP'),
+  ('LONDRES', 'GBR'),
+  ('NOVA IORQUE', 'USA'),
+  ('QUEBEC', 'CAN'),
+  ('MARKT SCHWABEN', 'D'),
+  ('VILLINGEN SCHWENNINGEN', 'D')
+on conflict (lookup_key) do update
+set country_code = excluded.country_code;
+
 create or replace function public.guest_country_fix_text(p_value text)
 returns text
 language plpgsql
