@@ -18,7 +18,7 @@ values
   ('AGO', 'AGO'),
   ('ALB', 'ALB'),
   ('ALBANIA', 'ALB'),
-  ('ALEMANHA', 'D'),
+  ('ALEMANHA', 'DEU'),
   ('AND', 'AND'),
   ('ANDORRA', 'AND'),
   ('ANGOLA', 'AGO'),
@@ -118,7 +118,8 @@ values
   ('CUBA', 'CUB'),
   ('CYP', 'CYP'),
   ('CZE', 'CZE'),
-  ('D', 'D'),
+  ('D', 'DEU'),
+  ('DEU', 'DEU'),
   ('DINAMARCA', 'DNK'),
   ('DJI', 'DJI'),
   ('DMA', 'DMA'),
@@ -497,6 +498,28 @@ values
 on conflict (lookup_key) do update
 set country_code = excluded.country_code;
 
+create or replace function public.guest_country_fix_text(p_value text)
+returns text
+language plpgsql
+immutable
+as $$
+declare
+  raw_value text := btrim(coalesce(p_value, ''), E' \t\n\r"');
+  repaired_value text := raw_value;
+begin
+  begin
+    repaired_value := convert_from(convert_to(raw_value, 'LATIN1'), 'UTF8');
+  exception
+    when others then
+      repaired_value := raw_value;
+  end;
+  if repaired_value is not null and repaired_value <> '' then
+    return repaired_value;
+  end if;
+  return raw_value;
+end;
+$$;
+
 create or replace function public.guest_country_lookup_key(p_value text)
 returns text
 language sql
@@ -505,7 +528,7 @@ as $$
   select nullif(
     upper(
       regexp_replace(
-        trim(unaccent(coalesce(p_value, ''))),
+        trim(unaccent(public.guest_country_fix_text(coalesce(p_value, '')))),
         '[^A-Z0-9]+',
         ' ',
         'g'
@@ -513,6 +536,18 @@ as $$
     ),
     ''
   );
+$$;
+
+create or replace function public.guest_country_canonical_code(p_code text)
+returns text
+language sql
+immutable
+as $$
+  select case upper(trim(coalesce(p_code, '')))
+    when 'D' then 'DEU'
+    when 'PTR' then 'PRT'
+    else upper(trim(coalesce(p_code, '')))
+  end;
 $$;
 
 create or replace function public.guest_country_resolve_code(p_value text)
@@ -537,13 +572,21 @@ set issuer_country_code = public.guest_country_resolve_code(issuer_country)
 where coalesce(trim(issuer_country_code), '') = ''
   and coalesce(trim(issuer_country), '') <> '';
 
+update public.guest_records
+set nationality_code = public.guest_country_canonical_code(nationality_code)
+where upper(trim(coalesce(nationality_code, ''))) in ('D', 'PTR');
+
+update public.guest_records
+set issuer_country_code = public.guest_country_canonical_code(issuer_country_code)
+where upper(trim(coalesce(issuer_country_code, ''))) in ('D', 'PTR');
+
 create or replace function public.guests_bi_nationality_key(p_nationality text, p_nationality_code text)
 returns text
 language sql
 immutable
 as $$
   select coalesce(
-    nullif(upper(trim(coalesce(p_nationality_code, ''))), ''),
+    nullif(public.guest_country_canonical_code(p_nationality_code), ''),
     public.guest_country_resolve_code(p_nationality),
     public.guest_country_lookup_key(p_nationality),
     'UNKNOWN'
