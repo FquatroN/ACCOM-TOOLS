@@ -1,5 +1,5 @@
 -- Normalizes guest nationality/issuer country codes for existing guest_records rows
--- that still have blank nationality_code and/or issuer_country_code.
+-- using the same built-in country list and aliases used by the app/SEF integration.
 
 create extension if not exists unaccent;
 
@@ -8,9 +8,10 @@ create table if not exists public.guest_country_code_map (
   country_code text not null
 );
 
+truncate table public.guest_country_code_map;
+
 insert into public.guest_country_code_map (lookup_key, country_code)
 values
-  ('ADOS UNIDOS DA AMERICA', 'USA'),
   ('AFEGANISTAO', 'AFG'),
   ('AFG', 'AFG'),
   ('AFRICA DO SUL', 'ZAF'),
@@ -18,7 +19,7 @@ values
   ('AGO', 'AGO'),
   ('ALB', 'ALB'),
   ('ALBANIA', 'ALB'),
-  ('ALEMANHA', 'DEU'),
+  ('ALEMANHA', 'D'),
   ('AND', 'AND'),
   ('ANDORRA', 'AND'),
   ('ANGOLA', 'AGO'),
@@ -44,7 +45,6 @@ values
   ('BAREM', 'BHR'),
   ('BDI', 'BDI'),
   ('BEL', 'BEL'),
-  ('BELARUS', 'BLR'),
   ('BELGICA', 'BEL'),
   ('BELIZE', 'BLZ'),
   ('BEN', 'BEN'),
@@ -63,15 +63,12 @@ values
   ('BMU', 'BMU'),
   ('BOL', 'BOL'),
   ('BOLIVIA', 'BOL'),
-  ('BOSNIA', 'BIH'),
   ('BOSNIA HERZEGOVINA', 'BIH'),
   ('BOTSWANA', 'BWA'),
   ('BRA', 'BRA'),
   ('BRASIL', 'BRA'),
-  ('BRAZIL', 'BRA'),
   ('BRB', 'BRB'),
   ('BRN', 'BRN'),
-  ('BRUNEI', 'BRN'),
   ('BRUNEI DARUSSALAM', 'BRN'),
   ('BTN', 'BTN'),
   ('BULGARIA', 'BGR'),
@@ -94,7 +91,6 @@ values
   ('CHIPRE', 'CYP'),
   ('CHL', 'CHL'),
   ('CHN', 'CHN'),
-  ('CISKEI', 'ZAF'),
   ('CIV', 'CIV'),
   ('CMR', 'CMR'),
   ('COD', 'COD'),
@@ -118,8 +114,7 @@ values
   ('CUBA', 'CUB'),
   ('CYP', 'CYP'),
   ('CZE', 'CZE'),
-  ('D', 'DEU'),
-  ('DEU', 'DEU'),
+  ('D', 'D'),
   ('DINAMARCA', 'DNK'),
   ('DJI', 'DJI'),
   ('DMA', 'DMA'),
@@ -132,13 +127,11 @@ values
   ('EGIPTO', 'EGY'),
   ('EGY', 'EGY'),
   ('EL SALVADOR', 'SLV'),
-  ('EMIRATOS ARABES', 'ARE'),
   ('EMIRATOS ARABES UNIDOS', 'ARE'),
   ('EQUADOR', 'ECU'),
   ('ERI', 'ERI'),
   ('ERITREIA', 'ERI'),
   ('ESLOVACA', 'SVK'),
-  ('ESLOVAQUIA', 'SVK'),
   ('ESLOVENIA', 'SVN'),
   ('ESP', 'ESP'),
   ('ESPANHA', 'ESP'),
@@ -153,7 +146,6 @@ values
   ('FJI', 'FJI'),
   ('FRA', 'FRA'),
   ('FRANCA', 'FRA'),
-  ('FRANCE', 'FRA'),
   ('FSM', 'FSM'),
   ('GAB', 'GAB'),
   ('GABAO', 'GAB'),
@@ -162,13 +154,11 @@ values
   ('GBR', 'GBR'),
   ('GEO', 'GEO'),
   ('GEORGIA', 'GEO'),
-  ('GERMANY', 'DEU'),
   ('GHA', 'GHA'),
   ('GIN', 'GIN'),
   ('GMB', 'GMB'),
   ('GNB', 'GNB'),
   ('GNQ', 'GNQ'),
-  ('GRA BRETANHA', 'GBR'),
   ('GRANADA', 'GRD'),
   ('GRC', 'GRC'),
   ('GRD', 'GRD'),
@@ -216,7 +206,6 @@ values
   ('ISRAEL', 'ISR'),
   ('ITA', 'ITA'),
   ('ITALIA', 'ITA'),
-  ('ITALY', 'ITA'),
   ('JAM', 'JAM'),
   ('JAMAICA', 'JAM'),
   ('JAPAO', 'JPN'),
@@ -224,10 +213,7 @@ values
   ('JOR', 'JOR'),
   ('JORDANIA', 'JOR'),
   ('JPN', 'JPN'),
-  ('JUGOSLAVIA', 'SRB'),
-  ('KAMPUCHEA', 'KHM'),
   ('KAZ', 'KAZ'),
-  ('KAZAKHSTAN', 'KAZ'),
   ('KEN', 'KEN'),
   ('KGZ', 'KGZ'),
   ('KHM', 'KHM'),
@@ -238,12 +224,10 @@ values
   ('KOSOVO', 'RKS'),
   ('KOSOVO REPUBLICA DO', 'RKS'),
   ('KUWAIT', 'KWT'),
-  ('KWAIT', 'KWT'),
   ('KWT', 'KWT'),
   ('LAO', 'LAO'),
   ('LAOS', 'LAO'),
   ('LAOS REPUBLICA POPULAR DEMOCRATICA', 'LAO'),
-  ('LATVIA', 'LVA'),
   ('LBN', 'LBN'),
   ('LBR', 'LBR'),
   ('LBY', 'LBY'),
@@ -274,7 +258,6 @@ values
   ('MALTA', 'MLT'),
   ('MAR', 'MAR'),
   ('MARROCOS', 'MAR'),
-  ('MAURICIA', 'MUS'),
   ('MAURICIAS', 'MUS'),
   ('MAURITANIA', 'MRT'),
   ('MAYOTTE', 'MYT'),
@@ -334,7 +317,6 @@ values
   ('OMN', 'OMN'),
   ('PAISES BAIXOS', 'NLD'),
   ('PAK', 'PAK'),
-  ('PAKISTAN', 'PAK'),
   ('PALAU', 'PLW'),
   ('PALESTINA', 'PSE'),
   ('PAN', 'PAN'),
@@ -348,11 +330,9 @@ values
   ('PLW', 'PLW'),
   ('PNG', 'PNG'),
   ('POL', 'POL'),
-  ('POLAND', 'POL'),
   ('POLONIA', 'POL'),
   ('PORTO RICO', 'PRI'),
   ('PORTUGAL', 'PRT'),
-  ('PORTUGUESE', 'PRT'),
   ('PRI', 'PRI'),
   ('PRK', 'PRK'),
   ('PRT', 'PRT'),
@@ -367,8 +347,6 @@ values
   ('REP CENTRO AFRICANA', 'CAF'),
   ('REP DEMOC CONGO ZAIRE', 'COD'),
   ('REP DEMOCRATICA CONGO', 'COD'),
-  ('REP DOMINICANA', 'DOM'),
-  ('REP SAO DOMINGOS', 'DOM'),
   ('REPUBLICA ARABE DO IEMEN', 'YEM'),
   ('REPUBLICA AZERBAIJAO', 'AZE'),
   ('REPUBLICA BIELORRUSSIA', 'BLR'),
@@ -376,7 +354,6 @@ values
   ('REPUBLICA CHECA', 'CZE'),
   ('REPUBLICA DA COREIA', 'KOR'),
   ('REPUBLICA DA MACEDONIA DO NORTE', 'MKD'),
-  ('REPUBLICA DO CASAQUISTAO', 'KAZ'),
   ('REPUBLICA DO CAZAQUISTAO', 'KAZ'),
   ('REPUBLICA DO SUDAO DO SUL', 'SSD'),
   ('REPUBLICA DOMINICANA', 'DOM'),
@@ -399,7 +376,6 @@ values
   ('SANTA SE CIDADE ESTADO DO VATICANO', 'VAT'),
   ('SAO CRISTOVAO E NEVIS', 'KNA'),
   ('SAO MARINO', 'SMR'),
-  ('SAO TOME E PRINCIPE', 'STP'),
   ('SAO TOME PRINCIPE', 'STP'),
   ('SAO VICENTE E GRANADINAS', 'VCT'),
   ('SAO VICENTE E GRENADINAS', 'VCT'),
@@ -429,7 +405,6 @@ values
   ('SUAZILANDIA', 'SWZ'),
   ('SUDAO', 'SDN'),
   ('SUDAO DO SUL', 'SSD'),
-  ('SUDAO SUL', 'SSD'),
   ('SUECIA', 'SWE'),
   ('SUICA', 'CHE'),
   ('SUR', 'SUR'),
@@ -444,7 +419,6 @@ values
   ('TAILANDIA', 'THA'),
   ('TAIWAN', 'TWN'),
   ('TAJIQUISTAO', 'TJK'),
-  ('TAJIQUISTAOO', 'TJK'),
   ('TANZANIA', 'TZA'),
   ('TANZANIA REPUBLICA DA', 'TZA'),
   ('TCD', 'TCD'),
@@ -462,7 +436,6 @@ values
   ('TUN', 'TUN'),
   ('TUNISIA', 'TUN'),
   ('TUR', 'TUR'),
-  ('TURKEY', 'TUR'),
   ('TURQUEMENISTAO', 'TKM'),
   ('TURQUIA', 'TUR'),
   ('TUV', 'TUV'),
@@ -472,7 +445,6 @@ values
   ('UCRANIA', 'UKR'),
   ('UGA', 'UGA'),
   ('UGANDA', 'UGA'),
-  ('UK BRITISH CITIZEN', 'GBR'),
   ('UKR', 'UKR'),
   ('UNIAO DAS COMORES', 'COM'),
   ('URUGUAI', 'URY'),
@@ -494,9 +466,7 @@ values
   ('ZAMBIA', 'ZMB'),
   ('ZIMBABWE', 'ZWE'),
   ('ZMB', 'ZMB'),
-  ('ZWE', 'ZWE')
-on conflict (lookup_key) do update
-set country_code = excluded.country_code;
+  ('ZWE', 'ZWE');
 
 create or replace function public.guest_country_fix_text(p_value text)
 returns text
@@ -538,18 +508,6 @@ as $$
   );
 $$;
 
-create or replace function public.guest_country_canonical_code(p_code text)
-returns text
-language sql
-immutable
-as $$
-  select case upper(trim(coalesce(p_code, '')))
-    when 'D' then 'DEU'
-    when 'PTR' then 'PRT'
-    else upper(trim(coalesce(p_code, '')))
-  end;
-$$;
-
 create or replace function public.guest_country_resolve_code(p_value text)
 returns text
 language sql
@@ -572,21 +530,13 @@ set issuer_country_code = public.guest_country_resolve_code(issuer_country)
 where coalesce(trim(issuer_country_code), '') = ''
   and coalesce(trim(issuer_country), '') <> '';
 
-update public.guest_records
-set nationality_code = public.guest_country_canonical_code(nationality_code)
-where upper(trim(coalesce(nationality_code, ''))) in ('D', 'PTR');
-
-update public.guest_records
-set issuer_country_code = public.guest_country_canonical_code(issuer_country_code)
-where upper(trim(coalesce(issuer_country_code, ''))) in ('D', 'PTR');
-
 create or replace function public.guests_bi_nationality_key(p_nationality text, p_nationality_code text)
 returns text
 language sql
 immutable
 as $$
   select coalesce(
-    nullif(public.guest_country_canonical_code(p_nationality_code), ''),
+    nullif(upper(trim(coalesce(p_nationality_code, ''))), ''),
     public.guest_country_resolve_code(p_nationality),
     public.guest_country_lookup_key(p_nationality),
     'UNKNOWN'
