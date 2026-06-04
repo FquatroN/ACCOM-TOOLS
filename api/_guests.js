@@ -84,6 +84,18 @@ function normalizeDocNumber(value) {
   return cleanText(value).toUpperCase().replace(/\s+/g, "");
 }
 
+function decodeCountryText(value) {
+  const raw = cleanText(value);
+  if (!raw) return "";
+  if (!/[ÃÂ]/.test(raw)) return raw;
+  try {
+    const repaired = Buffer.from(raw, "latin1").toString("utf8");
+    return cleanText(repaired) || raw;
+  } catch (_) {
+    return raw;
+  }
+}
+
 function normalizeCountryLookupKey(value) {
   return cleanText(value)
     .normalize("NFD")
@@ -97,8 +109,8 @@ function buildCountryLookups() {
   const exact = new Map();
   countries.forEach((item) => {
     const code = cleanText(item.code).toUpperCase();
-    const name = cleanText(item.name);
-    const abbr = cleanText(item.abbr);
+    const name = decodeCountryText(item.name);
+    const abbr = decodeCountryText(item.abbr);
     const entry = { code, name, abbr };
     [code, name, abbr].forEach((value) => {
       const key = normalizeCountryLookupKey(value);
@@ -147,6 +159,15 @@ function resolveCountry(value) {
     abbr: raw,
     isValid: false,
   };
+}
+
+function resolveCountryInput(value, codeValue = "") {
+  const codeRaw = cleanText(codeValue).toUpperCase();
+  if (codeRaw) {
+    const codeMatch = resolveCountry(codeRaw);
+    if (codeMatch.isValid) return codeMatch;
+  }
+  return resolveCountry(value);
 }
 
 function normalizeGuestMappingValue(value, fallback) {
@@ -201,24 +222,33 @@ function sanitizeGuestRecord(input = {}, existing = {}) {
   const birthDate = normalizeDate(input.birthDate ?? input.birth_date ?? existing.birthDate ?? existing.birth_date);
   const checkIn = normalizeDate(input.checkIn ?? input.check_in ?? existing.checkIn ?? existing.check_in);
   const checkOut = normalizeDate(input.checkOut ?? input.check_out ?? existing.checkOut ?? existing.check_out);
-  const nationality = resolveCountry(input.nationality ?? existing.nationality);
-  const issuerCountry = resolveCountry(input.issuerCountry ?? input.issuer_country ?? existing.issuerCountry ?? existing.issuer_country);
-  const residenceCountry = resolveCountry(input.residenceCountry ?? input.residence_country ?? existing.residenceCountry ?? existing.residence_country);
+  const nationality = resolveCountryInput(
+    input.nationality ?? existing.nationality,
+    input.nationalityCode ?? input.nationality_code ?? existing.nationalityCode ?? existing.nationality_code,
+  );
+  const issuerCountry = resolveCountryInput(
+    input.issuerCountry ?? input.issuer_country ?? existing.issuerCountry ?? existing.issuer_country,
+    input.issuerCountryCode ?? input.issuer_country_code ?? existing.issuerCountryCode ?? existing.issuer_country_code,
+  );
+  const residenceCountry = resolveCountryInput(
+    input.residenceCountry ?? input.residence_country ?? existing.residenceCountry ?? existing.residence_country,
+    input.residenceCountryCode ?? input.residence_country_code ?? existing.residenceCountryCode ?? existing.residence_country_code,
+  );
   const birthPlace = normalizeGuestText(input.birthPlace ?? input.birth_place ?? existing.birthPlace ?? existing.birth_place, 60);
   const residenceCity = normalizeGuestText(input.residenceCity ?? input.residence_city ?? existing.residenceCity ?? existing.residence_city, 60);
   const record = {
     id: cleanText(input.id || existing.id) || randomUUID(),
     ha: normalizeHA(input.ha ?? existing.ha),
     name,
-    nationality: nationality.input,
+    nationality: nationality.isValid ? nationality.name : nationality.input,
     nationalityCode: nationality.code,
     birthDate,
     birthPlace,
     docNumber: normalizeDocNumber(input.docNumber ?? input.doc_number ?? existing.docNumber ?? existing.doc_number),
     docType: normalizeDocType(input.docType ?? input.doc_type ?? existing.docType ?? existing.doc_type),
-    issuerCountry: issuerCountry.input,
+    issuerCountry: issuerCountry.isValid ? issuerCountry.name : issuerCountry.input,
     issuerCountryCode: issuerCountry.code,
-    residenceCountry: residenceCountry.input,
+    residenceCountry: residenceCountry.isValid ? residenceCountry.name : residenceCountry.input,
     residenceCountryCode: residenceCountry.code,
     residenceCity,
     checkIn,
