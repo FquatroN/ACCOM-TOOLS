@@ -1,4 +1,6 @@
 const { requireFeature, restQuery, sendError } = require("./_supabase");
+const GUESTS_BI_CACHE_TTL_MS = 120000;
+const guestsBiSourceCache = new Map();
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -68,6 +70,20 @@ async function fetchAllGuestsBiSourceRows(selectedHa = "") {
     if (list.length < pageSize) break;
     offset += pageSize;
   }
+  return rows;
+}
+
+async function getCachedGuestsBiSourceRows(selectedHa = "") {
+  const cacheKey = selectedHa || "ALL";
+  const cached = guestsBiSourceCache.get(cacheKey);
+  if (cached && (Date.now() - cached.loadedAt) < GUESTS_BI_CACHE_TTL_MS) {
+    return cached.rows;
+  }
+  const rows = await fetchAllGuestsBiSourceRows(selectedHa);
+  guestsBiSourceCache.set(cacheKey, {
+    loadedAt: Date.now(),
+    rows,
+  });
   return rows;
 }
 
@@ -222,7 +238,7 @@ module.exports = async function handler(req, res) {
     }
 
     const selectedHa = parseHaValue(req.query?.ha);
-    const fallbackSourceRows = await fetchAllGuestsBiSourceRows(selectedHa);
+    const fallbackSourceRows = await getCachedGuestsBiSourceRows(selectedHa);
     const availableYears = [...new Set(
       fallbackSourceRows
         .map((row) => clean(row?.check_in).slice(0, 4))
