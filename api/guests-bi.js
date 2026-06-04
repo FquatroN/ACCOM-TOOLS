@@ -257,10 +257,15 @@ module.exports = async function handler(req, res) {
       }),
     ]);
 
-    const rpcLooksEmpty = (!Array.isArray(rows) || !rows.length)
-      && (!Array.isArray(pieRows) || !pieRows.length)
+    const tmtLooksEmpty = !Array.isArray(rows)
+      || !rows.length
+      || rows.every((row) => Number(row?.total_nights || 0) === 0
+        && Number(row?.exempt_7days || 0) === 0
+        && Number(row?.exempt_13_year || 0) === 0);
+    const nationalityLooksEmpty = (!Array.isArray(pieRows) || !pieRows.length)
       && (!Array.isArray(lineRows) || !lineRows.length)
       && (!Array.isArray(monthLineRows) || !monthLineRows.length);
+    const rpcLooksEmpty = tmtLooksEmpty && nationalityLooksEmpty;
     if (rpcLooksEmpty) {
       const fallbackSourceRows = await fetchAllGuestsBiSourceRows(selectedHa);
       const fallbackPayload = buildGuestsBiFallbackPayload(fallbackSourceRows, selectedYear);
