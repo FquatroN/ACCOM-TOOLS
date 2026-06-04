@@ -1,3 +1,29 @@
+create or replace function public.guests_bi_nationality_key(p_nationality text, p_nationality_code text)
+returns text
+language sql
+immutable
+as $$
+  select coalesce(
+    nullif(upper(trim(coalesce(public.guest_country_canonical_code(p_nationality_code), ''))), ''),
+    nullif(upper(trim(coalesce(public.guest_country_resolve_code(p_nationality), ''))), ''),
+    public.guest_country_lookup_key(p_nationality),
+    'UNKNOWN'
+  );
+$$;
+
+create or replace function public.guests_bi_nationality_label(p_nationality text, p_nationality_code text)
+returns text
+language sql
+stable
+as $$
+  select coalesce(
+    nullif(public.guest_country_designacao(p_nationality_code), ''),
+    nullif(public.guest_country_designacao(public.guest_country_resolve_code(p_nationality)), ''),
+    nullif(trim(coalesce(p_nationality, '')), ''),
+    'Unknown'
+  );
+$$;
+
 create or replace function public.guests_bi_nationality_pies()
 returns table(
   chart_year integer,
