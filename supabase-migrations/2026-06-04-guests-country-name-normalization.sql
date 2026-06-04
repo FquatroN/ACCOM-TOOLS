@@ -1,4 +1,5 @@
--- Canonicalizes guest nationality and issuer_country text from their stored country codes
+-- Canonicalizes guest nationality, issuer_country, and residence_country text
+-- from their stored country codes
 -- using the SEF/XML reference Designacao values supplied by the user.
 
 create table if not exists public.guest_country_name_map (
@@ -254,3 +255,9 @@ set issuer_country = public.guest_country_designacao(issuer_country_code)
 where coalesce(trim(issuer_country_code), '') <> ''
   and public.guest_country_designacao(issuer_country_code) <> ''
   and coalesce(issuer_country, '') <> public.guest_country_designacao(issuer_country_code);
+
+update public.guest_records
+set residence_country = public.guest_country_designacao(residence_country_code)
+where coalesce(trim(residence_country_code), '') <> ''
+  and public.guest_country_designacao(residence_country_code) <> ''
+  and coalesce(residence_country, '') <> public.guest_country_designacao(residence_country_code);
