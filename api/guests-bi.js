@@ -90,8 +90,9 @@ function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
     });
   }
 
-  const currentCalendarYear = new Date().getFullYear();
-  const pieYears = [0, 1, 2, 3].map((offset) => String(currentCalendarYear - offset));
+  const anchorYear = Number.parseInt(String(selectedYear), 10);
+  const safeAnchorYear = Number.isFinite(anchorYear) ? anchorYear : new Date().getFullYear();
+  const pieYears = [0, 1, 2, 3].map((offset) => String(safeAnchorYear - offset));
   const globalTotals = new Map();
   const pieYearCountry = new Map();
   const lineYearCountry = new Map();
