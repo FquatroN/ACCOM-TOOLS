@@ -942,6 +942,8 @@ const state = {
   guestsBiNationalityLineSeries: [],
   guestsBiNationalityMonthLabels: [],
   guestsBiNationalityMonthSeries: [],
+  guestsBiNationalityPivotYears: [],
+  guestsBiNationalityPivotRows: [],
   guestsBiNationalityLineMode: "absolute",
   guestsBiNationalityMonthLineMode: "absolute",
   guestsBiLoaded: false,
@@ -1203,6 +1205,9 @@ const els = {
   guestsBiNationalitiesPies: document.getElementById("guests-bi-nationalities-pies"),
   guestsBiNationalitiesLine: document.getElementById("guests-bi-nationalities-line"),
   guestsBiNationalitiesMonthLine: document.getElementById("guests-bi-nationalities-month-line"),
+  guestsBiNationalitiesPivotHead: document.getElementById("guests-bi-nationalities-pivot-head"),
+  guestsBiNationalitiesPivotRows: document.getElementById("guests-bi-nationalities-pivot-rows"),
+  guestsBiNationalitiesPivotTotals: document.getElementById("guests-bi-nationalities-pivot-totals"),
   guestsBiLineModeAbsolute: document.getElementById("guests-bi-line-mode-absolute"),
   guestsBiLineModePercent: document.getElementById("guests-bi-line-mode-percent"),
   guestsBiMonthLineModeAbsolute: document.getElementById("guests-bi-month-line-mode-absolute"),
@@ -17979,6 +17984,8 @@ async function loadGuestsBiData({ silent = false } = {}) {
     state.guestsBiNationalityLineSeries = Array.isArray(result?.nationalities?.lineSeries) ? result.nationalities.lineSeries : [];
     state.guestsBiNationalityMonthLabels = Array.isArray(result?.nationalities?.monthLabels) ? result.nationalities.monthLabels : [];
     state.guestsBiNationalityMonthSeries = Array.isArray(result?.nationalities?.monthSeries) ? result.nationalities.monthSeries : [];
+    state.guestsBiNationalityPivotYears = Array.isArray(result?.nationalities?.pivotYears) ? result.nationalities.pivotYears : [];
+    state.guestsBiNationalityPivotRows = Array.isArray(result?.nationalities?.pivotRows) ? result.nationalities.pivotRows : [];
     state.guestsBiLoaded = true;
     renderGuestsBi();
     if (!silent) setGuestsBiStatus("Guests BI loaded.");
@@ -17992,6 +17999,8 @@ async function loadGuestsBiData({ silent = false } = {}) {
     state.guestsBiNationalityLineSeries = [];
     state.guestsBiNationalityMonthLabels = [];
     state.guestsBiNationalityMonthSeries = [];
+    state.guestsBiNationalityPivotYears = [];
+    state.guestsBiNationalityPivotRows = [];
     state.guestsBiLoaded = false;
     renderGuestsBi();
     if (!silent) setGuestsBiStatus(`Failed to load Guests BI: ${error.message}`, "error");
@@ -18202,6 +18211,36 @@ function renderGuestsBiNationalityMonthLine() {
   );
 }
 
+function renderGuestsBiNationalityPivot() {
+  const years = Array.isArray(state.guestsBiNationalityPivotYears) ? state.guestsBiNationalityPivotYears : [];
+  const rows = Array.isArray(state.guestsBiNationalityPivotRows) ? state.guestsBiNationalityPivotRows : [];
+  if (els.guestsBiNationalitiesPivotHead) {
+    els.guestsBiNationalitiesPivotHead.innerHTML = `<tr>
+      <th>Nationality</th>
+      ${years.map((year) => `<th>${escape(year)}</th>`).join("")}
+      <th>Total</th>
+    </tr>`;
+  }
+  if (els.guestsBiNationalitiesPivotRows) {
+    els.guestsBiNationalitiesPivotRows.innerHTML = rows.length
+      ? rows.map((row) => `<tr>
+        <td>${escape(row.countryLabel || "-")}</td>
+        ${years.map((year) => `<td>${escape(String(Number(row.values?.[year] || 0)))}</td>`).join("")}
+        <td>${escape(String(Number(row.total || 0)))}</td>
+      </tr>`).join("")
+      : '<tr><td colspan="99" class="empty">No nationalities found.</td></tr>';
+  }
+  if (els.guestsBiNationalitiesPivotTotals) {
+    const totalsByYear = Object.fromEntries(years.map((year) => [year, rows.reduce((sum, row) => sum + Number(row.values?.[year] || 0), 0)]));
+    const grandTotal = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+    els.guestsBiNationalitiesPivotTotals.innerHTML = `<tr class="summary-row">
+      <th>Total</th>
+      ${years.map((year) => `<th>${escape(String(Number(totalsByYear[year] || 0)))}</th>`).join("")}
+      <th>${escape(String(Number(grandTotal || 0)))}</th>
+    </tr>`;
+  }
+}
+
 function renderGuestsBi() {
   if (!canUseBusinessIntelligence()) {
     if (els.guestsBiRows) els.guestsBiRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Guests BI.</td></tr>';
@@ -18210,6 +18249,9 @@ function renderGuestsBi() {
     if (els.guestsBiNationalitiesPies) els.guestsBiNationalitiesPies.innerHTML = '<div class="empty">Your profile has no access to Guests BI.</div>';
     if (els.guestsBiNationalitiesLine) els.guestsBiNationalitiesLine.innerHTML = "";
     if (els.guestsBiNationalitiesMonthLine) els.guestsBiNationalitiesMonthLine.innerHTML = "";
+    if (els.guestsBiNationalitiesPivotHead) els.guestsBiNationalitiesPivotHead.innerHTML = "";
+    if (els.guestsBiNationalitiesPivotRows) els.guestsBiNationalitiesPivotRows.innerHTML = "";
+    if (els.guestsBiNationalitiesPivotTotals) els.guestsBiNationalitiesPivotTotals.innerHTML = "";
     if (els.guestsBiNationalitiesCount) els.guestsBiNationalitiesCount.textContent = "0 countries";
     return;
   }
@@ -18258,14 +18300,18 @@ function renderGuestsBi() {
     </tr>`;
   }
   const lineSeries = Array.isArray(state.guestsBiNationalityLineSeries) ? state.guestsBiNationalityLineSeries : [];
+  const pivotRows = Array.isArray(state.guestsBiNationalityPivotRows) ? state.guestsBiNationalityPivotRows : [];
   if (els.guestsBiNationalitiesCount) {
-    els.guestsBiNationalitiesCount.textContent = `${lineSeries.length} countr${lineSeries.length === 1 ? "y" : "ies"}`;
+    const countryCount = pivotRows.length || lineSeries.length;
+    els.guestsBiNationalitiesCount.textContent = `${countryCount} countr${countryCount === 1 ? "y" : "ies"}`;
   }
   renderGuestsBiNationalityPies();
   renderGuestsBiNationalityLine();
   renderGuestsBiNationalityMonthLine();
+  renderGuestsBiNationalityPivot();
   if (els.guestsBiNationalitiesStatus) {
-    els.guestsBiNationalitiesStatus.textContent = lineSeries.length ? "Nationality graphs loaded." : "No nationality distribution found.";
+    const hasNationalityData = lineSeries.length || pivotRows.length;
+    els.guestsBiNationalitiesStatus.textContent = hasNationalityData ? "Nationality graphs loaded." : "No nationality distribution found.";
     els.guestsBiNationalitiesStatus.classList.remove("status-error");
   }
 }

@@ -87,6 +87,33 @@ async function getCachedGuestsBiSourceRows(selectedHa = "") {
   return rows;
 }
 
+function buildGuestsBiPivotRowsFromSource(sourceRows) {
+  const rows = Array.isArray(sourceRows) ? sourceRows : [];
+  const years = [...new Set(
+    rows
+      .map((row) => clean(row?.check_in).slice(0, 4))
+      .filter((value) => /^\d{4}$/.test(value))
+  )].sort((a, b) => b.localeCompare(a));
+  const countryYearMap = new Map();
+  const totalByCountry = new Map();
+  rows.forEach((row) => {
+    const year = clean(row?.check_in).slice(0, 4);
+    if (!/^\d{4}$/.test(year)) return;
+    const label = normalizeCountryLabel(row?.nationality, row?.nationality_code);
+    const key = `${label}||${year}`;
+    countryYearMap.set(key, Number(countryYearMap.get(key) || 0) + 1);
+    totalByCountry.set(label, Number(totalByCountry.get(label) || 0) + 1);
+  });
+  const pivotRows = [...totalByCountry.entries()]
+    .map(([countryLabel, total]) => ({
+      countryLabel,
+      total,
+      values: Object.fromEntries(years.map((year) => [year, Number(countryYearMap.get(`${countryLabel}||${year}`) || 0)])),
+    }))
+    .sort((a, b) => Number(b.total || 0) - Number(a.total || 0) || a.countryLabel.localeCompare(b.countryLabel));
+  return { years, rows: pivotRows };
+}
+
 function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
   const rows = Array.isArray(sourceRows) ? sourceRows : [];
   const availableYears = [...new Set(
@@ -205,6 +232,8 @@ function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
   };
   if (othersMonth.values.some((value) => value > 0)) monthSeries.push(othersMonth);
 
+  const pivotPayload = buildGuestsBiPivotRowsFromSource(rows);
+
   const mappedRows = [...monthMap.values()];
   const totals = mappedRows.reduce((acc, row) => ({
     totalNights: acc.totalNights + row.totalNights,
@@ -224,6 +253,8 @@ function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
       lineSeries,
       monthLabels,
       monthSeries,
+      pivotYears: pivotPayload.years,
+      pivotRows: pivotPayload.rows,
     },
   };
 }
@@ -246,9 +277,42 @@ module.exports = async function handler(req, res) {
     )].sort((a, b) => b.localeCompare(a));
     const requestedYear = parseYearValue(req.query?.year);
     const selectedYear = requestedYear || new Date().getUTCFullYear();
+    let pivotPayload = { years: [], rows: [] };
+    try {
+      const pivotRows = await restQuery("rpc/guests_bi_nationality_pivot", {
+        method: "POST",
+        body: selectedHa ? { p_ha: selectedHa } : {},
+      });
+      const mappedPivotRows = Array.isArray(pivotRows) ? pivotRows : [];
+      const pivotYears = [...new Set(mappedPivotRows.map((row) => clean(row?.chart_year)).filter((year) => /^\d{4}$/.test(year)))].sort((a, b) => b.localeCompare(a));
+      const byCountry = new Map();
+      mappedPivotRows.forEach((row) => {
+        const label = normalizeCountryLabel(row?.country_label);
+        if (!byCountry.has(label)) {
+          byCountry.set(label, {
+            countryLabel: label,
+            total: Number(row?.row_total || 0),
+            values: {},
+          });
+        }
+        byCountry.get(label).values[clean(row?.chart_year)] = Number(row?.guest_count || 0);
+        if (!byCountry.get(label).total) byCountry.get(label).total = Number(row?.row_total || 0);
+      });
+      pivotPayload = {
+        years: pivotYears,
+        rows: [...byCountry.values()].sort((a, b) => Number(b.total || 0) - Number(a.total || 0) || a.countryLabel.localeCompare(b.countryLabel)),
+      };
+    } catch {
+      pivotPayload = buildGuestsBiPivotRowsFromSource(fallbackSourceRows);
+    }
     const payload = buildGuestsBiFallbackPayload(fallbackSourceRows, selectedYear);
     res.status(200).json({
       ...payload,
+      nationalities: {
+        ...payload.nationalities,
+        pivotYears: pivotPayload.years,
+        pivotRows: pivotPayload.rows,
+      },
       ha: selectedHa,
     });
   } catch (error) {
