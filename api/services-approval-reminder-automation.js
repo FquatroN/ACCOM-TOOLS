@@ -71,8 +71,13 @@ function shouldSendNow(timeOfDay, now, timeZone) {
   const clock = getClockParts(now, timeZone);
   const hour = Number(hourRaw);
   const minute = Number(minuteRaw);
-  if (clock.hour !== hour || clock.minute !== minute) return { due: false, reason: "time_mismatch" };
-  return { due: true, slotKey: `${clock.year}-${clock.month}-${clock.day}:${clock.hour}:${clock.minute}` };
+  const currentMinutes = (clock.hour * 60) + clock.minute;
+  const targetMinutes = (hour * 60) + minute;
+  if (currentMinutes < targetMinutes) return { due: false, reason: "before_time" };
+  return {
+    due: true,
+    slotKey: `${clock.year}-${String(clock.month).padStart(2, "0")}-${String(clock.day).padStart(2, "0")}:${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+  };
 }
 
 function formatDateDisplay(value) {
