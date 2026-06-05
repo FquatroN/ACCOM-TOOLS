@@ -1212,6 +1212,7 @@ const els = {
   guestsBiIneFilters: document.getElementById("guests-bi-ine-filters"),
   guestsBiIneFilterMonth: document.getElementById("guests-bi-ine-filter-month"),
   guestsBiIneFilterHa: document.getElementById("guests-bi-ine-filter-ha"),
+  guestsBiIneExportExcel: document.getElementById("guests-bi-ine-export-excel"),
   guestsBiPanelTmt: document.getElementById("guests-bi-panel-tmt"),
   guestsBiPanelNationalities: document.getElementById("guests-bi-panel-nationalities"),
   guestsBiPanelIne: document.getElementById("guests-bi-panel-ine"),
@@ -1917,6 +1918,7 @@ function bindEvents() {
   els.guestsBiNationalitiesFilterHa?.addEventListener("change", () => onGuestsBiHaChange("nationalities"));
   els.guestsBiIneFilterMonth?.addEventListener("change", onGuestsBiIneMonthChange);
   els.guestsBiIneFilterHa?.addEventListener("change", () => onGuestsBiHaChange("ine"));
+  els.guestsBiIneExportExcel?.addEventListener("click", exportGuestsBiIneToExcel);
   els.guestsBiTabTmt?.addEventListener("click", () => setGuestsBiTab("tmt"));
   els.guestsBiTabNationalities?.addEventListener("click", () => setGuestsBiTab("nationalities"));
   els.guestsBiTabIne?.addEventListener("click", () => setGuestsBiTab("ine"));
@@ -18405,6 +18407,52 @@ function renderGuestsBiIne() {
       </tr>`).join("")
       : '<tr><td colspan="4" class="empty">No INE nationality data found.</td></tr>';
   }
+}
+
+function exportGuestsBiIneToExcel() {
+  const yearMonth = currentGuestsBiYearMonth("ine") || defaultGuestsBiPreviousMonth();
+  const ha = currentGuestsBiHa("ine");
+  const summaryRows = Array.isArray(state.guestsBiIneSummaryRows) ? state.guestsBiIneSummaryRows : [];
+  const detailRows = Array.isArray(state.guestsBiIneDetailRows) ? state.guestsBiIneDetailRows : [];
+  if (!summaryRows.length && !detailRows.length) {
+    showToast("No INE data to export.", "error");
+    return;
+  }
+  const headers = [
+    "Grupo",
+    "Nº de Hóspedes que entraram no mês",
+    "Nº de Hóspedes que dormiram no mês",
+    "Nº de Dormidas (Noites)",
+  ];
+  const summaryBody = summaryRows.map((row) => [
+    row.rowLabel || "-",
+    String(Number(row.guestsEntered || 0)),
+    String(Number(row.guestsSlept || 0)),
+    String(Number(row.nights || 0)),
+  ]);
+  const detailBody = detailRows.map((row) => [
+    row.rowLabel || "-",
+    String(Number(row.guestsEntered || 0)),
+    String(Number(row.guestsSlept || 0)),
+    String(Number(row.nights || 0)),
+  ]);
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <h2>Guests BI - INE</h2>
+    <p><strong>Year-Month:</strong> ${escape(yearMonth)}<br><strong>HA:</strong> ${escape(ha || "All")}</p>
+    <h3>Residentes em Portugal</h3>
+    <table border="1">
+      <thead><tr>${headers.map((cell) => `<th>${escape(cell)}</th>`).join("")}</tr></thead>
+      <tbody>${summaryBody.length ? summaryBody.map((cells) => `<tr>${cells.map((cell) => `<td>${escape(cell)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">No INE summary data found.</td></tr>`}</tbody>
+    </table>
+    <br>
+    <h3>Nationalities</h3>
+    <table border="1">
+      <thead><tr>${headers.map((cell) => `<th>${escape(cell)}</th>`).join("")}</tr></thead>
+      <tbody>${detailBody.length ? detailBody.map((cells) => `<tr>${cells.map((cell) => `<td>${escape(cell)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">No INE nationality data found.</td></tr>`}</tbody>
+    </table>
+  </body></html>`;
+  downloadBlob(`guests_bi_ine_${yearMonth}${ha ? `_${ha}` : ""}.xls`, html, "application/vnd.ms-excel;charset=utf-8;");
+  showToast("INE exported to Excel.", "success");
 }
 
 function renderGuestsBi() {
