@@ -9,7 +9,7 @@ function normalizeDate(value) {
   return date.toISOString().slice(0, 10);
 }
 
-function normalizeTime(value) {
+function normalizeServiceTime(value) {
   const raw = cleanText(value);
   if (!raw) return null;
   if (/^\d{2}:\d{2}/.test(raw)) return raw.slice(0, 5);
@@ -98,7 +98,7 @@ function normalizeBool(value, fallback = false) {
   return fallback;
 }
 
-function normalizeTime(value, fallback = "09:00") {
+function normalizeReminderTime(value, fallback = "09:00") {
   const raw = cleanText(value);
   return /^\d{2}:\d{2}$/.test(raw) ? raw : fallback;
 }
@@ -108,7 +108,7 @@ function normalizeServiceSettingsPayload(payload) {
   return {
     automaticEmailRecipients: normalizeRecipients(source.automaticEmailRecipients || source.automatic_email_recipients),
     approvalReminderEnabled: normalizeBool(source.approvalReminderEnabled ?? source.approval_reminder_enabled, false),
-    approvalReminderTime: normalizeTime(source.approvalReminderTime ?? source.approval_reminder_time, "09:00"),
+    approvalReminderTime: normalizeReminderTime(source.approvalReminderTime ?? source.approval_reminder_time, "09:00"),
     approvalReminderTestEmail: cleanText(source.approvalReminderTestEmail ?? source.approval_reminder_test_email).toLowerCase(),
     serviceConfigs: normalizeServiceConfigs(source),
   };
@@ -169,7 +169,7 @@ function sanitizeService(input = {}, existing = null) {
   const customerPhone = cleanText(input.customer_phone ?? input.customerPhone ?? existing?.customer_phone);
   const pax = Math.max(1, Math.min(60, Math.round(normalizeNumber(input.pax ?? input.nr_persons ?? input.nrPersons, existing?.pax ?? 1))));
   const serviceDate = normalizeDate(input.service_date ?? input.date ?? input.serviceDate ?? existing?.service_date);
-  const serviceTime = normalizeTime(input.service_time ?? input.time ?? input.serviceTime ?? existing?.service_time);
+  const serviceTime = normalizeServiceTime(input.service_time ?? input.time ?? input.serviceTime ?? existing?.service_time);
   const price = Math.max(0, normalizeNumber(input.price, existing?.price ?? 0));
   const status = normalizeStatus(input.status ?? existing?.status);
   const hasReturn = normalizeBool(input.has_return ?? input.hasReturn ?? existing?.has_return);
@@ -204,7 +204,7 @@ function sanitizeService(input = {}, existing = null) {
     return_pickup_location: hasReturn ? cleanText(input.return_pickup_location ?? input.returnPickupLocation ?? existing?.return_pickup_location) : "",
     return_dropoff_location: hasReturn ? cleanText(input.return_dropoff_location ?? input.returnDropoffLocation ?? existing?.return_dropoff_location) : "",
     return_date: hasReturn ? normalizeDate(input.return_date ?? input.returnDate ?? existing?.return_date) : null,
-    return_time: hasReturn ? normalizeTime(input.return_time ?? input.returnTime ?? existing?.return_time) : null,
+    return_time: hasReturn ? normalizeServiceTime(input.return_time ?? input.returnTime ?? existing?.return_time) : null,
     return_flight_number: hasReturn ? cleanText(input.return_flight_number ?? input.returnFlightNumber ?? existing?.return_flight_number) : "",
     price,
     status,
