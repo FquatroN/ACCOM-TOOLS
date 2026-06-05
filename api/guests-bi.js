@@ -13,6 +13,14 @@ function parseYearValue(value) {
   return Number.isFinite(year) ? year : null;
 }
 
+function parseYearMonthValue(value) {
+  const raw = clean(value);
+  if (!/^\d{4}-\d{2}$/.test(raw)) return null;
+  const [year, month] = raw.split("-").map((part) => Number.parseInt(part, 10));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
 function parseHaValue(value) {
   const raw = clean(value).toUpperCase();
   return raw === "H" || raw === "A" ? raw : "";
@@ -51,13 +59,81 @@ function normalizeCountryLabel(value, fallbackCode = "") {
   return code || "Unknown";
 }
 
+function defaultPreviousMonthKey() {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+  const previousMonth = month === 1 ? 12 : month - 1;
+  const previousYear = month === 1 ? year - 1 : year;
+  return `${previousYear}-${String(previousMonth).padStart(2, "0")}`;
+}
+
+function monthStartUtc(yearMonth) {
+  const parsed = parseYearMonthValue(yearMonth);
+  if (!parsed) return null;
+  const [year, month] = parsed.split("-").map((part) => Number.parseInt(part, 10));
+  return Date.UTC(year, month - 1, 1);
+}
+
+function nextMonthKey(yearMonth) {
+  const parsed = parseYearMonthValue(yearMonth);
+  if (!parsed) return null;
+  const [year, month] = parsed.split("-").map((part) => Number.parseInt(part, 10));
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
+}
+
+function overlapNightsInMonth(checkInRaw, checkOutRaw, yearMonth) {
+  const start = parseDateOnly(checkInRaw);
+  const end = parseDateOnly(checkOutRaw);
+  const startMonthUtc = monthStartUtc(yearMonth);
+  const endMonthUtc = monthStartUtc(nextMonthKey(yearMonth));
+  if (!start || !end || startMonthUtc == null || endMonthUtc == null) return 0;
+  const startUtc = Date.UTC(start.year, start.month - 1, start.day);
+  const endUtc = Date.UTC(end.year, end.month - 1, end.day);
+  const overlapStart = Math.max(startUtc, startMonthUtc);
+  const overlapEnd = Math.min(endUtc, endMonthUtc);
+  return Math.max(Math.round((overlapEnd - overlapStart) / 86400000), 0);
+}
+
+function isPortugalCountry(label, code) {
+  const normalizedCode = clean(code).toUpperCase();
+  if (normalizedCode === "PRT" || normalizedCode === "PTR") return true;
+  return clean(label).toUpperCase() === "PORTUGAL";
+}
+
+function monthsTouchedByStay(checkInRaw, checkOutRaw) {
+  const start = parseDateOnly(checkInRaw);
+  if (!start) return [];
+  const end = parseDateOnly(checkOutRaw);
+  const startUtc = Date.UTC(start.year, start.month - 1, start.day);
+  const endUtc = end ? Date.UTC(end.year, end.month - 1, end.day) : startUtc;
+  const lastNightUtc = endUtc > startUtc ? endUtc - 86400000 : startUtc;
+  const months = [];
+  let cursorYear = start.year;
+  let cursorMonth = start.month;
+  const endDate = new Date(lastNightUtc);
+  const endYear = endDate.getUTCFullYear();
+  const endMonth = endDate.getUTCMonth() + 1;
+  while (cursorYear < endYear || (cursorYear === endYear && cursorMonth <= endMonth)) {
+    months.push(`${cursorYear}-${String(cursorMonth).padStart(2, "0")}`);
+    cursorMonth += 1;
+    if (cursorMonth > 12) {
+      cursorMonth = 1;
+      cursorYear += 1;
+    }
+  }
+  return months;
+}
+
 async function fetchAllGuestsBiSourceRows(selectedHa = "") {
   const rows = [];
   const pageSize = 1000;
   let offset = 0;
   while (true) {
     const query = [
-      "guest_records?select=check_in,check_out,birth_date,ha,nationality,nationality_code",
+      "guest_records?select=check_in,check_out,birth_date,ha,nationality,nationality_code,issuer_country,issuer_country_code",
       "check_in=not.is.null",
       "order=check_in.desc",
       `limit=${pageSize}`,
@@ -112,6 +188,58 @@ function buildGuestsBiPivotRowsFromSource(sourceRows) {
     }))
     .sort((a, b) => Number(b.total || 0) - Number(a.total || 0) || a.countryLabel.localeCompare(b.countryLabel));
   return { years, rows: pivotRows };
+}
+
+function buildGuestsBiIneFromSource(sourceRows, selectedYearMonth) {
+  const rows = Array.isArray(sourceRows) ? sourceRows : [];
+  const monthSet = new Set([selectedYearMonth, defaultPreviousMonthKey()]);
+  const summaryMap = new Map([
+    ["pt-residents", { rowLabel: "Portugueses residentes em Portugal", guestsEntered: 0, guestsSlept: 0, nights: 0 }],
+    ["foreign-residents", { rowLabel: "Estrangeiros residentes em Portugal", guestsEntered: 0, guestsSlept: 0, nights: 0 }],
+  ]);
+  const detailMap = new Map();
+
+  rows.forEach((row) => {
+    const checkIn = clean(row?.check_in);
+    const checkOut = clean(row?.check_out);
+    if (!checkIn) return;
+    monthsTouchedByStay(checkIn, checkOut).forEach((month) => monthSet.add(month));
+    const nationalityLabel = normalizeCountryLabel(row?.nationality, row?.nationality_code);
+    const issuerLabel = normalizeCountryLabel(row?.issuer_country, row?.issuer_country_code);
+    const nationalityPortugal = isPortugalCountry(nationalityLabel, row?.nationality_code);
+    const issuerPortugal = isPortugalCountry(issuerLabel, row?.issuer_country_code);
+    const guestsEntered = checkIn.startsWith(`${selectedYearMonth}-`) ? 1 : 0;
+    const nights = overlapNightsInMonth(checkIn, checkOut, selectedYearMonth);
+    const guestsSlept = nights > 0 ? 1 : 0;
+
+    if (issuerPortugal) {
+      const key = nationalityPortugal ? "pt-residents" : "foreign-residents";
+      const bucket = summaryMap.get(key);
+      bucket.guestsEntered += guestsEntered;
+      bucket.guestsSlept += guestsSlept;
+      bucket.nights += nights;
+    }
+
+    if (!nationalityPortugal && nights > 0) {
+      const key = nationalityLabel || "Unknown";
+      const bucket = detailMap.get(key) || { rowLabel: key, guestsEntered: 0, guestsSlept: 0, nights: 0 };
+      bucket.guestsEntered += guestsEntered;
+      bucket.guestsSlept += guestsSlept;
+      bucket.nights += nights;
+      detailMap.set(key, bucket);
+    }
+  });
+
+  const months = [...monthSet].filter((value) => /^\d{4}-\d{2}$/.test(value)).sort((a, b) => b.localeCompare(a));
+  const detailRows = [...detailMap.values()]
+    .sort((a, b) => Number(b.nights || 0) - Number(a.nights || 0) || a.rowLabel.localeCompare(b.rowLabel));
+
+  return {
+    yearMonth: selectedYearMonth,
+    months,
+    summaryRows: [...summaryMap.values()],
+    detailRows,
+  };
 }
 
 function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
@@ -277,6 +405,7 @@ module.exports = async function handler(req, res) {
     )].sort((a, b) => b.localeCompare(a));
     const requestedYear = parseYearValue(req.query?.year);
     const selectedYear = requestedYear || new Date().getUTCFullYear();
+    const selectedYearMonth = parseYearMonthValue(req.query?.year_month) || defaultPreviousMonthKey();
     let pivotPayload = { years: [], rows: [] };
     try {
       const pivotRows = await restQuery("rpc/guests_bi_nationality_pivot", {
@@ -306,6 +435,42 @@ module.exports = async function handler(req, res) {
       pivotPayload = buildGuestsBiPivotRowsFromSource(fallbackSourceRows);
     }
     const payload = buildGuestsBiFallbackPayload(fallbackSourceRows, selectedYear);
+    let inePayload;
+    try {
+      const ineRows = await restQuery("rpc/guests_bi_ine", {
+        method: "POST",
+        body: {
+          p_year_month: selectedYearMonth,
+          ...(selectedHa ? { p_ha: selectedHa } : {}),
+        },
+      });
+      const mappedIneRows = Array.isArray(ineRows) ? ineRows : [];
+      const summaryRows = mappedIneRows
+        .filter((row) => clean(row?.section) === "summary")
+        .sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0))
+        .map((row) => ({
+          rowLabel: clean(row?.row_label),
+          guestsEntered: Number(row?.guests_entered || 0),
+          guestsSlept: Number(row?.guests_slept || 0),
+          nights: Number(row?.nights || 0),
+        }));
+      const detailRows = mappedIneRows
+        .filter((row) => clean(row?.section) === "detail")
+        .sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0) || clean(a?.row_label).localeCompare(clean(b?.row_label)))
+        .map((row) => ({
+          rowLabel: clean(row?.row_label),
+          guestsEntered: Number(row?.guests_entered || 0),
+          guestsSlept: Number(row?.guests_slept || 0),
+          nights: Number(row?.nights || 0),
+        }));
+      inePayload = {
+        ...buildGuestsBiIneFromSource(fallbackSourceRows, selectedYearMonth),
+        summaryRows,
+        detailRows,
+      };
+    } catch {
+      inePayload = buildGuestsBiIneFromSource(fallbackSourceRows, selectedYearMonth);
+    }
     res.status(200).json({
       ...payload,
       nationalities: {
@@ -313,6 +478,7 @@ module.exports = async function handler(req, res) {
         pivotYears: pivotPayload.years,
         pivotRows: pivotPayload.rows,
       },
+      ine: inePayload,
       ha: selectedHa,
     });
   } catch (error) {

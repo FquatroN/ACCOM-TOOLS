@@ -946,6 +946,10 @@ const state = {
   guestsBiNationalityPivotRows: [],
   guestsBiNationalityLineMode: "percent",
   guestsBiNationalityMonthLineMode: "percent",
+  guestsBiIneMonths: [],
+  guestsBiIneMonth: "",
+  guestsBiIneSummaryRows: [],
+  guestsBiIneDetailRows: [],
   guestsBiLoaded: false,
   guestsBiLoading: false,
   guestsBiYear: "",
@@ -953,8 +957,9 @@ const state = {
   guestsBiTabFilters: {
     tmt: { year: "", ha: "" },
     nationalities: { year: "", ha: "" },
+    ine: { yearMonth: "", ha: "" },
   },
-  guestsBiLastLoaded: { tab: "", year: "", ha: "" },
+  guestsBiLastLoaded: { tab: "", year: "", yearMonth: "", ha: "" },
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -1197,14 +1202,19 @@ const els = {
   financialDocsSave: document.getElementById("financial-docs-save"),
   guestsBiTabTmt: document.getElementById("guests-bi-tab-tmt"),
   guestsBiTabNationalities: document.getElementById("guests-bi-tab-nationalities"),
+  guestsBiTabIne: document.getElementById("guests-bi-tab-ine"),
   guestsBiTmtFilters: document.getElementById("guests-bi-tmt-filters"),
   guestsBiTmtFilterYear: document.getElementById("guests-bi-tmt-filter-year"),
   guestsBiTmtFilterHa: document.getElementById("guests-bi-tmt-filter-ha"),
   guestsBiNationalitiesFilters: document.getElementById("guests-bi-nationalities-filters"),
   guestsBiNationalitiesFilterYear: document.getElementById("guests-bi-nationalities-filter-year"),
   guestsBiNationalitiesFilterHa: document.getElementById("guests-bi-nationalities-filter-ha"),
+  guestsBiIneFilters: document.getElementById("guests-bi-ine-filters"),
+  guestsBiIneFilterMonth: document.getElementById("guests-bi-ine-filter-month"),
+  guestsBiIneFilterHa: document.getElementById("guests-bi-ine-filter-ha"),
   guestsBiPanelTmt: document.getElementById("guests-bi-panel-tmt"),
   guestsBiPanelNationalities: document.getElementById("guests-bi-panel-nationalities"),
+  guestsBiPanelIne: document.getElementById("guests-bi-panel-ine"),
   guestsBiCount: document.getElementById("guests-bi-count"),
   guestsBiRows: document.getElementById("guests-bi-rows"),
   guestsBiTotals: document.getElementById("guests-bi-totals"),
@@ -1221,6 +1231,9 @@ const els = {
   guestsBiMonthLineModeAbsolute: document.getElementById("guests-bi-month-line-mode-absolute"),
   guestsBiMonthLineModePercent: document.getElementById("guests-bi-month-line-mode-percent"),
   guestsBiNationalitiesStatus: document.getElementById("guests-bi-nationalities-status"),
+  guestsBiIneSummaryRows: document.getElementById("guests-bi-ine-summary-rows"),
+  guestsBiIneDetailRows: document.getElementById("guests-bi-ine-detail-rows"),
+  guestsBiIneStatus: document.getElementById("guests-bi-ine-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
   financialDocsEntitiesFilterSearch: document.getElementById("financial-docs-entities-filter-search"),
@@ -1902,8 +1915,11 @@ function bindEvents() {
   els.guestsBiTmtFilterHa?.addEventListener("change", () => onGuestsBiHaChange("tmt"));
   els.guestsBiNationalitiesFilterYear?.addEventListener("change", () => onGuestsBiYearChange("nationalities"));
   els.guestsBiNationalitiesFilterHa?.addEventListener("change", () => onGuestsBiHaChange("nationalities"));
+  els.guestsBiIneFilterMonth?.addEventListener("change", onGuestsBiIneMonthChange);
+  els.guestsBiIneFilterHa?.addEventListener("change", () => onGuestsBiHaChange("ine"));
   els.guestsBiTabTmt?.addEventListener("click", () => setGuestsBiTab("tmt"));
   els.guestsBiTabNationalities?.addEventListener("click", () => setGuestsBiTab("nationalities"));
+  els.guestsBiTabIne?.addEventListener("click", () => setGuestsBiTab("ine"));
   els.guestsBiLineModeAbsolute?.addEventListener("click", () => setGuestsBiLineMode("absolute"));
   els.guestsBiLineModePercent?.addEventListener("click", () => setGuestsBiLineMode("percent"));
   els.guestsBiMonthLineModeAbsolute?.addEventListener("click", () => setGuestsBiMonthLineMode("absolute"));
@@ -17944,10 +17960,25 @@ function setGuestsBiStatus(message = "", tone = "") {
     els.guestsBiNationalitiesStatus.textContent = message;
     els.guestsBiNationalitiesStatus.classList.toggle("status-error", tone === "error");
   }
+  if (els.guestsBiIneStatus) {
+    els.guestsBiIneStatus.textContent = message;
+    els.guestsBiIneStatus.classList.toggle("status-error", tone === "error");
+  }
 }
 
 function normalizeGuestsBiTab(tab) {
-  return tab === "nationalities" ? "nationalities" : "tmt";
+  if (tab === "nationalities") return "nationalities";
+  if (tab === "ine") return "ine";
+  return "tmt";
+}
+
+function defaultGuestsBiPreviousMonth() {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+  const previousMonth = month === 1 ? 12 : month - 1;
+  const previousYear = month === 1 ? year - 1 : year;
+  return `${previousYear}-${String(previousMonth).padStart(2, "0")}`;
 }
 
 function guestsBiFilterState(tab = state.guestsBiTab) {
@@ -17961,6 +17992,12 @@ function guestsBiFilterState(tab = state.guestsBiTab) {
 
 function guestsBiFilterElements(tab = state.guestsBiTab) {
   const normalizedTab = normalizeGuestsBiTab(tab);
+  if (normalizedTab === "ine") {
+    return {
+      yearMonth: els.guestsBiIneFilterMonth,
+      ha: els.guestsBiIneFilterHa,
+    };
+  }
   if (normalizedTab === "nationalities") {
     return {
       year: els.guestsBiNationalitiesFilterYear,
@@ -17978,6 +18015,13 @@ function currentGuestsBiYear(tab = state.guestsBiTab) {
   const elements = guestsBiFilterElements(tab);
   if (elements.year) return clean(elements.year.value);
   return clean(filters.year || state.guestsBiYear);
+}
+
+function currentGuestsBiYearMonth(tab = state.guestsBiTab) {
+  const filters = guestsBiFilterState(tab);
+  const elements = guestsBiFilterElements(tab);
+  if (elements.yearMonth) return clean(elements.yearMonth.value || filters.yearMonth || state.guestsBiIneMonth || defaultGuestsBiPreviousMonth());
+  return clean(filters.yearMonth || state.guestsBiIneMonth || defaultGuestsBiPreviousMonth());
 }
 
 function currentGuestsBiHa(tab = state.guestsBiTab) {
@@ -18000,8 +18044,14 @@ function guestsBiColorPalette() {
 
 function buildGuestsBiUrlClient(tab = state.guestsBiTab) {
   const params = new URLSearchParams();
-  const year = currentGuestsBiYear(tab);
-  if (year) params.set("year", year);
+  const normalizedTab = normalizeGuestsBiTab(tab);
+  if (normalizedTab === "ine") {
+    const yearMonth = currentGuestsBiYearMonth(tab);
+    if (yearMonth) params.set("year_month", yearMonth);
+  } else {
+    const year = currentGuestsBiYear(tab);
+    if (year) params.set("year", year);
+  }
   const ha = currentGuestsBiHa(tab);
   if (ha) params.set("ha", ha);
   const query = params.toString();
@@ -18018,16 +18068,25 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
     state.guestsBiYears = Array.isArray(result?.years) ? result.years : [];
     state.guestsBiYear = clean(result?.year);
     state.guestsBiHa = clean(result?.ha).toUpperCase();
-    filterState.year = state.guestsBiYear;
+    state.guestsBiIneMonths = Array.isArray(result?.ine?.months) ? result.ine.months : [];
+    state.guestsBiIneMonth = clean(result?.ine?.yearMonth || defaultGuestsBiPreviousMonth());
+    state.guestsBiIneSummaryRows = Array.isArray(result?.ine?.summaryRows) ? result.ine.summaryRows : [];
+    state.guestsBiIneDetailRows = Array.isArray(result?.ine?.detailRows) ? result.ine.detailRows : [];
+    if (normalizedTab === "ine") filterState.yearMonth = state.guestsBiIneMonth;
+    else filterState.year = state.guestsBiYear;
     filterState.ha = state.guestsBiHa;
     for (const tabKey of ["tmt", "nationalities"]) {
       const tabFilters = guestsBiFilterState(tabKey);
       if (!clean(tabFilters.year)) tabFilters.year = state.guestsBiYear;
       if (!clean(tabFilters.ha)) tabFilters.ha = state.guestsBiHa;
     }
+    const ineFilters = guestsBiFilterState("ine");
+    if (!clean(ineFilters.yearMonth)) ineFilters.yearMonth = state.guestsBiIneMonth || defaultGuestsBiPreviousMonth();
+    if (!clean(ineFilters.ha)) ineFilters.ha = state.guestsBiHa;
     state.guestsBiLastLoaded = {
       tab: normalizedTab,
       year: state.guestsBiYear,
+      yearMonth: state.guestsBiIneMonth,
       ha: state.guestsBiHa,
     };
     state.guestsBiTotals = {
@@ -18058,6 +18117,10 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
     state.guestsBiNationalityMonthSeries = [];
     state.guestsBiNationalityPivotYears = [];
     state.guestsBiNationalityPivotRows = [];
+    state.guestsBiIneMonths = [];
+    state.guestsBiIneMonth = defaultGuestsBiPreviousMonth();
+    state.guestsBiIneSummaryRows = [];
+    state.guestsBiIneDetailRows = [];
     state.guestsBiLoaded = false;
     renderGuestsBi();
     if (!silent) setGuestsBiStatus(`Failed to load Guests BI: ${error.message}`, "error");
@@ -18076,6 +18139,12 @@ function onGuestsBiYearChange(tab) {
   loadGuestsBiData({ silent: true, tab: normalizedTab }).catch(() => {});
 }
 
+function onGuestsBiIneMonthChange() {
+  const normalizedTab = "ine";
+  guestsBiFilterState(normalizedTab).yearMonth = currentGuestsBiYearMonth(normalizedTab);
+  loadGuestsBiData({ silent: true, tab: normalizedTab }).catch(() => {});
+}
+
 function onGuestsBiHaChange(tab) {
   const normalizedTab = normalizeGuestsBiTab(tab);
   guestsBiFilterState(normalizedTab).ha = currentGuestsBiHa(normalizedTab);
@@ -18090,7 +18159,9 @@ function setGuestsBiTab(tab) {
   if (
     !state.guestsBiLoaded ||
     lastLoaded.tab !== state.guestsBiTab ||
-    clean(lastLoaded.year) !== clean(filterState.year || state.guestsBiYear) ||
+    (state.guestsBiTab === "ine"
+      ? clean(lastLoaded.yearMonth) !== clean(filterState.yearMonth || state.guestsBiIneMonth || defaultGuestsBiPreviousMonth())
+      : clean(lastLoaded.year) !== clean(filterState.year || state.guestsBiYear)) ||
     clean(lastLoaded.ha).toUpperCase() !== clean(filterState.ha || state.guestsBiHa).toUpperCase()
   ) {
     loadGuestsBiData({ silent: true, tab: state.guestsBiTab }).catch(() => {});
@@ -18311,6 +18382,31 @@ function renderGuestsBiNationalityPivot() {
   }
 }
 
+function renderGuestsBiIne() {
+  const summaryRows = Array.isArray(state.guestsBiIneSummaryRows) ? state.guestsBiIneSummaryRows : [];
+  const detailRows = Array.isArray(state.guestsBiIneDetailRows) ? state.guestsBiIneDetailRows : [];
+  if (els.guestsBiIneSummaryRows) {
+    els.guestsBiIneSummaryRows.innerHTML = summaryRows.length
+      ? summaryRows.map((row) => `<tr>
+        <td>${escape(row.rowLabel || "-")}</td>
+        <td>${escape(String(Number(row.guestsEntered || 0)))}</td>
+        <td>${escape(String(Number(row.guestsSlept || 0)))}</td>
+        <td>${escape(String(Number(row.nights || 0)))}</td>
+      </tr>`).join("")
+      : '<tr><td colspan="4" class="empty">No INE summary data found.</td></tr>';
+  }
+  if (els.guestsBiIneDetailRows) {
+    els.guestsBiIneDetailRows.innerHTML = detailRows.length
+      ? detailRows.map((row) => `<tr>
+        <td>${escape(row.rowLabel || "-")}</td>
+        <td>${escape(String(Number(row.guestsEntered || 0)))}</td>
+        <td>${escape(String(Number(row.guestsSlept || 0)))}</td>
+        <td class="guests-bi-total-cell">${escape(String(Number(row.nights || 0)))}</td>
+      </tr>`).join("")
+      : '<tr><td colspan="4" class="empty">No INE nationality data found.</td></tr>';
+  }
+}
+
 function renderGuestsBi() {
   if (!canUseBusinessIntelligence()) {
     if (els.guestsBiRows) els.guestsBiRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Guests BI.</td></tr>';
@@ -18322,14 +18418,20 @@ function renderGuestsBi() {
     if (els.guestsBiNationalitiesPivotHead) els.guestsBiNationalitiesPivotHead.innerHTML = "";
     if (els.guestsBiNationalitiesPivotRows) els.guestsBiNationalitiesPivotRows.innerHTML = "";
     if (els.guestsBiNationalitiesPivotTotals) els.guestsBiNationalitiesPivotTotals.innerHTML = "";
+    if (els.guestsBiIneSummaryRows) els.guestsBiIneSummaryRows.innerHTML = "";
+    if (els.guestsBiIneDetailRows) els.guestsBiIneDetailRows.innerHTML = "";
     if (els.guestsBiNationalitiesCount) els.guestsBiNationalitiesCount.textContent = "0 countries";
     return;
   }
-  const isTmt = state.guestsBiTab !== "nationalities";
+  const isTmt = state.guestsBiTab === "tmt";
+  const isNationalities = state.guestsBiTab === "nationalities";
+  const isIne = state.guestsBiTab === "ine";
   els.guestsBiTabTmt?.classList.toggle("active-tab", isTmt);
   els.guestsBiTabTmt?.classList.toggle("ghost", !isTmt);
-  els.guestsBiTabNationalities?.classList.toggle("active-tab", !isTmt);
-  els.guestsBiTabNationalities?.classList.toggle("ghost", isTmt);
+  els.guestsBiTabNationalities?.classList.toggle("active-tab", isNationalities);
+  els.guestsBiTabNationalities?.classList.toggle("ghost", !isNationalities);
+  els.guestsBiTabIne?.classList.toggle("active-tab", isIne);
+  els.guestsBiTabIne?.classList.toggle("ghost", !isIne);
   els.guestsBiLineModeAbsolute?.classList.toggle("active-tab", state.guestsBiNationalityLineMode !== "percent");
   els.guestsBiLineModeAbsolute?.classList.toggle("ghost", state.guestsBiNationalityLineMode === "percent");
   els.guestsBiLineModePercent?.classList.toggle("active-tab", state.guestsBiNationalityLineMode === "percent");
@@ -18339,7 +18441,8 @@ function renderGuestsBi() {
   els.guestsBiMonthLineModePercent?.classList.toggle("active-tab", state.guestsBiNationalityMonthLineMode === "percent");
   els.guestsBiMonthLineModePercent?.classList.toggle("ghost", state.guestsBiNationalityMonthLineMode !== "percent");
   if (els.guestsBiPanelTmt) els.guestsBiPanelTmt.hidden = !isTmt;
-  if (els.guestsBiPanelNationalities) els.guestsBiPanelNationalities.hidden = isTmt;
+  if (els.guestsBiPanelNationalities) els.guestsBiPanelNationalities.hidden = !isNationalities;
+  if (els.guestsBiPanelIne) els.guestsBiPanelIne.hidden = !isIne;
   const years = state.guestsBiYears.length ? state.guestsBiYears : [state.guestsBiYear || String(new Date().getFullYear())];
   for (const tabKey of ["tmt", "nationalities"]) {
     const filterState = guestsBiFilterState(tabKey);
@@ -18354,6 +18457,18 @@ function renderGuestsBi() {
         ? clean(filterState.ha).toUpperCase()
         : "";
     }
+  }
+  const ineFilterEls = guestsBiFilterElements("ine");
+  const ineMonths = state.guestsBiIneMonths.length ? state.guestsBiIneMonths : [state.guestsBiIneMonth || defaultGuestsBiPreviousMonth()];
+  if (ineFilterEls.yearMonth) {
+    ineFilterEls.yearMonth.innerHTML = ineMonths.map((month) => `<option value="${escape(month)}">${escape(month)}</option>`).join("");
+    const selectedMonth = clean(guestsBiFilterState("ine").yearMonth || state.guestsBiIneMonth || defaultGuestsBiPreviousMonth());
+    if (selectedMonth) ineFilterEls.yearMonth.value = selectedMonth;
+  }
+  if (ineFilterEls.ha) {
+    ineFilterEls.ha.value = clean(guestsBiFilterState("ine").ha).toUpperCase() === "H" || clean(guestsBiFilterState("ine").ha).toUpperCase() === "A"
+      ? clean(guestsBiFilterState("ine").ha).toUpperCase()
+      : "";
   }
   const rows = Array.isArray(state.guestsBiRows) ? state.guestsBiRows : [];
   if (els.guestsBiCount) els.guestsBiCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
@@ -18385,10 +18500,16 @@ function renderGuestsBi() {
   renderGuestsBiNationalityLine();
   renderGuestsBiNationalityMonthLine();
   renderGuestsBiNationalityPivot();
+  renderGuestsBiIne();
   if (els.guestsBiNationalitiesStatus) {
     const hasNationalityData = lineSeries.length || pivotRows.length;
     els.guestsBiNationalitiesStatus.textContent = hasNationalityData ? "Nationality graphs loaded." : "No nationality distribution found.";
     els.guestsBiNationalitiesStatus.classList.remove("status-error");
+  }
+  if (els.guestsBiIneStatus) {
+    const hasIneData = state.guestsBiIneSummaryRows.length || state.guestsBiIneDetailRows.length;
+    els.guestsBiIneStatus.textContent = hasIneData ? "INE tables loaded." : "No INE data found.";
+    els.guestsBiIneStatus.classList.remove("status-error");
   }
 }
 

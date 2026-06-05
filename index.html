@@ -3508,6 +3508,7 @@
               <div class="actions">
                 <button id="guests-bi-tab-tmt" type="button" class="active-tab">TMT</button>
                 <button id="guests-bi-tab-nationalities" type="button" class="ghost">Nationalities</button>
+                <button id="guests-bi-tab-ine" type="button" class="ghost">INE</button>
               </div>
             </div>
 
@@ -3606,6 +3607,63 @@
               </div>
             </div>
             <p id="guests-bi-nationalities-status" class="auth-status"></p>
+          </section>
+
+          <section id="guests-bi-panel-ine" class="card" hidden>
+            <div class="bar">
+              <h2>INE</h2>
+            </div>
+            <div id="guests-bi-ine-filters" class="grid filters guests-bi-filters">
+              <label>
+                Year-Month
+                <select id="guests-bi-ine-filter-month"></select>
+              </label>
+              <label>
+                HA
+                <select id="guests-bi-ine-filter-ha">
+                  <option value="">All</option>
+                  <option value="H">H</option>
+                  <option value="A">A</option>
+                </select>
+              </label>
+            </div>
+            <div class="guests-bi-line-card">
+              <div class="bar">
+                <h3>Residentes em Portugal</h3>
+              </div>
+              <div class="table-wrap compact-table-wrap">
+                <table class="compact-table guests-bi-table">
+                  <thead>
+                    <tr>
+                      <th>Grupo</th>
+                      <th>Nº de Hóspedes que entraram no mês</th>
+                      <th>Nº de Hóspedes que dormiram no mês</th>
+                      <th>Nº de Dormidas (Noites)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guests-bi-ine-summary-rows"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="guests-bi-line-card">
+              <div class="bar">
+                <h3>Nationalities</h3>
+              </div>
+              <div class="table-wrap compact-table-wrap">
+                <table class="compact-table guests-bi-table guests-bi-nationalities-table">
+                  <thead>
+                    <tr>
+                      <th>Nationality</th>
+                      <th>Nº de Hóspedes que entraram no mês</th>
+                      <th>Nº de Hóspedes que dormiram no mês</th>
+                      <th>Nº de Dormidas (Noites)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guests-bi-ine-detail-rows"></tbody>
+                </table>
+              </div>
+            </div>
+            <p id="guests-bi-ine-status" class="auth-status"></p>
           </section>
         </section>
       </section>
