@@ -230,6 +230,26 @@ async function loadGuestTableRows(filters = {}, options = {}) {
   return sortGuestListRows(mapped);
 }
 
+async function loadGuestTableRowById(id) {
+  const rows = await restQuery(`guest_records?select=*&id=eq.${encodeURIComponent(id)}&limit=1`, {
+    method: "GET",
+  });
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  return row ? mapGuestTableRow(row) : null;
+}
+
+async function findDuplicateGuestTableRow(record, excludeId = "") {
+  const docNumber = cleanId(record?.docNumber);
+  const checkIn = cleanId(record?.checkIn);
+  if (!docNumber || !checkIn) return null;
+  const rows = await restQuery(
+    `guest_records?select=*&doc_number=eq.${encodeURIComponent(docNumber)}&check_in=eq.${encodeURIComponent(checkIn)}&limit=10`,
+    { method: "GET" }
+  );
+  const mapped = (Array.isArray(rows) ? rows : []).map(mapGuestTableRow);
+  return mapped.find((item) => cleanId(item.id) !== cleanId(excludeId)) || null;
+}
+
 function buildGuestTableBody(record, existing = {}) {
   return {
     id: cleanId(record.id || existing.id) || undefined,
@@ -350,7 +370,8 @@ module.exports = async function handler(req, res) {
         return;
       }
       const nextRecord = sanitizeGuestRecord(body);
-      validateGuestSave(current.rows, nextRecord);
+      const duplicate = await findDuplicateGuestTableRow(nextRecord);
+      if (duplicate) validateGuestSave([duplicate], nextRecord);
       await createGuestTableRow({
         ...nextRecord,
         createdAt: new Date().toISOString(),
@@ -381,13 +402,14 @@ module.exports = async function handler(req, res) {
         res.status(200).json({ rows: scopeGuestListRows(saved.rows, responseFilters), settings: saved.settings, countries: COUNTRIES });
         return;
       }
-      const existing = current.rows.find((item) => cleanId(item.id) === id);
+      const existing = await loadGuestTableRowById(id);
       if (!existing) {
         res.status(404).json({ error: "Guest record not found." });
         return;
       }
       const nextRecord = sanitizeGuestRecord({ ...existing, ...body, id }, existing);
-      validateGuestSave(current.rows, nextRecord, { excludeId: id });
+      const duplicate = await findDuplicateGuestTableRow(nextRecord, id);
+      if (duplicate) validateGuestSave([duplicate], nextRecord, { excludeId: id });
       await updateGuestTableRow(id, nextRecord, existing);
       const rows = await loadGuestTableRows(responseFilters);
       res.status(200).json({ rows, settings: current.settings, countries: COUNTRIES });
