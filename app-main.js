@@ -13991,12 +13991,29 @@ function guestCheckoutEditMarkup(record, draft, nearbyRecord) {
   return `<div class="guest-checkout-stack"><input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" />${copyLink}</div>`;
 }
 
+function rerenderGuestDisplayRow(id) {
+  const recordId = clean(id);
+  if (!recordId) return false;
+  const rows = getFilteredGuestsRows();
+  const index = rows.findIndex((item) => clean(item.id) === recordId);
+  if (index === -1) return false;
+  const record = rows[index];
+  const nearbyRecord = { checkOut: findNearbyGuestCheckoutValue(rows, index) };
+  const nextTableRow = state.guestsEditingId === record.id ? buildGuestsEditableRow(record, nearbyRecord) : buildGuestsReadOnlyRow(record, nearbyRecord);
+  const currentTableRow = els.guestsRows?.querySelector(`[data-guest-row-id="${CSS.escape(recordId)}"]`);
+  if (currentTableRow) currentTableRow.replaceWith(nextTableRow);
+  const nextMobileCard = state.guestsEditingId === record.id ? buildGuestsEditableCard(record) : buildGuestsReadOnlyCard(record);
+  const currentMobileCard = els.guestsMobileCards?.querySelector(`[data-guest-row-id="${CSS.escape(recordId)}"]`);
+  if (currentMobileCard) currentMobileCard.replaceWith(nextMobileCard);
+  return !!currentTableRow || !!currentMobileCard;
+}
+
 function startGuestsQuickEdit(id, field) {
   const row = state.guestsRows.find((item) => item.id === id);
   if (!row || guestIsLocked(row)) return;
   state.guestsQuickEditId = id;
   state.guestsQuickEditField = field;
-  renderGuests();
+  if (!rerenderGuestDisplayRow(id)) renderGuests();
   requestAnimationFrame(() => {
     const selector = `[data-guests-quick-input="${CSS.escape(field)}"][data-id="${CSS.escape(id)}"]`;
     const input = document.querySelector(selector);
@@ -14054,10 +14071,6 @@ async function saveGuestQuickEdit(id, field, rawValue) {
   state.guestsCountries = Array.isArray(result?.countries) ? result.countries : state.guestsCountries;
   state.guestsLoaded = true;
   state.guestsSettingsLoaded = true;
-  renderGuestsCountryOptions();
-  renderGuests();
-  renderGuestsSettings();
-  renderLayout();
   return field === "ha" ? value : value || "";
 }
 
@@ -14075,7 +14088,7 @@ async function onGuestsQuickEditChange(event) {
     const current = state.guestsRows.find((item) => item.id === id);
     event.target.value = field === "ha" ? normalizeGuestHAClient(current?.[field]) : clean(current?.[field]);
     clearGuestsQuickEdit();
-    renderGuests();
+    if (!rerenderGuestDisplayRow(id)) renderGuests();
     setGuestsStatus(`Save failed: ${e.message}`);
     showToast(`Guest save failed: ${e.message}`, "error");
   }
@@ -14267,6 +14280,7 @@ function buildGuestsReadOnlyRow(record, previousRecord = null) {
     !locked ? `<button type="button" class="danger" data-guests-action="delete" data-id="${escape(record.id)}">Delete</button>` : "",
   ].filter(Boolean).join("");
   const tr = document.createElement("tr");
+  tr.dataset.guestRowId = record.id;
   const nameCell = `<div class="guest-name-stack"><div class="guest-name-label">${escape(record.name)}</div>${guestAlertsMarkup(meta)}</div>`;
   tr.innerHTML = `<td>${guestQuickFieldMarkup(record, "ha")}</td>
     <td>${nameCell}</td>
@@ -14289,6 +14303,7 @@ function buildGuestsEditableRow(record, previousRecord = null) {
   const meta = guestRowMetaClient(draft);
   const tr = document.createElement("tr");
   tr.className = "inline-editor";
+  tr.dataset.guestRowId = record.id;
   const nameCell = `<div class="guest-name-stack"><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" />${guestAlertsMarkup(meta)}</div>`;
   tr.innerHTML = `<td><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
     <td>${nameCell}</td>
@@ -14338,6 +14353,7 @@ function buildGuestsReadOnlyCard(record) {
   ].filter(Boolean).join("");
   const card = document.createElement("article");
   card.className = "guests-mobile-card";
+  card.dataset.guestRowId = record.id;
   card.innerHTML = `<div class="communication-mobile-header">
       <div>
         <div class="guest-name-stack"><div class="service-mobile-request">${escape(record.name)}</div>${guestAlertsMarkup(meta)}</div>
@@ -14366,6 +14382,7 @@ function buildGuestsEditableCard(record) {
   const meta = guestRowMetaClient(draft);
   const card = document.createElement("article");
   card.className = "guests-mobile-card";
+  card.dataset.guestRowId = record.id;
   card.innerHTML = `<div class="communication-mobile-grid">
       <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
       <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><div class="guest-name-stack"><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" />${guestAlertsMarkup(meta)}</div></label>
