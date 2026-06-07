@@ -18376,6 +18376,7 @@ function renderGuestsBiNationalityPivot() {
   const rows = Array.isArray(state.guestsBiNationalityPivotRows) ? state.guestsBiNationalityPivotRows : [];
   if (els.guestsBiNationalitiesPivotHead) {
     els.guestsBiNationalitiesPivotHead.innerHTML = `<tr>
+      <th>#</th>
       <th>Nationality</th>
       ${years.map((year) => `<th>${escape(year)}</th>`).join("")}
       <th>Total</th>
@@ -18383,7 +18384,8 @@ function renderGuestsBiNationalityPivot() {
   }
   if (els.guestsBiNationalitiesPivotRows) {
     els.guestsBiNationalitiesPivotRows.innerHTML = rows.length
-      ? rows.map((row) => `<tr>
+      ? rows.map((row, index) => `<tr>
+        <td>${escape(String(index + 1))}</td>
         <td>${escape(row.countryLabel || "-")}</td>
         ${years.map((year) => `<td>${escape(String(Number(row.values?.[year] || 0)))}</td>`).join("")}
         <td class="guests-bi-total-cell">${escape(String(Number(row.total || 0)))}</td>
@@ -18394,6 +18396,7 @@ function renderGuestsBiNationalityPivot() {
     const totalsByYear = Object.fromEntries(years.map((year) => [year, rows.reduce((sum, row) => sum + Number(row.values?.[year] || 0), 0)]));
     const grandTotal = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
     els.guestsBiNationalitiesPivotTotals.innerHTML = `<tr class="summary-row">
+      <th></th>
       <th>Total</th>
       ${years.map((year) => `<th>${escape(String(Number(totalsByYear[year] || 0)))}</th>`).join("")}
       <th>${escape(String(Number(grandTotal || 0)))}</th>
