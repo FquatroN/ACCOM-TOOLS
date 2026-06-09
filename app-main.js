@@ -929,9 +929,15 @@ const state = {
   financialDocsFilePickerTarget: null,
   financialDocsModalOpen: false,
   financialDocEntitiesModalOpen: false,
+  financialDocsImportModalOpen: false,
   financialDocsRulesDraft: [],
   financialDocsPreviewUrl: "",
   financialDocsLastOpenedId: "",
+  financialDocsImportType: "ordenados",
+  financialDocsImportRawText: "",
+  financialDocsImportPreviewRows: [],
+  financialDocsImportFiles: [],
+  financialDocsImportSourceMode: "",
   guestsBiRows: [],
   guestsBiYears: [],
   guestsBiTotals: { totalNights: 0, exempt7Days: 0, exempt13Year: 0 },
@@ -1153,6 +1159,7 @@ const els = {
   generalSaveSettings: document.getElementById("general-save-settings"),
   financialDocsOpenEntities: document.getElementById("financial-docs-open-entities"),
   financialDocsExportExcel: document.getElementById("financial-docs-export-excel"),
+  financialDocsOpenImport: document.getElementById("financial-docs-open-import"),
   financialDocsNew: document.getElementById("financial-docs-new"),
   financialDocsUploadParse: document.getElementById("financial-docs-upload-parse"),
   financialDocsFilterCreatedFrom: document.getElementById("financial-docs-filter-created-from"),
@@ -1172,6 +1179,7 @@ const els = {
   financialDocsStatus: document.getElementById("financial-docs-status"),
   financialDocsParseInput: document.getElementById("financial-docs-parse-input"),
   financialDocsAttachmentInput: document.getElementById("financial-docs-attachment-input"),
+  financialDocsImportInput: document.getElementById("financial-docs-import-input"),
   financialDocsEntityNameList: document.getElementById("financial-docs-entity-name-list"),
   financialDocsEntityNifList: document.getElementById("financial-docs-entity-nif-list"),
   financialDocsModal: document.getElementById("financial-docs-modal"),
@@ -1265,6 +1273,18 @@ const els = {
   financialDocsDriveRedirect: document.getElementById("financial-docs-drive-redirect"),
   financialDocsDriveClientId: document.getElementById("financial-docs-drive-client-id"),
   financialDocsSettingsStatus: document.getElementById("financial-docs-settings-status"),
+  financialDocsImportModal: document.getElementById("financial-docs-import-modal"),
+  financialDocsImportStatus: document.getElementById("financial-docs-import-status"),
+  financialDocsImportClose: document.getElementById("financial-docs-import-close"),
+  financialDocsImportConfirm: document.getElementById("financial-docs-import-confirm"),
+  financialDocsImportType: document.getElementById("financial-docs-import-type"),
+  financialDocsImportDropzone: document.getElementById("financial-docs-import-dropzone"),
+  financialDocsImportSourceSummary: document.getElementById("financial-docs-import-source-summary"),
+  financialDocsImportBrowse: document.getElementById("financial-docs-import-browse"),
+  financialDocsImportPreview: document.getElementById("financial-docs-import-preview"),
+  financialDocsImportText: document.getElementById("financial-docs-import-text"),
+  financialDocsImportCount: document.getElementById("financial-docs-import-count"),
+  financialDocsImportRows: document.getElementById("financial-docs-import-rows"),
   generalEmailProvider: document.getElementById("general-email-provider"),
   generalEmailSmtpHost: document.getElementById("general-email-smtp-host"),
   generalEmailSmtpPort: document.getElementById("general-email-smtp-port"),
@@ -1965,11 +1985,13 @@ function bindEvents() {
     el?.addEventListener("change", onFinancialDocsFilterChanged)
   );
   els.financialDocsExportExcel?.addEventListener("click", exportFinancialDocsToExcel);
+  els.financialDocsOpenImport?.addEventListener("click", openFinancialDocImportModal);
   els.financialDocsOpenEntities?.addEventListener("click", openFinancialDocEntitiesModal);
   els.financialDocsNew?.addEventListener("click", () => openFinancialDocModal());
   els.financialDocsUploadParse?.addEventListener("click", () => triggerFinancialDocParsePicker({ mode: "modal-parse" }));
   els.financialDocsParseInput?.addEventListener("change", onFinancialDocParsePicked);
   els.financialDocsAttachmentInput?.addEventListener("change", onFinancialDocAttachmentPicked);
+  els.financialDocsImportInput?.addEventListener("change", onFinancialDocImportFilesPicked);
   els.financialDocsRows?.addEventListener("click", onFinancialDocTableAction);
   els.financialDocsRows?.addEventListener("input", onFinancialDocTableInput);
   els.financialDocsRows?.addEventListener("change", onFinancialDocTableChange);
@@ -1986,6 +2008,15 @@ function bindEvents() {
     els.financialDocsAmountField,
   ].forEach((el) => el?.addEventListener("input", () => setFinancialDocsDuplicateWarning("")));
   els.financialDocsEntitiesClose?.addEventListener("click", closeFinancialDocEntitiesModal);
+  els.financialDocsImportClose?.addEventListener("click", closeFinancialDocImportModal);
+  els.financialDocsImportBrowse?.addEventListener("click", () => els.financialDocsImportInput?.click());
+  els.financialDocsImportPreview?.addEventListener("click", () => previewFinancialDocImport());
+  els.financialDocsImportConfirm?.addEventListener("click", confirmFinancialDocImport);
+  els.financialDocsImportType?.addEventListener("change", onFinancialDocImportTypeChange);
+  els.financialDocsImportText?.addEventListener("input", onFinancialDocImportTextInput);
+  els.financialDocsImportDropzone?.addEventListener("dragover", onFinancialDocImportDragOver);
+  els.financialDocsImportDropzone?.addEventListener("dragleave", onFinancialDocImportDragLeave);
+  els.financialDocsImportDropzone?.addEventListener("drop", onFinancialDocImportDrop);
   els.financialDocsEntitiesRows?.addEventListener("click", onFinancialDocEntitiesAction);
   [els.financialDocsEntitiesFilterSearch, els.financialDocsEntitiesFilterAddress].forEach((el) =>
     el?.addEventListener("input", renderFinancialDocEntities)
@@ -2692,6 +2723,9 @@ async function setView(view) {
   }
   if (view !== "financial-docs" && state.financialDocEntitiesModalOpen) {
     closeFinancialDocEntitiesModal();
+  }
+  if (view !== "financial-docs" && state.financialDocsImportModalOpen) {
+    closeFinancialDocImportModal();
   }
   if (view !== "guests-bi") {
     state.guestsBiLoading = false;
@@ -17417,6 +17451,430 @@ function closeFinancialDocEntitiesModal() {
   syncFinancialDocModalBodyState();
 }
 
+function setFinancialDocsImportStatus(message) {
+  if (els.financialDocsImportStatus) els.financialDocsImportStatus.textContent = message || "";
+}
+
+function emptyFinancialDocImportPreviewRow(rowNumber = 0) {
+  return {
+    rowNumber,
+    draft: emptyFinancialDocDraft(),
+    errors: [],
+  };
+}
+
+function resetFinancialDocImportState({ keepType = true } = {}) {
+  state.financialDocsImportRawText = "";
+  state.financialDocsImportPreviewRows = [];
+  state.financialDocsImportFiles = [];
+  state.financialDocsImportSourceMode = "";
+  if (!keepType) state.financialDocsImportType = "ordenados";
+  if (els.financialDocsImportInput) els.financialDocsImportInput.value = "";
+}
+
+function financialDocImportTypeLabel(type) {
+  return clean(type).toLowerCase() === "documents" ? "Documents" : "Ordenados";
+}
+
+function syncFinancialDocImportSourceSummary() {
+  if (!els.financialDocsImportSourceSummary) return;
+  if (state.financialDocsImportSourceMode === "files" && state.financialDocsImportFiles.length) {
+    const names = state.financialDocsImportFiles.map((file) => clean(file?.name)).filter(Boolean);
+    els.financialDocsImportSourceSummary.textContent = names.length
+      ? names.join(", ")
+      : `${state.financialDocsImportFiles.length} file${state.financialDocsImportFiles.length === 1 ? "" : "s"} selected`;
+    return;
+  }
+  if (state.financialDocsImportSourceMode === "text" && clean(state.financialDocsImportRawText)) {
+    els.financialDocsImportSourceSummary.textContent = "Text source ready for preview";
+    return;
+  }
+  els.financialDocsImportSourceSummary.textContent = "No source selected";
+}
+
+function renderFinancialDocImportPreview() {
+  const rows = Array.isArray(state.financialDocsImportPreviewRows) ? state.financialDocsImportPreviewRows : [];
+  const readyCount = rows.filter((row) => !row.errors.length).length;
+  if (els.financialDocsImportCount) {
+    els.financialDocsImportCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}${rows.length ? `, ${readyCount} ready` : ""}`;
+  }
+  if (els.financialDocsImportRows) {
+    els.financialDocsImportRows.innerHTML = rows.length
+      ? rows.map((item) => {
+          const draft = item.draft || emptyFinancialDocDraft();
+          const errors = Array.isArray(item.errors) ? item.errors : [];
+          return `<tr>
+            <td>${escape(String(item.rowNumber || ""))}</td>
+            <td>${escape(draft.cc || "-")}</td>
+            <td>${escape(formatDateOnly(draft.documentDate) || "-")}</td>
+            <td>${escape(draft.docNumber || "-")}</td>
+            <td>${escape(draft.description || "-")}</td>
+            <td>${escape(draft.supplierName || "-")}</td>
+            <td>${escape(draft.supplierNif || "-")}</td>
+            <td>${draft.amount === "" ? "-" : escape(formatMoney(draft.amount || 0))}</td>
+            <td>${draft.vatAmount === "" ? "-" : escape(formatMoney(draft.vatAmount || 0))}</td>
+            <td>${escape(draft.payment || "-")}</td>
+            <td>${escape(draft.docType || "-")}</td>
+            <td>${escape(draft.fat || "-")}</td>
+            <td>${escape(draft.category || "-")}</td>
+            <td>${escape(draft.status || "Draft")}</td>
+            <td class="${errors.length ? "financial-doc-import-validation--error" : "financial-doc-import-validation--ready"}">${escape(errors.length ? errors.join("; ") : "Ready")}</td>
+          </tr>`;
+        }).join("")
+      : '<tr><td colspan="15" class="muted">No preview rows yet.</td></tr>';
+  }
+  if (els.financialDocsImportConfirm) {
+    els.financialDocsImportConfirm.disabled = !readyCount;
+  }
+}
+
+function renderFinancialDocImportModal() {
+  if (els.financialDocsImportType) els.financialDocsImportType.value = state.financialDocsImportType || "ordenados";
+  if (els.financialDocsImportText) els.financialDocsImportText.value = state.financialDocsImportRawText || "";
+  syncFinancialDocImportSourceSummary();
+  renderFinancialDocImportPreview();
+}
+
+async function openFinancialDocImportModal() {
+  await ensureFinancialDocsData();
+  resetFinancialDocImportState({ keepType: true });
+  setFinancialDocsImportStatus("");
+  state.financialDocsImportModalOpen = true;
+  if (els.financialDocsImportModal) els.financialDocsImportModal.hidden = false;
+  syncFinancialDocModalBodyState();
+  renderFinancialDocImportModal();
+}
+
+function closeFinancialDocImportModal() {
+  state.financialDocsImportModalOpen = false;
+  resetFinancialDocImportState({ keepType: true });
+  setFinancialDocsImportStatus("");
+  if (els.financialDocsImportModal) els.financialDocsImportModal.hidden = true;
+  if (els.financialDocsImportText) els.financialDocsImportText.value = "";
+  syncFinancialDocModalBodyState();
+}
+
+function parseFinancialDocImportMoney(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  let normalized = raw
+    .replace(/\s+/g, "")
+    .replace(/€/g, "")
+    .replace(/[^\d,.-]/g, "");
+  if (!normalized) return "";
+  if (normalized.includes(",") && normalized.includes(".")) {
+    normalized = normalized.lastIndexOf(",") > normalized.lastIndexOf(".")
+      ? normalized.replace(/\./g, "").replace(",", ".")
+      : normalized.replace(/,/g, "");
+  } else if (normalized.includes(",")) {
+    normalized = normalized.replace(/\./g, "").replace(",", ".");
+  }
+  return normalizeNumber(normalized) ?? "";
+}
+
+function parseFinancialDocImportDate(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const dmyMatch = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if (dmyMatch) {
+    return `${dmyMatch[3]}-${String(Number(dmyMatch[2]) || 0).padStart(2, "0")}-${String(Number(dmyMatch[1]) || 0).padStart(2, "0")}`;
+  }
+  return normalizeDateInput(raw);
+}
+
+function parseDelimitedTextRow(line, delimiter) {
+  const output = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && char === delimiter) {
+      output.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  output.push(current);
+  return output;
+}
+
+function parseFinancialDocImportTextToTable(text) {
+  const raw = String(text || "").replace(/\r\n?/g, "\n");
+  const lines = raw.split("\n").filter((line) => clean(line) !== "");
+  return lines.map((line) => {
+    if (line.includes("\t")) return line.split("\t");
+    if (line.includes(";")) return parseDelimitedTextRow(line, ";");
+    if (line.includes(",")) return parseDelimitedTextRow(line, ",");
+    return [line];
+  });
+}
+
+function financialDocImportFieldMap(headerRow) {
+  return {
+    cc: findHeaderIndex(headerRow, ["cc"]),
+    documentDate: findHeaderIndex(headerRow, ["date", "data"]),
+    docNumber: findHeaderIndex(headerRow, ["doc number", "doc. number", "numero documento", "n documento"]),
+    description: findHeaderIndex(headerRow, ["description", "descricao"]),
+    supplierName: findHeaderIndex(headerRow, ["name", "nome"]),
+    supplierNif: findHeaderIndex(headerRow, ["supplier nif", "nif"]),
+    amount: findHeaderIndex(headerRow, ["amount", "valor"]),
+    vatAmount: findHeaderIndex(headerRow, ["vat amount", "iva"]),
+    payment: findHeaderIndex(headerRow, ["payment", "pagamento"]),
+    docType: findHeaderIndex(headerRow, ["type", "tipo"]),
+    fat: findHeaderIndex(headerRow, ["fat"]),
+    category: findHeaderIndex(headerRow, ["category", "categoria"]),
+  };
+}
+
+function financialDocImportDefaultFieldMap() {
+  return {
+    cc: 0,
+    documentDate: 1,
+    docNumber: 2,
+    description: 3,
+    supplierName: 4,
+    supplierNif: 5,
+    amount: 6,
+    vatAmount: 7,
+    payment: 8,
+    docType: 9,
+    fat: 10,
+    category: 11,
+  };
+}
+
+function financialDocImportLooksLikeHeader(row) {
+  const normalized = row.map((cell) => normalizeHeaderCell(cell));
+  return normalized.some((cell) => ["cc", "date", "data", "doc number", "doc. number", "description", "descricao", "name", "nome", "amount", "valor"].includes(cell));
+}
+
+function financialDocImportCell(cells, index) {
+  if (!Array.isArray(cells) || index < 0) return "";
+  return clean(cells[index]);
+}
+
+function normalizeFinancialDocImportPreviewRow(cells, fieldMap, sourceRowNumber) {
+  const base = normalizeFinancialDocRowClient({
+    cc: financialDocImportCell(cells, fieldMap.cc),
+    documentDate: parseFinancialDocImportDate(financialDocImportCell(cells, fieldMap.documentDate)),
+    docNumber: financialDocImportCell(cells, fieldMap.docNumber),
+    description: financialDocImportCell(cells, fieldMap.description),
+    supplierName: financialDocImportCell(cells, fieldMap.supplierName),
+    supplierNif: financialDocImportCell(cells, fieldMap.supplierNif),
+    amount: parseFinancialDocImportMoney(financialDocImportCell(cells, fieldMap.amount)),
+    vatAmount: (() => {
+      const parsed = parseFinancialDocImportMoney(financialDocImportCell(cells, fieldMap.vatAmount));
+      return parsed === "" ? "" : parsed;
+    })(),
+    payment: financialDocImportCell(cells, fieldMap.payment),
+    docType: financialDocImportCell(cells, fieldMap.docType),
+    fat: financialDocImportCell(cells, fieldMap.fat),
+    category: financialDocImportCell(cells, fieldMap.category),
+    status: "Draft",
+  });
+  const errors = [];
+  if (!clean(base.documentDate)) errors.push("Missing date");
+  if (!clean(base.description)) errors.push("Missing description");
+  if (!clean(base.supplierName)) errors.push("Missing name");
+  if (base.amount === "") errors.push("Missing amount");
+  return {
+    rowNumber: sourceRowNumber,
+    draft: base,
+    errors,
+  };
+}
+
+function parseFinancialDocImportRowsFromTable(table) {
+  const rows = Array.isArray(table)
+    ? table
+        .filter((row) => Array.isArray(row))
+        .map((row) => row.map((cell) => clean(cell)))
+        .filter((row) => row.some((cell) => clean(cell)))
+    : [];
+  if (!rows.length) return [];
+  const hasHeader = financialDocImportLooksLikeHeader(rows[0]);
+  const fieldMap = hasHeader ? financialDocImportFieldMap(rows[0]) : financialDocImportDefaultFieldMap();
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  return dataRows
+    .map((cells, index) => normalizeFinancialDocImportPreviewRow(cells, fieldMap, hasHeader ? index + 2 : index + 1))
+    .filter((item) => {
+      const draft = item.draft || emptyFinancialDocDraft();
+      return [draft.cc, draft.documentDate, draft.docNumber, draft.description, draft.supplierName, draft.supplierNif, draft.amount, draft.vatAmount, draft.payment, draft.docType, draft.fat, draft.category]
+        .some((value) => clean(value) !== "");
+    });
+}
+
+async function parseFinancialDocImportSpreadsheetFile(file) {
+  if (typeof XLSX === "undefined") throw new Error("Spreadsheet import is not available right now.");
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+  const rows = [];
+  workbook.SheetNames.forEach((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return;
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+    rows.push(...parseFinancialDocImportRowsFromTable(data));
+  });
+  return rows;
+}
+
+async function parseFinancialDocImportFile(file) {
+  const lowerName = clean(file?.name).toLowerCase();
+  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+    return parseFinancialDocImportSpreadsheetFile(file);
+  }
+  const text = await file.text();
+  return parseFinancialDocImportRowsFromTable(parseFinancialDocImportTextToTable(text));
+}
+
+async function previewFinancialDocImport() {
+  try {
+    setFinancialDocsImportStatus("Preparing preview...");
+    let rows = [];
+    if (state.financialDocsImportSourceMode === "files" && state.financialDocsImportFiles.length) {
+      for (const file of state.financialDocsImportFiles) {
+        rows.push(...await parseFinancialDocImportFile(file));
+      }
+    } else {
+      const text = clean(state.financialDocsImportRawText);
+      if (!text) {
+        state.financialDocsImportPreviewRows = [];
+        renderFinancialDocImportModal();
+        setFinancialDocsImportStatus("Paste text or choose files first.");
+        return;
+      }
+      rows = parseFinancialDocImportRowsFromTable(parseFinancialDocImportTextToTable(text));
+    }
+    state.financialDocsImportPreviewRows = rows;
+    renderFinancialDocImportModal();
+    setFinancialDocsImportStatus(rows.length ? `Preview ready for ${financialDocImportTypeLabel(state.financialDocsImportType)}.` : "No import rows found.");
+  } catch (error) {
+    state.financialDocsImportPreviewRows = [];
+    renderFinancialDocImportModal();
+    setFinancialDocsImportStatus(`Preview failed: ${error.message}`);
+    showToast(`Import preview failed: ${error.message}`, "error");
+  }
+}
+
+function onFinancialDocImportTypeChange(event) {
+  state.financialDocsImportType = clean(event?.target?.value).toLowerCase() === "documents" ? "documents" : "ordenados";
+  if (state.financialDocsImportPreviewRows.length) {
+    previewFinancialDocImport().catch(() => {});
+    return;
+  }
+  renderFinancialDocImportModal();
+}
+
+function onFinancialDocImportTextInput(event) {
+  state.financialDocsImportRawText = event?.target?.value || "";
+  state.financialDocsImportSourceMode = clean(state.financialDocsImportRawText) ? "text" : "";
+  state.financialDocsImportFiles = [];
+  if (els.financialDocsImportInput) els.financialDocsImportInput.value = "";
+  syncFinancialDocImportSourceSummary();
+}
+
+async function onFinancialDocImportFilesPicked(event) {
+  state.financialDocsImportFiles = Array.from(event?.target?.files || []);
+  state.financialDocsImportSourceMode = state.financialDocsImportFiles.length ? "files" : "";
+  state.financialDocsImportRawText = "";
+  if (els.financialDocsImportText) els.financialDocsImportText.value = "";
+  syncFinancialDocImportSourceSummary();
+  if (state.financialDocsImportFiles.length) await previewFinancialDocImport();
+}
+
+function onFinancialDocImportDragOver(event) {
+  event.preventDefault();
+  els.financialDocsImportDropzone?.classList.add("drag-over");
+}
+
+function onFinancialDocImportDragLeave() {
+  els.financialDocsImportDropzone?.classList.remove("drag-over");
+}
+
+async function onFinancialDocImportDrop(event) {
+  event.preventDefault();
+  els.financialDocsImportDropzone?.classList.remove("drag-over");
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (files.length) {
+    state.financialDocsImportFiles = files;
+    state.financialDocsImportSourceMode = "files";
+    state.financialDocsImportRawText = "";
+    if (els.financialDocsImportText) els.financialDocsImportText.value = "";
+    syncFinancialDocImportSourceSummary();
+    await previewFinancialDocImport();
+    return;
+  }
+  const text = event.dataTransfer?.getData("text/plain") || "";
+  if (!clean(text)) return;
+  state.financialDocsImportRawText = text;
+  state.financialDocsImportSourceMode = "text";
+  state.financialDocsImportFiles = [];
+  if (els.financialDocsImportInput) els.financialDocsImportInput.value = "";
+  if (els.financialDocsImportText) els.financialDocsImportText.value = text;
+  syncFinancialDocImportSourceSummary();
+  await previewFinancialDocImport();
+}
+
+async function confirmFinancialDocImport() {
+  const rows = (Array.isArray(state.financialDocsImportPreviewRows) ? state.financialDocsImportPreviewRows : []).filter((item) => !(Array.isArray(item.errors) && item.errors.length));
+  if (!rows.length) {
+    setFinancialDocsImportStatus("No valid rows to import.");
+    return;
+  }
+  const failures = [];
+  let successCount = 0;
+  try {
+    if (els.financialDocsImportConfirm) els.financialDocsImportConfirm.disabled = true;
+    setFinancialDocsImportStatus("Importing rows...");
+    for (const item of rows) {
+      try {
+        await saveFinancialDocRequest({
+          ...financialDocBuildPayload({
+            ...item.draft,
+            status: "Draft",
+          }),
+          status: "Draft",
+          source: state.financialDocsImportType === "documents" ? "import-documents" : "import-ordenados",
+        }, false, "");
+        successCount += 1;
+      } catch (error) {
+        failures.push(`Row ${item.rowNumber}: ${error.message}`);
+      }
+    }
+    if (successCount) {
+      await Promise.all([
+        loadFinancialDocsData({ silent: true }),
+        loadFinancialDocEntitiesData({ silent: true }),
+      ]);
+      renderFinancialDocEntityLists();
+      renderFinancialDocs();
+    }
+    if (successCount && !failures.length) {
+      closeFinancialDocImportModal();
+      setFinancialDocsStatus(`${successCount} financial document${successCount === 1 ? "" : "s"} imported.`);
+      showToast(`${successCount} financial document${successCount === 1 ? "" : "s"} imported.`, "success");
+      return;
+    }
+    const summary = `${successCount} imported, ${failures.length} failed.`;
+    setFinancialDocsImportStatus(summary);
+    setFinancialDocsStatus(summary);
+    showToast(summary, failures.length ? "error" : "success");
+  } finally {
+    renderFinancialDocImportModal();
+  }
+}
+
 async function saveFinancialDocEntity(id = "") {
   const draft = financialDocEntityDraftFromInputs(id);
   try {
@@ -17524,7 +17982,7 @@ function setFinancialDocsEntitiesStatus(message) {
 }
 
 function syncFinancialDocModalBodyState() {
-  const anyOpen = !!state.financialDocsModalOpen || !!state.financialDocEntitiesModalOpen;
+  const anyOpen = !!state.financialDocsModalOpen || !!state.financialDocEntitiesModalOpen || !!state.financialDocsImportModalOpen;
   document.body.classList.toggle("modal-open", anyOpen);
 }
 

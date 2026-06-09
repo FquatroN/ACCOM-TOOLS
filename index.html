@@ -3249,6 +3249,7 @@
               <h2>Filters</h2>
               <div class="row-actions">
                 <button id="financial-docs-export-excel" type="button" class="ghost">Export Excel</button>
+                <button id="financial-docs-open-import" type="button" class="ghost">Import</button>
                 <button id="financial-docs-open-entities" type="button" class="ghost financial-docs-entities-link">Entities</button>
               </div>
             </div>
@@ -3336,6 +3337,7 @@
 
           <input id="financial-docs-parse-input" class="sr-only-file" type="file" accept=".pdf,image/*,application/pdf" />
           <input id="financial-docs-attachment-input" class="sr-only-file" type="file" accept=".pdf,image/*,application/pdf" />
+          <input id="financial-docs-import-input" class="sr-only-file" type="file" multiple accept=".txt,.csv,.tsv,.xlsx,.xls,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
           <datalist id="financial-docs-entity-name-list"></datalist>
           <datalist id="financial-docs-entity-nif-list"></datalist>
 
@@ -3490,6 +3492,75 @@
                       </tr>
                     </thead>
                     <tbody id="financial-docs-entities-rows"></tbody>
+                  </table>
+                </div>
+              </section>
+            </section>
+          </section>
+
+          <section id="financial-docs-import-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card financial-doc-import-modal-card">
+              <div class="bar">
+                <h2>Import Financial Documents</h2>
+                <div class="actions">
+                  <p id="financial-docs-import-status" class="auth-status"></p>
+                  <button id="financial-docs-import-confirm" type="button">Confirm</button>
+                  <button id="financial-docs-import-close" type="button" class="ghost">Close</button>
+                </div>
+              </div>
+
+              <section class="settings-block">
+                <div class="grid financial-doc-import-grid">
+                  <label>
+                    Type of import
+                    <select id="financial-docs-import-type">
+                      <option value="ordenados">Ordenados</option>
+                      <option value="documents">Documents</option>
+                    </select>
+                  </label>
+                  <div class="field-group financial-doc-import-source-group">
+                    <span>Files or Text</span>
+                    <div id="financial-docs-import-dropzone" class="file-dropzone financial-doc-import-dropzone" tabindex="0" role="textbox" aria-label="Drop files or paste import text">
+                      <strong>Drop files here or paste text</strong>
+                      <span>For Ordenados, you can paste tabular text copied from Excel.</span>
+                      <small id="financial-docs-import-source-summary">No source selected</small>
+                    </div>
+                    <div class="financial-doc-import-actions">
+                      <button id="financial-docs-import-browse" type="button" class="ghost">Choose Files</button>
+                      <button id="financial-docs-import-preview" type="button" class="ghost">Preview</button>
+                    </div>
+                    <textarea id="financial-docs-import-text" rows="8" placeholder="Paste text here or use file drop/upload."></textarea>
+                  </div>
+                </div>
+              </section>
+
+              <section class="settings-block">
+                <div class="bar">
+                  <h3>Import Preview</h3>
+                  <p id="financial-docs-import-count">0 rows</p>
+                </div>
+                <div class="table-wrap compact-table-wrap financial-doc-import-table-wrap">
+                  <table class="compact-table financial-doc-import-table">
+                    <thead>
+                      <tr>
+                        <th>Row</th>
+                        <th>CC</th>
+                        <th>Date</th>
+                        <th>Doc Number</th>
+                        <th>Description</th>
+                        <th>Name</th>
+                        <th>Supplier NIF</th>
+                        <th>Amount</th>
+                        <th>VAT Amount</th>
+                        <th>Payment</th>
+                        <th>Type</th>
+                        <th>Fat</th>
+                        <th>Category</th>
+                        <th>Status</th>
+                        <th>Validation</th>
+                      </tr>
+                    </thead>
+                    <tbody id="financial-docs-import-rows"></tbody>
                   </table>
                 </div>
               </section>

@@ -5296,6 +5296,73 @@ button[id^="close-settings"] {
   width: min(980px, 100%);
 }
 
+.financial-doc-import-modal-card {
+  width: min(1320px, 97vw);
+}
+
+.financial-doc-import-grid {
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 0.75rem 1rem;
+  align-items: start;
+}
+
+.financial-doc-import-source-group {
+  gap: 0.55rem;
+}
+
+.financial-doc-import-dropzone {
+  min-height: 8rem;
+}
+
+.financial-doc-import-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.financial-doc-import-source-group textarea {
+  min-height: 12rem;
+  resize: vertical;
+  font-family: "Roboto Mono", "Consolas", monospace;
+  font-size: 0.78rem;
+}
+
+.financial-doc-import-table-wrap {
+  max-height: 30rem;
+}
+
+.financial-doc-import-table th,
+.financial-doc-import-table td {
+  font-size: 0.76rem;
+  vertical-align: top;
+}
+
+.financial-doc-import-table td:nth-child(3),
+.financial-doc-import-table td:nth-child(8),
+.financial-doc-import-table td:nth-child(9),
+.financial-doc-import-table td:nth-child(14),
+.financial-doc-import-table td:nth-child(15) {
+  white-space: nowrap;
+}
+
+.financial-doc-import-table td:nth-child(4),
+.financial-doc-import-table td:nth-child(5),
+.financial-doc-import-table td:nth-child(6),
+.financial-doc-import-table td:nth-child(7) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.financial-doc-import-validation--error {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.financial-doc-import-validation--ready {
+  color: #116149;
+  font-weight: 600;
+}
+
 .financial-doc-entities-modal-card .bar h2,
 .financial-doc-entities-modal-card .bar h3 {
   font-size: 1rem;
@@ -5453,6 +5520,10 @@ button[id^="close-settings"] {
   }
 
   .financial-doc-entities-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .financial-doc-import-grid {
     grid-template-columns: 1fr;
   }
 
