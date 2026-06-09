@@ -3511,17 +3511,19 @@
 
               <section class="settings-block">
                 <div class="grid financial-doc-import-grid">
-                  <label>
-                    Type of import
-                    <select id="financial-docs-import-type">
-                      <option value="ordenados">Ordenados</option>
-                      <option value="documents">Documents</option>
-                    </select>
-                  </label>
-                  <label>
-                    Status
-                    <select id="financial-docs-import-status-field"></select>
-                  </label>
+                  <div class="field-group financial-doc-import-meta-group">
+                    <label>
+                      Type of import
+                      <select id="financial-docs-import-type">
+                        <option value="ordenados">Ordenados</option>
+                        <option value="documents">Documents</option>
+                      </select>
+                    </label>
+                    <label>
+                      Status
+                      <select id="financial-docs-import-status-field"></select>
+                    </label>
+                  </div>
                   <div class="field-group financial-doc-import-source-group">
                     <span>Files or Text</span>
                     <div id="financial-docs-import-dropzone" class="file-dropzone financial-doc-import-dropzone" tabindex="0" role="textbox" aria-label="Drop files or paste import text">
@@ -3533,8 +3535,11 @@
                       <button id="financial-docs-import-browse" type="button" class="ghost">Choose Files</button>
                       <button id="financial-docs-import-preview" type="button" class="ghost">Preview</button>
                     </div>
-                    <textarea id="financial-docs-import-text" rows="8" placeholder="Paste text here or use file drop/upload."></textarea>
                   </div>
+                  <label class="financial-doc-import-text-group">
+                    Paste Text
+                    <textarea id="financial-docs-import-text" rows="8" placeholder="Paste text here or use file drop/upload."></textarea>
+                  </label>
                 </div>
               </section>
 
