@@ -5307,7 +5307,15 @@ button[id^="close-settings"] {
 }
 
 .financial-doc-import-source-group {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
   gap: 0.55rem;
+  align-items: start;
+}
+
+.financial-doc-import-source-group > span,
+.financial-doc-import-actions {
+  grid-column: 1 / -1;
 }
 
 .financial-doc-import-dropzone {
@@ -5524,6 +5532,10 @@ button[id^="close-settings"] {
   }
 
   .financial-doc-import-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .financial-doc-import-source-group {
     grid-template-columns: 1fr;
   }
 
