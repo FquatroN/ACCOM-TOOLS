@@ -934,6 +934,7 @@ const state = {
   financialDocsPreviewUrl: "",
   financialDocsLastOpenedId: "",
   financialDocsImportType: "ordenados",
+  financialDocsImportSelectedStatus: "Draft",
   financialDocsImportRawText: "",
   financialDocsImportPreviewRows: [],
   financialDocsImportFiles: [],
@@ -1278,6 +1279,7 @@ const els = {
   financialDocsImportClose: document.getElementById("financial-docs-import-close"),
   financialDocsImportConfirm: document.getElementById("financial-docs-import-confirm"),
   financialDocsImportType: document.getElementById("financial-docs-import-type"),
+  financialDocsImportStatusField: document.getElementById("financial-docs-import-status-field"),
   financialDocsImportDropzone: document.getElementById("financial-docs-import-dropzone"),
   financialDocsImportSourceSummary: document.getElementById("financial-docs-import-source-summary"),
   financialDocsImportBrowse: document.getElementById("financial-docs-import-browse"),
@@ -2013,6 +2015,7 @@ function bindEvents() {
   els.financialDocsImportPreview?.addEventListener("click", () => previewFinancialDocImport());
   els.financialDocsImportConfirm?.addEventListener("click", confirmFinancialDocImport);
   els.financialDocsImportType?.addEventListener("change", onFinancialDocImportTypeChange);
+  els.financialDocsImportStatusField?.addEventListener("change", onFinancialDocImportStatusChange);
   els.financialDocsImportText?.addEventListener("input", onFinancialDocImportTextInput);
   els.financialDocsImportDropzone?.addEventListener("dragover", onFinancialDocImportDragOver);
   els.financialDocsImportDropzone?.addEventListener("dragleave", onFinancialDocImportDragLeave);
@@ -17469,6 +17472,7 @@ function resetFinancialDocImportState({ keepType = true } = {}) {
   state.financialDocsImportFiles = [];
   state.financialDocsImportSourceMode = "";
   if (!keepType) state.financialDocsImportType = "ordenados";
+  state.financialDocsImportSelectedStatus = getFinancialDocSelectOptions("status").find((item) => item.toLowerCase() === "draft") || getFinancialDocSelectOptions("status")[0] || "Draft";
   if (els.financialDocsImportInput) els.financialDocsImportInput.value = "";
 }
 
@@ -17530,6 +17534,10 @@ function renderFinancialDocImportPreview() {
 
 function renderFinancialDocImportModal() {
   if (els.financialDocsImportType) els.financialDocsImportType.value = state.financialDocsImportType || "ordenados";
+  if (els.financialDocsImportStatusField) {
+    const statuses = getFinancialDocSelectOptions("status");
+    els.financialDocsImportStatusField.innerHTML = statuses.map((item) => `<option value="${escape(item)}"${item === state.financialDocsImportSelectedStatus ? " selected" : ""}>${escape(item)}</option>`).join("");
+  }
   if (els.financialDocsImportText) els.financialDocsImportText.value = state.financialDocsImportRawText || "";
   syncFinancialDocImportSourceSummary();
   renderFinancialDocImportPreview();
@@ -17681,7 +17689,7 @@ function normalizeFinancialDocImportPreviewRow(cells, fieldMap, sourceRowNumber)
     docType: financialDocImportCell(cells, fieldMap.docType),
     fat: financialDocImportCell(cells, fieldMap.fat),
     category: financialDocImportCell(cells, fieldMap.category),
-    status: "Draft",
+    status: state.financialDocsImportSelectedStatus || "Draft",
   });
   const errors = [];
   if (!clean(base.documentDate)) errors.push("Missing date");
@@ -17776,6 +17784,20 @@ function onFinancialDocImportTypeChange(event) {
   renderFinancialDocImportModal();
 }
 
+function onFinancialDocImportStatusChange(event) {
+  state.financialDocsImportSelectedStatus = clean(event?.target?.value) || "Draft";
+  if (state.financialDocsImportPreviewRows.length) {
+    state.financialDocsImportPreviewRows = state.financialDocsImportPreviewRows.map((item) => ({
+      ...item,
+      draft: normalizeFinancialDocRowClient({
+        ...(item.draft || emptyFinancialDocDraft()),
+        status: state.financialDocsImportSelectedStatus,
+      }),
+    }));
+  }
+  renderFinancialDocImportModal();
+}
+
 function onFinancialDocImportTextInput(event) {
   state.financialDocsImportRawText = event?.target?.value || "";
   state.financialDocsImportSourceMode = clean(state.financialDocsImportRawText) ? "text" : "";
@@ -17842,9 +17864,9 @@ async function confirmFinancialDocImport() {
         await saveFinancialDocRequest({
           ...financialDocBuildPayload({
             ...item.draft,
-            status: "Draft",
+            status: state.financialDocsImportSelectedStatus || "Draft",
           }),
-          status: "Draft",
+          status: state.financialDocsImportSelectedStatus || "Draft",
           source: state.financialDocsImportType === "documents" ? "import-documents" : "import-ordenados",
         }, false, "");
         successCount += 1;
