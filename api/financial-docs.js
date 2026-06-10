@@ -1,4 +1,5 @@
 const { cleanText, parseBody, requireFeature, sendError } = require("./_supabase");
+const financialDocsParseHandler = require("./financial-docs-parse");
 const {
   buildStoredFileName,
   findPossibleDuplicates,
@@ -146,6 +147,7 @@ module.exports = async function handler(req, res) {
   try {
     const auth = await requireFeature(req, "app", "financial-docs");
     const userEmail = cleanText(auth.user?.email) || cleanText(auth.user?.id);
+    const action = cleanText(req.query?.action).toLowerCase();
 
     if (req.method === "GET") {
       const id = cleanText(req.query?.id);
@@ -178,6 +180,11 @@ module.exports = async function handler(req, res) {
 
     if (req.method === "POST") {
       const body = await parseBody(req);
+      if (action === "parse") {
+        const result = await financialDocsParseHandler.parseFinancialDocumentRequest(body);
+        res.status(200).json(result);
+        return;
+      }
       const settings = await loadFinancialDocsSettings();
       const sanitized = sanitizeFinancialDocumentInput(body, settings);
       const upload = normalizeUpload(body?.attachmentUpload, userEmail);

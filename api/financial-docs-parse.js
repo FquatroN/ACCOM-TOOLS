@@ -212,7 +212,38 @@ async function parseFinancialDocument(file) {
   return { parsed, rawText: text };
 }
 
-module.exports = async function handler(req, res) {
+async function parseFinancialDocumentRequest(body = {}) {
+  const file = body?.file && typeof body.file === "object" ? body.file : {};
+  if (!cleanText(file.base64Content)) {
+    const error = new Error("A document file is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const { parsed, rawText } = await parseFinancialDocument(file);
+  const row = {
+    cc: "",
+    documentDate: cleanText(parsed.documentDate),
+    docNumber: cleanText(parsed.docNumber),
+    description: buildPortugueseDescription(parsed),
+    supplierNif: normalizeParsedSupplierNif(parsed.supplierNif),
+    supplierName: cleanText(parsed.supplierName),
+    amount: parsed.amount === null || parsed.amount === undefined || cleanText(parsed.amount) === "" ? "" : Number(parsed.amount),
+    vatAmount: parsed.vatAmount === null || parsed.vatAmount === undefined || cleanText(parsed.vatAmount) === "" ? "" : Number(parsed.vatAmount),
+    payment: "",
+    docType: "",
+    fat: "",
+    category: "",
+    status: "Draft",
+  };
+  return {
+    row,
+    ocrFields: parsed,
+    ocrRawText: rawText,
+    notes: cleanText(parsed.notes),
+  };
+}
+
+async function handler(req, res) {
   try {
     await requireFeature(req, "app", "financial-docs");
     if (req.method !== "POST") {
@@ -220,34 +251,12 @@ module.exports = async function handler(req, res) {
       return;
     }
     const body = await parseBody(req);
-    const file = body?.file && typeof body.file === "object" ? body.file : {};
-    if (!cleanText(file.base64Content)) {
-      res.status(400).json({ error: "A document file is required." });
-      return;
-    }
-    const { parsed, rawText } = await parseFinancialDocument(file);
-    const row = {
-      cc: "",
-      documentDate: cleanText(parsed.documentDate),
-      docNumber: cleanText(parsed.docNumber),
-      description: buildPortugueseDescription(parsed),
-      supplierNif: normalizeParsedSupplierNif(parsed.supplierNif),
-      supplierName: cleanText(parsed.supplierName),
-      amount: parsed.amount === null || parsed.amount === undefined || cleanText(parsed.amount) === "" ? "" : Number(parsed.amount),
-      vatAmount: parsed.vatAmount === null || parsed.vatAmount === undefined || cleanText(parsed.vatAmount) === "" ? "" : Number(parsed.vatAmount),
-      payment: "",
-      docType: "",
-      fat: "",
-      category: "",
-      status: "Draft",
-    };
-    res.status(200).json({
-      row,
-      ocrFields: parsed,
-      ocrRawText: rawText,
-      notes: cleanText(parsed.notes),
-    });
+    const result = await parseFinancialDocumentRequest(body);
+    res.status(200).json(result);
   } catch (error) {
     sendError(res, error);
   }
-};
+}
+
+module.exports = handler;
+module.exports.parseFinancialDocumentRequest = parseFinancialDocumentRequest;

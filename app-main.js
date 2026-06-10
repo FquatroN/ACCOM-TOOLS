@@ -19577,10 +19577,19 @@ function triggerFinancialDocAttachmentPicker(target = { mode: "modal-attachment"
 
 async function requestFinancialDocParse(file) {
   const upload = await fileToUploadPayload(file);
-  const result = await api("/api/financial-docs-parse", {
-    method: "POST",
-    body: { file: upload },
-  });
+  let result;
+  try {
+    result = await api("/api/financial-docs-parse", {
+      method: "POST",
+      body: { file: upload },
+    });
+  } catch (error) {
+    if (!/Request failed \(404\)/i.test(error.message)) throw error;
+    result = await api("/api/financial-docs?action=parse", {
+      method: "POST",
+      body: { file: upload },
+    });
+  }
   return { upload, result };
 }
 
