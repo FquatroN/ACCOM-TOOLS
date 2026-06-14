@@ -242,7 +242,7 @@ function buildGuestsBiIneFromSource(sourceRows, selectedYearMonth) {
   };
 }
 
-function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
+function buildGuestsBiFallbackPayload(sourceRows, selectedYear, selectedMonthFilterYear = "") {
   const rows = Array.isArray(sourceRows) ? sourceRows : [];
   const availableYears = [...new Set(
     rows
@@ -250,6 +250,7 @@ function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
       .filter((value) => /^\d{4}$/.test(value))
   )].sort((a, b) => b.localeCompare(a));
   const yearsForFilter = [...new Set([...availableYears, String(selectedYear)])].sort((a, b) => b.localeCompare(a));
+  const resolvedMonthFilterYear = /^\d{4}$/.test(clean(selectedMonthFilterYear)) ? clean(selectedMonthFilterYear) : "";
 
   const monthMap = new Map();
   for (let month = 1; month <= 12; month += 1) {
@@ -285,7 +286,7 @@ function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
       const lineKey = `${chartYear}||${label}`;
       lineYearCountry.set(lineKey, Number(lineYearCountry.get(lineKey) || 0) + 1);
     }
-    if (/^\d{2}$/.test(chartMonth)) {
+    if (/^\d{2}$/.test(chartMonth) && (!resolvedMonthFilterYear || chartYear === resolvedMonthFilterYear)) {
       const monthKey = `${chartMonth}||${label}`;
       monthCountry.set(monthKey, Number(monthCountry.get(monthKey) || 0) + 1);
     }
@@ -381,6 +382,8 @@ function buildGuestsBiFallbackPayload(sourceRows, selectedYear) {
       lineSeries,
       monthLabels,
       monthSeries,
+      monthFilterYears: availableYears,
+      monthFilterYear: resolvedMonthFilterYear,
       pivotYears: pivotPayload.years,
       pivotRows: pivotPayload.rows,
     },
@@ -398,12 +401,8 @@ module.exports = async function handler(req, res) {
 
     const selectedHa = parseHaValue(req.query?.ha);
     const fallbackSourceRows = await getCachedGuestsBiSourceRows(selectedHa);
-    const availableYears = [...new Set(
-      fallbackSourceRows
-        .map((row) => clean(row?.check_in).slice(0, 4))
-        .filter((year) => /^\d{4}$/.test(year))
-    )].sort((a, b) => b.localeCompare(a));
     const requestedYear = parseYearValue(req.query?.year);
+    const requestedMonthFilterYear = parseYearValue(req.query?.month_year);
     const selectedYear = requestedYear || new Date().getUTCFullYear();
     const selectedYearMonth = parseYearMonthValue(req.query?.year_month) || defaultPreviousMonthKey();
     let pivotPayload = { years: [], rows: [] };
@@ -434,7 +433,11 @@ module.exports = async function handler(req, res) {
     } catch {
       pivotPayload = buildGuestsBiPivotRowsFromSource(fallbackSourceRows);
     }
-    const payload = buildGuestsBiFallbackPayload(fallbackSourceRows, selectedYear);
+    const payload = buildGuestsBiFallbackPayload(
+      fallbackSourceRows,
+      selectedYear,
+      requestedMonthFilterYear ? String(requestedMonthFilterYear) : ""
+    );
     let inePayload;
     try {
       const ineRows = await restQuery("rpc/guests_bi_ine", {

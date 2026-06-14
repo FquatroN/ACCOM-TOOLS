@@ -1824,6 +1824,31 @@ select:disabled {
   margin: 0 0 0.7rem;
 }
 
+.guests-bi-subfilters {
+  display: flex;
+  gap: 0.75rem;
+  align-items: end;
+  margin: -0.15rem 0 0.8rem;
+}
+
+.guests-bi-inline-filter {
+  display: grid;
+  gap: 0.2rem;
+  align-items: end;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.guests-bi-inline-filter span {
+  font-weight: 600;
+}
+
+.guests-bi-inline-filter select {
+  min-width: 8rem;
+  font-size: 0.82rem;
+  padding: 0.3rem 1.9rem 0.3rem 0.55rem;
+}
+
 .guests-bi-line-wrap {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;

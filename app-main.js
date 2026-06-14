@@ -949,6 +949,8 @@ const state = {
   guestsBiNationalityLineSeries: [],
   guestsBiNationalityMonthLabels: [],
   guestsBiNationalityMonthSeries: [],
+  guestsBiNationalityMonthFilterYears: [],
+  guestsBiNationalityMonthFilterYear: "",
   guestsBiNationalityPivotYears: [],
   guestsBiNationalityPivotRows: [],
   guestsBiNationalityLineMode: "percent",
@@ -963,10 +965,10 @@ const state = {
   guestsBiHa: "",
   guestsBiTabFilters: {
     tmt: { year: "", ha: "" },
-    nationalities: { year: "", ha: "" },
+    nationalities: { year: "", ha: "", monthYear: "" },
     ine: { yearMonth: "", ha: "" },
   },
-  guestsBiLastLoaded: { tab: "", year: "", yearMonth: "", ha: "" },
+  guestsBiLastLoaded: { tab: "", year: "", yearMonth: "", monthYear: "", ha: "" },
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -1218,6 +1220,7 @@ const els = {
   guestsBiNationalitiesFilters: document.getElementById("guests-bi-nationalities-filters"),
   guestsBiNationalitiesFilterYear: document.getElementById("guests-bi-nationalities-filter-year"),
   guestsBiNationalitiesFilterHa: document.getElementById("guests-bi-nationalities-filter-ha"),
+  guestsBiMonthFilterYear: document.getElementById("guests-bi-month-filter-year"),
   guestsBiIneFilters: document.getElementById("guests-bi-ine-filters"),
   guestsBiIneFilterMonth: document.getElementById("guests-bi-ine-filter-month"),
   guestsBiIneFilterHa: document.getElementById("guests-bi-ine-filter-ha"),
@@ -1938,6 +1941,7 @@ function bindEvents() {
   els.guestsBiTmtFilterHa?.addEventListener("change", () => onGuestsBiHaChange("tmt"));
   els.guestsBiNationalitiesFilterYear?.addEventListener("change", () => onGuestsBiYearChange("nationalities"));
   els.guestsBiNationalitiesFilterHa?.addEventListener("change", () => onGuestsBiHaChange("nationalities"));
+  els.guestsBiMonthFilterYear?.addEventListener("change", onGuestsBiMonthFilterYearChange);
   els.guestsBiIneFilterMonth?.addEventListener("change", onGuestsBiIneMonthChange);
   els.guestsBiIneFilterHa?.addEventListener("change", () => onGuestsBiHaChange("ine"));
   els.guestsBiIneExportExcel?.addEventListener("click", exportGuestsBiIneToExcel);
@@ -13608,12 +13612,22 @@ function guestBlacklistTooltipClient(match) {
   return lines.join("\n");
 }
 
+function guestStatusDetailText(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (titleMatch?.[1]) {
+    return clean(titleMatch[1].replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'"));
+  }
+  return raw;
+}
+
 function guestStatusText(record, meta) {
   const sentStatus = clean(record.sentStatus).toLowerCase();
   const lines = [];
   lines.push(sentStatus === "sent" ? "Sent" : sentStatus === "error" ? "Error" : "Pending");
   if (clean(record.sentAt)) lines.push(`Sent: ${formatDateTimeShort(record.sentAt)}`);
-  if (clean(record.sendError)) lines.push(clean(record.sendError));
+  if (clean(record.sendError)) lines.push(guestStatusDetailText(record.sendError));
   return lines;
 }
 
@@ -18484,7 +18498,13 @@ function guestsBiFilterState(tab = state.guestsBiTab) {
   const normalizedTab = normalizeGuestsBiTab(tab);
   if (!state.guestsBiTabFilters?.[normalizedTab]) {
     state.guestsBiTabFilters = state.guestsBiTabFilters || {};
-    state.guestsBiTabFilters[normalizedTab] = { year: "", ha: "" };
+    state.guestsBiTabFilters[normalizedTab] = normalizedTab === "nationalities"
+      ? { year: "", ha: "", monthYear: "" }
+      : normalizedTab === "ine"
+        ? { yearMonth: "", ha: "" }
+        : { year: "", ha: "" };
+  } else if (normalizedTab === "nationalities" && !Object.prototype.hasOwnProperty.call(state.guestsBiTabFilters[normalizedTab], "monthYear")) {
+    state.guestsBiTabFilters[normalizedTab].monthYear = "";
   }
   return state.guestsBiTabFilters[normalizedTab];
 }
@@ -18501,6 +18521,7 @@ function guestsBiFilterElements(tab = state.guestsBiTab) {
     return {
       year: els.guestsBiNationalitiesFilterYear,
       ha: els.guestsBiNationalitiesFilterHa,
+      monthYear: els.guestsBiMonthFilterYear,
     };
   }
   return {
@@ -18531,6 +18552,13 @@ function currentGuestsBiHa(tab = state.guestsBiTab) {
   return value === "H" || value === "A" ? value : "";
 }
 
+function currentGuestsBiMonthFilterYear() {
+  const filters = guestsBiFilterState("nationalities");
+  const rawValue = els.guestsBiMonthFilterYear ? els.guestsBiMonthFilterYear.value : (filters.monthYear || state.guestsBiNationalityMonthFilterYear);
+  const value = clean(rawValue);
+  return value && /^\d{4}$/.test(value) ? value : "";
+}
+
 function guestsBiColorPalette() {
   return [
     "#0f766e", "#2563eb", "#ea580c", "#7c3aed", "#dc2626",
@@ -18550,6 +18578,10 @@ function buildGuestsBiUrlClient(tab = state.guestsBiTab) {
   } else {
     const year = currentGuestsBiYear(tab);
     if (year) params.set("year", year);
+    if (normalizedTab === "nationalities") {
+      const monthYear = currentGuestsBiMonthFilterYear();
+      if (monthYear) params.set("month_year", monthYear);
+    }
   }
   const ha = currentGuestsBiHa(tab);
   if (ha) params.set("ha", ha);
@@ -18582,12 +18614,6 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
     const ineFilters = guestsBiFilterState("ine");
     if (!clean(ineFilters.yearMonth)) ineFilters.yearMonth = state.guestsBiIneMonth || defaultGuestsBiPreviousMonth();
     if (!clean(ineFilters.ha)) ineFilters.ha = state.guestsBiHa;
-    state.guestsBiLastLoaded = {
-      tab: normalizedTab,
-      year: state.guestsBiYear,
-      yearMonth: state.guestsBiIneMonth,
-      ha: state.guestsBiHa,
-    };
     state.guestsBiTotals = {
       totalNights: Number(result?.totals?.totalNights || 0),
       exempt7Days: Number(result?.totals?.exempt7Days || 0),
@@ -18599,8 +18625,19 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
     state.guestsBiNationalityLineSeries = Array.isArray(result?.nationalities?.lineSeries) ? result.nationalities.lineSeries : [];
     state.guestsBiNationalityMonthLabels = Array.isArray(result?.nationalities?.monthLabels) ? result.nationalities.monthLabels : [];
     state.guestsBiNationalityMonthSeries = Array.isArray(result?.nationalities?.monthSeries) ? result.nationalities.monthSeries : [];
+    state.guestsBiNationalityMonthFilterYears = Array.isArray(result?.nationalities?.monthFilterYears) ? result.nationalities.monthFilterYears : [];
+    state.guestsBiNationalityMonthFilterYear = clean(result?.nationalities?.monthFilterYear);
     state.guestsBiNationalityPivotYears = Array.isArray(result?.nationalities?.pivotYears) ? result.nationalities.pivotYears : [];
     state.guestsBiNationalityPivotRows = Array.isArray(result?.nationalities?.pivotRows) ? result.nationalities.pivotRows : [];
+    const nationalitiesFilters = guestsBiFilterState("nationalities");
+    nationalitiesFilters.monthYear = state.guestsBiNationalityMonthFilterYear;
+    state.guestsBiLastLoaded = {
+      tab: normalizedTab,
+      year: state.guestsBiYear,
+      yearMonth: state.guestsBiIneMonth,
+      monthYear: state.guestsBiNationalityMonthFilterYear,
+      ha: state.guestsBiHa,
+    };
     state.guestsBiLoaded = true;
     renderGuestsBi();
     if (!silent) setGuestsBiStatus("Guests BI loaded.");
@@ -18614,6 +18651,8 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
     state.guestsBiNationalityLineSeries = [];
     state.guestsBiNationalityMonthLabels = [];
     state.guestsBiNationalityMonthSeries = [];
+    state.guestsBiNationalityMonthFilterYears = [];
+    state.guestsBiNationalityMonthFilterYear = "";
     state.guestsBiNationalityPivotYears = [];
     state.guestsBiNationalityPivotRows = [];
     state.guestsBiIneMonths = [];
@@ -18650,17 +18689,25 @@ function onGuestsBiHaChange(tab) {
   loadGuestsBiData({ silent: true, tab: normalizedTab }).catch(() => {});
 }
 
+function onGuestsBiMonthFilterYearChange() {
+  const normalizedTab = "nationalities";
+  guestsBiFilterState(normalizedTab).monthYear = currentGuestsBiMonthFilterYear();
+  loadGuestsBiData({ silent: true, tab: normalizedTab }).catch(() => {});
+}
+
 function setGuestsBiTab(tab) {
   state.guestsBiTab = normalizeGuestsBiTab(tab);
   renderGuestsBi();
   const filterState = guestsBiFilterState(state.guestsBiTab);
-  const lastLoaded = state.guestsBiLastLoaded || { tab: "", year: "", ha: "" };
+  const lastLoaded = state.guestsBiLastLoaded || { tab: "", year: "", yearMonth: "", monthYear: "", ha: "" };
   if (
     !state.guestsBiLoaded ||
     lastLoaded.tab !== state.guestsBiTab ||
     (state.guestsBiTab === "ine"
       ? clean(lastLoaded.yearMonth) !== clean(filterState.yearMonth || state.guestsBiIneMonth || defaultGuestsBiPreviousMonth())
       : clean(lastLoaded.year) !== clean(filterState.year || state.guestsBiYear)) ||
+    (state.guestsBiTab === "nationalities"
+      && clean(lastLoaded.monthYear) !== clean(filterState.monthYear || state.guestsBiNationalityMonthFilterYear)) ||
     clean(lastLoaded.ha).toUpperCase() !== clean(filterState.ha || state.guestsBiHa).toUpperCase()
   ) {
     loadGuestsBiData({ silent: true, tab: state.guestsBiTab }).catch(() => {});
@@ -19005,6 +19052,21 @@ function renderGuestsBi() {
         ? clean(filterState.ha).toUpperCase()
         : "";
     }
+  }
+  if (els.guestsBiMonthFilterYear) {
+    const selectedMonthFilterYear = clean(guestsBiFilterState("nationalities").monthYear || state.guestsBiNationalityMonthFilterYear);
+    const monthFilterYears = [...new Set([
+      ...(
+        state.guestsBiNationalityMonthFilterYears.length
+          ? state.guestsBiNationalityMonthFilterYears
+          : state.guestsBiNationalityLineYears
+      ),
+      selectedMonthFilterYear,
+    ].filter((year) => /^\d{4}$/.test(clean(year))))];
+    const options = ['<option value="">All</option>']
+      .concat(monthFilterYears.map((year) => `<option value="${escape(year)}">${escape(year)}</option>`));
+    els.guestsBiMonthFilterYear.innerHTML = options.join("");
+    els.guestsBiMonthFilterYear.value = selectedMonthFilterYear;
   }
   const ineFilterEls = guestsBiFilterElements("ine");
   const ineMonths = state.guestsBiIneMonths.length ? state.guestsBiIneMonths : [state.guestsBiIneMonth || defaultGuestsBiPreviousMonth()];
