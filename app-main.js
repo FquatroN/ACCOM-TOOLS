@@ -17490,8 +17490,18 @@ function resetFinancialDocImportState({ keepType = true } = {}) {
   if (els.financialDocsImportInput) els.financialDocsImportInput.value = "";
 }
 
+function normalizeFinancialDocImportType(value) {
+  const normalized = clean(value).toLowerCase();
+  if (normalized === "documents") return "documents";
+  if (normalized === "recibos-staff") return "recibos-staff";
+  return "ordenados";
+}
+
 function financialDocImportTypeLabel(type) {
-  return clean(type).toLowerCase() === "documents" ? "Documents" : "Ordenados";
+  const normalized = normalizeFinancialDocImportType(type);
+  if (normalized === "documents") return "Documents";
+  if (normalized === "recibos-staff") return "Recibos Staff";
+  return "Ordenados";
 }
 
 function syncFinancialDocImportSourceSummary() {
@@ -17659,6 +17669,16 @@ function financialDocImportFieldMap(headerRow) {
   };
 }
 
+function financialDocImportRecibosStaffFieldMap(headerRow) {
+  return {
+    supplierName: findHeaderIndex(headerRow, ["staff"]),
+    documentDate: findHeaderIndex(headerRow, ["dt fatura", "data fatura"]),
+    docNumber: findHeaderIndex(headerRow, ["nfatura", "n fatura", "n factura", "nfactura"]),
+    amount: findHeaderIndex(headerRow, ["valor"]),
+    description: findHeaderIndex(headerRow, ["descricao"]),
+  };
+}
+
 function financialDocImportDefaultFieldMap() {
   return {
     cc: 0,
@@ -17717,7 +17737,36 @@ function normalizeFinancialDocImportPreviewRow(cells, fieldMap, sourceRowNumber)
   };
 }
 
-function parseFinancialDocImportRowsFromTable(table) {
+function normalizeFinancialDocImportPreviewRowRecibosStaff(cells, fieldMap, sourceRowNumber) {
+  const base = normalizeFinancialDocRowClient({
+    cc: "H",
+    documentDate: parseFinancialDocImportDate(financialDocImportCell(cells, fieldMap.documentDate)),
+    docNumber: financialDocImportCell(cells, fieldMap.docNumber),
+    description: financialDocImportCell(cells, fieldMap.description),
+    supplierName: financialDocImportCell(cells, fieldMap.supplierName),
+    supplierNif: "",
+    amount: parseFinancialDocImportMoney(financialDocImportCell(cells, fieldMap.amount)),
+    vatAmount: "",
+    payment: "Banco",
+    docType: "R",
+    fat: "S",
+    category: "Ordenados",
+    status: state.financialDocsImportSelectedStatus || "Draft",
+  });
+  const errors = [];
+  if (!clean(base.documentDate)) errors.push("Missing date");
+  if (!clean(base.docNumber)) errors.push("Missing doc number");
+  if (!clean(base.description)) errors.push("Missing description");
+  if (!clean(base.supplierName)) errors.push("Missing name");
+  if (base.amount === "") errors.push("Missing amount");
+  return {
+    rowNumber: sourceRowNumber,
+    draft: base,
+    errors,
+  };
+}
+
+function parseFinancialDocImportRowsFromTable(table, importType = state.financialDocsImportType) {
   const rows = Array.isArray(table)
     ? table
         .filter((row) => Array.isArray(row))
@@ -17725,11 +17774,20 @@ function parseFinancialDocImportRowsFromTable(table) {
         .filter((row) => row.some((cell) => clean(cell)))
     : [];
   if (!rows.length) return [];
+  const normalizedImportType = normalizeFinancialDocImportType(importType);
   const hasHeader = financialDocImportLooksLikeHeader(rows[0]);
-  const fieldMap = hasHeader ? financialDocImportFieldMap(rows[0]) : financialDocImportDefaultFieldMap();
+  const fieldMap = normalizedImportType === "recibos-staff"
+    ? financialDocImportRecibosStaffFieldMap(rows[0])
+    : hasHeader
+      ? financialDocImportFieldMap(rows[0])
+      : financialDocImportDefaultFieldMap();
   const dataRows = hasHeader ? rows.slice(1) : rows;
   return dataRows
-    .map((cells, index) => normalizeFinancialDocImportPreviewRow(cells, fieldMap, hasHeader ? index + 2 : index + 1))
+    .map((cells, index) => (
+      normalizedImportType === "recibos-staff"
+        ? normalizeFinancialDocImportPreviewRowRecibosStaff(cells, fieldMap, hasHeader ? index + 2 : index + 1)
+        : normalizeFinancialDocImportPreviewRow(cells, fieldMap, hasHeader ? index + 2 : index + 1)
+    ))
     .filter((item) => {
       const draft = item.draft || emptyFinancialDocDraft();
       return [draft.cc, draft.documentDate, draft.docNumber, draft.description, draft.supplierName, draft.supplierNif, draft.amount, draft.vatAmount, draft.payment, draft.docType, draft.fat, draft.category]
@@ -17746,7 +17804,7 @@ async function parseFinancialDocImportSpreadsheetFile(file) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) return;
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
-    rows.push(...parseFinancialDocImportRowsFromTable(data));
+    rows.push(...parseFinancialDocImportRowsFromTable(data, state.financialDocsImportType));
   });
   return rows;
 }
@@ -17757,7 +17815,7 @@ async function parseFinancialDocImportFile(file) {
     return parseFinancialDocImportSpreadsheetFile(file);
   }
   const text = await file.text();
-  return parseFinancialDocImportRowsFromTable(parseFinancialDocImportTextToTable(text));
+  return parseFinancialDocImportRowsFromTable(parseFinancialDocImportTextToTable(text), state.financialDocsImportType);
 }
 
 async function previewFinancialDocImport() {
@@ -17776,7 +17834,7 @@ async function previewFinancialDocImport() {
         setFinancialDocsImportStatus("Paste text or choose files first.");
         return;
       }
-      rows = parseFinancialDocImportRowsFromTable(parseFinancialDocImportTextToTable(text));
+      rows = parseFinancialDocImportRowsFromTable(parseFinancialDocImportTextToTable(text), state.financialDocsImportType);
     }
     state.financialDocsImportPreviewRows = rows;
     renderFinancialDocImportModal();
@@ -17790,7 +17848,7 @@ async function previewFinancialDocImport() {
 }
 
 function onFinancialDocImportTypeChange(event) {
-  state.financialDocsImportType = clean(event?.target?.value).toLowerCase() === "documents" ? "documents" : "ordenados";
+  state.financialDocsImportType = normalizeFinancialDocImportType(event?.target?.value);
   if (state.financialDocsImportPreviewRows.length) {
     previewFinancialDocImport().catch(() => {});
     return;
@@ -17881,7 +17939,11 @@ async function confirmFinancialDocImport() {
             status: state.financialDocsImportSelectedStatus || "Draft",
           }),
           status: state.financialDocsImportSelectedStatus || "Draft",
-          source: state.financialDocsImportType === "documents" ? "import-documents" : "import-ordenados",
+          source: state.financialDocsImportType === "documents"
+            ? "import-documents"
+            : state.financialDocsImportType === "recibos-staff"
+              ? "import-recibos-staff"
+              : "import-ordenados",
         }, false, "");
         successCount += 1;
       } catch (error) {
