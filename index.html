@@ -92,6 +92,7 @@
           </div>
           <div class="backoffice-top-links">
             <button id="nav-financial-docs" type="button" class="nav-link">Financial Documents</button>
+            <button id="nav-import-data" type="button" class="nav-link">Import Data</button>
           </div>
         </section>
 
@@ -2113,6 +2114,9 @@
               <button id="settings-menu-financial-docs" type="button" class="nav-link">
                 Financial Documents
               </button>
+              <button id="settings-menu-import-data" type="button" class="nav-link">
+                Import Data
+              </button>
               <button id="settings-menu-cash" type="button" class="nav-link">
                 Cash Control
               </button>
@@ -2475,6 +2479,28 @@
                 </section>
 
                 <p id="financial-docs-settings-status" class="auth-status"></p>
+              </div>
+
+              <div id="settings-view-import-data" hidden>
+                <div class="actions">
+                  <button id="close-settings-import-data" type="button" class="ghost">Back To App</button>
+                  <button id="import-data-save-settings" type="button" class="ghost">Save Configuration</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>Import Data Configuration</h3>
+                  </div>
+                  <table class="settings-table">
+                    <thead>
+                      <tr>
+                        <th>Type of Data</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody id="import-data-settings-body"></tbody>
+                  </table>
+                  <p id="import-data-settings-status" class="auth-status"></p>
+                </section>
               </div>
 
               <div id="settings-view-admin-users" hidden>
@@ -3576,6 +3602,127 @@
               </section>
             </section>
           </section>
+        </section>
+
+        <section id="view-import-data" class="view" hidden>
+          <section class="feature-title">
+            <h2>Import Data</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Import Data</h2>
+              <div class="actions">
+                <button id="import-data-tab-fdm-accounts" type="button" class="active-tab">FDM Accounts</button>
+              </div>
+            </div>
+            <p id="import-data-description" class="auth-status"></p>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Source</h2>
+              <div class="actions">
+                <p id="import-data-status" class="auth-status"></p>
+                <button id="import-data-confirm" type="button">Confirm</button>
+              </div>
+            </div>
+            <div class="grid financial-doc-import-grid">
+              <div class="field-group financial-doc-import-meta-group">
+                <label>
+                  Type of data
+                  <select id="import-data-type">
+                    <option value="fdm-accounts">FDM Accounts</option>
+                  </select>
+                </label>
+              </div>
+              <div class="field-group financial-doc-import-source-group">
+                <span>Files</span>
+                <div id="import-data-dropzone" class="file-dropzone financial-doc-import-dropzone" tabindex="0" role="button" aria-label="Drop import file">
+                  <strong>Drop file here</strong>
+                  <span>TXT, TSV, CSV, XLSX or XLS.</span>
+                  <small id="import-data-source-summary">No source selected</small>
+                </div>
+                <div class="financial-doc-import-actions">
+                  <button id="import-data-browse" type="button" class="ghost">Choose File</button>
+                  <button id="import-data-preview" type="button" class="ghost">Preview</button>
+                </div>
+              </div>
+              <label class="financial-doc-import-text-group">
+                Paste Text
+                <textarea id="import-data-text" rows="8" placeholder="Paste tabular text here."></textarea>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Preview</h2>
+              <p id="import-data-preview-count">0 rows</p>
+            </div>
+            <div class="table-wrap compact-table-wrap financial-doc-import-table-wrap">
+              <table class="compact-table financial-doc-import-table">
+                <thead>
+                  <tr>
+                    <th>Row</th>
+                    <th>Account</th>
+                    <th>Date Time</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>Reservation ID</th>
+                    <th>Guest</th>
+                    <th>Reporting Date</th>
+                    <th>User</th>
+                    <th>Description</th>
+                    <th>Bill Number</th>
+                    <th>Item</th>
+                    <th>InvoiceNumber</th>
+                    <th>Currency</th>
+                    <th>Invoice Amount</th>
+                    <th>Designation</th>
+                    <th>Invoice</th>
+                    <th>Validation</th>
+                  </tr>
+                </thead>
+                <tbody id="import-data-preview-rows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Imported Rows</h2>
+              <p id="import-data-count">0 rows</p>
+            </div>
+            <div class="table-wrap compact-table-wrap financial-doc-import-table-wrap">
+              <table class="compact-table financial-doc-import-table">
+                <thead>
+                  <tr>
+                    <th>Imported</th>
+                    <th>Account</th>
+                    <th>Date Time</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>Reservation ID</th>
+                    <th>Guest</th>
+                    <th>Reporting Date</th>
+                    <th>User</th>
+                    <th>Description</th>
+                    <th>Bill Number</th>
+                    <th>Item</th>
+                    <th>InvoiceNumber</th>
+                    <th>Currency</th>
+                    <th>Invoice Amount</th>
+                    <th>Designation</th>
+                    <th>Invoice</th>
+                  </tr>
+                </thead>
+                <tbody id="import-data-rows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <input id="import-data-input" class="sr-only-file" type="file" accept=".txt,.tsv,.csv,.xlsx,.xls,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
         </section>
 
         <section id="view-guests-bi" class="view" hidden>

@@ -17,8 +17,8 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "business-intelligence", "guests-bi"];
-const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "business-intelligence", "guests-bi"];
+const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -511,6 +511,12 @@ const DEFAULT_FINANCIAL_DOCS_SETTINGS = {
   },
 };
 
+const DEFAULT_IMPORT_DATA_SETTINGS = {
+  types: [
+    { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
+  ],
+};
+
 const FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT = "Possible duplicate found. Do you still want to save this document?";
 
 const GUEST_DESCRIPTION_PALETTES = {
@@ -525,6 +531,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "Profile Name", kind: "meta", key: "name" },
   { label: "App: Backoffice", kind: "app", key: "backoffice" },
   { label: "App: Financial Documents", kind: "app", key: "financial-docs" },
+  { label: "App: Import Data", kind: "app", key: "import-data" },
   { label: "App: Business Intelligence", kind: "app", key: "business-intelligence" },
   { label: "App: Guests BI", kind: "app", key: "guests-bi" },
   { label: "App: Communications", kind: "app", key: "communications" },
@@ -543,6 +550,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "Settings: Communications", kind: "settings", key: "communications" },
   { label: "Settings: Guests", kind: "settings", key: "guests" },
   { label: "Settings: Financial Documents", kind: "settings", key: "financial-docs" },
+  { label: "Settings: Import Data", kind: "settings", key: "import-data" },
   { label: "Settings: Cash Control", kind: "settings", key: "cash" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
   { label: "Settings: Maintenance", kind: "settings", key: "maintenance" },
@@ -939,6 +947,15 @@ const state = {
   financialDocsImportPreviewRows: [],
   financialDocsImportFiles: [],
   financialDocsImportSourceMode: "",
+  importDataSettings: clone(DEFAULT_IMPORT_DATA_SETTINGS),
+  importDataSettingsLoaded: false,
+  importDataRows: [],
+  importDataLoaded: false,
+  importDataType: "fdm-accounts",
+  importDataPreviewRows: [],
+  importDataRawText: "",
+  importDataFiles: [],
+  importDataSourceMode: "",
   guestsBiRows: [],
   guestsBiYears: [],
   guestsBiTotals: { totalNights: 0, exempt7Days: 0, exempt13Year: 0 },
@@ -1007,6 +1024,7 @@ const els = {
   mobileMenuToggle: document.getElementById("mobile-menu-toggle"),
   navCommunications: document.getElementById("nav-communications"),
   navFinancialDocs: document.getElementById("nav-financial-docs"),
+  navImportData: document.getElementById("nav-import-data"),
   navGuestsBi: document.getElementById("nav-guests-bi"),
   navGuests: document.getElementById("nav-guests"),
   navCash: document.getElementById("nav-cash"),
@@ -1025,6 +1043,7 @@ const els = {
   closeSettings: document.getElementById("close-settings"),
   viewCommunications: document.getElementById("view-communications"),
   viewFinancialDocs: document.getElementById("view-financial-docs"),
+  viewImportData: document.getElementById("view-import-data"),
   viewGuestsBi: document.getElementById("view-guests-bi"),
   viewGuests: document.getElementById("view-guests"),
   viewCash: document.getElementById("view-cash"),
@@ -1041,6 +1060,7 @@ const els = {
   settingsMenuCommunications: document.getElementById("settings-menu-communications"),
   settingsMenuGuests: document.getElementById("settings-menu-guests"),
   settingsMenuFinancialDocs: document.getElementById("settings-menu-financial-docs"),
+  settingsMenuImportData: document.getElementById("settings-menu-import-data"),
   settingsMenuCash: document.getElementById("settings-menu-cash"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
   settingsMenuMaintenance: document.getElementById("settings-menu-maintenance"),
@@ -1133,6 +1153,7 @@ const els = {
   settingsViewCommunications: document.getElementById("settings-view-communications"),
   settingsViewGuests: document.getElementById("settings-view-guests"),
   settingsViewFinancialDocs: document.getElementById("settings-view-financial-docs"),
+  settingsViewImportData: document.getElementById("settings-view-import-data"),
   settingsViewCash: document.getElementById("settings-view-cash"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
   settingsViewMaintenance: document.getElementById("settings-view-maintenance"),
@@ -1150,6 +1171,7 @@ const els = {
   closeSettingsGeneral: document.getElementById("close-settings-general"),
   closeSettingsGuests: document.getElementById("close-settings-guests"),
   closeSettingsFinancialDocs: document.getElementById("close-settings-financial-docs"),
+  closeSettingsImportData: document.getElementById("close-settings-import-data"),
   closeSettingsAdmin: document.getElementById("close-settings-admin"),
   closeSettingsReviews: document.getElementById("close-settings-reviews"),
   closeSettingsMaintenance: document.getElementById("close-settings-maintenance"),
@@ -1290,6 +1312,24 @@ const els = {
   financialDocsImportText: document.getElementById("financial-docs-import-text"),
   financialDocsImportCount: document.getElementById("financial-docs-import-count"),
   financialDocsImportRows: document.getElementById("financial-docs-import-rows"),
+  importDataTabFdmAccounts: document.getElementById("import-data-tab-fdm-accounts"),
+  importDataDescription: document.getElementById("import-data-description"),
+  importDataStatus: document.getElementById("import-data-status"),
+  importDataConfirm: document.getElementById("import-data-confirm"),
+  importDataType: document.getElementById("import-data-type"),
+  importDataDropzone: document.getElementById("import-data-dropzone"),
+  importDataSourceSummary: document.getElementById("import-data-source-summary"),
+  importDataBrowse: document.getElementById("import-data-browse"),
+  importDataPreview: document.getElementById("import-data-preview"),
+  importDataText: document.getElementById("import-data-text"),
+  importDataPreviewCount: document.getElementById("import-data-preview-count"),
+  importDataPreviewRows: document.getElementById("import-data-preview-rows"),
+  importDataCount: document.getElementById("import-data-count"),
+  importDataRows: document.getElementById("import-data-rows"),
+  importDataInput: document.getElementById("import-data-input"),
+  importDataSaveSettings: document.getElementById("import-data-save-settings"),
+  importDataSettingsBody: document.getElementById("import-data-settings-body"),
+  importDataSettingsStatus: document.getElementById("import-data-settings-status"),
   generalEmailProvider: document.getElementById("general-email-provider"),
   generalEmailSmtpHost: document.getElementById("general-email-smtp-host"),
   generalEmailSmtpPort: document.getElementById("general-email-smtp-port"),
@@ -1847,14 +1887,15 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
-  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = "financial-docs";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : "import-data";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = "guests-bi";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   handleFinancialDocsDriveCallbackQuery();
   if (!canAccessGeneralSettings() && canSettings("guests")) state.settingsSection = "guests";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && canSettings("financial-docs")) state.settingsSection = "financial-docs";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && canSettings("cash")) state.settingsSection = "cash";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && canSettings("import-data")) state.settingsSection = "import-data";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("import-data") && canSettings("cash")) state.settingsSection = "cash";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
@@ -1872,7 +1913,8 @@ async function init() {
   if (canApp("communications")) loadSidebarReviewSummary({ silent: true }).catch(() => {});
   await ensureCurrentViewData();
   if (canApp("guests")) loadGuestsData({ silent: true }).then(() => renderLayout()).catch(() => {});
-  if (canUseBackoffice()) loadFinancialDocsData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canAppFinancialDocs()) loadFinancialDocsData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canAppImportData()) ensureImportDataData().then(() => renderLayout()).catch(() => {});
   if (canUseBusinessIntelligence()) loadGuestsBiData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("cash")) loadCashData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("maintenance")) loadMaintenanceData({ silent: true }).then(() => renderLayout()).catch(() => {});
@@ -1887,6 +1929,7 @@ function bindEvents() {
   els.appLogoHome?.addEventListener("click", onLogoHomeClick);
   els.navCommunications.addEventListener("click", () => setView("communications"));
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
+  els.navImportData?.addEventListener("click", () => setView("import-data"));
   els.navGuestsBi?.addEventListener("click", () => setView("guests-bi"));
   els.backofficeBackToApp?.addEventListener("click", onLogoHomeClick);
   els.navGuests?.addEventListener("click", () => setView("guests"));
@@ -1912,6 +1955,7 @@ function bindEvents() {
   els.closeSettingsGeneral?.addEventListener("click", () => setView("communications"));
   els.closeSettings.addEventListener("click", () => setView("communications"));
   els.closeSettingsFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
+  els.closeSettingsImportData?.addEventListener("click", () => setView("import-data"));
   els.closeSettingsCash?.addEventListener("click", () => setView("cash"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
   els.closeSettingsReviews.addEventListener("click", () => setView("reviews"));
@@ -1927,6 +1971,7 @@ function bindEvents() {
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
   els.settingsMenuGuests?.addEventListener("click", () => setSettingsSection("guests"));
   els.settingsMenuFinancialDocs?.addEventListener("click", () => setSettingsSection("financial-docs"));
+  els.settingsMenuImportData?.addEventListener("click", () => setSettingsSection("import-data"));
   els.settingsMenuCash?.addEventListener("click", () => setSettingsSection("cash"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuMaintenance?.addEventListener("click", () => setSettingsSection("maintenance"));
@@ -2049,6 +2094,18 @@ function bindEvents() {
   els.financialDocsDriveConnect?.addEventListener("click", connectFinancialDocsDrive);
   els.financialDocsDriveRefresh?.addEventListener("click", refreshFinancialDocsDrive);
   els.financialDocsDriveDisconnect?.addEventListener("click", disconnectFinancialDocsDrive);
+  els.importDataTabFdmAccounts?.addEventListener("click", () => setImportDataType("fdm-accounts"));
+  els.importDataType?.addEventListener("change", onImportDataTypeChange);
+  els.importDataBrowse?.addEventListener("click", () => els.importDataInput?.click());
+  els.importDataInput?.addEventListener("change", onImportDataFilesPicked);
+  els.importDataPreview?.addEventListener("click", previewImportData);
+  els.importDataConfirm?.addEventListener("click", confirmImportData);
+  els.importDataText?.addEventListener("input", onImportDataTextInput);
+  els.importDataDropzone?.addEventListener("dragover", onImportDataDragOver);
+  els.importDataDropzone?.addEventListener("dragleave", onImportDataDragLeave);
+  els.importDataDropzone?.addEventListener("drop", onImportDataDrop);
+  els.importDataSaveSettings?.addEventListener("click", saveImportDataSettings);
+  els.importDataSettingsBody?.addEventListener("input", onImportDataSettingsInput);
   els.guestsTabList?.addEventListener("click", () => setGuestsScreen("list"));
   els.guestsTabDescriptions?.addEventListener("click", () => setGuestsScreen("descriptions"));
   els.guestsTabBlacklist?.addEventListener("click", () => setGuestsScreen("blacklist"));
@@ -2543,7 +2600,15 @@ function canSettings(feature) {
 }
 
 function canUseBackoffice() {
+  return canApp("backoffice") && (canApp("financial-docs") || canApp("import-data"));
+}
+
+function canAppFinancialDocs() {
   return canApp("backoffice") && canApp("financial-docs");
+}
+
+function canAppImportData() {
+  return canApp("backoffice") && canApp("import-data");
 }
 
 function canUseBusinessIntelligence() {
@@ -2615,8 +2680,11 @@ function applyInitialRouteFromUrl() {
     if (view === "maintenance" && canApp("maintenance")) {
       state.currentView = "maintenance";
     }
-    if (view === "financial-docs" && canUseBackoffice()) {
+    if (view === "financial-docs" && canAppFinancialDocs()) {
       state.currentView = "financial-docs";
+    }
+    if (view === "import-data" && canAppImportData()) {
+      state.currentView = "import-data";
     }
     if (view === "guests-bi" && canUseBusinessIntelligence()) {
       state.currentView = "guests-bi";
@@ -2653,6 +2721,9 @@ function syncAppRoute() {
     } else if (state.currentView === "financial-docs") {
       url.searchParams.set("view", "financial-docs");
       url.searchParams.delete("service");
+    } else if (state.currentView === "import-data") {
+      url.searchParams.set("view", "import-data");
+      url.searchParams.delete("service");
     } else if (state.currentView === "guests-bi") {
       url.searchParams.set("view", "guests-bi");
       url.searchParams.delete("service");
@@ -2670,7 +2741,8 @@ function syncAppRoute() {
 
 async function setView(view) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
-  if (view === "financial-docs" && !canUseBackoffice()) return showToast("No financial documents access.", "error");
+  if (view === "financial-docs" && !canAppFinancialDocs()) return showToast("No financial documents access.", "error");
+  if (view === "import-data" && !canAppImportData()) return showToast("No import data access.", "error");
   if (view === "guests-bi" && !canUseBusinessIntelligence()) return showToast("No Guests BI access.", "error");
   if (view === "guests" && !canApp("guests")) return showToast("No guests access.", "error");
   if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
@@ -2684,16 +2756,18 @@ async function setView(view) {
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
-  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "guests-bi") {
+  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "guests-bi") {
     state.lastMainView = state.currentView;
   }
   const previousView = state.currentView;
   state.currentView = view;
   if (view === "settings") {
     if (previousView === "financial-docs" && canSettings("financial-docs")) state.settingsSection = "financial-docs";
+    else if (previousView === "import-data" && canSettings("import-data")) state.settingsSection = "import-data";
     else if (canAccessGeneralSettings()) state.settingsSection = "general";
     else if (canSettings("guests")) state.settingsSection = "guests";
     else if (canSettings("financial-docs")) state.settingsSection = "financial-docs";
+    else if (canSettings("import-data")) state.settingsSection = "import-data";
     else if (canSettings("cash")) state.settingsSection = "cash";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
     else if (canSettings("maintenance")) state.settingsSection = "maintenance";
@@ -2734,6 +2808,9 @@ async function setView(view) {
   if (view !== "financial-docs" && state.financialDocsImportModalOpen) {
     closeFinancialDocImportModal();
   }
+  if (view !== "import-data") {
+    state.importDataSourceMode = "";
+  }
   if (view !== "guests-bi") {
     state.guestsBiLoading = false;
   }
@@ -2759,6 +2836,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "lost-found") {
     await ensureLostFoundData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "import-data") {
+    await ensureImportDataData();
     renderSettingsSection();
     render();
     return;
@@ -2891,10 +2974,18 @@ async function refreshCurrentViewData(reason = "timer") {
       state.lastAutoRefreshAt = now;
       return;
     }
-    if (state.currentView === "financial-docs" && canUseBackoffice()) {
+    if (state.currentView === "financial-docs" && canAppFinancialDocs()) {
       await loadFinancialDocsData({ silent: true });
       state.financialDocsLoaded = true;
       renderFinancialDocs();
+      renderLayout();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
+    if (state.currentView === "import-data" && canAppImportData()) {
+      await loadImportDataRows({ silent: true });
+      state.importDataLoaded = true;
+      renderImportData();
       renderLayout();
       state.lastAutoRefreshAt = now;
       return;
@@ -3176,6 +3267,10 @@ async function ensureSettingsSectionData() {
     await ensureFinancialDocsData();
     return;
   }
+  if (state.settingsSection === "import-data") {
+    await ensureImportDataData();
+    return;
+  }
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
     return;
@@ -3222,8 +3317,10 @@ async function ensureSettingsSectionData() {
 function renderLayout() {
   const comm = state.currentView === "communications";
   const financialDocs = state.currentView === "financial-docs";
+  const importData = state.currentView === "import-data";
   const guestsBi = state.currentView === "guests-bi";
   const backofficeSettings = state.currentView === "settings" && state.settingsSection === "financial-docs";
+  const importDataSettings = state.currentView === "settings" && state.settingsSection === "import-data";
   const guests = state.currentView === "guests";
   const cash = state.currentView === "cash";
   const lostFound = state.currentView === "lost-found";
@@ -3236,11 +3333,12 @@ function renderLayout() {
   const bakery = state.currentView === "bakery";
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
-  const backofficeMode = financialDocs || backofficeSettings;
+  const backofficeMode = financialDocs || importData || backofficeSettings || importDataSettings;
   const businessIntelligenceMode = guestsBi;
   const workspaceMode = backofficeMode || businessIntelligenceMode;
   const canComm = canApp("communications");
-  const canFinancialDocs = canUseBackoffice();
+  const canFinancialDocs = canAppFinancialDocs();
+  const canImportData = canAppImportData();
   const canGuestsBi = canUseBusinessIntelligence();
   const canGuests = canApp("guests");
   const canCash = canApp("cash");
@@ -3260,6 +3358,7 @@ function renderLayout() {
   els.appShell.classList.toggle("business-intelligence-mode", businessIntelligenceMode);
   els.navCommunications.classList.toggle("active", comm);
   els.navFinancialDocs?.classList.toggle("active", financialDocs);
+  els.navImportData?.classList.toggle("active", importData);
   els.navGuestsBi?.classList.toggle("active", guestsBi);
   els.navGuests?.classList.toggle("active", guests);
   els.navCash?.classList.toggle("active", cash);
@@ -3274,6 +3373,7 @@ function renderLayout() {
   els.navLaundry.classList.toggle("active", laundry);
   els.navCommunications.hidden = !canComm;
   if (els.navFinancialDocs) els.navFinancialDocs.hidden = !canFinancialDocs;
+  if (els.navImportData) els.navImportData.hidden = !canImportData;
   if (els.navGuestsBi) els.navGuestsBi.hidden = !canGuestsBi;
   if (els.navGuests) els.navGuests.hidden = !canGuests;
   if (els.navCash) els.navCash.hidden = !canCash;
@@ -3295,7 +3395,7 @@ function renderLayout() {
   els.navLaundry.classList.toggle("has-alert", shouldShowLaundryAlert());
   els.openSettings.hidden = !state.access.settingsFeatures.length;
   if (els.openBackoffice) {
-    els.openBackoffice.hidden = !canFinancialDocs;
+    els.openBackoffice.hidden = !canUseBackoffice();
     els.openBackoffice.classList.toggle("active", backofficeMode);
   }
   if (els.openBusinessIntelligence) {
@@ -3310,6 +3410,7 @@ function renderLayout() {
   if (els.mobileMenuToggle) els.mobileMenuToggle.hidden = settingsMode || !isMobileNavLayout();
   els.viewCommunications.hidden = !comm;
   if (els.viewFinancialDocs) els.viewFinancialDocs.hidden = !financialDocs;
+  if (els.viewImportData) els.viewImportData.hidden = !importData;
   if (els.viewGuestsBi) els.viewGuestsBi.hidden = !guestsBi;
   if (els.viewGuests) els.viewGuests.hidden = !guests;
   if (els.viewCash) els.viewCash.hidden = !cash;
@@ -3327,6 +3428,7 @@ function renderLayout() {
   els.settingsMenuCommunications.hidden = !canSettings("communications");
   if (els.settingsMenuGuests) els.settingsMenuGuests.hidden = !canSettings("guests");
   if (els.settingsMenuFinancialDocs) els.settingsMenuFinancialDocs.hidden = !canSettings("financial-docs");
+  if (els.settingsMenuImportData) els.settingsMenuImportData.hidden = !canSettings("import-data");
   if (els.settingsMenuCash) els.settingsMenuCash.hidden = !canSettings("cash");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
   if (els.settingsMenuMaintenance) els.settingsMenuMaintenance.hidden = !canSettings("maintenance");
@@ -3341,6 +3443,7 @@ function renderLayout() {
   els.settingsMenuCommunications.classList.toggle("active", state.settingsSection === "communications");
   els.settingsMenuGuests?.classList.toggle("active", state.settingsSection === "guests");
   els.settingsMenuFinancialDocs?.classList.toggle("active", state.settingsSection === "financial-docs");
+  els.settingsMenuImportData?.classList.toggle("active", state.settingsSection === "import-data");
   els.settingsMenuCash?.classList.toggle("active", state.settingsSection === "cash");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
   els.settingsMenuMaintenance?.classList.toggle("active", state.settingsSection === "maintenance");
@@ -3359,6 +3462,7 @@ async function setSettingsSection(section) {
   if (section === "general" && !canAccessGeneralSettings()) return;
   if (section === "guests" && !canSettings("guests")) return;
   if (section === "financial-docs" && !canSettings("financial-docs")) return;
+  if (section === "import-data" && !canSettings("import-data")) return;
   if (section === "communications" && !canSettings("communications")) return;
   if (section === "cash" && !canSettings("cash")) return;
   if (section === "reviews" && !canSettings("reviews")) return;
@@ -3373,6 +3477,7 @@ async function setSettingsSection(section) {
   setMobileNavOpen(false);
   if (section === "guests") state.guestsSettingsLoaded = false;
   if (section === "financial-docs") state.financialDocsSettingsLoaded = false;
+  if (section === "import-data") state.importDataSettingsLoaded = false;
   if (section === "maintenance") state.maintenanceSettingsLoaded = false;
   state.settingsSection = section === "admin-users"
     ? "admin-users"
@@ -3380,6 +3485,8 @@ async function setSettingsSection(section) {
       ? "guests"
     : section === "financial-docs"
       ? "financial-docs"
+    : section === "import-data"
+      ? "import-data"
     : section === "cash"
       ? "cash"
     : section === "maintenance"
@@ -3428,6 +3535,7 @@ function renderSettingsSection() {
   const isGeneral = state.settingsSection === "general" && canAccessGeneralSettings();
   const isGuests = state.settingsSection === "guests" && canSettings("guests");
   const isFinancialDocs = state.settingsSection === "financial-docs" && canSettings("financial-docs");
+  const isImportData = state.settingsSection === "import-data" && canSettings("import-data");
   const isComm = state.settingsSection === "communications" && canSettings("communications");
   const isCash = state.settingsSection === "cash" && canSettings("cash");
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
@@ -3442,6 +3550,7 @@ function renderSettingsSection() {
   els.settingsViewGeneral.hidden = !isGeneral;
   if (els.settingsViewGuests) els.settingsViewGuests.hidden = !isGuests;
   if (els.settingsViewFinancialDocs) els.settingsViewFinancialDocs.hidden = !isFinancialDocs;
+  if (els.settingsViewImportData) els.settingsViewImportData.hidden = !isImportData;
   els.settingsViewCommunications.hidden = !isComm;
   if (els.settingsViewCash) els.settingsViewCash.hidden = !isCash;
   els.settingsViewReviews.hidden = !isReviews;
@@ -3729,6 +3838,7 @@ function collectProfilePayload(id) {
   const appFeatures = [];
   if (els.profilesBody.querySelector(`[data-profile-app-backoffice="${id}"]`)?.checked) appFeatures.push("backoffice");
   if (els.profilesBody.querySelector(`[data-profile-app-financial-docs="${id}"]`)?.checked) appFeatures.push("financial-docs");
+  if (els.profilesBody.querySelector(`[data-profile-app-import-data="${id}"]`)?.checked) appFeatures.push("import-data");
   if (els.profilesBody.querySelector(`[data-profile-app-business-intelligence="${id}"]`)?.checked) appFeatures.push("business-intelligence");
   if (els.profilesBody.querySelector(`[data-profile-app-guests-bi="${id}"]`)?.checked) appFeatures.push("guests-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-communications="${id}"]`)?.checked) appFeatures.push("communications");
@@ -3748,6 +3858,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-settings-communications="${id}"]`)?.checked) settingsFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-settings-guests="${id}"]`)?.checked) settingsFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-settings-financial-docs="${id}"]`)?.checked) settingsFeatures.push("financial-docs");
+  if (els.profilesBody.querySelector(`[data-profile-settings-import-data="${id}"]`)?.checked) settingsFeatures.push("import-data");
   if (els.profilesBody.querySelector(`[data-profile-settings-cash="${id}"]`)?.checked) settingsFeatures.push("cash");
   if (els.profilesBody.querySelector(`[data-profile-settings-reviews="${id}"]`)?.checked) settingsFeatures.push("reviews");
   if (els.profilesBody.querySelector(`[data-profile-settings-maintenance="${id}"]`)?.checked) settingsFeatures.push("maintenance");
@@ -18277,11 +18388,11 @@ function revokeFinancialDocPreviewUrl() {
 }
 
 function isBackofficeSettingsContext() {
-  return state.currentView === "settings" && state.settingsSection === "financial-docs";
+  return state.currentView === "settings" && (state.settingsSection === "financial-docs" || state.settingsSection === "import-data");
 }
 
 function onLogoHomeClick() {
-  if (state.currentView === "financial-docs" || state.currentView === "guests-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
+  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "guests-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
   }
@@ -18313,10 +18424,10 @@ async function sendServiceApprovalReminderTest() {
 
 function openBackofficeHome() {
   if (!canUseBackoffice()) {
-    showToast("No financial documents access.", "error");
+    showToast("No backoffice access.", "error");
     return;
   }
-  setView("financial-docs");
+  setView(canAppFinancialDocs() ? "financial-docs" : "import-data");
 }
 
 function openBusinessIntelligenceHome() {
@@ -18353,6 +18464,8 @@ function openSettingsFromCurrentContext() {
   }
   if (state.currentView === "financial-docs" && canSettings("financial-docs")) {
     state.settingsSection = "financial-docs";
+  } else if (state.currentView === "import-data" && canSettings("import-data")) {
+    state.settingsSection = "import-data";
   }
   setView("settings");
 }
@@ -18525,6 +18638,527 @@ async function ensureFinancialDocsData() {
   if ((state.currentView === "settings" && state.settingsSection === "financial-docs") && !state.financialDocsSettingsLoaded) {
     await loadFinancialDocsSettings({ silent: true });
   }
+}
+
+function normalizeImportDataTypeClient(value) {
+  return clean(value).toLowerCase() === "fdm-accounts" ? "fdm-accounts" : "fdm-accounts";
+}
+
+function normalizeImportDataSettingsClient(source = {}) {
+  const defaults = clone(DEFAULT_IMPORT_DATA_SETTINGS);
+  const rows = Array.isArray(source?.types) ? source.types : defaults.types;
+  const mapped = new Map(
+    rows.map((item) => [
+      normalizeImportDataTypeClient(item?.type),
+      {
+        type: normalizeImportDataTypeClient(item?.type),
+        description: clean(item?.description),
+      },
+    ])
+  );
+  return {
+    types: defaults.types.map((item) => ({
+      type: item.type,
+      description: clean(mapped.get(item.type)?.description) || item.description,
+    })),
+  };
+}
+
+function importDataTypeDescription(type = state.importDataType) {
+  const normalized = normalizeImportDataTypeClient(type);
+  return clean(state.importDataSettings?.types?.find((item) => item.type === normalized)?.description);
+}
+
+function setImportDataStatus(message = "", tone = "") {
+  if (!els.importDataStatus) return;
+  els.importDataStatus.textContent = message;
+  els.importDataStatus.classList.toggle("status-error", tone === "error");
+}
+
+function setImportDataSettingsStatus(message = "", tone = "") {
+  if (!els.importDataSettingsStatus) return;
+  els.importDataSettingsStatus.textContent = message;
+  els.importDataSettingsStatus.classList.toggle("status-error", tone === "error");
+}
+
+async function loadImportDataSettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/import-data-settings");
+    state.importDataSettings = normalizeImportDataSettingsClient(result?.settings);
+    state.importDataSettingsLoaded = true;
+    renderImportDataSettings();
+    renderImportData();
+    if (!silent) setImportDataSettingsStatus("Import Data settings loaded.");
+  } catch (error) {
+    state.importDataSettings = clone(DEFAULT_IMPORT_DATA_SETTINGS);
+    state.importDataSettingsLoaded = false;
+    renderImportDataSettings();
+    renderImportData();
+    if (!silent) setImportDataSettingsStatus(`Using default settings (${error.message}).`, "error");
+  }
+}
+
+async function loadImportDataRows({ silent = false } = {}) {
+  try {
+    const result = await api(`/api/import-data?type=${encodeURIComponent(state.importDataType)}`);
+    state.importDataRows = Array.isArray(result?.rows) ? result.rows : [];
+    state.importDataLoaded = true;
+    renderImportData();
+    if (!silent) setImportDataStatus("Import Data loaded.");
+  } catch (error) {
+    state.importDataRows = [];
+    state.importDataLoaded = false;
+    renderImportData();
+    if (!silent) setImportDataStatus(`Failed to load imports: ${error.message}`, "error");
+  }
+}
+
+async function ensureImportDataData() {
+  const loads = [];
+  if (!state.importDataLoaded && canAppImportData()) loads.push(loadImportDataRows({ silent: true }));
+  if ((state.currentView === "settings" && state.settingsSection === "import-data") && !state.importDataSettingsLoaded && canSettings("import-data")) {
+    loads.push(loadImportDataSettings({ silent: true }));
+  }
+  if (state.currentView === "import-data" && !state.importDataSettingsLoaded && canSettings("import-data")) {
+    loads.push(loadImportDataSettings({ silent: true }));
+  }
+  if (loads.length) await Promise.all(loads);
+}
+
+function setImportDataType(type) {
+  state.importDataType = normalizeImportDataTypeClient(type);
+  if (els.importDataType) els.importDataType.value = state.importDataType;
+  renderImportData();
+  if (state.importDataLoaded) loadImportDataRows({ silent: true }).catch(() => {});
+}
+
+function onImportDataTypeChange() {
+  setImportDataType(els.importDataType?.value);
+}
+
+function onImportDataSettingsInput(event) {
+  const target = event?.target;
+  if (!(target instanceof HTMLElement)) return;
+  const type = normalizeImportDataTypeClient(target.dataset?.importDataSettingsType);
+  state.importDataSettings = normalizeImportDataSettingsClient({
+    ...state.importDataSettings,
+    types: (state.importDataSettings?.types || []).map((item) => item.type === type
+      ? { ...item, description: String(target.value || "") }
+      : item),
+  });
+}
+
+async function saveImportDataSettings() {
+  try {
+    const result = await api("/api/import-data-settings", {
+      method: "PUT",
+      body: { settings: state.importDataSettings },
+    });
+    state.importDataSettings = normalizeImportDataSettingsClient(result?.settings);
+    state.importDataSettingsLoaded = true;
+    renderImportDataSettings();
+    renderImportData();
+    setImportDataSettingsStatus("Import Data settings saved.");
+    showToast("Import Data settings saved.", "success");
+  } catch (error) {
+    setImportDataSettingsStatus(`Save failed: ${error.message}`, "error");
+    showToast(`Import Data settings save failed: ${error.message}`, "error");
+  }
+}
+
+function importDataValidationMessage(row) {
+  if (!clean(row.account)) return "Account is required.";
+  if (!clean(row.dateTimeRaw)) return "Date Time is required.";
+  if (!clean(row.category)) return "Category is required.";
+  if (!Number.isFinite(Number(row.amount))) return "Amount is required.";
+  return "Ready";
+}
+
+function normalizeImportDataMoneyClient(value) {
+  const raw = clean(value).replace(/\s+/g, "").replace(/[€$£]/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const num = Number(raw);
+  return Number.isFinite(num) ? Number(num.toFixed(2)) : "";
+}
+
+function scoreDelimitedSeparator(text, separator) {
+  let inQuotes = false;
+  let score = 0;
+  const raw = String(text || "");
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (char === '"') {
+      if (inQuotes && raw[index + 1] === '"') {
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && char === separator) score += 1;
+  }
+  return score;
+}
+
+function detectDelimitedSeparator(text) {
+  const raw = String(text || "").replace(/^\uFEFF/, "");
+  const firstLine = raw.split(/\r?\n/).find((line) => clean(line)) || "";
+  const candidates = ["\t", ";", ","];
+  let winner = "\t";
+  let bestScore = -1;
+  candidates.forEach((separator) => {
+    const score = scoreDelimitedSeparator(firstLine, separator);
+    if (score > bestScore) {
+      bestScore = score;
+      winner = separator;
+    }
+  });
+  return winner;
+}
+
+function parseDelimitedTextTable(text) {
+  const raw = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!clean(raw)) return [];
+  const separator = detectDelimitedSeparator(raw);
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+
+  const pushCell = () => {
+    row.push(cell.trim());
+    cell = "";
+  };
+
+  const pushRow = () => {
+    pushCell();
+    if (row.some((item) => clean(item))) rows.push(row);
+    row = [];
+  };
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (char === '"') {
+      if (inQuotes && raw[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && char === separator) {
+      pushCell();
+      continue;
+    }
+    if (!inQuotes && char === "\n") {
+      pushRow();
+      continue;
+    }
+    cell += char;
+  }
+  if (cell || row.length) pushRow();
+  return rows;
+}
+
+function parseImportDataFdmAccountsFieldMap(headerRow) {
+  const map = new Map();
+  headerRow.forEach((cell, index) => {
+    map.set(clean(cell).toLowerCase(), index);
+  });
+  return {
+    account: map.get("account"),
+    dateTime: map.get("date time"),
+    category: map.get("category"),
+    amount: map.get("amount"),
+    reservationId: map.get("reservation id"),
+    guest: map.get("guest"),
+    reportingDate: map.get("reporting date"),
+    userName: map.get("user"),
+    description: map.get("description"),
+    billNumber: map.get("bill number"),
+    item: map.get("item"),
+    invoiceNumber: map.get("invoicenumber"),
+    currency: map.get("currency"),
+    invoiceAmount: map.get("invoice amount"),
+    designation: map.get("designation"),
+    invoice: map.get("invoice"),
+  };
+}
+
+function buildImportDataPreviewRowFdm(cells, fieldMap, sourceRowNumber) {
+  const pick = (key) => {
+    const index = fieldMap[key];
+    return index === undefined || index === null || index < 0 ? "" : String(cells[index] ?? "").trim();
+  };
+  const row = {
+    sourceRowNumber,
+    account: pick("account"),
+    dateTimeRaw: pick("dateTime"),
+    category: pick("category"),
+    amount: normalizeImportDataMoneyClient(pick("amount")),
+    reservationId: pick("reservationId"),
+    guest: pick("guest"),
+    reportingDateRaw: pick("reportingDate"),
+    userName: pick("userName"),
+    description: pick("description"),
+    billNumber: pick("billNumber"),
+    item: pick("item"),
+    invoiceNumber: pick("invoiceNumber"),
+    currency: pick("currency") || "EUR",
+    invoiceAmount: pick("invoiceAmount") === "" ? "" : normalizeImportDataMoneyClient(pick("invoiceAmount")),
+    designation: pick("designation"),
+    invoice: pick("invoice"),
+  };
+  row.validation = importDataValidationMessage(row);
+  return row;
+}
+
+function parseImportDataRowsFromTable(tableRows, type = state.importDataType) {
+  const rows = Array.isArray(tableRows) ? tableRows.filter((row) => Array.isArray(row) && row.some((cell) => clean(cell))) : [];
+  if (rows.length < 2) return [];
+  const normalizedType = normalizeImportDataTypeClient(type);
+  if (normalizedType !== "fdm-accounts") return [];
+  const fieldMap = parseImportDataFdmAccountsFieldMap(rows[0]);
+  return rows.slice(1).map((cells, index) => buildImportDataPreviewRowFdm(cells, fieldMap, index + 2));
+}
+
+async function readFileAsTextClient(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve(String(event?.target?.result || ""));
+    reader.onerror = () => reject(new Error(`Could not read file ${clean(file?.name) || ""}.`));
+    reader.readAsText(file);
+  });
+}
+
+async function readFileAsArrayBufferClient(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve(event?.target?.result);
+    reader.onerror = () => reject(new Error(`Could not read file ${clean(file?.name) || ""}.`));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function parseImportDataSpreadsheetFile(file) {
+  if (typeof XLSX === "undefined") throw new Error("Spreadsheet import is not available right now.");
+  const buffer = await readFileAsArrayBufferClient(file);
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+  const firstSheet = workbook.SheetNames[0];
+  if (!firstSheet) return [];
+  const data = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { header: 1, raw: false, defval: "" });
+  return parseImportDataRowsFromTable(data, state.importDataType);
+}
+
+async function parseImportDataFile(file) {
+  const name = clean(file?.name).toLowerCase();
+  if (/\.(xlsx|xls)$/i.test(name)) return parseImportDataSpreadsheetFile(file);
+  const text = await readFileAsTextClient(file);
+  const rows = parseDelimitedTextTable(text);
+  return parseImportDataRowsFromTable(rows, state.importDataType);
+}
+
+function updateImportDataSourceSummary() {
+  if (!els.importDataSourceSummary) return;
+  const fileNames = (state.importDataFiles || []).map((file) => clean(file?.name)).filter(Boolean);
+  const text = clean(state.importDataRawText);
+  if (fileNames.length) {
+    els.importDataSourceSummary.textContent = fileNames.join(", ");
+    return;
+  }
+  if (text) {
+    els.importDataSourceSummary.textContent = `${text.split(/\r?\n/).filter(Boolean).length} line(s) pasted`;
+    return;
+  }
+  els.importDataSourceSummary.textContent = "No source selected";
+}
+
+function onImportDataFilesPicked(event) {
+  state.importDataFiles = Array.from(event?.target?.files || []);
+  state.importDataSourceMode = state.importDataFiles.length ? "file" : "";
+  if (state.importDataFiles.length) {
+    state.importDataRawText = "";
+    if (els.importDataText) els.importDataText.value = "";
+  }
+  updateImportDataSourceSummary();
+}
+
+function onImportDataTextInput() {
+  state.importDataRawText = String(els.importDataText?.value || "");
+  if (clean(state.importDataRawText)) {
+    state.importDataSourceMode = "text";
+    state.importDataFiles = [];
+    if (els.importDataInput) els.importDataInput.value = "";
+  }
+  updateImportDataSourceSummary();
+}
+
+function onImportDataDragOver(event) {
+  event.preventDefault();
+  els.importDataDropzone?.classList.add("drag-over");
+}
+
+function onImportDataDragLeave(event) {
+  event.preventDefault();
+  els.importDataDropzone?.classList.remove("drag-over");
+}
+
+function onImportDataDrop(event) {
+  event.preventDefault();
+  els.importDataDropzone?.classList.remove("drag-over");
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (files.length) {
+    state.importDataFiles = files;
+    state.importDataSourceMode = "file";
+    state.importDataRawText = "";
+    if (els.importDataText) els.importDataText.value = "";
+    if (els.importDataInput) {
+      const dt = new DataTransfer();
+      files.forEach((file) => dt.items.add(file));
+      els.importDataInput.files = dt.files;
+    }
+    updateImportDataSourceSummary();
+  }
+}
+
+async function previewImportData() {
+  try {
+    let rows = [];
+    if (clean(state.importDataRawText)) {
+      const table = parseDelimitedTextTable(state.importDataRawText);
+      rows = parseImportDataRowsFromTable(table, state.importDataType);
+      state.importDataSourceMode = "text";
+    } else if ((state.importDataFiles || []).length) {
+      rows = (await Promise.all(state.importDataFiles.map((file) => parseImportDataFile(file)))).flat();
+      state.importDataSourceMode = "file";
+    }
+    state.importDataPreviewRows = rows;
+    renderImportData();
+    setImportDataStatus(rows.length ? "Preview ready." : "No rows detected.", rows.length ? "" : "error");
+  } catch (error) {
+    state.importDataPreviewRows = [];
+    renderImportData();
+    setImportDataStatus(`Preview failed: ${error.message}`, "error");
+  }
+}
+
+async function confirmImportData() {
+  const readyRows = (state.importDataPreviewRows || []).filter((row) => clean(row.validation).toLowerCase() === "ready");
+  if (!readyRows.length) {
+    setImportDataStatus("No valid rows ready to import.", "error");
+    return;
+  }
+  try {
+    const result = await api("/api/import-data", {
+      method: "POST",
+      body: {
+        type: state.importDataType,
+        sourceName: (state.importDataFiles || []).map((file) => clean(file?.name)).filter(Boolean).join(", "),
+        rows: readyRows,
+      },
+    });
+    state.importDataPreviewRows = [];
+    state.importDataFiles = [];
+    state.importDataRawText = "";
+    state.importDataSourceMode = "";
+    if (els.importDataInput) els.importDataInput.value = "";
+    if (els.importDataText) els.importDataText.value = "";
+    updateImportDataSourceSummary();
+    await loadImportDataRows({ silent: true });
+    renderImportData();
+    const inserted = Number(result?.insertedCount || readyRows.length);
+    setImportDataStatus(`${inserted} row(s) imported successfully.`);
+    showToast(`${inserted} Import Data row(s) imported.`, "success");
+  } catch (error) {
+    setImportDataStatus(`Import failed: ${error.message}`, "error");
+    showToast(`Import Data failed: ${error.message}`, "error");
+  }
+}
+
+function renderImportDataSettings() {
+  if (!els.importDataSettingsBody) return;
+  const rows = Array.isArray(state.importDataSettings?.types) ? state.importDataSettings.types : [];
+  els.importDataSettingsBody.innerHTML = rows.map((row) => `<tr>
+    <td>${escape(row.type === "fdm-accounts" ? "FDM Accounts" : row.type)}</td>
+    <td><input type="text" data-import-data-settings-type="${escape(row.type)}" value="${escape(row.description)}" /></td>
+  </tr>`).join("") || '<tr><td colspan="2" class="empty">No import types configured.</td></tr>';
+}
+
+function renderImportDataPreviewRows() {
+  if (!els.importDataPreviewRows) return;
+  const rows = Array.isArray(state.importDataPreviewRows) ? state.importDataPreviewRows : [];
+  els.importDataPreviewRows.innerHTML = rows.length
+    ? rows.map((row) => {
+      const ready = clean(row.validation).toLowerCase() === "ready";
+      return `<tr>
+        <td>${escape(String(row.sourceRowNumber || "-"))}</td>
+        <td>${escape(row.account || "-")}</td>
+        <td>${escape(row.dateTimeRaw || "-")}</td>
+        <td>${escape(row.category || "-")}</td>
+        <td>${row.amount === "" ? "-" : escape(formatMoney(row.amount || 0))}</td>
+        <td>${escape(row.reservationId || "-")}</td>
+        <td>${escape(row.guest || "-")}</td>
+        <td>${escape(row.reportingDateRaw || "-")}</td>
+        <td>${escape(row.userName || "-")}</td>
+        <td>${escape(row.description || "-")}</td>
+        <td>${escape(row.billNumber || "-")}</td>
+        <td>${escape(row.item || "-")}</td>
+        <td>${escape(row.invoiceNumber || "-")}</td>
+        <td>${escape(row.currency || "-")}</td>
+        <td>${row.invoiceAmount === "" ? "-" : escape(formatMoney(row.invoiceAmount || 0))}</td>
+        <td>${escape(row.designation || "-")}</td>
+        <td>${escape(row.invoice || "-")}</td>
+        <td class="${ready ? "financial-doc-import-validation--ready" : "financial-doc-import-validation--error"}">${escape(row.validation || "-")}</td>
+      </tr>`;
+    }).join("")
+    : '<tr><td colspan="18" class="empty">No preview rows yet.</td></tr>';
+  if (els.importDataPreviewCount) els.importDataPreviewCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
+}
+
+function renderImportDataRows() {
+  if (!els.importDataRows) return;
+  const rows = Array.isArray(state.importDataRows) ? state.importDataRows : [];
+  els.importDataRows.innerHTML = rows.length
+    ? rows.map((row) => `<tr>
+      <td>${escape(formatDateTimeShort(row.created_at) || "-")}</td>
+      <td>${escape(row.account || "-")}</td>
+      <td>${escape(row.date_time_raw || "-")}</td>
+      <td>${escape(row.category || "-")}</td>
+      <td>${escape(formatMoney(row.amount || 0))}</td>
+      <td>${escape(row.reservation_id || "-")}</td>
+      <td>${escape(row.guest || "-")}</td>
+      <td>${escape(row.reporting_date_raw || "-")}</td>
+      <td>${escape(row.user_name || "-")}</td>
+      <td>${escape(row.description || "-")}</td>
+      <td>${escape(row.bill_number || "-")}</td>
+      <td>${escape(row.item || "-")}</td>
+      <td>${escape(row.invoice_number || "-")}</td>
+      <td>${escape(row.currency || "-")}</td>
+      <td>${row.invoice_amount == null ? "-" : escape(formatMoney(row.invoice_amount || 0))}</td>
+      <td>${escape(row.designation || "-")}</td>
+      <td>${escape(row.invoice || "-")}</td>
+    </tr>`).join("")
+    : '<tr><td colspan="17" class="empty">No imported rows yet.</td></tr>';
+  if (els.importDataCount) els.importDataCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
+}
+
+function renderImportData() {
+  if (!canAppImportData()) {
+    if (els.importDataCount) els.importDataCount.textContent = "0 rows";
+    if (els.importDataPreviewCount) els.importDataPreviewCount.textContent = "0 rows";
+    if (els.importDataRows) els.importDataRows.innerHTML = '<tr><td colspan="17" class="empty">Your profile has no access to Import Data.</td></tr>';
+    if (els.importDataPreviewRows) els.importDataPreviewRows.innerHTML = '<tr><td colspan="18" class="empty">Your profile has no access to Import Data.</td></tr>';
+    return;
+  }
+  if (els.importDataTabFdmAccounts) {
+    els.importDataTabFdmAccounts.classList.toggle("active-tab", state.importDataType === "fdm-accounts");
+    els.importDataTabFdmAccounts.classList.toggle("ghost", state.importDataType !== "fdm-accounts");
+  }
+  if (els.importDataType) els.importDataType.value = state.importDataType;
+  if (els.importDataDescription) els.importDataDescription.textContent = importDataTypeDescription(state.importDataType);
+  updateImportDataSourceSummary();
+  renderImportDataPreviewRows();
+  renderImportDataRows();
 }
 
 function setGuestsBiStatus(message = "", tone = "") {
@@ -19463,7 +20097,7 @@ function renderFinancialDocsMobileCards(rows) {
 }
 
 function renderFinancialDocs() {
-  if (!canUseBackoffice()) {
+  if (!canAppFinancialDocs()) {
     if (els.financialDocsCount) els.financialDocsCount.textContent = "0 records";
     if (els.financialDocsRows) els.financialDocsRows.innerHTML = '<tr><td colspan="16" class="empty">Your profile has no access to Financial Documents.</td></tr>';
     if (els.financialDocsMobileCards) els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Financial Documents.</div>';
@@ -20201,6 +20835,10 @@ function handleFinancialDocsDriveCallbackQuery() {
 function render() {
   if (state.currentView === "financial-docs") {
     renderFinancialDocs();
+    return;
+  }
+  if (state.currentView === "import-data") {
+    renderImportData();
     return;
   }
   if (state.currentView === "guests-bi") {
