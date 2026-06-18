@@ -186,6 +186,10 @@ body {
   text-align: center;
 }
 
+.sidebar-summary-value-danger {
+  color: var(--danger);
+}
+
 .sidebar-summary-grid-row-total {
   border-top: 1px solid var(--line);
   margin-top: 0.1rem;

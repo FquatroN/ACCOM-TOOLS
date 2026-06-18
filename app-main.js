@@ -23368,6 +23368,13 @@ function formatAverageOnly(value) {
   return Number.isFinite(num) ? num.toFixed(1) : "-";
 }
 
+function renderSidebarReviewSummaryValue(value) {
+  const numeric = Number(value);
+  const formatted = formatAverageOnly(value);
+  const dangerClass = Number.isFinite(numeric) && numeric < 90 ? " sidebar-summary-value-danger" : "";
+  return `<span class="sidebar-summary-value${dangerClass}">${escape(formatted)}</span>`;
+}
+
 function renderSidebarReviewSummary() {
   if (!els.sidebarReviewSummaryCard || !els.sidebarReviewSummaryBody || !els.sidebarReviewSummaryStatus) return;
   if (!canApp("communications")) {
@@ -23396,18 +23403,18 @@ function renderSidebarReviewSummary() {
       </div>
       <div class="sidebar-summary-grid-row">
         <span class="sidebar-summary-label">Hostel</span>
-        <span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.currentAverage))}</span>
-        <span class="sidebar-summary-value">${escape(formatAverageOnly(hostel.previousAverage))}</span>
+        ${renderSidebarReviewSummaryValue(hostel.currentAverage)}
+        ${renderSidebarReviewSummaryValue(hostel.previousAverage)}
       </div>
       <div class="sidebar-summary-grid-row">
         <span class="sidebar-summary-label">Cruz</span>
-        <span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.currentAverage))}</span>
-        <span class="sidebar-summary-value">${escape(formatAverageOnly(cruz.previousAverage))}</span>
+        ${renderSidebarReviewSummaryValue(cruz.currentAverage)}
+        ${renderSidebarReviewSummaryValue(cruz.previousAverage)}
       </div>
       <div class="sidebar-summary-grid-row sidebar-summary-grid-row-total">
         <span class="sidebar-summary-label">Overall</span>
-        <span class="sidebar-summary-value">${escape(formatAverageOnly(overall.currentAverage))}</span>
-        <span class="sidebar-summary-value">${escape(formatAverageOnly(overall.previousAverage))}</span>
+        ${renderSidebarReviewSummaryValue(overall.currentAverage)}
+        ${renderSidebarReviewSummaryValue(overall.previousAverage)}
       </div>
     </div>`;
 }
