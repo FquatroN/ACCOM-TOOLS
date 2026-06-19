@@ -54,6 +54,10 @@ body {
   grid-template-columns: 1fr;
 }
 
+.app-layout.import-data-mode {
+  max-width: 1520px;
+}
+
 .app-layout.business-intelligence-mode {
   grid-template-columns: 1fr;
 }

@@ -3372,6 +3372,7 @@ function renderLayout() {
   els.appShell.classList.toggle("settings-mode", settingsMode);
   els.appShell.classList.toggle("backoffice-mode", backofficeMode);
   els.appShell.classList.toggle("business-intelligence-mode", businessIntelligenceMode);
+  els.appShell.classList.toggle("import-data-mode", importData);
   els.navCommunications.classList.toggle("active", comm);
   els.navFinancialDocs?.classList.toggle("active", financialDocs);
   els.navImportData?.classList.toggle("active", importData);
