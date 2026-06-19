@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 
-const { parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
+const { cleanText, parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
 const { normalizeImportDataType, sanitizeFdmAccountsImportRow } = require("./_import-data");
 
 function importBatchId(type) {
@@ -54,6 +54,57 @@ module.exports = async function handler(req, res) {
         importBatch: batch,
         insertedCount: Array.isArray(created) ? created.length : rows.length,
       });
+      return;
+    }
+
+    if (req.method === "PUT") {
+      const body = await parseBody(req);
+      const type = normalizeImportDataType(body?.type);
+      const id = cleanText(body?.id);
+      if (type !== "fdm-accounts") {
+        res.status(400).json({ error: "Unsupported import data type." });
+        return;
+      }
+      if (!id) {
+        res.status(400).json({ error: "Record id is required." });
+        return;
+      }
+      const existingRows = await restQuery(`import_fdm_accounts?select=*&id=eq.${encodeURIComponent(id)}&limit=1`, { method: "GET" });
+      const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+      if (!existing) {
+        res.status(404).json({ error: "Imported record not found." });
+        return;
+      }
+      const updatedPayload = sanitizeFdmAccountsImportRow(body?.row || {}, {
+        importBatch: body?.row?.import_batch || existing.import_batch,
+        sourceName: body?.row?.source_name || existing.source_name,
+        sourceRowNumber: body?.row?.source_row_number || existing.source_row_number,
+      });
+      const updatedRows = await restQuery(`import_fdm_accounts?id=eq.${encodeURIComponent(id)}&select=*`, {
+        method: "PATCH",
+        body: updatedPayload,
+        preferRepresentation: true,
+      });
+      res.status(200).json({
+        ok: true,
+        row: Array.isArray(updatedRows) ? updatedRows[0] || null : null,
+      });
+      return;
+    }
+
+    if (req.method === "DELETE") {
+      const type = normalizeImportDataType(req.query?.type);
+      const id = cleanText(req.query?.id);
+      if (type !== "fdm-accounts") {
+        res.status(400).json({ error: "Unsupported import data type." });
+        return;
+      }
+      if (!id) {
+        res.status(400).json({ error: "Record id is required." });
+        return;
+      }
+      await restQuery(`import_fdm_accounts?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+      res.status(200).json({ ok: true });
       return;
     }
 

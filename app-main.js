@@ -951,11 +951,15 @@ const state = {
   importDataSettingsLoaded: false,
   importDataRows: [],
   importDataLoaded: false,
+  importDataTab: "import",
   importDataType: "fdm-accounts",
+  importDataViewType: "fdm-accounts",
   importDataPreviewRows: [],
   importDataRawText: "",
   importDataFiles: [],
   importDataSourceMode: "",
+  importDataEditingId: "",
+  importDataEditDraft: null,
   guestsBiRows: [],
   guestsBiYears: [],
   guestsBiTotals: { totalNights: 0, exempt7Days: 0, exempt13Year: 0 },
@@ -1313,10 +1317,17 @@ const els = {
   financialDocsImportCount: document.getElementById("financial-docs-import-count"),
   financialDocsImportRows: document.getElementById("financial-docs-import-rows"),
   importDataTabFdmAccounts: document.getElementById("import-data-tab-fdm-accounts"),
+  importDataTabImport: document.getElementById("import-data-tab-import"),
+  importDataTabView: document.getElementById("import-data-tab-view"),
+  importDataImportPanel: document.getElementById("import-data-import-panel"),
+  importDataViewPanel: document.getElementById("import-data-view-panel"),
   importDataDescription: document.getElementById("import-data-description"),
   importDataStatus: document.getElementById("import-data-status"),
   importDataConfirm: document.getElementById("import-data-confirm"),
   importDataType: document.getElementById("import-data-type"),
+  importDataViewType: document.getElementById("import-data-view-type"),
+  importDataViewDescription: document.getElementById("import-data-view-description"),
+  importDataViewStatus: document.getElementById("import-data-view-status"),
   importDataDropzone: document.getElementById("import-data-dropzone"),
   importDataSourceSummary: document.getElementById("import-data-source-summary"),
   importDataBrowse: document.getElementById("import-data-browse"),
@@ -2094,8 +2105,11 @@ function bindEvents() {
   els.financialDocsDriveConnect?.addEventListener("click", connectFinancialDocsDrive);
   els.financialDocsDriveRefresh?.addEventListener("click", refreshFinancialDocsDrive);
   els.financialDocsDriveDisconnect?.addEventListener("click", disconnectFinancialDocsDrive);
+  els.importDataTabImport?.addEventListener("click", () => setImportDataTab("import"));
+  els.importDataTabView?.addEventListener("click", () => setImportDataTab("view"));
   els.importDataTabFdmAccounts?.addEventListener("click", () => setImportDataType("fdm-accounts"));
   els.importDataType?.addEventListener("change", onImportDataTypeChange);
+  els.importDataViewType?.addEventListener("change", onImportDataViewTypeChange);
   els.importDataBrowse?.addEventListener("click", () => els.importDataInput?.click());
   els.importDataInput?.addEventListener("change", onImportDataFilesPicked);
   els.importDataPreview?.addEventListener("click", previewImportData);
@@ -2106,6 +2120,8 @@ function bindEvents() {
   els.importDataDropzone?.addEventListener("drop", onImportDataDrop);
   els.importDataSaveSettings?.addEventListener("click", saveImportDataSettings);
   els.importDataSettingsBody?.addEventListener("input", onImportDataSettingsInput);
+  els.importDataRows?.addEventListener("input", onImportDataViewInput);
+  els.importDataRows?.addEventListener("click", onImportDataRowsClick);
   els.guestsTabList?.addEventListener("click", () => setGuestsScreen("list"));
   els.guestsTabDescriptions?.addEventListener("click", () => setGuestsScreen("descriptions"));
   els.guestsTabBlacklist?.addEventListener("click", () => setGuestsScreen("blacklist"));
@@ -18675,6 +18691,12 @@ function setImportDataStatus(message = "", tone = "") {
   els.importDataStatus.classList.toggle("status-error", tone === "error");
 }
 
+function setImportDataViewStatus(message = "", tone = "") {
+  if (!els.importDataViewStatus) return;
+  els.importDataViewStatus.textContent = message;
+  els.importDataViewStatus.classList.toggle("status-error", tone === "error");
+}
+
 function setImportDataSettingsStatus(message = "", tone = "") {
   if (!els.importDataSettingsStatus) return;
   els.importDataSettingsStatus.textContent = message;
@@ -18698,18 +18720,19 @@ async function loadImportDataSettings({ silent = false } = {}) {
   }
 }
 
-async function loadImportDataRows({ silent = false } = {}) {
+async function loadImportDataRows({ silent = false, type = state.importDataViewType } = {}) {
   try {
-    const result = await api(`/api/import-data?type=${encodeURIComponent(state.importDataType)}`);
+    const normalizedType = normalizeImportDataTypeClient(type);
+    const result = await api(`/api/import-data?type=${encodeURIComponent(normalizedType)}`);
     state.importDataRows = Array.isArray(result?.rows) ? result.rows : [];
     state.importDataLoaded = true;
     renderImportData();
-    if (!silent) setImportDataStatus("Import Data loaded.");
+    if (!silent) setImportDataViewStatus("Data loaded.");
   } catch (error) {
     state.importDataRows = [];
     state.importDataLoaded = false;
     renderImportData();
-    if (!silent) setImportDataStatus(`Failed to load imports: ${error.message}`, "error");
+    if (!silent) setImportDataViewStatus(`Failed to load data: ${error.message}`, "error");
   }
 }
 
@@ -18729,11 +18752,35 @@ function setImportDataType(type) {
   state.importDataType = normalizeImportDataTypeClient(type);
   if (els.importDataType) els.importDataType.value = state.importDataType;
   renderImportData();
-  if (state.importDataLoaded) loadImportDataRows({ silent: true }).catch(() => {});
 }
 
 function onImportDataTypeChange() {
   setImportDataType(els.importDataType?.value);
+}
+
+function setImportDataTab(tab) {
+  state.importDataTab = clean(tab).toLowerCase() === "view" ? "view" : "import";
+  if (state.importDataTab !== "view") {
+    state.importDataEditingId = "";
+    state.importDataEditDraft = null;
+  }
+  if (state.importDataTab === "view" && canAppImportData()) {
+    loadImportDataRows({ silent: true, type: state.importDataViewType }).catch(() => {});
+  }
+  renderImportData();
+}
+
+function setImportDataViewType(type) {
+  state.importDataViewType = normalizeImportDataTypeClient(type);
+  state.importDataEditingId = "";
+  state.importDataEditDraft = null;
+  if (els.importDataViewType) els.importDataViewType.value = state.importDataViewType;
+  loadImportDataRows({ silent: true, type: state.importDataViewType }).catch(() => {});
+  renderImportData();
+}
+
+function onImportDataViewTypeChange() {
+  setImportDataViewType(els.importDataViewType?.value);
 }
 
 function onImportDataSettingsInput(event) {
@@ -19075,6 +19122,119 @@ async function confirmImportData() {
   }
 }
 
+function formatImportDataEditNumber(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? String(numeric) : clean(value);
+}
+
+function cloneImportDataRowForEdit(row = {}) {
+  return {
+    id: clean(row.id),
+    account: clean(row.account),
+    date_time_raw: clean(row.date_time_raw),
+    category: clean(row.category),
+    amount: formatImportDataEditNumber(row.amount),
+    reservation_id: clean(row.reservation_id),
+    guest: clean(row.guest),
+    reporting_date_raw: clean(row.reporting_date_raw),
+    user_name: clean(row.user_name),
+    description: clean(row.description),
+    bill_number: clean(row.bill_number),
+    item: clean(row.item),
+    invoice_number: clean(row.invoice_number),
+    currency: clean(row.currency) || "EUR",
+    invoice_amount: formatImportDataEditNumber(row.invoice_amount),
+    designation: clean(row.designation),
+    invoice: clean(row.invoice),
+  };
+}
+
+function startImportDataEdit(id) {
+  const row = state.importDataRows.find((item) => clean(item.id) === clean(id));
+  if (!row) return;
+  state.importDataEditingId = clean(id);
+  state.importDataEditDraft = cloneImportDataRowForEdit(row);
+  renderImportData();
+}
+
+function cancelImportDataEdit() {
+  state.importDataEditingId = "";
+  state.importDataEditDraft = null;
+  setImportDataViewStatus("");
+  renderImportData();
+}
+
+function onImportDataViewInput(event) {
+  const target = event?.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  const field = clean(target.dataset?.field);
+  if (!field || !state.importDataEditDraft) return;
+  state.importDataEditDraft = {
+    ...state.importDataEditDraft,
+    [field]: target.value,
+  };
+}
+
+async function saveImportDataEdit(id) {
+  if (!state.importDataEditDraft || clean(id) !== clean(state.importDataEditingId)) return;
+  try {
+    const result = await api("/api/import-data", {
+      method: "PUT",
+      body: {
+        id,
+        type: state.importDataViewType,
+        row: state.importDataEditDraft,
+      },
+    });
+    const savedRow = result?.row && typeof result.row === "object" ? result.row : null;
+    if (savedRow) {
+      state.importDataRows = state.importDataRows.map((item) => clean(item.id) === clean(id) ? savedRow : item);
+    } else {
+      await loadImportDataRows({ silent: true, type: state.importDataViewType });
+    }
+    state.importDataEditingId = "";
+    state.importDataEditDraft = null;
+    renderImportData();
+    setImportDataViewStatus("Record saved.");
+    showToast("Import Data record saved.", "success");
+  } catch (error) {
+    setImportDataViewStatus(`Save failed: ${error.message}`, "error");
+    showToast(`Import Data save failed: ${error.message}`, "error");
+  }
+}
+
+async function deleteImportDataRow(id) {
+  if (!id || !window.confirm("Delete this imported record?")) return;
+  try {
+    await api(`/api/import-data?id=${encodeURIComponent(id)}&type=${encodeURIComponent(state.importDataViewType)}`, {
+      method: "DELETE",
+    });
+    state.importDataRows = state.importDataRows.filter((item) => clean(item.id) !== clean(id));
+    if (clean(state.importDataEditingId) === clean(id)) {
+      state.importDataEditingId = "";
+      state.importDataEditDraft = null;
+    }
+    renderImportData();
+    setImportDataViewStatus("Record deleted.");
+    showToast("Import Data record deleted.", "success");
+  } catch (error) {
+    setImportDataViewStatus(`Delete failed: ${error.message}`, "error");
+    showToast(`Import Data delete failed: ${error.message}`, "error");
+  }
+}
+
+function onImportDataRowsClick(event) {
+  const button = event.target instanceof HTMLElement ? event.target.closest("button[data-import-data-action]") : null;
+  if (!button) return;
+  const action = clean(button.dataset.importDataAction);
+  const id = clean(button.dataset.id);
+  if (action === "edit") startImportDataEdit(id);
+  if (action === "cancel") cancelImportDataEdit();
+  if (action === "save") saveImportDataEdit(id);
+  if (action === "delete") deleteImportDataRow(id);
+}
+
 function renderImportDataSettings() {
   if (!els.importDataSettingsBody) return;
   const rows = Array.isArray(state.importDataSettings?.types) ? state.importDataSettings.types : [];
@@ -19119,26 +19279,53 @@ function renderImportDataRows() {
   if (!els.importDataRows) return;
   const rows = Array.isArray(state.importDataRows) ? state.importDataRows : [];
   els.importDataRows.innerHTML = rows.length
-    ? rows.map((row) => `<tr>
-      <td>${escape(formatDateTimeShort(row.created_at) || "-")}</td>
-      <td>${escape(row.account || "-")}</td>
-      <td>${escape(row.date_time_raw || "-")}</td>
-      <td>${escape(row.category || "-")}</td>
-      <td>${escape(formatMoney(row.amount || 0))}</td>
-      <td>${escape(row.reservation_id || "-")}</td>
-      <td>${escape(row.guest || "-")}</td>
-      <td>${escape(row.reporting_date_raw || "-")}</td>
-      <td>${escape(row.user_name || "-")}</td>
-      <td>${escape(row.description || "-")}</td>
-      <td>${escape(row.bill_number || "-")}</td>
-      <td>${escape(row.item || "-")}</td>
-      <td>${escape(row.invoice_number || "-")}</td>
-      <td>${escape(row.currency || "-")}</td>
-      <td>${row.invoice_amount == null ? "-" : escape(formatMoney(row.invoice_amount || 0))}</td>
-      <td>${escape(row.designation || "-")}</td>
-      <td>${escape(row.invoice || "-")}</td>
-    </tr>`).join("")
-    : '<tr><td colspan="17" class="empty">No imported rows yet.</td></tr>';
+    ? rows.map((row) => {
+      const isEditing = clean(state.importDataEditingId) === clean(row.id) && state.importDataEditDraft;
+      if (isEditing) {
+        const draft = state.importDataEditDraft;
+        return `<tr>
+          <td>${escape(formatDateTimeShort(row.created_at) || "-")}</td>
+          <td><input type="text" data-field="account" value="${escape(draft.account)}" /></td>
+          <td><input type="text" data-field="date_time_raw" value="${escape(draft.date_time_raw)}" /></td>
+          <td><input type="text" data-field="category" value="${escape(draft.category)}" /></td>
+          <td><input type="number" step="0.01" data-field="amount" value="${escape(draft.amount)}" /></td>
+          <td><input type="text" data-field="reservation_id" value="${escape(draft.reservation_id)}" /></td>
+          <td><input type="text" data-field="guest" value="${escape(draft.guest)}" /></td>
+          <td><input type="text" data-field="reporting_date_raw" value="${escape(draft.reporting_date_raw)}" /></td>
+          <td><input type="text" data-field="user_name" value="${escape(draft.user_name)}" /></td>
+          <td><input type="text" data-field="description" value="${escape(draft.description)}" /></td>
+          <td><input type="text" data-field="bill_number" value="${escape(draft.bill_number)}" /></td>
+          <td><input type="text" data-field="item" value="${escape(draft.item)}" /></td>
+          <td><input type="text" data-field="invoice_number" value="${escape(draft.invoice_number)}" /></td>
+          <td><input type="text" data-field="currency" value="${escape(draft.currency)}" /></td>
+          <td><input type="number" step="0.01" data-field="invoice_amount" value="${escape(draft.invoice_amount)}" /></td>
+          <td><input type="text" data-field="designation" value="${escape(draft.designation)}" /></td>
+          <td><input type="text" data-field="invoice" value="${escape(draft.invoice)}" /></td>
+          <td class="row-actions"><button type="button" data-import-data-action="save" data-id="${escape(row.id)}">Save</button><button type="button" class="ghost" data-import-data-action="cancel" data-id="${escape(row.id)}">Cancel</button></td>
+        </tr>`;
+      }
+      return `<tr>
+        <td>${escape(formatDateTimeShort(row.created_at) || "-")}</td>
+        <td>${escape(row.account || "-")}</td>
+        <td>${escape(row.date_time_raw || "-")}</td>
+        <td>${escape(row.category || "-")}</td>
+        <td>${escape(formatMoney(row.amount || 0))}</td>
+        <td>${escape(row.reservation_id || "-")}</td>
+        <td>${escape(row.guest || "-")}</td>
+        <td>${escape(row.reporting_date_raw || "-")}</td>
+        <td>${escape(row.user_name || "-")}</td>
+        <td>${escape(row.description || "-")}</td>
+        <td>${escape(row.bill_number || "-")}</td>
+        <td>${escape(row.item || "-")}</td>
+        <td>${escape(row.invoice_number || "-")}</td>
+        <td>${escape(row.currency || "-")}</td>
+        <td>${row.invoice_amount == null ? "-" : escape(formatMoney(row.invoice_amount || 0))}</td>
+        <td>${escape(row.designation || "-")}</td>
+        <td>${escape(row.invoice || "-")}</td>
+        <td class="row-actions"><button type="button" class="ghost" data-import-data-action="edit" data-id="${escape(row.id)}">Edit</button><button type="button" class="danger" data-import-data-action="delete" data-id="${escape(row.id)}">Delete</button></td>
+      </tr>`;
+    }).join("")
+    : '<tr><td colspan="18" class="empty">No imported rows yet.</td></tr>';
   if (els.importDataCount) els.importDataCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
 }
 
@@ -19146,16 +19333,28 @@ function renderImportData() {
   if (!canAppImportData()) {
     if (els.importDataCount) els.importDataCount.textContent = "0 rows";
     if (els.importDataPreviewCount) els.importDataPreviewCount.textContent = "0 rows";
-    if (els.importDataRows) els.importDataRows.innerHTML = '<tr><td colspan="17" class="empty">Your profile has no access to Import Data.</td></tr>';
+    if (els.importDataRows) els.importDataRows.innerHTML = '<tr><td colspan="18" class="empty">Your profile has no access to Import Data.</td></tr>';
     if (els.importDataPreviewRows) els.importDataPreviewRows.innerHTML = '<tr><td colspan="18" class="empty">Your profile has no access to Import Data.</td></tr>';
     return;
+  }
+  if (els.importDataTabImport) {
+    els.importDataTabImport.classList.toggle("active-tab", state.importDataTab === "import");
+    els.importDataTabImport.classList.toggle("ghost", state.importDataTab !== "import");
+  }
+  if (els.importDataTabView) {
+    els.importDataTabView.classList.toggle("active-tab", state.importDataTab === "view");
+    els.importDataTabView.classList.toggle("ghost", state.importDataTab !== "view");
   }
   if (els.importDataTabFdmAccounts) {
     els.importDataTabFdmAccounts.classList.toggle("active-tab", state.importDataType === "fdm-accounts");
     els.importDataTabFdmAccounts.classList.toggle("ghost", state.importDataType !== "fdm-accounts");
   }
   if (els.importDataType) els.importDataType.value = state.importDataType;
+  if (els.importDataViewType) els.importDataViewType.value = state.importDataViewType;
   if (els.importDataDescription) els.importDataDescription.textContent = importDataTypeDescription(state.importDataType);
+  if (els.importDataViewDescription) els.importDataViewDescription.textContent = importDataTypeDescription(state.importDataViewType);
+  if (els.importDataImportPanel) els.importDataImportPanel.hidden = state.importDataTab !== "import";
+  if (els.importDataViewPanel) els.importDataViewPanel.hidden = state.importDataTab !== "view";
   updateImportDataSourceSummary();
   renderImportDataPreviewRows();
   renderImportDataRows();
