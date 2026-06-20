@@ -62,7 +62,7 @@ function normalizeImportTime(value) {
 
 function normalizeImportLooseDate(value) {
   const normalized = normalizeDate(value);
-  if (normalized) return normalized;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
   const dottedMatch = cleanText(value).match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
   if (dottedMatch) {
     const yearNum = Number.parseInt(dottedMatch[3], 10);
