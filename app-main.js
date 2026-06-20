@@ -15262,6 +15262,9 @@ function onHoursDraftInput(event) {
   if ((field === "person" || field === "date" || field === "start" || field === "finish") && els.hoursStatus) {
     setHoursStatus("");
   }
+  if (event?.type === "input" && event?.target instanceof HTMLInputElement && event.target.type === "time") {
+    return;
+  }
   renderHours();
 }
 
