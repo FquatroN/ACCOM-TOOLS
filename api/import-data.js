@@ -5,6 +5,7 @@ const {
   normalizeImportDataType,
   sanitizeFdmAccountsImportRow,
   sanitizeFdmBookingsImportRow,
+  sanitizeFdmSalesImportRow,
 } = require("./_import-data");
 
 const IMPORT_DATA_CONFIG = {
@@ -23,10 +24,21 @@ const IMPORT_DATA_CONFIG = {
     sanitize: sanitizeFdmBookingsImportRow,
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,booking_number",
-    onConflict: "booking_number",
+    onConflictColumns: ["booking_number"],
     summaryQueries: {
       importDate: "select=created_at&order=created_at.desc&limit=1",
       specific: "select=check_in_date&order=check_in_date.desc.nullslast,created_at.desc&limit=1",
+    },
+  },
+  "fdm-sales": {
+    table: "import_fdm_sales",
+    sanitize: sanitizeFdmSalesImportRow,
+    listQuery: "select=*&order=created_at.desc&limit=120",
+    insertSelect: "select=id,reservation_id,sale_date,sale_time,sale_item,quantity,guest",
+    onConflictColumns: ["sale_date", "sale_time", "sale_item", "quantity", "guest"],
+    summaryQueries: {
+      importDate: "select=created_at&order=created_at.desc&limit=1",
+      specific: "select=sale_date&order=sale_date.desc.nullslast,created_at.desc&limit=1",
     },
   },
 };
@@ -40,6 +52,26 @@ function importDataConfig(type) {
   return IMPORT_DATA_CONFIG[normalizeImportDataType(type)] || IMPORT_DATA_CONFIG["fdm-accounts"];
 }
 
+function normalizeOnConflictColumns(config = {}) {
+  if (Array.isArray(config.onConflictColumns) && config.onConflictColumns.length) {
+    return config.onConflictColumns.map((column) => cleanText(column)).filter(Boolean);
+  }
+  const legacy = cleanText(config.onConflict);
+  return legacy ? legacy.split(",").map((column) => cleanText(column)).filter(Boolean) : [];
+}
+
+function buildConflictKey(row, columns) {
+  return columns.map((column) => cleanText(row?.[column])).join("\u001F");
+}
+
+function dedupeRowsByConflict(rows, columns) {
+  if (!Array.isArray(rows) || !rows.length || !Array.isArray(columns) || !columns.length) return rows;
+  return Array.from(rows.reduce((map, row) => {
+    map.set(buildConflictKey(row, columns), row);
+    return map;
+  }, new Map()).values());
+}
+
 async function fetchImportDataMeta(type) {
   const normalizedType = normalizeImportDataType(type);
   const config = importDataConfig(normalizedType);
@@ -51,6 +83,12 @@ async function fetchImportDataMeta(type) {
     return {
       maxImportDate: cleanText(importRow?.created_at),
       maxCheckInDate: cleanText(specificRow?.check_in_date),
+    };
+  }
+  if (normalizedType === "fdm-sales") {
+    return {
+      maxImportDate: cleanText(importRow?.created_at),
+      maxDate: cleanText(specificRow?.sale_date),
     };
   }
   return {
@@ -93,17 +131,13 @@ module.exports = async function handler(req, res) {
           sourceRowNumber: row?.sourceRowNumber || index + 2,
         })
       );
-      const rowsToInsert = config.onConflict
-        ? Array.from(rows.reduce((map, row) => {
-          map.set(cleanText(row[config.onConflict]), row);
-          return map;
-        }, new Map()).values())
-        : rows;
-      const created = await restQuery(`${config.table}?${config.insertSelect}${config.onConflict ? `&on_conflict=${encodeURIComponent(config.onConflict)}` : ""}`, {
+      const onConflictColumns = normalizeOnConflictColumns(config);
+      const rowsToInsert = dedupeRowsByConflict(rows, onConflictColumns);
+      const created = await restQuery(`${config.table}?${config.insertSelect}${onConflictColumns.length ? `&on_conflict=${encodeURIComponent(onConflictColumns.join(","))}` : ""}`, {
         method: "POST",
         body: rowsToInsert,
         preferRepresentation: true,
-        prefer: config.onConflict ? "resolution=merge-duplicates" : "",
+        prefer: onConflictColumns.length ? "resolution=merge-duplicates" : "",
       });
       res.status(200).json({
         ok: true,

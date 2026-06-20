@@ -4,12 +4,14 @@ const IMPORT_DATA_SETTINGS_KEY = "import_data";
 const IMPORT_DATA_TYPES = [
   { key: "fdm-accounts", label: "FDM Accounts" },
   { key: "fdm-bookings", label: "FDM Bookings" },
+  { key: "fdm-sales", label: "FDM Sales" },
 ];
 
 const DEFAULT_IMPORT_DATA_SETTINGS = {
   types: [
     { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
     { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
+    { type: "fdm-sales", description: "Import FDM sales lines from uploaded or pasted sales report exports." },
   ],
 };
 
@@ -51,6 +53,12 @@ function normalizeImportMoney(value) {
   const raw = cleanText(value).replace(/\s+/g, "").replace(/[€$£]/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
   const numeric = normalizeNumeric(raw);
   return numeric === null || numeric === undefined || Number.isNaN(numeric) ? null : Number(Number(numeric).toFixed(2));
+}
+
+function normalizeImportDecimal(value) {
+  const raw = cleanText(value).replace(/\s+/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const numeric = normalizeNumeric(raw);
+  return numeric === null || numeric === undefined || Number.isNaN(numeric) ? null : Number(numeric);
 }
 
 function normalizeImportTime(value) {
@@ -100,6 +108,21 @@ function normalizeImportLooseDate(value) {
 function normalizeImportDateTime(value) {
   const raw = cleanText(value);
   if (!raw) return { raw: "", eventDate: "", eventTime: "" };
+  const meridiemMatch = raw.match(/^(.+?)\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (meridiemMatch) {
+    let hours = Number.parseInt(meridiemMatch[2], 10);
+    const minutes = meridiemMatch[3];
+    const suffix = meridiemMatch[5].toUpperCase();
+    if (Number.isFinite(hours)) {
+      if (suffix === "AM") hours = hours === 12 ? 0 : hours;
+      if (suffix === "PM") hours = hours === 12 ? 12 : hours + 12;
+      return {
+        raw,
+        eventDate: normalizeImportLooseDate(meridiemMatch[1]),
+        eventTime: `${String(hours).padStart(2, "0")}:${minutes}`,
+      };
+    }
+  }
   const match = raw.match(/^(.+?)\s+(\d{1,2}:\d{2})(?::\d{2})?$/);
   if (match) {
     return {
@@ -190,9 +213,9 @@ function sanitizeFdmBookingsImportRow(input = {}, meta = {}) {
     guest_name: cleanText(input.name || input.guest_name || input.guest),
     arrival_raw: arrivalRaw,
     arrival_time: normalizeImportTime(arrivalRaw) || null,
-    check_in_raw: checkInRaw,
+    check_in_raw: cleanText(checkInRaw),
     check_in_date: normalizeImportLooseDate(checkInRaw) || null,
-    check_out_raw: checkOutRaw,
+    check_out_raw: cleanText(checkOutRaw),
     check_out_date: normalizeImportLooseDate(checkOutRaw) || null,
     nights: cleanText(input.nights) === "" ? null : Number.parseInt(input.nights, 10),
     guests: cleanText(input.guests) === "" ? null : Number.parseInt(input.guests, 10),
@@ -212,6 +235,40 @@ function sanitizeFdmBookingsImportRow(input = {}, meta = {}) {
   };
 }
 
+function sanitizeFdmSalesImportRow(input = {}, meta = {}) {
+  const reservationId = cleanText(input.reservationId || input.reservation_id || input.bookingNumber || input.booking_number);
+  const saleDate = normalizeImportDateTime(input.dateRaw || input.date || input.saleDate || input.sale_date_raw);
+  const saleItem = cleanText(input.saleItem || input.sale_item);
+  const quantityValue = cleanText(input.quantity) === "" ? null : normalizeImportDecimal(input.quantity);
+  if (!saleDate.raw) throw badRequest("Date is required.");
+  if (!saleDate.eventDate) throw badRequest("Date is invalid.");
+  if (!saleItem) throw badRequest("Sale Item is required.");
+  if (!Number.isFinite(quantityValue)) throw badRequest("Quantity is required.");
+  return {
+    import_batch: cleanText(meta.importBatch),
+    source_type: "fdm-sales",
+    source_name: cleanText(meta.sourceName),
+    source_row_number: Number(meta.sourceRowNumber) || 0,
+    reservation_id: reservationId,
+    sale_date_raw: saleDate.raw,
+    sale_date: saleDate.eventDate,
+    sale_time: saleDate.eventTime || "",
+    sale_item: saleItem,
+    quantity: quantityValue,
+    price: cleanText(input.price) === "" ? null : normalizeImportMoney(input.price),
+    net_price: cleanText(input.netPrice || input.net_price) === "" ? null : normalizeImportMoney(input.netPrice || input.net_price),
+    tax: cleanText(input.tax) === "" ? null : normalizeImportMoney(input.tax),
+    total: cleanText(input.total) === "" ? null : normalizeImportMoney(input.total),
+    total_net: cleanText(input.totalNet || input.total_net) === "" ? null : normalizeImportMoney(input.totalNet || input.total_net),
+    total_tax: cleanText(input.totalTax || input.total_tax) === "" ? null : normalizeImportMoney(input.totalTax || input.total_tax),
+    user_name: cleanText(input.user || input.user_name),
+    guest: cleanText(input.guest),
+    financial_account: cleanText(input.financialAccount || input.financial_account),
+    note: cleanText(input.note),
+    raw_payload: input && typeof input === "object" ? input : {},
+  };
+}
+
 module.exports = {
   DEFAULT_IMPORT_DATA_SETTINGS,
   IMPORT_DATA_SETTINGS_KEY,
@@ -220,5 +277,6 @@ module.exports = {
   safeImportDataSettings,
   sanitizeFdmAccountsImportRow,
   sanitizeFdmBookingsImportRow,
+  sanitizeFdmSalesImportRow,
   sanitizeImportDataSettings,
 };

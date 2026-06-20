@@ -515,12 +515,14 @@ const DEFAULT_IMPORT_DATA_SETTINGS = {
   types: [
     { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
     { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
+    { type: "fdm-sales", description: "Import FDM sales lines from uploaded or pasted sales report exports." },
   ],
 };
 
 const IMPORT_DATA_TYPE_LABELS = {
   "fdm-accounts": "FDM Accounts",
   "fdm-bookings": "FDM Bookings",
+  "fdm-sales": "FDM Sales",
 };
 
 const IMPORT_DATA_TYPE_DEFS = {
@@ -614,11 +616,49 @@ const IMPORT_DATA_TYPE_DEFS = {
       { label: "Currency", key: "currency", format: "plain", editable: true, inputType: "text" },
     ],
   },
+  "fdm-sales": {
+    previewColumns: [
+      { label: "Row", key: "sourceRowNumber", format: "plain" },
+      { label: "Date", key: "dateRaw", format: "plain" },
+      { label: "Sale Item", key: "saleItem", format: "plain" },
+      { label: "Quantity", key: "quantity", format: "number" },
+      { label: "Price", key: "price", format: "money" },
+      { label: "Net Price", key: "netPrice", format: "money" },
+      { label: "Tax", key: "tax", format: "money" },
+      { label: "Total", key: "total", format: "money" },
+      { label: "Total Net", key: "totalNet", format: "money" },
+      { label: "Total Tax", key: "totalTax", format: "money" },
+      { label: "User", key: "user", format: "plain" },
+      { label: "Guest", key: "guest", format: "plain" },
+      { label: "Reservation ID", key: "reservationId", format: "plain" },
+      { label: "Financial Account", key: "financialAccount", format: "plain" },
+      { label: "Note", key: "note", format: "plain" },
+      { label: "Validation", key: "validation", format: "validation" },
+    ],
+    viewColumns: [
+      { label: "Imported", key: "created_at", format: "datetime", editable: false },
+      { label: "Date", key: "sale_date_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Sale Item", key: "sale_item", format: "plain", editable: true, inputType: "text" },
+      { label: "Quantity", key: "quantity", format: "number", editable: true, inputType: "number", step: "0.01" },
+      { label: "Price", key: "price", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Net Price", key: "net_price", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Tax", key: "tax", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Total", key: "total", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Total Net", key: "total_net", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Total Tax", key: "total_tax", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "User", key: "user_name", format: "plain", editable: true, inputType: "text" },
+      { label: "Guest", key: "guest", format: "plain", editable: true, inputType: "text" },
+      { label: "Reservation ID", key: "reservation_id", format: "plain", editable: true, inputType: "text" },
+      { label: "Financial Account", key: "financial_account", format: "plain", editable: true, inputType: "text" },
+      { label: "Note", key: "note", format: "plain", editable: true, inputType: "text" },
+    ],
+  },
 };
 
 const IMPORT_DATA_META_LABELS = {
   "fdm-accounts": "Max Date Time",
   "fdm-bookings": "Max Check-in Date",
+  "fdm-sales": "Max Date",
 };
 
 const FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT = "Possible duplicate found. Do you still want to save this document?";
@@ -18837,6 +18877,9 @@ function formatImportDataMetaValue(type, meta = {}) {
   if (normalizedType === "fdm-bookings") {
     return `${importPart} | ${importDataMetaLabel(normalizedType)}: ${clean(meta.maxCheckInDate) ? formatDateOnly(meta.maxCheckInDate) : "-"}`;
   }
+  if (normalizedType === "fdm-sales") {
+    return `${importPart} | ${importDataMetaLabel(normalizedType)}: ${clean(meta.maxDate) ? formatDateOnly(meta.maxDate) : "-"}`;
+  }
   if (normalizedType === "fdm-accounts") {
     const raw = clean(meta.maxDateTimeRaw);
     return `${importPart} | ${importDataMetaLabel(normalizedType)}: ${raw || "-"}`;
@@ -19006,9 +19049,17 @@ function importDataBookingsValidationMessage(row) {
   return "Ready";
 }
 
+function importDataSalesValidationMessage(row) {
+  if (!clean(row.dateRaw)) return "Date is required.";
+  if (!clean(row.saleItem)) return "Sale Item is required.";
+  if (!Number.isFinite(Number(row.quantity))) return "Quantity is required.";
+  return "Ready";
+}
+
 function importDataValidationMessage(type, row) {
   const normalizedType = normalizeImportDataTypeClient(type);
   if (normalizedType === "fdm-bookings") return importDataBookingsValidationMessage(row);
+  if (normalizedType === "fdm-sales") return importDataSalesValidationMessage(row);
   return importDataAccountsValidationMessage(row);
 }
 
@@ -19159,6 +19210,29 @@ function parseImportDataFdmBookingsFieldMap(headerRow) {
   };
 }
 
+function parseImportDataFdmSalesFieldMap(headerRow) {
+  const map = new Map();
+  headerRow.forEach((cell, index) => {
+    map.set(clean(cell).toLowerCase(), index);
+  });
+  return {
+    date: map.get("date"),
+    saleItem: map.get("saleitem"),
+    quantity: map.get("quantity"),
+    price: map.get("price"),
+    netPrice: map.get("net price"),
+    tax: map.get("tax"),
+    total: map.get("total"),
+    totalNet: map.get("total net"),
+    totalTax: map.get("total tax"),
+    user: map.get("user"),
+    guest: map.get("guest"),
+    reservationId: map.get("reservation id"),
+    financialAccount: map.get("financial account"),
+    note: map.get("note"),
+  };
+}
+
 function buildImportDataPreviewRowFdm(cells, fieldMap, sourceRowNumber) {
   const pick = (key) => {
     const index = fieldMap[key];
@@ -19219,6 +19293,32 @@ function buildImportDataPreviewRowBookings(cells, fieldMap, sourceRowNumber) {
   return row;
 }
 
+function buildImportDataPreviewRowSales(cells, fieldMap, sourceRowNumber) {
+  const pick = (key) => {
+    const index = fieldMap[key];
+    return index === undefined || index === null || index < 0 ? "" : String(cells[index] ?? "").trim();
+  };
+  const row = {
+    sourceRowNumber,
+    dateRaw: pick("date"),
+    saleItem: pick("saleItem"),
+    quantity: pick("quantity") === "" ? "" : normalizeImportDataMoneyClient(pick("quantity")),
+    price: pick("price") === "" ? "" : normalizeImportDataMoneyClient(pick("price")),
+    netPrice: pick("netPrice") === "" ? "" : normalizeImportDataMoneyClient(pick("netPrice")),
+    tax: pick("tax") === "" ? "" : normalizeImportDataMoneyClient(pick("tax")),
+    total: pick("total") === "" ? "" : normalizeImportDataMoneyClient(pick("total")),
+    totalNet: pick("totalNet") === "" ? "" : normalizeImportDataMoneyClient(pick("totalNet")),
+    totalTax: pick("totalTax") === "" ? "" : normalizeImportDataMoneyClient(pick("totalTax")),
+    user: pick("user"),
+    guest: pick("guest"),
+    reservationId: pick("reservationId"),
+    financialAccount: pick("financialAccount"),
+    note: pick("note"),
+  };
+  row.validation = importDataValidationMessage("fdm-sales", row);
+  return row;
+}
+
 function parseImportDataRowsFromTable(tableRows, type = state.importDataType) {
   const rows = Array.isArray(tableRows) ? tableRows.filter((row) => Array.isArray(row) && row.some((cell) => clean(cell))) : [];
   if (rows.length < 2) return [];
@@ -19226,6 +19326,10 @@ function parseImportDataRowsFromTable(tableRows, type = state.importDataType) {
   if (normalizedType === "fdm-bookings") {
     const fieldMap = parseImportDataFdmBookingsFieldMap(rows[0]);
     return rows.slice(1).map((cells, index) => buildImportDataPreviewRowBookings(cells, fieldMap, index + 2));
+  }
+  if (normalizedType === "fdm-sales") {
+    const fieldMap = parseImportDataFdmSalesFieldMap(rows[0]);
+    return rows.slice(1).map((cells, index) => buildImportDataPreviewRowSales(cells, fieldMap, index + 2));
   }
   const fieldMap = parseImportDataFdmAccountsFieldMap(rows[0]);
   return rows.slice(1).map((cells, index) => buildImportDataPreviewRowFdm(cells, fieldMap, index + 2));
