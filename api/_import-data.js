@@ -3,11 +3,13 @@ const { cleanText, normalizeDate, normalizeNumeric } = require("./_supabase");
 const IMPORT_DATA_SETTINGS_KEY = "import_data";
 const IMPORT_DATA_TYPES = [
   { key: "fdm-accounts", label: "FDM Accounts" },
+  { key: "fdm-bookings", label: "FDM Bookings" },
 ];
 
 const DEFAULT_IMPORT_DATA_SETTINGS = {
   types: [
     { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
+    { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
   ],
 };
 
@@ -61,6 +63,14 @@ function normalizeImportTime(value) {
 function normalizeImportLooseDate(value) {
   const normalized = normalizeDate(value);
   if (normalized) return normalized;
+  const dottedMatch = cleanText(value).match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
+  if (dottedMatch) {
+    const yearNum = Number.parseInt(dottedMatch[3], 10);
+    if (Number.isFinite(yearNum)) {
+      const year = dottedMatch[3].length === 2 ? 2000 + yearNum : yearNum;
+      return `${year}-${String(Number.parseInt(dottedMatch[2], 10)).padStart(2, "0")}-${String(Number.parseInt(dottedMatch[1], 10)).padStart(2, "0")}`;
+    }
+  }
   const raw = cleanText(value).toLowerCase().replace(/\./g, "");
   const match = raw.match(/^(\d{1,2})\/([a-zç]+)\/(\d{2,4})$/i);
   if (!match) return "";
@@ -156,6 +166,51 @@ function sanitizeFdmAccountsImportRow(input = {}, meta = {}) {
   };
 }
 
+function sanitizeFdmBookingsImportRow(input = {}, meta = {}) {
+  const bookingNumber = cleanText(input.bookingNumber || input.booking_number || input.reservationId || input.reservation_id);
+  const bookingDate = normalizeImportDateTime(input.bookingDate || input.booking_date || input.booking_date_raw);
+  const arrivalRaw = cleanText(input.arrival || input.arrival_raw);
+  const checkInRaw = cleanText(input.checkIn || input.check_in || input.check_in_raw);
+  const checkOutRaw = cleanText(input.checkOut || input.check_out || input.check_out_raw);
+  const balanceDueRaw = input.balanceDue ?? input.balance_due;
+  const invoiceTotalRaw = input.invoiceTotal ?? input.invoice_total;
+
+  if (!bookingNumber) throw badRequest("Booking Number is required.");
+
+  return {
+    import_batch: cleanText(meta.importBatch),
+    source_type: "fdm-bookings",
+    source_name: cleanText(meta.sourceName),
+    source_row_number: Number(meta.sourceRowNumber) || 0,
+    booking_number: bookingNumber,
+    room_type: cleanText(input.roomType || input.room_type),
+    room: cleanText(input.room),
+    rate: cleanText(input.rate),
+    guest_name: cleanText(input.name || input.guest_name || input.guest),
+    arrival_raw: arrivalRaw,
+    arrival_time: normalizeImportTime(arrivalRaw) || null,
+    check_in_raw: checkInRaw,
+    check_in_date: normalizeImportLooseDate(checkInRaw) || null,
+    check_out_raw: checkOutRaw,
+    check_out_date: normalizeImportLooseDate(checkOutRaw) || null,
+    nights: cleanText(input.nights) === "" ? null : Number.parseInt(input.nights, 10),
+    guests: cleanText(input.guests) === "" ? null : Number.parseInt(input.guests, 10),
+    room_assigned: cleanText(input.isRoomAssigned || input.roomAssigned || input.room_assigned),
+    status: cleanText(input.status),
+    payment_status: cleanText(input.paymentStatus || input.payment_status),
+    balance_due: cleanText(balanceDueRaw) === "" ? null : normalizeImportMoney(balanceDueRaw),
+    channel: cleanText(input.channel),
+    booking_date_raw: bookingDate.raw,
+    booking_date: bookingDate.eventDate || null,
+    booking_time: bookingDate.eventTime || null,
+    country: cleanText(input.country),
+    city: cleanText(input.city),
+    invoice_total: cleanText(invoiceTotalRaw) === "" ? null : normalizeImportMoney(invoiceTotalRaw),
+    currency: cleanText(input.currency) || "EUR",
+    raw_payload: input && typeof input === "object" ? input : {},
+  };
+}
+
 module.exports = {
   DEFAULT_IMPORT_DATA_SETTINGS,
   IMPORT_DATA_SETTINGS_KEY,
@@ -163,5 +218,6 @@ module.exports = {
   normalizeImportDataType,
   safeImportDataSettings,
   sanitizeFdmAccountsImportRow,
+  sanitizeFdmBookingsImportRow,
   sanitizeImportDataSettings,
 };

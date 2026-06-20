@@ -335,14 +335,18 @@ async function verifyUser(req) {
   return response.json();
 }
 
-async function restQuery(path, { method = "GET", body, preferRepresentation = false } = {}) {
+async function restQuery(path, { method = "GET", body, preferRepresentation = false, prefer = "", headers: extraHeaders = {} } = {}) {
   const { url, serviceRoleKey } = readEnv();
   const headers = {
     apikey: serviceRoleKey,
     Authorization: `Bearer ${serviceRoleKey}`,
     "Content-Type": "application/json",
   };
-  if (preferRepresentation) headers.Prefer = "return=representation";
+  const preferParts = [];
+  if (preferRepresentation) preferParts.push("return=representation");
+  if (cleanText(prefer)) preferParts.push(cleanText(prefer));
+  if (preferParts.length) headers.Prefer = preferParts.join(", ");
+  Object.assign(headers, extraHeaders || {});
 
   const response = await fetch(`${url}/rest/v1/${path}`, {
     method,

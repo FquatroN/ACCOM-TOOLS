@@ -514,7 +514,106 @@ const DEFAULT_FINANCIAL_DOCS_SETTINGS = {
 const DEFAULT_IMPORT_DATA_SETTINGS = {
   types: [
     { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
+    { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
   ],
+};
+
+const IMPORT_DATA_TYPE_LABELS = {
+  "fdm-accounts": "FDM Accounts",
+  "fdm-bookings": "FDM Bookings",
+};
+
+const IMPORT_DATA_TYPE_DEFS = {
+  "fdm-accounts": {
+    previewColumns: [
+      { label: "Row", key: "sourceRowNumber", format: "plain" },
+      { label: "Account", key: "account", format: "plain" },
+      { label: "Date Time", key: "dateTimeRaw", format: "plain" },
+      { label: "Category", key: "category", format: "plain" },
+      { label: "Amount", key: "amount", format: "money" },
+      { label: "Reservation ID", key: "reservationId", format: "plain" },
+      { label: "Guest", key: "guest", format: "plain" },
+      { label: "Reporting Date", key: "reportingDateRaw", format: "plain" },
+      { label: "User", key: "userName", format: "plain" },
+      { label: "Description", key: "description", format: "plain" },
+      { label: "Bill Number", key: "billNumber", format: "plain" },
+      { label: "Item", key: "item", format: "plain" },
+      { label: "InvoiceNumber", key: "invoiceNumber", format: "plain" },
+      { label: "Currency", key: "currency", format: "plain" },
+      { label: "Invoice Amount", key: "invoiceAmount", format: "money" },
+      { label: "Designation", key: "designation", format: "plain" },
+      { label: "Invoice", key: "invoice", format: "plain" },
+      { label: "Validation", key: "validation", format: "validation" },
+    ],
+    viewColumns: [
+      { label: "Imported", key: "created_at", format: "datetime", editable: false },
+      { label: "Account", key: "account", format: "plain", editable: true, inputType: "text" },
+      { label: "Date Time", key: "date_time_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Category", key: "category", format: "plain", editable: true, inputType: "text" },
+      { label: "Amount", key: "amount", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Reservation ID", key: "reservation_id", format: "plain", editable: true, inputType: "text" },
+      { label: "Guest", key: "guest", format: "plain", editable: true, inputType: "text" },
+      { label: "Reporting Date", key: "reporting_date_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "User", key: "user_name", format: "plain", editable: true, inputType: "text" },
+      { label: "Description", key: "description", format: "plain", editable: true, inputType: "text" },
+      { label: "Bill Number", key: "bill_number", format: "plain", editable: true, inputType: "text" },
+      { label: "Item", key: "item", format: "plain", editable: true, inputType: "text" },
+      { label: "InvoiceNumber", key: "invoice_number", format: "plain", editable: true, inputType: "text" },
+      { label: "Currency", key: "currency", format: "plain", editable: true, inputType: "text" },
+      { label: "Invoice Amount", key: "invoice_amount", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Designation", key: "designation", format: "plain", editable: true, inputType: "text" },
+      { label: "Invoice", key: "invoice", format: "plain", editable: true, inputType: "text" },
+    ],
+  },
+  "fdm-bookings": {
+    previewColumns: [
+      { label: "Row", key: "sourceRowNumber", format: "plain" },
+      { label: "Booking Number", key: "bookingNumber", format: "plain" },
+      { label: "Room Type", key: "roomType", format: "plain" },
+      { label: "Room", key: "room", format: "plain" },
+      { label: "Rate", key: "rate", format: "plain" },
+      { label: "Name", key: "name", format: "plain" },
+      { label: "Arrival", key: "arrival", format: "plain" },
+      { label: "Check In", key: "checkIn", format: "plain" },
+      { label: "Check Out", key: "checkOut", format: "plain" },
+      { label: "Nights", key: "nights", format: "number" },
+      { label: "Guests", key: "guests", format: "number" },
+      { label: "Room Assigned", key: "isRoomAssigned", format: "plain" },
+      { label: "Status", key: "status", format: "plain" },
+      { label: "Payment Status", key: "paymentStatus", format: "plain" },
+      { label: "Balance Due", key: "balanceDue", format: "money" },
+      { label: "Channel", key: "channel", format: "plain" },
+      { label: "Booking Date", key: "bookingDate", format: "plain" },
+      { label: "Country", key: "country", format: "plain" },
+      { label: "City", key: "city", format: "plain" },
+      { label: "Invoice Total", key: "invoiceTotal", format: "money" },
+      { label: "Currency", key: "currency", format: "plain" },
+      { label: "Validation", key: "validation", format: "validation" },
+    ],
+    viewColumns: [
+      { label: "Imported", key: "created_at", format: "datetime", editable: false },
+      { label: "Booking Number", key: "booking_number", format: "plain", editable: true, inputType: "text" },
+      { label: "Room Type", key: "room_type", format: "plain", editable: true, inputType: "text" },
+      { label: "Room", key: "room", format: "plain", editable: true, inputType: "text" },
+      { label: "Rate", key: "rate", format: "plain", editable: true, inputType: "text" },
+      { label: "Name", key: "guest_name", format: "plain", editable: true, inputType: "text" },
+      { label: "Arrival", key: "arrival_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Check In", key: "check_in_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Check Out", key: "check_out_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Nights", key: "nights", format: "number", editable: true, inputType: "number", step: "1" },
+      { label: "Guests", key: "guests", format: "number", editable: true, inputType: "number", step: "1" },
+      { label: "Room Assigned", key: "room_assigned", format: "plain", editable: true, inputType: "text" },
+      { label: "Status", key: "status", format: "plain", editable: true, inputType: "text" },
+      { label: "Payment Status", key: "payment_status", format: "plain", editable: true, inputType: "text" },
+      { label: "Balance Due", key: "balance_due", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Channel", key: "channel", format: "plain", editable: true, inputType: "text" },
+      { label: "Booking Date", key: "booking_date_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Country", key: "country", format: "plain", editable: true, inputType: "text" },
+      { label: "City", key: "city", format: "plain", editable: true, inputType: "text" },
+      { label: "Invoice Total", key: "invoice_total", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Currency", key: "currency", format: "plain", editable: true, inputType: "text" },
+    ],
+  },
 };
 
 const FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT = "Possible duplicate found. Do you still want to save this document?";
@@ -1334,8 +1433,10 @@ const els = {
   importDataPreview: document.getElementById("import-data-preview"),
   importDataText: document.getElementById("import-data-text"),
   importDataPreviewCount: document.getElementById("import-data-preview-count"),
+  importDataPreviewHead: document.getElementById("import-data-preview-head"),
   importDataPreviewRows: document.getElementById("import-data-preview-rows"),
   importDataCount: document.getElementById("import-data-count"),
+  importDataViewHead: document.getElementById("import-data-view-head"),
   importDataRows: document.getElementById("import-data-rows"),
   importDataInput: document.getElementById("import-data-input"),
   importDataSaveSettings: document.getElementById("import-data-save-settings"),
@@ -18658,7 +18759,16 @@ async function ensureFinancialDocsData() {
 }
 
 function normalizeImportDataTypeClient(value) {
-  return clean(value).toLowerCase() === "fdm-accounts" ? "fdm-accounts" : "fdm-accounts";
+  const raw = clean(value).toLowerCase();
+  return Object.prototype.hasOwnProperty.call(IMPORT_DATA_TYPE_DEFS, raw) ? raw : "fdm-accounts";
+}
+
+function importDataTypeLabelClient(type) {
+  return IMPORT_DATA_TYPE_LABELS[normalizeImportDataTypeClient(type)] || "Import Data";
+}
+
+function importDataTypeDef(type) {
+  return IMPORT_DATA_TYPE_DEFS[normalizeImportDataTypeClient(type)] || IMPORT_DATA_TYPE_DEFS["fdm-accounts"];
 }
 
 function normalizeImportDataSettingsClient(source = {}) {
@@ -18814,7 +18924,7 @@ async function saveImportDataSettings() {
   }
 }
 
-function importDataValidationMessage(row) {
+function importDataAccountsValidationMessage(row) {
   if (!clean(row.account)) return "Account is required.";
   if (!clean(row.dateTimeRaw)) return "Date Time is required.";
   if (!clean(row.category)) return "Category is required.";
@@ -18822,10 +18932,28 @@ function importDataValidationMessage(row) {
   return "Ready";
 }
 
+function importDataBookingsValidationMessage(row) {
+  if (!clean(row.bookingNumber)) return "Booking Number is required.";
+  return "Ready";
+}
+
+function importDataValidationMessage(type, row) {
+  const normalizedType = normalizeImportDataTypeClient(type);
+  if (normalizedType === "fdm-bookings") return importDataBookingsValidationMessage(row);
+  return importDataAccountsValidationMessage(row);
+}
+
 function normalizeImportDataMoneyClient(value) {
   const raw = clean(value).replace(/\s+/g, "").replace(/[€$£]/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
   const num = Number(raw);
   return Number.isFinite(num) ? Number(num.toFixed(2)) : "";
+}
+
+function normalizeImportDataIntegerClient(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  const num = Number.parseInt(raw, 10);
+  return Number.isFinite(num) ? num : "";
 }
 
 function scoreDelimitedSeparator(text, separator) {
@@ -18933,6 +19061,35 @@ function parseImportDataFdmAccountsFieldMap(headerRow) {
   };
 }
 
+function parseImportDataFdmBookingsFieldMap(headerRow) {
+  const map = new Map();
+  headerRow.forEach((cell, index) => {
+    map.set(clean(cell).toLowerCase(), index);
+  });
+  return {
+    bookingNumber: map.get("reservation id"),
+    roomType: map.get("room type"),
+    room: map.get("room"),
+    rate: map.get("rate"),
+    name: map.get("name"),
+    arrival: map.get("arrival"),
+    checkIn: map.get("check in"),
+    checkOut: map.get("check out"),
+    nights: map.get("nights"),
+    guests: map.get("guests"),
+    isRoomAssigned: map.get("[isroomassigned]"),
+    status: map.get("status"),
+    paymentStatus: map.get("payment status"),
+    balanceDue: map.get("balance due"),
+    channel: map.get("channel"),
+    bookingDate: map.get("booking date"),
+    country: map.get("country"),
+    city: map.get("city"),
+    invoiceTotal: map.get("invoice total"),
+    currency: map.get("currency"),
+  };
+}
+
 function buildImportDataPreviewRowFdm(cells, fieldMap, sourceRowNumber) {
   const pick = (key) => {
     const index = fieldMap[key];
@@ -18957,7 +19114,39 @@ function buildImportDataPreviewRowFdm(cells, fieldMap, sourceRowNumber) {
     designation: pick("designation"),
     invoice: pick("invoice"),
   };
-  row.validation = importDataValidationMessage(row);
+  row.validation = importDataValidationMessage("fdm-accounts", row);
+  return row;
+}
+
+function buildImportDataPreviewRowBookings(cells, fieldMap, sourceRowNumber) {
+  const pick = (key) => {
+    const index = fieldMap[key];
+    return index === undefined || index === null || index < 0 ? "" : String(cells[index] ?? "").trim();
+  };
+  const row = {
+    sourceRowNumber,
+    bookingNumber: pick("bookingNumber"),
+    roomType: pick("roomType"),
+    room: pick("room"),
+    rate: pick("rate"),
+    name: pick("name"),
+    arrival: pick("arrival"),
+    checkIn: pick("checkIn"),
+    checkOut: pick("checkOut"),
+    nights: normalizeImportDataIntegerClient(pick("nights")),
+    guests: normalizeImportDataIntegerClient(pick("guests")),
+    isRoomAssigned: pick("isRoomAssigned"),
+    status: pick("status"),
+    paymentStatus: pick("paymentStatus"),
+    balanceDue: pick("balanceDue") === "" ? "" : normalizeImportDataMoneyClient(pick("balanceDue")),
+    channel: pick("channel"),
+    bookingDate: pick("bookingDate"),
+    country: pick("country"),
+    city: pick("city"),
+    invoiceTotal: pick("invoiceTotal") === "" ? "" : normalizeImportDataMoneyClient(pick("invoiceTotal")),
+    currency: pick("currency") || "EUR",
+  };
+  row.validation = importDataValidationMessage("fdm-bookings", row);
   return row;
 }
 
@@ -18965,7 +19154,10 @@ function parseImportDataRowsFromTable(tableRows, type = state.importDataType) {
   const rows = Array.isArray(tableRows) ? tableRows.filter((row) => Array.isArray(row) && row.some((cell) => clean(cell))) : [];
   if (rows.length < 2) return [];
   const normalizedType = normalizeImportDataTypeClient(type);
-  if (normalizedType !== "fdm-accounts") return [];
+  if (normalizedType === "fdm-bookings") {
+    const fieldMap = parseImportDataFdmBookingsFieldMap(rows[0]);
+    return rows.slice(1).map((cells, index) => buildImportDataPreviewRowBookings(cells, fieldMap, index + 2));
+  }
   const fieldMap = parseImportDataFdmAccountsFieldMap(rows[0]);
   return rows.slice(1).map((cells, index) => buildImportDataPreviewRowFdm(cells, fieldMap, index + 2));
 }
@@ -19129,33 +19321,59 @@ function formatImportDataEditNumber(value) {
   return Number.isFinite(numeric) ? String(numeric) : clean(value);
 }
 
-function cloneImportDataRowForEdit(row = {}) {
-  return {
-    id: clean(row.id),
-    account: clean(row.account),
-    date_time_raw: clean(row.date_time_raw),
-    category: clean(row.category),
-    amount: formatImportDataEditNumber(row.amount),
-    reservation_id: clean(row.reservation_id),
-    guest: clean(row.guest),
-    reporting_date_raw: clean(row.reporting_date_raw),
-    user_name: clean(row.user_name),
-    description: clean(row.description),
-    bill_number: clean(row.bill_number),
-    item: clean(row.item),
-    invoice_number: clean(row.invoice_number),
-    currency: clean(row.currency) || "EUR",
-    invoice_amount: formatImportDataEditNumber(row.invoice_amount),
-    designation: clean(row.designation),
-    invoice: clean(row.invoice),
-  };
+function formatImportDataDisplayValue(value, format = "plain") {
+  if (format === "datetime") return formatDateTimeShort(value) || "-";
+  if (format === "money") {
+    if (value === null || value === undefined || value === "") return "-";
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? formatMoney(numeric) : (clean(value) || "-");
+  }
+  if (format === "number") {
+    if (value === null || value === undefined || value === "") return "-";
+    return String(value);
+  }
+  return clean(value) || "-";
+}
+
+function renderImportDataTableHead(target, columns, { includeAction = false } = {}) {
+  if (!target) return;
+  const safeColumns = Array.isArray(columns) ? columns : [];
+  target.innerHTML = `<tr>${safeColumns.map((column) => `<th>${escape(column.label)}</th>`).join("")}${includeAction ? "<th>Action</th>" : ""}</tr>`;
+}
+
+function cloneImportDataRowForEdit(row = {}, type = state.importDataViewType) {
+  const draft = { id: clean(row.id) };
+  importDataTypeDef(type).viewColumns.forEach((column) => {
+    if (!column.editable) return;
+    draft[column.key] = column.inputType === "number"
+      ? formatImportDataEditNumber(row[column.key])
+      : clean(row[column.key]);
+  });
+  return draft;
+}
+
+function renderImportDataPreviewCell(row, column) {
+  const value = row?.[column.key];
+  if (column.format === "validation") {
+    const ready = clean(value).toLowerCase() === "ready";
+    return `<td class="${ready ? "financial-doc-import-validation--ready" : "financial-doc-import-validation--error"}">${escape(formatImportDataDisplayValue(value, column.format))}</td>`;
+  }
+  return `<td>${escape(formatImportDataDisplayValue(value, column.format))}</td>`;
+}
+
+function renderImportDataViewCell(row, column, isEditing, draft) {
+  if (isEditing && column.editable) {
+    const step = column.step ? ` step="${escape(column.step)}"` : "";
+    return `<td><input type="${escape(column.inputType || "text")}" data-field="${escape(column.key)}" value="${escape(draft?.[column.key] ?? "")}"${step} /></td>`;
+  }
+  return `<td>${escape(formatImportDataDisplayValue(row?.[column.key], column.format))}</td>`;
 }
 
 function startImportDataEdit(id) {
   const row = state.importDataRows.find((item) => clean(item.id) === clean(id));
   if (!row) return;
   state.importDataEditingId = clean(id);
-  state.importDataEditDraft = cloneImportDataRowForEdit(row);
+  state.importDataEditDraft = cloneImportDataRowForEdit(row, state.importDataViewType);
   renderImportData();
 }
 
@@ -19240,7 +19458,7 @@ function renderImportDataSettings() {
   if (!els.importDataSettingsBody) return;
   const rows = Array.isArray(state.importDataSettings?.types) ? state.importDataSettings.types : [];
   els.importDataSettingsBody.innerHTML = rows.map((row) => `<tr>
-    <td>${escape(row.type === "fdm-accounts" ? "FDM Accounts" : row.type)}</td>
+    <td>${escape(importDataTypeLabelClient(row.type))}</td>
     <td><input type="text" data-import-data-settings-type="${escape(row.type)}" value="${escape(row.description)}" /></td>
   </tr>`).join("") || '<tr><td colspan="2" class="empty">No import types configured.</td></tr>';
 }
@@ -19248,85 +19466,26 @@ function renderImportDataSettings() {
 function renderImportDataPreviewRows() {
   if (!els.importDataPreviewRows) return;
   const rows = Array.isArray(state.importDataPreviewRows) ? state.importDataPreviewRows : [];
+  const columns = importDataTypeDef(state.importDataType).previewColumns;
   els.importDataPreviewRows.innerHTML = rows.length
-    ? rows.map((row) => {
-      const ready = clean(row.validation).toLowerCase() === "ready";
-      return `<tr>
-        <td>${escape(String(row.sourceRowNumber || "-"))}</td>
-        <td>${escape(row.account || "-")}</td>
-        <td>${escape(row.dateTimeRaw || "-")}</td>
-        <td>${escape(row.category || "-")}</td>
-        <td>${row.amount === "" ? "-" : escape(formatMoney(row.amount || 0))}</td>
-        <td>${escape(row.reservationId || "-")}</td>
-        <td>${escape(row.guest || "-")}</td>
-        <td>${escape(row.reportingDateRaw || "-")}</td>
-        <td>${escape(row.userName || "-")}</td>
-        <td>${escape(row.description || "-")}</td>
-        <td>${escape(row.billNumber || "-")}</td>
-        <td>${escape(row.item || "-")}</td>
-        <td>${escape(row.invoiceNumber || "-")}</td>
-        <td>${escape(row.currency || "-")}</td>
-        <td>${row.invoiceAmount === "" ? "-" : escape(formatMoney(row.invoiceAmount || 0))}</td>
-        <td>${escape(row.designation || "-")}</td>
-        <td>${escape(row.invoice || "-")}</td>
-        <td class="${ready ? "financial-doc-import-validation--ready" : "financial-doc-import-validation--error"}">${escape(row.validation || "-")}</td>
-      </tr>`;
-    }).join("")
-    : '<tr><td colspan="18" class="empty">No preview rows yet.</td></tr>';
+    ? rows.map((row) => `<tr>${columns.map((column) => renderImportDataPreviewCell(row, column)).join("")}</tr>`).join("")
+    : `<tr><td colspan="${columns.length}" class="empty">No preview rows yet.</td></tr>`;
   if (els.importDataPreviewCount) els.importDataPreviewCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
 }
 
 function renderImportDataRows() {
   if (!els.importDataRows) return;
   const rows = Array.isArray(state.importDataRows) ? state.importDataRows : [];
+  const columns = importDataTypeDef(state.importDataViewType).viewColumns;
   els.importDataRows.innerHTML = rows.length
     ? rows.map((row) => {
       const isEditing = clean(state.importDataEditingId) === clean(row.id) && state.importDataEditDraft;
-      if (isEditing) {
-        const draft = state.importDataEditDraft;
-        return `<tr>
-          <td>${escape(formatDateTimeShort(row.created_at) || "-")}</td>
-          <td><input type="text" data-field="account" value="${escape(draft.account)}" /></td>
-          <td><input type="text" data-field="date_time_raw" value="${escape(draft.date_time_raw)}" /></td>
-          <td><input type="text" data-field="category" value="${escape(draft.category)}" /></td>
-          <td><input type="number" step="0.01" data-field="amount" value="${escape(draft.amount)}" /></td>
-          <td><input type="text" data-field="reservation_id" value="${escape(draft.reservation_id)}" /></td>
-          <td><input type="text" data-field="guest" value="${escape(draft.guest)}" /></td>
-          <td><input type="text" data-field="reporting_date_raw" value="${escape(draft.reporting_date_raw)}" /></td>
-          <td><input type="text" data-field="user_name" value="${escape(draft.user_name)}" /></td>
-          <td><input type="text" data-field="description" value="${escape(draft.description)}" /></td>
-          <td><input type="text" data-field="bill_number" value="${escape(draft.bill_number)}" /></td>
-          <td><input type="text" data-field="item" value="${escape(draft.item)}" /></td>
-          <td><input type="text" data-field="invoice_number" value="${escape(draft.invoice_number)}" /></td>
-          <td><input type="text" data-field="currency" value="${escape(draft.currency)}" /></td>
-          <td><input type="number" step="0.01" data-field="invoice_amount" value="${escape(draft.invoice_amount)}" /></td>
-          <td><input type="text" data-field="designation" value="${escape(draft.designation)}" /></td>
-          <td><input type="text" data-field="invoice" value="${escape(draft.invoice)}" /></td>
-          <td class="row-actions"><button type="button" data-import-data-action="save" data-id="${escape(row.id)}">Save</button><button type="button" class="ghost" data-import-data-action="cancel" data-id="${escape(row.id)}">Cancel</button></td>
-        </tr>`;
-      }
-      return `<tr>
-        <td>${escape(formatDateTimeShort(row.created_at) || "-")}</td>
-        <td>${escape(row.account || "-")}</td>
-        <td>${escape(row.date_time_raw || "-")}</td>
-        <td>${escape(row.category || "-")}</td>
-        <td>${escape(formatMoney(row.amount || 0))}</td>
-        <td>${escape(row.reservation_id || "-")}</td>
-        <td>${escape(row.guest || "-")}</td>
-        <td>${escape(row.reporting_date_raw || "-")}</td>
-        <td>${escape(row.user_name || "-")}</td>
-        <td>${escape(row.description || "-")}</td>
-        <td>${escape(row.bill_number || "-")}</td>
-        <td>${escape(row.item || "-")}</td>
-        <td>${escape(row.invoice_number || "-")}</td>
-        <td>${escape(row.currency || "-")}</td>
-        <td>${row.invoice_amount == null ? "-" : escape(formatMoney(row.invoice_amount || 0))}</td>
-        <td>${escape(row.designation || "-")}</td>
-        <td>${escape(row.invoice || "-")}</td>
-        <td class="row-actions"><button type="button" class="ghost" data-import-data-action="edit" data-id="${escape(row.id)}">Edit</button><button type="button" class="danger" data-import-data-action="delete" data-id="${escape(row.id)}">Delete</button></td>
-      </tr>`;
+      const draft = isEditing ? state.importDataEditDraft : null;
+      return `<tr>${columns.map((column) => renderImportDataViewCell(row, column, isEditing, draft)).join("")}<td class="row-actions">${isEditing
+        ? `<button type="button" data-import-data-action="save" data-id="${escape(row.id)}">Save</button><button type="button" class="ghost" data-import-data-action="cancel" data-id="${escape(row.id)}">Cancel</button>`
+        : `<button type="button" class="ghost" data-import-data-action="edit" data-id="${escape(row.id)}">Edit</button><button type="button" class="danger" data-import-data-action="delete" data-id="${escape(row.id)}">Delete</button>`}</td></tr>`;
     }).join("")
-    : '<tr><td colspan="18" class="empty">No imported rows yet.</td></tr>';
+    : `<tr><td colspan="${columns.length + 1}" class="empty">No imported rows yet.</td></tr>`;
   if (els.importDataCount) els.importDataCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
 }
 
@@ -19334,8 +19493,12 @@ function renderImportData() {
   if (!canAppImportData()) {
     if (els.importDataCount) els.importDataCount.textContent = "0 rows";
     if (els.importDataPreviewCount) els.importDataPreviewCount.textContent = "0 rows";
-    if (els.importDataRows) els.importDataRows.innerHTML = '<tr><td colspan="18" class="empty">Your profile has no access to Import Data.</td></tr>';
-    if (els.importDataPreviewRows) els.importDataPreviewRows.innerHTML = '<tr><td colspan="18" class="empty">Your profile has no access to Import Data.</td></tr>';
+    const previewColumns = importDataTypeDef(state.importDataType).previewColumns;
+    const viewColumns = importDataTypeDef(state.importDataViewType).viewColumns;
+    renderImportDataTableHead(els.importDataPreviewHead, previewColumns);
+    renderImportDataTableHead(els.importDataViewHead, viewColumns, { includeAction: true });
+    if (els.importDataRows) els.importDataRows.innerHTML = `<tr><td colspan="${viewColumns.length + 1}" class="empty">Your profile has no access to Import Data.</td></tr>`;
+    if (els.importDataPreviewRows) els.importDataPreviewRows.innerHTML = `<tr><td colspan="${previewColumns.length}" class="empty">Your profile has no access to Import Data.</td></tr>`;
     return;
   }
   if (els.importDataTabImport) {
@@ -19356,6 +19519,8 @@ function renderImportData() {
   if (els.importDataViewDescription) els.importDataViewDescription.textContent = importDataTypeDescription(state.importDataViewType);
   if (els.importDataImportPanel) els.importDataImportPanel.hidden = state.importDataTab !== "import";
   if (els.importDataViewPanel) els.importDataViewPanel.hidden = state.importDataTab !== "view";
+  renderImportDataTableHead(els.importDataPreviewHead, importDataTypeDef(state.importDataType).previewColumns);
+  renderImportDataTableHead(els.importDataViewHead, importDataTypeDef(state.importDataViewType).viewColumns, { includeAction: true });
   updateImportDataSourceSummary();
   renderImportDataPreviewRows();
   renderImportDataRows();
