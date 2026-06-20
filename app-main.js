@@ -11744,9 +11744,21 @@ function emptyHoursDraft() {
 function normalizeHoursTimeValue(value) {
   const raw = clean(value);
   if (!raw) return "";
+  const digits = raw.replace(/\D/g, "");
+  if (/^\d{4}$/.test(digits)) return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+  const shortMatch = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (shortMatch) return `${String(Number.parseInt(shortMatch[1], 10)).padStart(2, "0")}:${shortMatch[2]}`;
   if (/^\d{2}:\d{2}$/.test(raw)) return raw;
   if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw.slice(0, 5);
   return raw;
+}
+
+function normalizeHoursTypingValue(value) {
+  const raw = String(value ?? "");
+  const digits = raw.replace(/\D/g, "").slice(0, 4);
+  if (!digits) return "";
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
 }
 
 function hoursRecordNeedsFinish(record) {
@@ -15199,7 +15211,9 @@ function validateHoursDraftClient(draft) {
   if (!(state.hoursSettings?.people || []).some((item) => clean(item).toLowerCase() === person.toLowerCase())) return "Person must exist in the configured list.";
   if (!clean(draft?.date)) return "Date is required.";
   if (!clean(draft?.start)) return "Start time is required.";
+  if (!/^\d{2}:\d{2}$/.test(normalizeHoursTimeValue(draft?.start))) return "Start time must be in HH:MM format.";
   if (clean(draft?.finish)) {
+    if (!/^\d{2}:\d{2}$/.test(normalizeHoursTimeValue(draft?.finish))) return "Finish time must be in HH:MM format.";
     const minutes = hoursDurationMinutes(draft.start, draft.finish);
     if (minutes == null || minutes <= 0) return "Finish time must be after start time.";
   }
@@ -15258,11 +15272,17 @@ function onHoursDraftInput(event) {
   if (!field) return;
   const targetDraft = scope === "edit" ? state.hoursEditDraft : state.hoursDraft;
   if (!targetDraft) return;
-  targetDraft[field] = event.target.value;
+  if ((field === "start" || field === "finish") && event?.target instanceof HTMLInputElement) {
+    const formatted = normalizeHoursTypingValue(event.target.value);
+    targetDraft[field] = formatted;
+    if (event.target.value !== formatted) event.target.value = formatted;
+  } else {
+    targetDraft[field] = event.target.value;
+  }
   if ((field === "person" || field === "date" || field === "start" || field === "finish") && els.hoursStatus) {
     setHoursStatus("");
   }
-  if (event?.type === "input" && event?.target instanceof HTMLInputElement && event.target.type === "time") {
+  if (event?.type === "input" && (field === "start" || field === "finish")) {
     return;
   }
   renderHours();
@@ -15304,8 +15324,8 @@ function buildHoursInlineRow() {
   tr.className = "inline-editor sticky-new-row";
   tr.innerHTML = `<td><select data-field="person" data-scope="new">${(state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people).map((person) => option(person, draft.person)).join("")}</select></td>
     <td><input data-field="date" data-scope="new" type="date" value="${escape(draft.date)}" /></td>
-    <td><input data-field="start" data-scope="new" type="time" value="${escape(draft.start)}" /></td>
-    <td><input data-field="finish" data-scope="new" type="time" value="${escape(draft.finish)}" /></td>
+    <td><input class="hours-time-input" data-field="start" data-scope="new" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${escape(draft.start)}" /></td>
+    <td><input class="hours-time-input" data-field="finish" data-scope="new" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${escape(draft.finish)}" /></td>
     <td>${escape(formatHoursDuration(draft.start, draft.finish))}</td>
     <td class="row-actions"><button type="button" data-hours-action="save-inline" ${pending ? "disabled" : ""}>Add</button>${pending ? '<div class="warning-text hours-pending-inline">please fill finish time</div>' : ""}</td>`;
   return tr;
@@ -15328,8 +15348,8 @@ function buildHoursEditableRow(record) {
   tr.className = "inline-editor";
   tr.innerHTML = `<td><select data-field="person" data-scope="edit" data-id="${escape(record.id)}">${(state.hoursSettings?.people || DEFAULT_HOURS_SETTINGS.people).map((person) => option(person, draft.person)).join("")}</select></td>
     <td><input data-field="date" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.date)}" /></td>
-    <td><input data-field="start" data-scope="edit" data-id="${escape(record.id)}" type="time" value="${escape(draft.start)}" /></td>
-    <td><input data-field="finish" data-scope="edit" data-id="${escape(record.id)}" type="time" value="${escape(draft.finish)}" /></td>
+    <td><input class="hours-time-input" data-field="start" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${escape(draft.start)}" /></td>
+    <td><input class="hours-time-input" data-field="finish" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${escape(draft.finish)}" /></td>
     <td>${escape(formatHoursDuration(draft.start, draft.finish))}</td>
     <td class="row-actions"><button type="button" data-hours-action="save-edit" data-id="${escape(record.id)}">Save</button>
     <button type="button" class="ghost" data-hours-action="cancel-edit" data-id="${escape(record.id)}">Cancel</button></td>`;
@@ -15352,11 +15372,11 @@ function buildHoursInlineCard() {
       </label>
       <label class="communication-mobile-field">
         <small>Start</small>
-        <input data-field="start" data-scope="new" type="time" value="${escape(draft.start)}" />
+        <input class="hours-time-input" data-field="start" data-scope="new" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${escape(draft.start)}" />
       </label>
       <label class="communication-mobile-field">
         <small>Finish</small>
-        <input data-field="finish" data-scope="new" type="time" value="${escape(draft.finish)}" />
+        <input class="hours-time-input" data-field="finish" data-scope="new" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${escape(draft.finish)}" />
       </label>
       <div class="communication-mobile-field communication-mobile-field-full">
         <small>Hours</small>
@@ -15403,11 +15423,11 @@ function buildHoursEditableCard(record) {
       </label>
       <label class="communication-mobile-field">
         <small>Start</small>
-        <input data-field="start" data-scope="edit" data-id="${escape(record.id)}" type="time" value="${escape(draft.start)}" />
+        <input class="hours-time-input" data-field="start" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${escape(draft.start)}" />
       </label>
       <label class="communication-mobile-field">
         <small>Finish</small>
-        <input data-field="finish" data-scope="edit" data-id="${escape(record.id)}" type="time" value="${escape(draft.finish)}" />
+        <input class="hours-time-input" data-field="finish" data-scope="edit" data-id="${escape(record.id)}" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${escape(draft.finish)}" />
       </label>
       <div class="communication-mobile-field communication-mobile-field-full">
         <small>Hours</small>

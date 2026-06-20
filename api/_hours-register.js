@@ -150,7 +150,17 @@ function sanitizeHoursRecord(input = {}, settings = DEFAULT_HOURS_SETTINGS, exis
     error.statusCode = 400;
     throw error;
   }
+  if (!/^\d{2}:\d{2}$/.test(start)) {
+    const error = new Error("Start time must be in HH:MM format.");
+    error.statusCode = 400;
+    throw error;
+  }
   if (finish) {
+    if (!/^\d{2}:\d{2}$/.test(finish)) {
+      const error = new Error("Finish time must be in HH:MM format.");
+      error.statusCode = 400;
+      throw error;
+    }
     const minutes = calculateDurationMinutes(start, finish);
     if (minutes == null || minutes <= 0) {
       const error = new Error("Finish time must be after start time.");
