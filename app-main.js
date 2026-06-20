@@ -616,6 +616,11 @@ const IMPORT_DATA_TYPE_DEFS = {
   },
 };
 
+const IMPORT_DATA_META_LABELS = {
+  "fdm-accounts": "Max Date Time",
+  "fdm-bookings": "Max Check-in Date",
+};
+
 const FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT = "Possible duplicate found. Do you still want to save this document?";
 
 const GUEST_DESCRIPTION_PALETTES = {
@@ -1050,6 +1055,7 @@ const state = {
   importDataSettingsLoaded: false,
   importDataRows: [],
   importDataLoaded: false,
+  importDataMetaByType: {},
   importDataTab: "import",
   importDataType: "fdm-accounts",
   importDataViewType: "fdm-accounts",
@@ -1424,6 +1430,7 @@ const els = {
   importDataStatus: document.getElementById("import-data-status"),
   importDataConfirm: document.getElementById("import-data-confirm"),
   importDataType: document.getElementById("import-data-type"),
+  importDataMeta: document.getElementById("import-data-meta"),
   importDataViewType: document.getElementById("import-data-view-type"),
   importDataViewDescription: document.getElementById("import-data-view-description"),
   importDataViewStatus: document.getElementById("import-data-view-status"),
@@ -18796,6 +18803,24 @@ function importDataTypeDescription(type = state.importDataType) {
   return clean(state.importDataSettings?.types?.find((item) => item.type === normalized)?.description);
 }
 
+function importDataMetaLabel(type = state.importDataType) {
+  return IMPORT_DATA_META_LABELS[normalizeImportDataTypeClient(type)] || "Max Date";
+}
+
+function formatImportDataMetaValue(type, meta = {}) {
+  const normalizedType = normalizeImportDataTypeClient(type);
+  const importDate = clean(meta.maxImportDate);
+  const importPart = `Max import date: ${importDate ? formatDateTimeShort(importDate) : "-"}`;
+  if (normalizedType === "fdm-bookings") {
+    return `${importPart} | ${importDataMetaLabel(normalizedType)}: ${clean(meta.maxCheckInDate) ? formatDateOnly(meta.maxCheckInDate) : "-"}`;
+  }
+  if (normalizedType === "fdm-accounts") {
+    const raw = clean(meta.maxDateTimeRaw);
+    return `${importPart} | ${importDataMetaLabel(normalizedType)}: ${raw || "-"}`;
+  }
+  return importPart;
+}
+
 function setImportDataStatus(message = "", tone = "") {
   if (!els.importDataStatus) return;
   els.importDataStatus.textContent = message;
@@ -18847,9 +18872,29 @@ async function loadImportDataRows({ silent = false, type = state.importDataViewT
   }
 }
 
+async function loadImportDataMeta({ type = state.importDataType, silent = false } = {}) {
+  try {
+    const normalizedType = normalizeImportDataTypeClient(type);
+    const result = await api(`/api/import-data?type=${encodeURIComponent(normalizedType)}&summary=1`);
+    state.importDataMetaByType = {
+      ...state.importDataMetaByType,
+      [normalizedType]: result?.meta && typeof result.meta === "object" ? result.meta : {},
+    };
+    renderImportData();
+  } catch (error) {
+    state.importDataMetaByType = {
+      ...state.importDataMetaByType,
+      [normalizeImportDataTypeClient(type)]: {},
+    };
+    renderImportData();
+    if (!silent) setImportDataStatus(`Failed to load import summary: ${error.message}`, "error");
+  }
+}
+
 async function ensureImportDataData() {
   const loads = [];
   if (!state.importDataLoaded && canAppImportData()) loads.push(loadImportDataRows({ silent: true }));
+  if (canAppImportData()) loads.push(loadImportDataMeta({ type: state.importDataType, silent: true }));
   if ((state.currentView === "settings" && state.settingsSection === "import-data") && !state.importDataSettingsLoaded && canSettings("import-data")) {
     loads.push(loadImportDataSettings({ silent: true }));
   }
@@ -18862,6 +18907,7 @@ async function ensureImportDataData() {
 function setImportDataType(type) {
   state.importDataType = normalizeImportDataTypeClient(type);
   if (els.importDataType) els.importDataType.value = state.importDataType;
+  loadImportDataMeta({ type: state.importDataType, silent: true }).catch(() => {});
   renderImportData();
 }
 
@@ -19305,6 +19351,7 @@ async function confirmImportData() {
     if (els.importDataText) els.importDataText.value = "";
     updateImportDataSourceSummary();
     await loadImportDataRows({ silent: true });
+    await loadImportDataMeta({ type: state.importDataType, silent: true });
     renderImportData();
     const inserted = Number(result?.insertedCount || readyRows.length);
     setImportDataStatus(`${inserted} row(s) imported successfully.`);
@@ -19516,6 +19563,7 @@ function renderImportData() {
   if (els.importDataType) els.importDataType.value = state.importDataType;
   if (els.importDataViewType) els.importDataViewType.value = state.importDataViewType;
   if (els.importDataDescription) els.importDataDescription.textContent = importDataTypeDescription(state.importDataType);
+  if (els.importDataMeta) els.importDataMeta.textContent = formatImportDataMetaValue(state.importDataType, state.importDataMetaByType?.[state.importDataType] || {});
   if (els.importDataViewDescription) els.importDataViewDescription.textContent = importDataTypeDescription(state.importDataViewType);
   if (els.importDataImportPanel) els.importDataImportPanel.hidden = state.importDataTab !== "import";
   if (els.importDataViewPanel) els.importDataViewPanel.hidden = state.importDataTab !== "view";

@@ -13,6 +13,10 @@ const IMPORT_DATA_CONFIG = {
     sanitize: sanitizeFdmAccountsImportRow,
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,import_batch,source_row_number",
+    summaryQueries: {
+      importDate: "select=created_at&order=created_at.desc&limit=1",
+      specific: "select=date_time_raw,event_date,event_time,created_at&order=event_date.desc.nullslast,event_time.desc.nullslast,created_at.desc&limit=1",
+    },
   },
   "fdm-bookings": {
     table: "import_fdm_bookings",
@@ -20,6 +24,10 @@ const IMPORT_DATA_CONFIG = {
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,booking_number",
     onConflict: "booking_number",
+    summaryQueries: {
+      importDate: "select=created_at&order=created_at.desc&limit=1",
+      specific: "select=check_in_date&order=check_in_date.desc.nullslast,created_at.desc&limit=1",
+    },
   },
 };
 
@@ -32,11 +40,35 @@ function importDataConfig(type) {
   return IMPORT_DATA_CONFIG[normalizeImportDataType(type)] || IMPORT_DATA_CONFIG["fdm-accounts"];
 }
 
+async function fetchImportDataMeta(type) {
+  const normalizedType = normalizeImportDataType(type);
+  const config = importDataConfig(normalizedType);
+  const importRows = await restQuery(`${config.table}?${config.summaryQueries.importDate}`, { method: "GET" });
+  const specificRows = await restQuery(`${config.table}?${config.summaryQueries.specific}`, { method: "GET" });
+  const importRow = Array.isArray(importRows) ? importRows[0] || null : null;
+  const specificRow = Array.isArray(specificRows) ? specificRows[0] || null : null;
+  if (normalizedType === "fdm-bookings") {
+    return {
+      maxImportDate: cleanText(importRow?.created_at),
+      maxCheckInDate: cleanText(specificRow?.check_in_date),
+    };
+  }
+  return {
+    maxImportDate: cleanText(importRow?.created_at),
+    maxDateTimeRaw: cleanText(specificRow?.date_time_raw),
+  };
+}
+
 module.exports = async function handler(req, res) {
   try {
     await requireFeature(req, "app", "import-data");
     if (req.method === "GET") {
       const type = normalizeImportDataType(req.query?.type);
+      if (cleanText(req.query?.summary) === "1") {
+        const meta = await fetchImportDataMeta(type);
+        res.status(200).json({ type, meta });
+        return;
+      }
       const config = importDataConfig(type);
       const rows = await restQuery(`${config.table}?${config.listQuery}`, { method: "GET" });
       res.status(200).json({ type, rows: Array.isArray(rows) ? rows : [] });
