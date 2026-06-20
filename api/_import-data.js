@@ -61,16 +61,17 @@ function normalizeImportTime(value) {
 }
 
 function normalizeImportLooseDate(value) {
-  const normalized = normalizeDate(value);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
-  const dottedMatch = cleanText(value).match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
-  if (dottedMatch) {
-    const yearNum = Number.parseInt(dottedMatch[3], 10);
+  const compact = cleanText(value);
+  const numericMatch = compact.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/);
+  if (numericMatch) {
+    const yearNum = Number.parseInt(numericMatch[3], 10);
     if (Number.isFinite(yearNum)) {
-      const year = dottedMatch[3].length === 2 ? 2000 + yearNum : yearNum;
-      return `${year}-${String(Number.parseInt(dottedMatch[2], 10)).padStart(2, "0")}-${String(Number.parseInt(dottedMatch[1], 10)).padStart(2, "0")}`;
+      const year = numericMatch[3].length === 2 ? 2000 + yearNum : yearNum;
+      return `${year}-${String(Number.parseInt(numericMatch[2], 10)).padStart(2, "0")}-${String(Number.parseInt(numericMatch[1], 10)).padStart(2, "0")}`;
     }
   }
+  const normalized = normalizeDate(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
   const raw = cleanText(value).toLowerCase().replace(/\./g, "");
   const match = raw.match(/^(\d{1,2})\/([a-zç]+)\/(\d{2,4})$/i);
   if (!match) return "";
