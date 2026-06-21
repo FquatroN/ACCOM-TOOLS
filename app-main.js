@@ -20516,10 +20516,15 @@ function getFinancialDocsResumeRows() {
   return {
     categories,
     rows: [...buckets.values()]
-      .map((row) => ({
-        ...row,
-        values: Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, Number(value.toFixed(2))])),
-      }))
+      .map((row) => {
+        const values = Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, Number(value.toFixed(2))]));
+        const total = Number(Object.values(values).reduce((sum, value) => sum + Number(value || 0), 0).toFixed(2));
+        return {
+          ...row,
+          values,
+          total,
+        };
+      })
       .sort((a, b) => clean(a.yearMonth).localeCompare(clean(b.yearMonth))),
   };
 }
@@ -20528,16 +20533,17 @@ function renderFinancialDocsResume(summary = getFinancialDocsResumeRows()) {
   const { categories, rows } = summary;
   if (els.financialDocsResumeCount) els.financialDocsResumeCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
   if (els.financialDocsResumeHead) {
-    els.financialDocsResumeHead.innerHTML = `<tr><th>Year-Month</th>${categories.map((category) => `<th>${escape(category)}</th>`).join("")}</tr>`;
+    els.financialDocsResumeHead.innerHTML = `<tr><th>Year-Month</th>${categories.map((category) => `<th>${escape(category)}</th>`).join("")}<th>Total</th></tr>`;
   }
   if (!els.financialDocsResumeRows) return;
   if (!rows.length) {
-    els.financialDocsResumeRows.innerHTML = `<tr><td colspan="${categories.length + 1}" class="empty">No financial document summary found.</td></tr>`;
+    els.financialDocsResumeRows.innerHTML = `<tr><td colspan="${categories.length + 2}" class="empty">No financial document summary found.</td></tr>`;
     return;
   }
   els.financialDocsResumeRows.innerHTML = rows.map((row) => `<tr>
     <td>${escape(row.yearMonth)}</td>
     ${categories.map((category) => `<td>${escape(formatMoney(row.values?.[category] || 0))}</td>`).join("")}
+    <td>${escape(formatMoney(row.total || 0))}</td>
   </tr>`).join("");
 }
 

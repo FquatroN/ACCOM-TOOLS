@@ -5066,6 +5066,11 @@ button[id^="close-settings"] {
   min-width: 6.5rem;
 }
 
+.financial-docs-resume-table th:last-child,
+.financial-docs-resume-table td:last-child {
+  font-weight: 700;
+}
+
 .financial-docs-table {
   min-width: 1760px;
 }
