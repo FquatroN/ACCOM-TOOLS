@@ -5033,6 +5033,23 @@ button[id^="close-settings"] {
   overflow-x: auto;
 }
 
+.financial-docs-resume-table {
+  min-width: max-content;
+}
+
+.financial-docs-resume-table th,
+.financial-docs-resume-table td {
+  padding: 0.3rem 0.4rem;
+  font-size: 0.76rem;
+  vertical-align: middle;
+}
+
+.financial-docs-resume-table th:not(:first-child),
+.financial-docs-resume-table td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .financial-docs-table {
   min-width: 1760px;
 }

@@ -1067,6 +1067,7 @@ const state = {
   financialDocEntitiesLoaded: false,
   financialDocsSettingsLoaded: false,
   financialDocsSettingsTab: "attributes",
+  financialDocsScreen: "list",
   financialDocsFiltersInitialized: false,
   financialDocsReloadTimer: 0,
   financialDocsDraft: null,
@@ -1334,6 +1335,8 @@ const els = {
   financialDocsOpenEntities: document.getElementById("financial-docs-open-entities"),
   financialDocsExportExcel: document.getElementById("financial-docs-export-excel"),
   financialDocsOpenImport: document.getElementById("financial-docs-open-import"),
+  financialDocsTabList: document.getElementById("financial-docs-tab-list"),
+  financialDocsTabResume: document.getElementById("financial-docs-tab-resume"),
   financialDocsNew: document.getElementById("financial-docs-new"),
   financialDocsUploadParse: document.getElementById("financial-docs-upload-parse"),
   financialDocsFilterCreatedFrom: document.getElementById("financial-docs-filter-created-from"),
@@ -1348,8 +1351,13 @@ const els = {
   financialDocsFilterCategory: document.getElementById("financial-docs-filter-category"),
   financialDocsFilterStatus: document.getElementById("financial-docs-filter-status"),
   financialDocsCount: document.getElementById("financial-docs-count"),
+  financialDocsPanelList: document.getElementById("financial-docs-panel-list"),
+  financialDocsPanelResume: document.getElementById("financial-docs-panel-resume"),
   financialDocsRows: document.getElementById("financial-docs-rows"),
   financialDocsMobileCards: document.getElementById("financial-docs-mobile-cards"),
+  financialDocsResumeCount: document.getElementById("financial-docs-resume-count"),
+  financialDocsResumeHead: document.getElementById("financial-docs-resume-head"),
+  financialDocsResumeRows: document.getElementById("financial-docs-resume-rows"),
   financialDocsStatus: document.getElementById("financial-docs-status"),
   financialDocsParseInput: document.getElementById("financial-docs-parse-input"),
   financialDocsAttachmentInput: document.getElementById("financial-docs-attachment-input"),
@@ -2197,6 +2205,8 @@ function bindEvents() {
   els.financialDocsExportExcel?.addEventListener("click", exportFinancialDocsToExcel);
   els.financialDocsOpenImport?.addEventListener("click", openFinancialDocImportModal);
   els.financialDocsOpenEntities?.addEventListener("click", openFinancialDocEntitiesModal);
+  els.financialDocsTabList?.addEventListener("click", () => setFinancialDocsScreen("list"));
+  els.financialDocsTabResume?.addEventListener("click", () => setFinancialDocsScreen("resume"));
   els.financialDocsNew?.addEventListener("click", () => openFinancialDocModal());
   els.financialDocsUploadParse?.addEventListener("click", () => triggerFinancialDocParsePicker({ mode: "modal-parse" }));
   els.financialDocsParseInput?.addEventListener("change", onFinancialDocParsePicked);
@@ -20459,6 +20469,78 @@ function exportFinancialDocsToExcel() {
   showToast(`Exported ${rows.length} financial document${rows.length === 1 ? "" : "s"} to Excel.`, "success");
 }
 
+function setFinancialDocsScreen(screen) {
+  state.financialDocsScreen = screen === "resume" ? "resume" : "list";
+  renderFinancialDocs();
+}
+
+function financialDocsResumeMonthKey(value) {
+  const iso = clean(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.slice(0, 7) : "";
+}
+
+function getFinancialDocsResumeCategories(rows = getFilteredFinancialDocs()) {
+  const seen = new Set();
+  const configured = getFinancialDocSelectOptions("category");
+  const categories = [];
+  [...configured, ...(Array.isArray(rows) ? rows.map((row) => clean(row.category) || "Uncategorized") : [])]
+    .map((value) => clean(value) || "Uncategorized")
+    .forEach((value) => {
+      const key = value.toLowerCase();
+      if (!value || seen.has(key)) return;
+      seen.add(key);
+      categories.push(value);
+    });
+  return categories;
+}
+
+function getFinancialDocsResumeRows() {
+  const rows = getFilteredFinancialDocs();
+  const categories = getFinancialDocsResumeCategories(rows);
+  const buckets = new Map();
+  rows.forEach((row) => {
+    const monthKey = financialDocsResumeMonthKey(row.documentDate);
+    if (!monthKey) return;
+    const category = clean(row.category) || "Uncategorized";
+    const amount = Number(normalizeNumber(row.amount) || 0);
+    if (!buckets.has(monthKey)) {
+      buckets.set(monthKey, {
+        yearMonth: monthKey,
+        values: Object.fromEntries(categories.map((item) => [item, 0])),
+      });
+    }
+    const current = buckets.get(monthKey);
+    if (!Object.prototype.hasOwnProperty.call(current.values, category)) current.values[category] = 0;
+    current.values[category] += amount;
+  });
+  return {
+    categories,
+    rows: [...buckets.values()]
+      .map((row) => ({
+        ...row,
+        values: Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, Number(value.toFixed(2))])),
+      }))
+      .sort((a, b) => clean(a.yearMonth).localeCompare(clean(b.yearMonth))),
+  };
+}
+
+function renderFinancialDocsResume(summary = getFinancialDocsResumeRows()) {
+  const { categories, rows } = summary;
+  if (els.financialDocsResumeCount) els.financialDocsResumeCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
+  if (els.financialDocsResumeHead) {
+    els.financialDocsResumeHead.innerHTML = `<tr><th>Year-Month</th>${categories.map((category) => `<th>${escape(category)}</th>`).join("")}</tr>`;
+  }
+  if (!els.financialDocsResumeRows) return;
+  if (!rows.length) {
+    els.financialDocsResumeRows.innerHTML = `<tr><td colspan="${categories.length + 1}" class="empty">No financial document summary found.</td></tr>`;
+    return;
+  }
+  els.financialDocsResumeRows.innerHTML = rows.map((row) => `<tr>
+    <td>${escape(row.yearMonth)}</td>
+    ${categories.map((category) => `<td>${escape(formatMoney(row.values?.[category] || 0))}</td>`).join("")}
+  </tr>`).join("");
+}
+
 function renderFinancialDocsFilterOptions() {
   const setFilterOptions = (select, values) => {
     if (!select) return;
@@ -20658,6 +20740,7 @@ function renderFinancialDocs() {
     if (els.financialDocsCount) els.financialDocsCount.textContent = "0 records";
     if (els.financialDocsRows) els.financialDocsRows.innerHTML = '<tr><td colspan="16" class="empty">Your profile has no access to Financial Documents.</td></tr>';
     if (els.financialDocsMobileCards) els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Financial Documents.</div>';
+    if (els.financialDocsResumeRows) els.financialDocsResumeRows.innerHTML = '<tr><td colspan="2" class="empty">Your profile has no access to Financial Documents.</td></tr>';
     return;
   }
   if (!state.financialDocsLoaded && !state.financialDocsLoading) {
@@ -20666,7 +20749,20 @@ function renderFinancialDocs() {
   ensureFinancialDocsDefaultFilters();
   renderFinancialDocEntityLists();
   renderFinancialDocsSettings();
+  const isResume = state.financialDocsScreen === "resume";
+  els.financialDocsTabList?.classList.toggle("active-tab", !isResume);
+  els.financialDocsTabList?.classList.toggle("ghost", isResume);
+  els.financialDocsTabResume?.classList.toggle("active-tab", isResume);
+  els.financialDocsTabResume?.classList.toggle("ghost", !isResume);
+  if (els.financialDocsPanelList) els.financialDocsPanelList.hidden = isResume;
+  if (els.financialDocsPanelResume) els.financialDocsPanelResume.hidden = !isResume;
   const rows = getFilteredFinancialDocs();
+  if (isResume) {
+    const summary = getFinancialDocsResumeRows();
+    if (els.financialDocsCount) els.financialDocsCount.textContent = `${summary.rows.length} month${summary.rows.length === 1 ? "" : "s"}`;
+    renderFinancialDocsResume(summary);
+    return;
+  }
   if (els.financialDocsCount) els.financialDocsCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
   if (els.financialDocsRows) {
     const inlineRow = buildFinancialDocInlineCreateRow();

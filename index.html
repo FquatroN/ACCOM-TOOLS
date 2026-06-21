@@ -3330,34 +3330,54 @@
           <section class="card">
             <div class="bar">
               <h2>Documents</h2>
-              <p id="financial-docs-count">0 records</p>
+              <div class="actions">
+                <button id="financial-docs-tab-list" type="button" class="active-tab">List</button>
+                <button id="financial-docs-tab-resume" type="button" class="ghost">Resume</button>
+                <p id="financial-docs-count">0 records</p>
+              </div>
             </div>
-            <div class="table-wrap financial-docs-table-wrap">
-              <table class="financial-docs-table">
-                <thead>
-                  <tr>
-                    <th>Create Date</th>
-                    <th>CC</th>
-                    <th>Date</th>
-                    <th>Doc Number</th>
-                    <th>Description</th>
-                    <th>Name</th>
-                    <th>Supplier NIF</th>
-                    <th>Amount</th>
-                    <th>VAT Amount</th>
-                    <th>Payment</th>
-                    <th>Type</th>
-                    <th>Fat</th>
-                    <th>Category</th>
-                    <th>Status</th>
-                    <th>File</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="financial-docs-rows"></tbody>
-              </table>
-            </div>
-            <div id="financial-docs-mobile-cards" class="services-mobile-cards financial-docs-mobile-cards"></div>
+            <section id="financial-docs-panel-list">
+              <div class="table-wrap financial-docs-table-wrap">
+                <table class="financial-docs-table">
+                  <thead>
+                    <tr>
+                      <th>Create Date</th>
+                      <th>CC</th>
+                      <th>Date</th>
+                      <th>Doc Number</th>
+                      <th>Description</th>
+                      <th>Name</th>
+                      <th>Supplier NIF</th>
+                      <th>Amount</th>
+                      <th>VAT Amount</th>
+                      <th>Payment</th>
+                      <th>Type</th>
+                      <th>Fat</th>
+                      <th>Category</th>
+                      <th>Status</th>
+                      <th>File</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="financial-docs-rows"></tbody>
+                </table>
+              </div>
+              <div id="financial-docs-mobile-cards" class="services-mobile-cards financial-docs-mobile-cards"></div>
+            </section>
+            <section id="financial-docs-panel-resume" hidden>
+              <div class="bar services-subbar">
+                <h3>Resume</h3>
+                <div class="actions">
+                  <p id="financial-docs-resume-count">0 months</p>
+                </div>
+              </div>
+              <div class="table-wrap financial-docs-table-wrap">
+                <table class="compact-table financial-docs-resume-table">
+                  <thead id="financial-docs-resume-head"></thead>
+                  <tbody id="financial-docs-resume-rows"></tbody>
+                </table>
+              </div>
+            </section>
             <p id="financial-docs-status" class="auth-status"></p>
           </section>
 
