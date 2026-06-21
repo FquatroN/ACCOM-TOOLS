@@ -16,7 +16,8 @@ const IMPORT_DATA_CONFIG = {
     insertSelect: "select=id,import_batch,source_row_number",
     summaryQueries: {
       importDate: "select=created_at&order=created_at.desc&limit=1",
-      specific: "select=date_time_raw,event_date,event_time,created_at&order=event_date.desc.nullslast,event_time.desc.nullslast,created_at.desc&limit=1",
+      specificMax: "select=date_time_raw,event_date,event_time,created_at&order=event_date.desc.nullslast,event_time.desc.nullslast,created_at.desc&limit=1",
+      specificMin: "select=date_time_raw,event_date,event_time,created_at&order=event_date.asc.nullslast,event_time.asc.nullslast,created_at.asc&limit=1",
     },
   },
   "fdm-bookings": {
@@ -27,7 +28,8 @@ const IMPORT_DATA_CONFIG = {
     onConflictColumns: ["booking_number"],
     summaryQueries: {
       importDate: "select=created_at&order=created_at.desc&limit=1",
-      specific: "select=check_in_date&order=check_in_date.desc.nullslast,created_at.desc&limit=1",
+      specificMax: "select=check_in_date&order=check_in_date.desc.nullslast,created_at.desc&limit=1",
+      specificMin: "select=check_in_date&order=check_in_date.asc.nullslast,created_at.asc&limit=1",
     },
   },
   "fdm-sales": {
@@ -37,7 +39,8 @@ const IMPORT_DATA_CONFIG = {
     insertSelect: "select=id,reservation_id,sale_date,sale_time,sale_item,quantity,guest",
     summaryQueries: {
       importDate: "select=created_at&order=created_at.desc&limit=1",
-      specific: "select=sale_date&order=sale_date.desc.nullslast,created_at.desc&limit=1",
+      specificMax: "select=sale_date&order=sale_date.desc.nullslast,created_at.desc&limit=1",
+      specificMin: "select=sale_date&order=sale_date.asc.nullslast,created_at.asc&limit=1",
     },
   },
 };
@@ -75,24 +78,29 @@ async function fetchImportDataMeta(type) {
   const normalizedType = normalizeImportDataType(type);
   const config = importDataConfig(normalizedType);
   const importRows = await restQuery(`${config.table}?${config.summaryQueries.importDate}`, { method: "GET" });
-  const specificRows = await restQuery(`${config.table}?${config.summaryQueries.specific}`, { method: "GET" });
+  const specificMaxRows = await restQuery(`${config.table}?${config.summaryQueries.specificMax}`, { method: "GET" });
+  const specificMinRows = await restQuery(`${config.table}?${config.summaryQueries.specificMin}`, { method: "GET" });
   const importRow = Array.isArray(importRows) ? importRows[0] || null : null;
-  const specificRow = Array.isArray(specificRows) ? specificRows[0] || null : null;
+  const specificMaxRow = Array.isArray(specificMaxRows) ? specificMaxRows[0] || null : null;
+  const specificMinRow = Array.isArray(specificMinRows) ? specificMinRows[0] || null : null;
   if (normalizedType === "fdm-bookings") {
     return {
       maxImportDate: cleanText(importRow?.created_at),
-      maxCheckInDate: cleanText(specificRow?.check_in_date),
+      maxCheckInDate: cleanText(specificMaxRow?.check_in_date),
+      minCheckInDate: cleanText(specificMinRow?.check_in_date),
     };
   }
   if (normalizedType === "fdm-sales") {
     return {
       maxImportDate: cleanText(importRow?.created_at),
-      maxDate: cleanText(specificRow?.sale_date),
+      maxDate: cleanText(specificMaxRow?.sale_date),
+      minDate: cleanText(specificMinRow?.sale_date),
     };
   }
   return {
     maxImportDate: cleanText(importRow?.created_at),
-    maxDateTimeRaw: cleanText(specificRow?.date_time_raw),
+    maxDateTimeRaw: cleanText(specificMaxRow?.date_time_raw),
+    minDateTimeRaw: cleanText(specificMinRow?.date_time_raw),
   };
 }
 

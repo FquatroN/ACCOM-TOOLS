@@ -18870,19 +18870,36 @@ function importDataMetaLabel(type = state.importDataType) {
   return IMPORT_DATA_META_LABELS[normalizeImportDataTypeClient(type)] || "Max Date";
 }
 
+function importDataMinMetaLabel(type = state.importDataType) {
+  return importDataMetaLabel(type).replace(/^Max\s+/i, "Min ");
+}
+
 function formatImportDataMetaValue(type, meta = {}) {
   const normalizedType = normalizeImportDataTypeClient(type);
   const importDate = clean(meta.maxImportDate);
   const importPart = `Max import date: ${importDate ? formatDateTimeShort(importDate) : "-"}`;
   if (normalizedType === "fdm-bookings") {
-    return `${importPart} | ${importDataMetaLabel(normalizedType)}: ${clean(meta.maxCheckInDate) ? formatDateOnly(meta.maxCheckInDate) : "-"}`;
+    return [
+      importPart,
+      `${importDataMetaLabel(normalizedType)}: ${clean(meta.maxCheckInDate) ? formatDateOnly(meta.maxCheckInDate) : "-"}`,
+      `${importDataMinMetaLabel(normalizedType)}: ${clean(meta.minCheckInDate) ? formatDateOnly(meta.minCheckInDate) : "-"}`,
+    ].join("\n");
   }
   if (normalizedType === "fdm-sales") {
-    return `${importPart} | ${importDataMetaLabel(normalizedType)}: ${clean(meta.maxDate) ? formatDateOnly(meta.maxDate) : "-"}`;
+    return [
+      importPart,
+      `${importDataMetaLabel(normalizedType)}: ${clean(meta.maxDate) ? formatDateOnly(meta.maxDate) : "-"}`,
+      `${importDataMinMetaLabel(normalizedType)}: ${clean(meta.minDate) ? formatDateOnly(meta.minDate) : "-"}`,
+    ].join("\n");
   }
   if (normalizedType === "fdm-accounts") {
-    const raw = clean(meta.maxDateTimeRaw);
-    return `${importPart} | ${importDataMetaLabel(normalizedType)}: ${raw || "-"}`;
+    const maxRaw = clean(meta.maxDateTimeRaw);
+    const minRaw = clean(meta.minDateTimeRaw);
+    return [
+      importPart,
+      `${importDataMetaLabel(normalizedType)}: ${maxRaw || "-"}`,
+      `${importDataMinMetaLabel(normalizedType)}: ${minRaw || "-"}`,
+    ].join("\n");
   }
   return importPart;
 }

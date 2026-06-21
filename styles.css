@@ -5413,6 +5413,10 @@ button[id^="close-settings"] {
   line-height: 1.35;
 }
 
+#import-data-meta {
+  white-space: pre-line;
+}
+
 .import-data-table th,
 .import-data-table td {
   font-size: 0.72rem;
