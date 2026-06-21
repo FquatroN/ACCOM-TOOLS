@@ -205,6 +205,11 @@ async function loadRowsAndSettings() {
 }
 
 function validateSendableGuest(record) {
+  if (!cleanText(record.name)) return "Guest name is required.";
+  if (!cleanText(record.birthDate)) return "Birth date is required.";
+  if (!cleanText(record.docNumber)) return "Document number is required.";
+  if (!cleanText(record.checkIn)) return "Check-in date is required for SEF send.";
+  if (!cleanText(record.checkOut)) return "Check-out date is required for SEF send.";
   if (!record.nationalityCode) return "Nationality must match a valid ICAO country.";
   if (!record.issuerCountryCode) return "Issuer Country must match a valid ICAO country.";
   if (!record.residenceCountryCode) return "Residence Country must match a valid ICAO country.";
@@ -336,16 +341,22 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const sendableMapped = sendable.map((row) => buildGuestForSend(row, current.settings));
-
-    const validationErrors = sendableMapped
-      .map((row) => ({ row, error: validateSendableGuest(row) }))
-      .filter((item) => item.error);
-    if (validationErrors.length) {
-      const first = validationErrors[0];
-      res.status(400).json({ error: `${first.row.name}: ${first.error}` });
+    const sendablePairs = sendable.map((row) => {
+      const mapped = buildGuestForSend(row, current.settings);
+      return {
+        source: row,
+        mapped,
+        error: validateSendableGuest(mapped),
+      };
+    });
+    const readyPairs = sendablePairs.filter((item) => !item.error);
+    if (!readyPairs.length) {
+      res.status(200).json({ rows: current.rows, settings: current.settings, sent: 0, message: "No pending guest records ready to send." });
       return;
     }
+    const readySourceRows = readyPairs.map((item) => item.source);
+    const readyMappedRows = readyPairs.map((item) => item.mapped);
+    const skippedCount = sendablePairs.length - readyPairs.length;
 
     const sefConfig = resolveSefConfig(current.settings);
     if (!cleanText(sefConfig.unitCode) || !cleanText(sefConfig.establishment) || !cleanText(sefConfig.accessKey)) {
@@ -354,7 +365,7 @@ module.exports = async function handler(req, res) {
     }
 
     const nextFileNumber = Math.max(1, Number(current.payload.lastFileNumber || 0) + 1);
-    const xml = buildBalXml(sendableMapped, nextFileNumber, current.settings);
+    const xml = buildBalXml(readyMappedRows, nextFileNumber, current.settings);
     const base64Payload = Buffer.from(xml, "utf-8").toString("base64");
     const soap = buildSoapEnvelope(base64Payload, current.settings);
     const maskedSoap = maskSefSoap(soap);
@@ -363,8 +374,8 @@ module.exports = async function handler(req, res) {
       requestMethod: "POST",
       soapAction: "http://sef.pt/EntregaBoletinsAlojamento",
       fileNumber: nextFileNumber,
-      guestCount: sendableMapped.length,
-      guestNames: sendableMapped.map((row) => cleanText(row.name)).filter(Boolean),
+      guestCount: readyMappedRows.length,
+      guestNames: readyMappedRows.map((row) => cleanText(row.name)).filter(Boolean),
       unitCode: cleanText(sefConfig.unitCode),
       establishment: cleanText(sefConfig.establishment),
     };
@@ -388,7 +399,7 @@ module.exports = async function handler(req, res) {
         soapAction: "http://sef.pt/EntregaBoletinsAlojamento",
         httpStatus: statusCode,
         fileNumber: nextFileNumber,
-        guestCount: sendableMapped.length,
+        guestCount: readyMappedRows.length,
         success: result.ok,
         responseMessage: result.message,
         errorMessage: result.ok ? "" : result.message,
@@ -404,7 +415,7 @@ module.exports = async function handler(req, res) {
         soapAction: "http://sef.pt/EntregaBoletinsAlojamento",
         httpStatus: statusCode || Number.parseInt(error?.statusCode, 10) || 0,
         fileNumber: nextFileNumber,
-        guestCount: sendableMapped.length,
+        guestCount: readyMappedRows.length,
         success: false,
         responseMessage: "",
         errorMessage: cleanText(error?.message || "Unknown SEF transport error."),
@@ -422,7 +433,7 @@ module.exports = async function handler(req, res) {
     let savedRows = current.rows;
     let savedSettings = current.settings;
     if (current.mode === "table") {
-      await updateGuestSendStatuses(sendable, {
+      await updateGuestSendStatuses(readySourceRows, {
         ok: result.ok,
         nextFileNumber,
         message: result.message,
@@ -435,7 +446,7 @@ module.exports = async function handler(req, res) {
       });
       savedSettings = savedPayload.settings;
     } else {
-      const attemptedIds = new Set(sendable.map((row) => cleanId(row.id)));
+      const attemptedIds = new Set(readySourceRows.map((row) => cleanId(row.id)));
       const nextRows = current.payload.rows.map((row) => {
         if (!attemptedIds.has(cleanId(row.id))) return row;
         if (result.ok) {
@@ -468,12 +479,12 @@ module.exports = async function handler(req, res) {
       res.status(502).json({ error: result.message, rows: savedRows, settings: savedSettings, sent: 0 });
       return;
     }
-    const sentCount = sendableMapped.length;
+    const sentCount = readyMappedRows.length;
     res.status(200).json({
       rows: savedRows,
       settings: savedSettings,
       sent: sentCount,
-      message: `${sentCount} Guest${sentCount === 1 ? "" : "s"} sent successfully.`,
+      message: `${sentCount} Guest${sentCount === 1 ? "" : "s"} sent successfully.${skippedCount > 0 ? ` ${skippedCount} incomplete record${skippedCount === 1 ? " was" : "s were"} skipped.` : ""}`,
     });
   } catch (error) {
     sendError(res, error);
