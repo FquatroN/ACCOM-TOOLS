@@ -35,7 +35,6 @@ const IMPORT_DATA_CONFIG = {
     sanitize: sanitizeFdmSalesImportRow,
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,reservation_id,sale_date,sale_time,sale_item,quantity,guest",
-    onConflictColumns: ["sale_date", "sale_time", "sale_item", "quantity", "guest"],
     summaryQueries: {
       importDate: "select=created_at&order=created_at.desc&limit=1",
       specific: "select=sale_date&order=sale_date.desc.nullslast,created_at.desc&limit=1",
