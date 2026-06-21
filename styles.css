@@ -5033,8 +5033,16 @@ button[id^="close-settings"] {
   overflow-x: auto;
 }
 
+.financial-docs-resume-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .financial-docs-resume-table {
-  min-width: max-content;
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
 }
 
 .financial-docs-resume-table th,
@@ -5044,10 +5052,18 @@ button[id^="close-settings"] {
   vertical-align: middle;
 }
 
+.financial-docs-resume-table th:first-child,
+.financial-docs-resume-table td:first-child {
+  text-align: left;
+  white-space: nowrap;
+  min-width: 7.5rem;
+}
+
 .financial-docs-resume-table th:not(:first-child),
 .financial-docs-resume-table td:not(:first-child) {
   text-align: right;
   white-space: nowrap;
+  min-width: 6.5rem;
 }
 
 .financial-docs-table {
