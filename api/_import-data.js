@@ -53,14 +53,20 @@ function safeImportDataSettings(settings = DEFAULT_IMPORT_DATA_SETTINGS) {
   return sanitizeImportDataSettings(settings);
 }
 
+function compactImportNumericText(value) {
+  return cleanText(value)
+    .replace(/[\s\u00a0\u1680\u180e\u2000-\u200d\u2028\u2029\u202f\u205f\u2060\u3000\ufeff]+/g, "")
+    .replace(/[€$£]/g, "");
+}
+
 function normalizeImportMoney(value) {
-  const raw = cleanText(value).replace(/\s+/g, "").replace(/[€$£]/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const raw = compactImportNumericText(value).replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
   const numeric = normalizeNumeric(raw);
   return numeric === null || numeric === undefined || Number.isNaN(numeric) ? null : Number(Number(numeric).toFixed(2));
 }
 
 function normalizeImportDecimal(value) {
-  const raw = cleanText(value).replace(/\s+/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const raw = compactImportNumericText(value).replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
   const numeric = normalizeNumeric(raw);
   return numeric === null || numeric === undefined || Number.isNaN(numeric) ? null : Number(numeric);
 }

@@ -19136,8 +19136,14 @@ function importDataValidationMessage(type, row) {
   return importDataAccountsValidationMessage(row);
 }
 
+function compactImportDataNumericText(value) {
+  return clean(value)
+    .replace(/[\s\u00a0\u1680\u180e\u2000-\u200d\u2028\u2029\u202f\u205f\u2060\u3000\ufeff]+/g, "")
+    .replace(/[€$£]/g, "");
+}
+
 function normalizeImportDataMoneyClient(value) {
-  const raw = clean(value).replace(/\s+/g, "").replace(/[€$£]/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const raw = compactImportDataNumericText(value).replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
   const num = Number(raw);
   return Number.isFinite(num) ? Number(num.toFixed(2)) : "";
 }
