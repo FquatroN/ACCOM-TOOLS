@@ -4964,7 +4964,7 @@ button[id^="close-settings"] {
 }
 
 .guests-bi-filters {
-  grid-template-columns: 140px 110px;
+  grid-template-columns: 140px 110px 110px;
 }
 
 .guests-bi-table th,
@@ -4975,6 +4975,14 @@ button[id^="close-settings"] {
 .guests-bi-table th:first-child,
 .guests-bi-table td:first-child {
   text-align: left;
+}
+
+.guests-bi-tmt-bookings-card {
+  margin-top: 1rem;
+}
+
+.guests-bi-tmt-bookings-table {
+  min-width: 420px;
 }
 
 .guests-bi-nationalities-table {

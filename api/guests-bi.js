@@ -68,6 +68,18 @@ function defaultPreviousMonthKey() {
   return `${previousYear}-${String(previousMonth).padStart(2, "0")}`;
 }
 
+function defaultCurrentMonthValue() {
+  return String(new Date().getUTCMonth() + 1).padStart(2, "0");
+}
+
+function parseMonthValue(value) {
+  const raw = clean(value).padStart(2, "0");
+  if (!/^\d{2}$/.test(raw)) return defaultCurrentMonthValue();
+  const month = Number.parseInt(raw, 10);
+  if (!Number.isFinite(month) || month < 1 || month > 12) return defaultCurrentMonthValue();
+  return String(month).padStart(2, "0");
+}
+
 function monthStartUtc(yearMonth) {
   const parsed = parseYearMonthValue(yearMonth);
   if (!parsed) return null;
@@ -161,6 +173,61 @@ async function getCachedGuestsBiSourceRows(selectedHa = "") {
     rows,
   });
   return rows;
+}
+
+function nextMonthStartDate(yearMonth) {
+  const next = nextMonthKey(yearMonth);
+  return next ? `${next}-01` : "";
+}
+
+async function fetchFdmBookingsTmtRows(yearMonth, selectedHa = "") {
+  const rows = [];
+  const pageSize = 1000;
+  let offset = 0;
+  const startDate = `${yearMonth}-01`;
+  const endDate = nextMonthStartDate(yearMonth);
+  if (!parseYearMonthValue(yearMonth) || !endDate) return rows;
+  while (true) {
+    const query = [
+      "import_fdm_bookings?select=channel,nights,guests,room_type,check_in_date",
+      `check_in_date=gte.${encodeURIComponent(startDate)}`,
+      `check_in_date=lt.${encodeURIComponent(endDate)}`,
+      "order=channel.asc",
+      `limit=${pageSize}`,
+      `offset=${offset}`,
+    ].join("&");
+    const batch = await restQuery(query, { method: "GET" });
+    const list = Array.isArray(batch) ? batch : [];
+    rows.push(...list);
+    if (list.length < pageSize) break;
+    offset += pageSize;
+  }
+  return selectedHa
+    ? rows.filter((row) => {
+      const rowHa = clean(row?.room_type).toLowerCase().includes("cruz") ? "A" : "H";
+      return rowHa === selectedHa;
+    })
+    : rows;
+}
+
+async function buildFdmBookingsTmt(yearMonth, selectedHa = "") {
+  const rows = await fetchFdmBookingsTmtRows(yearMonth, selectedHa);
+  const byChannel = new Map();
+  rows.forEach((row) => {
+    const channel = clean(row?.channel) || "Unknown";
+    const nights = Number(row?.nights || 0);
+    const guests = Number(row?.guests || 0);
+    const totalNights = Math.max(nights, 0) * Math.max(guests, 0);
+    byChannel.set(channel, Number(byChannel.get(channel) || 0) + totalNights);
+  });
+  const mappedRows = [...byChannel.entries()]
+    .map(([channel, totalNights]) => ({ channel, totalNights }))
+    .sort((a, b) => Number(b.totalNights || 0) - Number(a.totalNights || 0) || a.channel.localeCompare(b.channel));
+  return {
+    yearMonth,
+    rows: mappedRows,
+    totalNights: mappedRows.reduce((sum, row) => sum + Number(row.totalNights || 0), 0),
+  };
 }
 
 function buildGuestsBiPivotRowsFromSource(sourceRows) {
@@ -404,6 +471,8 @@ module.exports = async function handler(req, res) {
     const requestedYear = parseYearValue(req.query?.year);
     const requestedMonthFilterYear = parseYearValue(req.query?.month_year);
     const selectedYear = requestedYear || new Date().getUTCFullYear();
+    const selectedMonth = parseMonthValue(req.query?.month);
+    const selectedTmtYearMonth = `${selectedYear}-${selectedMonth}`;
     const selectedYearMonth = parseYearMonthValue(req.query?.year_month) || defaultPreviousMonthKey();
     let pivotPayload = { years: [], rows: [] };
     try {
@@ -438,6 +507,12 @@ module.exports = async function handler(req, res) {
       selectedYear,
       requestedMonthFilterYear ? String(requestedMonthFilterYear) : ""
     );
+    let bookingsTmtPayload;
+    try {
+      bookingsTmtPayload = await buildFdmBookingsTmt(selectedTmtYearMonth, selectedHa);
+    } catch {
+      bookingsTmtPayload = { yearMonth: selectedTmtYearMonth, rows: [], totalNights: 0 };
+    }
     let inePayload;
     try {
       const ineRows = await restQuery("rpc/guests_bi_ine", {
@@ -481,6 +556,7 @@ module.exports = async function handler(req, res) {
         pivotYears: pivotPayload.years,
         pivotRows: pivotPayload.rows,
       },
+      bookingsTmt: bookingsTmtPayload,
       ine: inePayload,
       ha: selectedHa,
     });

@@ -3756,6 +3756,10 @@
                 <select id="guests-bi-tmt-filter-year"></select>
               </label>
               <label>
+                Month
+                <select id="guests-bi-tmt-filter-month"></select>
+              </label>
+              <label>
                 HA
                 <select id="guests-bi-tmt-filter-ha">
                   <option value="">All</option>
@@ -3778,6 +3782,26 @@
                 <tfoot id="guests-bi-totals"></tfoot>
               </table>
             </div>
+            <section class="guests-bi-tmt-bookings-card">
+              <div class="bar services-subbar">
+                <h3>FDM Bookings by Channel</h3>
+                <div class="actions">
+                  <p id="guests-bi-tmt-bookings-count">0 channels</p>
+                </div>
+              </div>
+              <div class="table-wrap compact-table-wrap">
+                <table class="compact-table guests-bi-table guests-bi-tmt-bookings-table">
+                  <thead>
+                    <tr>
+                      <th>Channel</th>
+                      <th>Total Nights</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guests-bi-tmt-bookings-rows"></tbody>
+                  <tfoot id="guests-bi-tmt-bookings-totals"></tfoot>
+                </table>
+              </div>
+            </section>
             <p id="guests-bi-status" class="auth-status"></p>
           </section>
 
