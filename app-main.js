@@ -19123,8 +19123,8 @@ function importDataCgdExtratoOrdemValidationMessage(row) {
   if (!clean(row.dataRaw)) return "Data is required.";
   if (!clean(row.dataValorRaw)) return "Data Valor is required.";
   if (!clean(row.descritivo)) return "Descritivo is required.";
-  if (!Number.isFinite(Number(row.montante))) return "Montante is required.";
-  if (!Number.isFinite(Number(row.saldo))) return "Saldo is required.";
+  if (!clean(row.montante) || !Number.isFinite(Number(row.montante))) return "Montante is required.";
+  if (!clean(row.saldo) || !Number.isFinite(Number(row.saldo))) return "Saldo is required.";
   return "Ready";
 }
 
@@ -19142,8 +19142,25 @@ function compactImportDataNumericText(value) {
     .replace(/[€$£]/g, "");
 }
 
+function normalizeImportDataNumericText(value) {
+  const raw = compactImportDataNumericText(value).replace(/[^0-9,.\-+]/g, "");
+  if (!raw) return "";
+  const lastComma = raw.lastIndexOf(",");
+  const lastDot = raw.lastIndexOf(".");
+  const decimalIndex = Math.max(lastComma, lastDot);
+  if (decimalIndex < 0) return raw.replace(/[,.]/g, "");
+  const decimalSeparator = raw[decimalIndex];
+  const decimalPart = raw.slice(decimalIndex + 1);
+  const integerPart = raw.slice(0, decimalIndex).replace(/[,.]/g, "");
+  if (decimalPart.length === 3 && !raw.slice(decimalIndex + 1).includes(decimalSeparator) && !/[,.]/.test(raw.slice(decimalIndex + 1))) {
+    const singleSeparator = (lastComma >= 0 ? 1 : 0) + (lastDot >= 0 ? 1 : 0) === 1;
+    if (singleSeparator) return raw.replace(/[,.]/g, "");
+  }
+  return `${integerPart}.${decimalPart}`;
+}
+
 function normalizeImportDataMoneyClient(value) {
-  const raw = compactImportDataNumericText(value).replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const raw = normalizeImportDataNumericText(value);
   const num = Number(raw);
   return Number.isFinite(num) ? Number(num.toFixed(2)) : "";
 }

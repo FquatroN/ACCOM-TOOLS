@@ -59,14 +59,31 @@ function compactImportNumericText(value) {
     .replace(/[€$£]/g, "");
 }
 
+function normalizeImportNumericText(value) {
+  const raw = compactImportNumericText(value).replace(/[^0-9,.\-+]/g, "");
+  if (!raw) return "";
+  const lastComma = raw.lastIndexOf(",");
+  const lastDot = raw.lastIndexOf(".");
+  const decimalIndex = Math.max(lastComma, lastDot);
+  if (decimalIndex < 0) return raw.replace(/[,.]/g, "");
+  const decimalSeparator = raw[decimalIndex];
+  const decimalPart = raw.slice(decimalIndex + 1);
+  const integerPart = raw.slice(0, decimalIndex).replace(/[,.]/g, "");
+  if (decimalPart.length === 3 && !raw.slice(decimalIndex + 1).includes(decimalSeparator) && !/[,.]/.test(raw.slice(decimalIndex + 1))) {
+    const singleSeparator = (lastComma >= 0 ? 1 : 0) + (lastDot >= 0 ? 1 : 0) === 1;
+    if (singleSeparator) return raw.replace(/[,.]/g, "");
+  }
+  return `${integerPart}.${decimalPart}`;
+}
+
 function normalizeImportMoney(value) {
-  const raw = compactImportNumericText(value).replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const raw = normalizeImportNumericText(value);
   const numeric = normalizeNumeric(raw);
   return numeric === null || numeric === undefined || Number.isNaN(numeric) ? null : Number(Number(numeric).toFixed(2));
 }
 
 function normalizeImportDecimal(value) {
-  const raw = compactImportNumericText(value).replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const raw = normalizeImportNumericText(value);
   const numeric = normalizeNumeric(raw);
   return numeric === null || numeric === undefined || Number.isNaN(numeric) ? null : Number(numeric);
 }
