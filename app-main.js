@@ -18881,6 +18881,12 @@ function importDataTypeDef(type) {
   return IMPORT_DATA_TYPE_DEFS[normalizeImportDataTypeClient(type)] || IMPORT_DATA_TYPE_DEFS["fdm-accounts"];
 }
 
+function importDataConfirmBatchSize(type) {
+  const normalizedType = normalizeImportDataTypeClient(type);
+  if (normalizedType === "cgd-extrato-ordem") return 500;
+  return 1000;
+}
+
 function normalizeImportDataSettingsClient(source = {}) {
   const defaults = clone(DEFAULT_IMPORT_DATA_SETTINGS);
   const rows = Array.isArray(source?.types) ? source.types : defaults.types;
@@ -19576,15 +19582,26 @@ async function confirmImportData() {
     setImportDataStatus("No valid rows ready to import.", "error");
     return;
   }
+  const type = state.importDataType;
+  const sourceName = (state.importDataFiles || []).map((file) => clean(file?.name)).filter(Boolean).join(", ");
+  const batchSize = importDataConfirmBatchSize(type);
+  let inserted = 0;
   try {
-    const result = await api("/api/import-data", {
-      method: "POST",
-      body: {
-        type: state.importDataType,
-        sourceName: (state.importDataFiles || []).map((file) => clean(file?.name)).filter(Boolean).join(", "),
-        rows: readyRows,
-      },
-    });
+    if (els.importDataConfirm) els.importDataConfirm.disabled = true;
+    for (let start = 0; start < readyRows.length; start += batchSize) {
+      const rows = readyRows.slice(start, start + batchSize);
+      const importedSoFar = Math.min(start + rows.length, readyRows.length);
+      setImportDataStatus(`Importing ${importedSoFar} of ${readyRows.length} row(s)...`);
+      const result = await api("/api/import-data", {
+        method: "POST",
+        body: {
+          type,
+          sourceName,
+          rows,
+        },
+      });
+      inserted += Number(result?.insertedCount || rows.length);
+    }
     state.importDataPreviewRows = [];
     state.importDataFiles = [];
     state.importDataRawText = "";
@@ -19595,12 +19612,13 @@ async function confirmImportData() {
     await loadImportDataRows({ silent: true });
     await loadImportDataMeta({ type: state.importDataType, silent: true });
     renderImportData();
-    const inserted = Number(result?.insertedCount || readyRows.length);
     setImportDataStatus(`${inserted} row(s) imported successfully.`);
     showToast(`${inserted} Import Data row(s) imported.`, "success");
   } catch (error) {
     setImportDataStatus(`Import failed: ${error.message}`, "error");
     showToast(`Import Data failed: ${error.message}`, "error");
+  } finally {
+    if (els.importDataConfirm) els.importDataConfirm.disabled = false;
   }
 }
 
