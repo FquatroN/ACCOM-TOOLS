@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const { cleanText, parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
 const {
   normalizeImportDataType,
+  sanitizeCgdExtratoOrdemImportRow,
   sanitizeFdmAccountsImportRow,
   sanitizeFdmBookingsImportRow,
   sanitizeFdmSalesImportRow,
@@ -41,6 +42,18 @@ const IMPORT_DATA_CONFIG = {
       importDate: "select=created_at&order=created_at.desc&limit=1",
       specificMax: "select=sale_date&order=sale_date.desc.nullslast,created_at.desc&limit=1",
       specificMin: "select=sale_date&order=sale_date.asc.nullslast,created_at.asc&limit=1",
+    },
+  },
+  "cgd-extrato-ordem": {
+    table: "import_cgd_extrato_ordem",
+    sanitize: sanitizeCgdExtratoOrdemImportRow,
+    listQuery: "select=*&order=created_at.desc&limit=120",
+    insertSelect: "select=id,row_key",
+    onConflictColumns: ["row_key"],
+    summaryQueries: {
+      importDate: "select=created_at&order=created_at.desc&limit=1",
+      specificMax: "select=data&order=data.desc.nullslast,created_at.desc&limit=1",
+      specificMin: "select=data&order=data.asc.nullslast,created_at.asc&limit=1",
     },
   },
 };
@@ -95,6 +108,13 @@ async function fetchImportDataMeta(type) {
       maxImportDate: cleanText(importRow?.created_at),
       maxDate: cleanText(specificMaxRow?.sale_date),
       minDate: cleanText(specificMinRow?.sale_date),
+    };
+  }
+  if (normalizedType === "cgd-extrato-ordem") {
+    return {
+      maxImportDate: cleanText(importRow?.created_at),
+      maxDate: cleanText(specificMaxRow?.data),
+      minDate: cleanText(specificMinRow?.data),
     };
   }
   return {

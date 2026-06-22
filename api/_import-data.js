@@ -1,3 +1,5 @@
+const crypto = require("crypto");
+
 const { cleanText, normalizeDate, normalizeNumeric } = require("./_supabase");
 
 const IMPORT_DATA_SETTINGS_KEY = "import_data";
@@ -5,6 +7,7 @@ const IMPORT_DATA_TYPES = [
   { key: "fdm-accounts", label: "FDM Accounts" },
   { key: "fdm-bookings", label: "FDM Bookings" },
   { key: "fdm-sales", label: "FDM Sales" },
+  { key: "cgd-extrato-ordem", label: "CGD Extrato Ordem" },
 ];
 
 const DEFAULT_IMPORT_DATA_SETTINGS = {
@@ -12,6 +15,7 @@ const DEFAULT_IMPORT_DATA_SETTINGS = {
     { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
     { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
     { type: "fdm-sales", description: "Import FDM sales lines from uploaded or pasted sales report exports." },
+    { type: "cgd-extrato-ordem", description: "Import CGD Conta Ordem bank statement movements from uploaded or pasted extracts." },
   ],
 };
 
@@ -105,6 +109,19 @@ function normalizeImportLooseDate(value) {
   return `${year}-${String(month).padStart(2, "0")}-${String(Number.parseInt(match[1], 10)).padStart(2, "0")}`;
 }
 
+function normalizeImportCgdDate(value) {
+  const raw = cleanText(value);
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const serial = Number(raw);
+    if (Number.isFinite(serial) && serial > 20000 && serial < 80000) {
+      const excelEpoch = Date.UTC(1899, 11, 30);
+      const date = new Date(excelEpoch + Math.round(serial) * 86400000);
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+    }
+  }
+  return normalizeImportLooseDate(value);
+}
+
 function normalizeImportDateTime(value) {
   const raw = cleanText(value);
   if (!raw) return { raw: "", eventDate: "", eventTime: "" };
@@ -136,6 +153,12 @@ function normalizeImportDateTime(value) {
     eventDate: normalizeImportLooseDate(raw),
     eventTime: "",
   };
+}
+
+function importDataRowKey(parts) {
+  return crypto.createHash("sha256")
+    .update((Array.isArray(parts) ? parts : []).map((part) => cleanText(part)).join("\u001F"))
+    .digest("hex");
 }
 
 function normalizeInvoiceFlag(value) {
@@ -269,12 +292,49 @@ function sanitizeFdmSalesImportRow(input = {}, meta = {}) {
   };
 }
 
+function sanitizeCgdExtratoOrdemImportRow(input = {}, meta = {}) {
+  const dataRaw = cleanText(input.dataRaw || input.data_raw || input.data || input.DATA);
+  const dataValorRaw = cleanText(input.dataValorRaw || input.data_valor_raw || input.dataValor || input.datavalor || input.DATAVALOR);
+  const descritivo = cleanText(input.descritivo || input.DESCRITIVO);
+  const montanteInput = input.montante ?? input.MONTANTE;
+  const saldoInput = input.saldo ?? input.SALDO;
+  const montante = cleanText(montanteInput) === "" ? null : normalizeImportMoney(montanteInput);
+  const saldo = cleanText(saldoInput) === "" ? null : normalizeImportMoney(saldoInput);
+  if (!dataRaw) throw badRequest("Data is required.");
+  if (!dataValorRaw) throw badRequest("Data Valor is required.");
+  if (!descritivo) throw badRequest("Descritivo is required.");
+  if (!Number.isFinite(montante)) throw badRequest("Montante is required.");
+  if (!Number.isFinite(saldo)) throw badRequest("Saldo is required.");
+  const data = normalizeImportCgdDate(dataRaw);
+  const dataValor = normalizeImportCgdDate(dataValorRaw);
+  if (!data) throw badRequest("Data is invalid.");
+  if (!dataValor) throw badRequest("Data Valor is invalid.");
+  const normalizedMontante = Number(Number(montante).toFixed(2));
+  const normalizedSaldo = Number(Number(saldo).toFixed(2));
+  return {
+    import_batch: cleanText(meta.importBatch),
+    source_type: "cgd-extrato-ordem",
+    source_name: cleanText(meta.sourceName),
+    source_row_number: Number(meta.sourceRowNumber) || 0,
+    row_key: importDataRowKey([data, dataValor, descritivo, normalizedMontante, normalizedSaldo]),
+    data_raw: dataRaw,
+    data,
+    data_valor_raw: dataValorRaw,
+    data_valor: dataValor,
+    descritivo,
+    montante: normalizedMontante,
+    saldo: normalizedSaldo,
+    raw_payload: input && typeof input === "object" ? input : {},
+  };
+}
+
 module.exports = {
   DEFAULT_IMPORT_DATA_SETTINGS,
   IMPORT_DATA_SETTINGS_KEY,
   IMPORT_DATA_TYPES,
   normalizeImportDataType,
   safeImportDataSettings,
+  sanitizeCgdExtratoOrdemImportRow,
   sanitizeFdmAccountsImportRow,
   sanitizeFdmBookingsImportRow,
   sanitizeFdmSalesImportRow,

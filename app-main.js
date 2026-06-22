@@ -516,6 +516,7 @@ const DEFAULT_IMPORT_DATA_SETTINGS = {
     { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
     { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
     { type: "fdm-sales", description: "Import FDM sales lines from uploaded or pasted sales report exports." },
+    { type: "cgd-extrato-ordem", description: "Import CGD Conta Ordem bank statement movements from uploaded or pasted extracts." },
   ],
 };
 
@@ -523,6 +524,7 @@ const IMPORT_DATA_TYPE_LABELS = {
   "fdm-accounts": "FDM Accounts",
   "fdm-bookings": "FDM Bookings",
   "fdm-sales": "FDM Sales",
+  "cgd-extrato-ordem": "CGD Extrato Ordem",
 };
 
 const IMPORT_DATA_TYPE_DEFS = {
@@ -653,12 +655,32 @@ const IMPORT_DATA_TYPE_DEFS = {
       { label: "Note", key: "note", format: "plain", editable: true, inputType: "text" },
     ],
   },
+  "cgd-extrato-ordem": {
+    previewColumns: [
+      { label: "Row", key: "sourceRowNumber", format: "plain" },
+      { label: "Data", key: "dataRaw", format: "plain" },
+      { label: "Data Valor", key: "dataValorRaw", format: "plain" },
+      { label: "Descritivo", key: "descritivo", format: "plain" },
+      { label: "Montante", key: "montante", format: "money" },
+      { label: "Saldo", key: "saldo", format: "money" },
+      { label: "Validation", key: "validation", format: "validation" },
+    ],
+    viewColumns: [
+      { label: "Imported", key: "created_at", format: "datetime", editable: false },
+      { label: "Data", key: "data_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Data Valor", key: "data_valor_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Descritivo", key: "descritivo", format: "plain", editable: true, inputType: "text" },
+      { label: "Montante", key: "montante", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Saldo", key: "saldo", format: "money", editable: true, inputType: "number", step: "0.01" },
+    ],
+  },
 };
 
 const IMPORT_DATA_META_LABELS = {
   "fdm-accounts": "Max Date Time",
   "fdm-bookings": "Max Check-in Date",
   "fdm-sales": "Max Date",
+  "cgd-extrato-ordem": "Max Data",
 };
 
 const FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT = "Possible duplicate found. Do you still want to save this document?";
@@ -18903,7 +18925,7 @@ function formatImportDataMetaValue(type, meta = {}) {
       `${importDataMinMetaLabel(normalizedType)}: ${clean(meta.minCheckInDate) ? formatDateOnly(meta.minCheckInDate) : "-"}`,
     ].join("\n");
   }
-  if (normalizedType === "fdm-sales") {
+  if (normalizedType === "fdm-sales" || normalizedType === "cgd-extrato-ordem") {
     return [
       importPart,
       `${importDataMetaLabel(normalizedType)}: ${clean(meta.maxDate) ? formatDateOnly(meta.maxDate) : "-"}`,
@@ -19091,10 +19113,20 @@ function importDataSalesValidationMessage(row) {
   return "Ready";
 }
 
+function importDataCgdExtratoOrdemValidationMessage(row) {
+  if (!clean(row.dataRaw)) return "Data is required.";
+  if (!clean(row.dataValorRaw)) return "Data Valor is required.";
+  if (!clean(row.descritivo)) return "Descritivo is required.";
+  if (!Number.isFinite(Number(row.montante))) return "Montante is required.";
+  if (!Number.isFinite(Number(row.saldo))) return "Saldo is required.";
+  return "Ready";
+}
+
 function importDataValidationMessage(type, row) {
   const normalizedType = normalizeImportDataTypeClient(type);
   if (normalizedType === "fdm-bookings") return importDataBookingsValidationMessage(row);
   if (normalizedType === "fdm-sales") return importDataSalesValidationMessage(row);
+  if (normalizedType === "cgd-extrato-ordem") return importDataCgdExtratoOrdemValidationMessage(row);
   return importDataAccountsValidationMessage(row);
 }
 
@@ -19268,6 +19300,20 @@ function parseImportDataFdmSalesFieldMap(headerRow) {
   };
 }
 
+function parseImportDataCgdExtratoOrdemFieldMap(headerRow) {
+  const map = new Map();
+  headerRow.forEach((cell, index) => {
+    map.set(clean(cell).toLowerCase(), index);
+  });
+  return {
+    data: map.get("data"),
+    dataValor: map.get("datavalor") ?? map.get("data valor"),
+    descritivo: map.get("descritivo"),
+    montante: map.get("montante"),
+    saldo: map.get("saldo"),
+  };
+}
+
 function buildImportDataPreviewRowFdm(cells, fieldMap, sourceRowNumber) {
   const pick = (key) => {
     const index = fieldMap[key];
@@ -19354,10 +19400,44 @@ function buildImportDataPreviewRowSales(cells, fieldMap, sourceRowNumber) {
   return row;
 }
 
+function buildImportDataPreviewRowCgdExtratoOrdem(cells, fieldMap, sourceRowNumber) {
+  const pick = (key) => {
+    const index = fieldMap[key];
+    return index === undefined || index === null || index < 0 ? "" : String(cells[index] ?? "").trim();
+  };
+  const row = {
+    sourceRowNumber,
+    dataRaw: pick("data"),
+    dataValorRaw: pick("dataValor"),
+    descritivo: pick("descritivo"),
+    montante: pick("montante") === "" ? "" : normalizeImportDataMoneyClient(pick("montante")),
+    saldo: pick("saldo") === "" ? "" : normalizeImportDataMoneyClient(pick("saldo")),
+  };
+  row.validation = importDataValidationMessage("cgd-extrato-ordem", row);
+  return row;
+}
+
+function findImportDataCgdHeaderIndex(rows) {
+  return rows.findIndex((row) => {
+    const labels = (Array.isArray(row) ? row : []).map((cell) => clean(cell).toLowerCase());
+    return labels.includes("data")
+      && (labels.includes("datavalor") || labels.includes("data valor"))
+      && labels.includes("descritivo")
+      && labels.includes("montante")
+      && labels.includes("saldo");
+  });
+}
+
 function parseImportDataRowsFromTable(tableRows, type = state.importDataType) {
   const rows = Array.isArray(tableRows) ? tableRows.filter((row) => Array.isArray(row) && row.some((cell) => clean(cell))) : [];
   if (rows.length < 2) return [];
   const normalizedType = normalizeImportDataTypeClient(type);
+  if (normalizedType === "cgd-extrato-ordem") {
+    const headerIndex = findImportDataCgdHeaderIndex(rows);
+    if (headerIndex < 0 || !rows[headerIndex + 1]) return [];
+    const fieldMap = parseImportDataCgdExtratoOrdemFieldMap(rows[headerIndex]);
+    return rows.slice(headerIndex + 1).map((cells, index) => buildImportDataPreviewRowCgdExtratoOrdem(cells, fieldMap, headerIndex + index + 2));
+  }
   if (normalizedType === "fdm-bookings") {
     const fieldMap = parseImportDataFdmBookingsFieldMap(rows[0]);
     return rows.slice(1).map((cells, index) => buildImportDataPreviewRowBookings(cells, fieldMap, index + 2));
