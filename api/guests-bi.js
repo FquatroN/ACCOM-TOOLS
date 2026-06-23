@@ -26,6 +26,16 @@ function parseHaValue(value) {
   return raw === "H" || raw === "A" ? raw : "";
 }
 
+function defaultBookingStatuses() {
+  return ["Checked Out", "Checked In", "Confirmed"];
+}
+
+function parseBookingStatuses(value) {
+  const source = Array.isArray(value) ? value : clean(value).split(",");
+  const statuses = source.map((item) => clean(item)).filter(Boolean);
+  return statuses.length ? [...new Set(statuses)] : defaultBookingStatuses();
+}
+
 function parseDateOnly(value) {
   const raw = clean(value);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
@@ -68,15 +78,15 @@ function defaultPreviousMonthKey() {
   return `${previousYear}-${String(previousMonth).padStart(2, "0")}`;
 }
 
-function defaultCurrentMonthValue() {
-  return String(new Date().getUTCMonth() + 1).padStart(2, "0");
+function defaultPreviousMonthValue() {
+  return defaultPreviousMonthKey().slice(5, 7);
 }
 
 function parseMonthValue(value) {
   const raw = clean(value).padStart(2, "0");
-  if (!/^\d{2}$/.test(raw)) return defaultCurrentMonthValue();
+  if (!/^\d{2}$/.test(raw)) return defaultPreviousMonthValue();
   const month = Number.parseInt(raw, 10);
-  if (!Number.isFinite(month) || month < 1 || month > 12) return defaultCurrentMonthValue();
+  if (!Number.isFinite(month) || month < 1 || month > 12) return defaultPreviousMonthValue();
   return String(month).padStart(2, "0");
 }
 
@@ -180,22 +190,24 @@ function nextMonthStartDate(yearMonth) {
   return next ? `${next}-01` : "";
 }
 
-async function fetchFdmBookingsTmtRows(yearMonth, selectedHa = "") {
+async function fetchFdmBookingsTmtRows(yearMonth, selectedHa = "", bookingStatuses = defaultBookingStatuses()) {
   const rows = [];
   const pageSize = 1000;
   let offset = 0;
   const startDate = `${yearMonth}-01`;
   const endDate = nextMonthStartDate(yearMonth);
+  const statuses = parseBookingStatuses(bookingStatuses);
   if (!parseYearMonthValue(yearMonth) || !endDate) return rows;
   while (true) {
     const query = [
       "import_fdm_bookings?select=channel,nights,guests,room_type,check_in_date",
       `check_in_date=gte.${encodeURIComponent(startDate)}`,
       `check_in_date=lt.${encodeURIComponent(endDate)}`,
+      statuses.length ? `status=in.(${statuses.map((status) => encodeURIComponent(status)).join(",")})` : "",
       "order=channel.asc",
       `limit=${pageSize}`,
       `offset=${offset}`,
-    ].join("&");
+    ].filter(Boolean).join("&");
     const batch = await restQuery(query, { method: "GET" });
     const list = Array.isArray(batch) ? batch : [];
     rows.push(...list);
@@ -210,8 +222,9 @@ async function fetchFdmBookingsTmtRows(yearMonth, selectedHa = "") {
     : rows;
 }
 
-async function buildFdmBookingsTmt(yearMonth, selectedHa = "") {
-  const rows = await fetchFdmBookingsTmtRows(yearMonth, selectedHa);
+async function buildFdmBookingsTmt(yearMonth, selectedHa = "", bookingStatuses = defaultBookingStatuses()) {
+  const statuses = parseBookingStatuses(bookingStatuses);
+  const rows = await fetchFdmBookingsTmtRows(yearMonth, selectedHa, statuses);
   const byChannel = new Map();
   rows.forEach((row) => {
     const channel = clean(row?.channel) || "Unknown";
@@ -225,6 +238,7 @@ async function buildFdmBookingsTmt(yearMonth, selectedHa = "") {
     .sort((a, b) => Number(b.totalNights || 0) - Number(a.totalNights || 0) || a.channel.localeCompare(b.channel));
   return {
     yearMonth,
+    bookingStatuses: statuses,
     rows: mappedRows,
     totalNights: mappedRows.reduce((sum, row) => sum + Number(row.totalNights || 0), 0),
   };
@@ -472,6 +486,7 @@ module.exports = async function handler(req, res) {
     const requestedMonthFilterYear = parseYearValue(req.query?.month_year);
     const selectedYear = requestedYear || new Date().getUTCFullYear();
     const selectedMonth = parseMonthValue(req.query?.month);
+    const selectedBookingStatuses = parseBookingStatuses(req.query?.booking_statuses);
     const selectedTmtYearMonth = `${selectedYear}-${selectedMonth}`;
     const selectedYearMonth = parseYearMonthValue(req.query?.year_month) || defaultPreviousMonthKey();
     let pivotPayload = { years: [], rows: [] };
@@ -509,9 +524,9 @@ module.exports = async function handler(req, res) {
     );
     let bookingsTmtPayload;
     try {
-      bookingsTmtPayload = await buildFdmBookingsTmt(selectedTmtYearMonth, selectedHa);
+      bookingsTmtPayload = await buildFdmBookingsTmt(selectedTmtYearMonth, selectedHa, selectedBookingStatuses);
     } catch {
-      bookingsTmtPayload = { yearMonth: selectedTmtYearMonth, rows: [], totalNights: 0 };
+      bookingsTmtPayload = { yearMonth: selectedTmtYearMonth, bookingStatuses: selectedBookingStatuses, rows: [], totalNights: 0 };
     }
     let inePayload;
     try {

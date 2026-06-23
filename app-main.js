@@ -1134,6 +1134,7 @@ const state = {
   guestsBiTmtBookingsRows: [],
   guestsBiTmtBookingsTotalNights: 0,
   guestsBiTmtMonth: "",
+  guestsBiTmtBookingStatuses: ["Checked Out", "Checked In", "Confirmed"],
   guestsBiTab: "tmt",
   guestsBiNationalityPieYears: [],
   guestsBiNationalityPieCharts: [],
@@ -1156,11 +1157,11 @@ const state = {
   guestsBiYear: "",
   guestsBiHa: "",
   guestsBiTabFilters: {
-    tmt: { year: "", month: "", ha: "" },
+    tmt: { year: "", month: "", ha: "", bookingStatuses: ["Checked Out", "Checked In", "Confirmed"] },
     nationalities: { year: "", ha: "", monthYear: "" },
     ine: { yearMonth: "", ha: "" },
   },
-  guestsBiLastLoaded: { tab: "", year: "", yearMonth: "", monthYear: "", tmtMonth: "", ha: "" },
+  guestsBiLastLoaded: { tab: "", year: "", yearMonth: "", monthYear: "", tmtMonth: "", tmtBookingStatuses: "", ha: "" },
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -1422,6 +1423,7 @@ const els = {
   guestsBiTmtFilterYear: document.getElementById("guests-bi-tmt-filter-year"),
   guestsBiTmtFilterMonth: document.getElementById("guests-bi-tmt-filter-month"),
   guestsBiTmtFilterHa: document.getElementById("guests-bi-tmt-filter-ha"),
+  guestsBiTmtFilterStatus: document.getElementById("guests-bi-tmt-filter-status"),
   guestsBiNationalitiesFilters: document.getElementById("guests-bi-nationalities-filters"),
   guestsBiNationalitiesFilterYear: document.getElementById("guests-bi-nationalities-filter-year"),
   guestsBiNationalitiesFilterHa: document.getElementById("guests-bi-nationalities-filter-ha"),
@@ -2181,6 +2183,7 @@ function bindEvents() {
   els.guestsBiTmtFilterYear?.addEventListener("change", () => onGuestsBiYearChange("tmt"));
   els.guestsBiTmtFilterMonth?.addEventListener("change", onGuestsBiTmtMonthChange);
   els.guestsBiTmtFilterHa?.addEventListener("change", () => onGuestsBiHaChange("tmt"));
+  els.guestsBiTmtFilterStatus?.addEventListener("change", onGuestsBiTmtBookingStatusChange);
   els.guestsBiNationalitiesFilterYear?.addEventListener("change", () => onGuestsBiYearChange("nationalities"));
   els.guestsBiNationalitiesFilterHa?.addEventListener("change", () => onGuestsBiHaChange("nationalities"));
   els.guestsBiMonthFilterYear?.addEventListener("change", onGuestsBiMonthFilterYearChange);
@@ -19886,8 +19889,12 @@ function defaultGuestsBiPreviousMonth() {
   return `${previousYear}-${String(previousMonth).padStart(2, "0")}`;
 }
 
-function defaultGuestsBiCurrentMonth() {
-  return String(new Date().getUTCMonth() + 1).padStart(2, "0");
+function defaultGuestsBiPreviousYear() {
+  return defaultGuestsBiPreviousMonth().slice(0, 4);
+}
+
+function defaultGuestsBiPreviousMonthNumber() {
+  return defaultGuestsBiPreviousMonth().slice(5, 7);
 }
 
 function monthLabelShort(monthValue) {
@@ -19904,11 +19911,13 @@ function guestsBiFilterState(tab = state.guestsBiTab) {
       ? { year: "", ha: "", monthYear: "" }
       : normalizedTab === "ine"
         ? { yearMonth: "", ha: "" }
-        : { year: "", month: "", ha: "" };
+        : { year: "", month: "", ha: "", bookingStatuses: ["Checked Out", "Checked In", "Confirmed"] };
   } else if (normalizedTab === "nationalities" && !Object.prototype.hasOwnProperty.call(state.guestsBiTabFilters[normalizedTab], "monthYear")) {
     state.guestsBiTabFilters[normalizedTab].monthYear = "";
   } else if (normalizedTab === "tmt" && !Object.prototype.hasOwnProperty.call(state.guestsBiTabFilters[normalizedTab], "month")) {
     state.guestsBiTabFilters[normalizedTab].month = "";
+  } else if (normalizedTab === "tmt" && !Object.prototype.hasOwnProperty.call(state.guestsBiTabFilters[normalizedTab], "bookingStatuses")) {
+    state.guestsBiTabFilters[normalizedTab].bookingStatuses = ["Checked Out", "Checked In", "Confirmed"];
   }
   return state.guestsBiTabFilters[normalizedTab];
 }
@@ -19932,14 +19941,15 @@ function guestsBiFilterElements(tab = state.guestsBiTab) {
     year: els.guestsBiTmtFilterYear,
     month: els.guestsBiTmtFilterMonth,
     ha: els.guestsBiTmtFilterHa,
+    bookingStatuses: els.guestsBiTmtFilterStatus,
   };
 }
 
 function currentGuestsBiYear(tab = state.guestsBiTab) {
   const filters = guestsBiFilterState(tab);
   const elements = guestsBiFilterElements(tab);
-  if (elements.year) return clean(elements.year.value);
-  return clean(filters.year || state.guestsBiYear);
+  if (elements.year) return clean(elements.year.value || (normalizeGuestsBiTab(tab) === "tmt" ? defaultGuestsBiPreviousYear() : ""));
+  return clean(filters.year || state.guestsBiYear || (normalizeGuestsBiTab(tab) === "tmt" ? defaultGuestsBiPreviousYear() : ""));
 }
 
 function currentGuestsBiYearMonth(tab = state.guestsBiTab) {
@@ -19954,7 +19964,25 @@ function currentGuestsBiTmtMonth() {
   const rawValue = els.guestsBiTmtFilterMonth ? els.guestsBiTmtFilterMonth.value : (filters.month || state.guestsBiTmtMonth);
   const value = clean(rawValue).padStart(2, "0");
   const month = Number.parseInt(value, 10);
-  return /^\d{2}$/.test(value) && Number.isFinite(month) && month >= 1 && month <= 12 ? value : defaultGuestsBiCurrentMonth();
+  return /^\d{2}$/.test(value) && Number.isFinite(month) && month >= 1 && month <= 12 ? value : defaultGuestsBiPreviousMonthNumber();
+}
+
+function currentGuestsBiTmtBookingStatuses() {
+  const filters = guestsBiFilterState("tmt");
+  if (els.guestsBiTmtFilterStatus) {
+    return Array.from(els.guestsBiTmtFilterStatus.selectedOptions || []).map((option) => clean(option.value)).filter(Boolean);
+  }
+  return Array.isArray(filters.bookingStatuses) && filters.bookingStatuses.length
+    ? filters.bookingStatuses.map((status) => clean(status)).filter(Boolean)
+    : ["Checked Out", "Checked In", "Confirmed"];
+}
+
+function guestsBiStatusFilterKey(statuses = []) {
+  return (Array.isArray(statuses) ? statuses : [])
+    .map((status) => clean(status))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .join("|");
 }
 
 function currentGuestsBiHa(tab = state.guestsBiTab) {
@@ -19994,6 +20022,8 @@ function buildGuestsBiUrlClient(tab = state.guestsBiTab) {
     if (normalizedTab === "tmt") {
       const month = currentGuestsBiTmtMonth();
       if (month) params.set("month", month);
+      const statuses = currentGuestsBiTmtBookingStatuses();
+      if (statuses.length) params.set("booking_statuses", statuses.join(","));
     }
     if (normalizedTab === "nationalities") {
       const monthYear = currentGuestsBiMonthFilterYear();
@@ -20017,6 +20047,9 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
     state.guestsBiYear = clean(result?.year);
     state.guestsBiHa = clean(result?.ha).toUpperCase();
     state.guestsBiTmtMonth = clean(result?.bookingsTmt?.yearMonth).slice(5, 7) || currentGuestsBiTmtMonth();
+    state.guestsBiTmtBookingStatuses = Array.isArray(result?.bookingsTmt?.bookingStatuses)
+      ? result.bookingsTmt.bookingStatuses.map((status) => clean(status)).filter(Boolean)
+      : currentGuestsBiTmtBookingStatuses();
     state.guestsBiTmtBookingsRows = Array.isArray(result?.bookingsTmt?.rows) ? result.bookingsTmt.rows : [];
     state.guestsBiTmtBookingsTotalNights = Number(result?.bookingsTmt?.totalNights || 0);
     state.guestsBiIneMonths = Array.isArray(result?.ine?.months) ? result.ine.months : [];
@@ -20025,7 +20058,10 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
     state.guestsBiIneDetailRows = Array.isArray(result?.ine?.detailRows) ? result.ine.detailRows : [];
     if (normalizedTab === "ine") filterState.yearMonth = state.guestsBiIneMonth;
     else filterState.year = state.guestsBiYear;
-    if (normalizedTab === "tmt") filterState.month = state.guestsBiTmtMonth;
+    if (normalizedTab === "tmt") {
+      filterState.month = state.guestsBiTmtMonth;
+      filterState.bookingStatuses = state.guestsBiTmtBookingStatuses;
+    }
     filterState.ha = state.guestsBiHa;
     for (const tabKey of ["tmt", "nationalities"]) {
       const tabFilters = guestsBiFilterState(tabKey);
@@ -20033,7 +20069,8 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
       if (!clean(tabFilters.ha)) tabFilters.ha = state.guestsBiHa;
     }
     const tmtFilters = guestsBiFilterState("tmt");
-    if (!clean(tmtFilters.month)) tmtFilters.month = state.guestsBiTmtMonth || defaultGuestsBiCurrentMonth();
+    if (!clean(tmtFilters.month)) tmtFilters.month = state.guestsBiTmtMonth || defaultGuestsBiPreviousMonthNumber();
+    if (!Array.isArray(tmtFilters.bookingStatuses) || !tmtFilters.bookingStatuses.length) tmtFilters.bookingStatuses = state.guestsBiTmtBookingStatuses;
     const ineFilters = guestsBiFilterState("ine");
     if (!clean(ineFilters.yearMonth)) ineFilters.yearMonth = state.guestsBiIneMonth || defaultGuestsBiPreviousMonth();
     if (!clean(ineFilters.ha)) ineFilters.ha = state.guestsBiHa;
@@ -20060,6 +20097,7 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
       yearMonth: state.guestsBiIneMonth,
       monthYear: state.guestsBiNationalityMonthFilterYear,
       tmtMonth: state.guestsBiTmtMonth,
+      tmtBookingStatuses: guestsBiStatusFilterKey(state.guestsBiTmtBookingStatuses),
       ha: state.guestsBiHa,
     };
     state.guestsBiLoaded = true;
@@ -20071,7 +20109,8 @@ async function loadGuestsBiData({ silent = false, tab = state.guestsBiTab } = {}
     state.guestsBiTotals = { totalNights: 0, exempt7Days: 0, exempt13Year: 0 };
     state.guestsBiTmtBookingsRows = [];
     state.guestsBiTmtBookingsTotalNights = 0;
-    state.guestsBiTmtMonth = defaultGuestsBiCurrentMonth();
+    state.guestsBiTmtMonth = defaultGuestsBiPreviousMonthNumber();
+    state.guestsBiTmtBookingStatuses = ["Checked Out", "Checked In", "Confirmed"];
     state.guestsBiNationalityPieYears = [];
     state.guestsBiNationalityPieCharts = [];
     state.guestsBiNationalityLineYears = [];
@@ -20110,6 +20149,12 @@ function onGuestsBiTmtMonthChange() {
   loadGuestsBiData({ silent: true, tab: normalizedTab }).catch(() => {});
 }
 
+function onGuestsBiTmtBookingStatusChange() {
+  const normalizedTab = "tmt";
+  guestsBiFilterState(normalizedTab).bookingStatuses = currentGuestsBiTmtBookingStatuses();
+  loadGuestsBiData({ silent: true, tab: normalizedTab }).catch(() => {});
+}
+
 function onGuestsBiIneMonthChange() {
   const normalizedTab = "ine";
   guestsBiFilterState(normalizedTab).yearMonth = currentGuestsBiYearMonth(normalizedTab);
@@ -20132,7 +20177,7 @@ function setGuestsBiTab(tab) {
   state.guestsBiTab = normalizeGuestsBiTab(tab);
   renderGuestsBi();
   const filterState = guestsBiFilterState(state.guestsBiTab);
-  const lastLoaded = state.guestsBiLastLoaded || { tab: "", year: "", yearMonth: "", monthYear: "", tmtMonth: "", ha: "" };
+  const lastLoaded = state.guestsBiLastLoaded || { tab: "", year: "", yearMonth: "", monthYear: "", tmtMonth: "", tmtBookingStatuses: "", ha: "" };
   if (
     !state.guestsBiLoaded ||
     lastLoaded.tab !== state.guestsBiTab ||
@@ -20140,7 +20185,9 @@ function setGuestsBiTab(tab) {
       ? clean(lastLoaded.yearMonth) !== clean(filterState.yearMonth || state.guestsBiIneMonth || defaultGuestsBiPreviousMonth())
       : clean(lastLoaded.year) !== clean(filterState.year || state.guestsBiYear)) ||
     (state.guestsBiTab === "tmt"
-      && clean(lastLoaded.tmtMonth) !== clean(filterState.month || state.guestsBiTmtMonth || defaultGuestsBiCurrentMonth())) ||
+      && clean(lastLoaded.tmtMonth) !== clean(filterState.month || state.guestsBiTmtMonth || defaultGuestsBiPreviousMonthNumber())) ||
+    (state.guestsBiTab === "tmt"
+      && clean(lastLoaded.tmtBookingStatuses) !== guestsBiStatusFilterKey(filterState.bookingStatuses || state.guestsBiTmtBookingStatuses)) ||
     (state.guestsBiTab === "nationalities"
       && clean(lastLoaded.monthYear) !== clean(filterState.monthYear || state.guestsBiNationalityMonthFilterYear)) ||
     clean(lastLoaded.ha).toUpperCase() !== clean(filterState.ha || state.guestsBiHa).toUpperCase()
@@ -20482,16 +20529,27 @@ function renderGuestsBi() {
     const filterEls = guestsBiFilterElements(tabKey);
     if (filterEls.year) {
       filterEls.year.innerHTML = years.map((year) => `<option value="${escape(year)}">${escape(year)}</option>`).join("");
-      const selectedYear = clean(filterState.year || state.guestsBiYear);
+      const selectedYear = clean(filterState.year || state.guestsBiYear || (tabKey === "tmt" ? defaultGuestsBiPreviousYear() : ""));
       if (selectedYear) filterEls.year.value = selectedYear;
     }
     if (tabKey === "tmt" && filterEls.month) {
-      const selectedMonth = clean(filterState.month || state.guestsBiTmtMonth || defaultGuestsBiCurrentMonth()).padStart(2, "0");
+      const selectedMonth = clean(filterState.month || state.guestsBiTmtMonth || defaultGuestsBiPreviousMonthNumber()).padStart(2, "0");
       filterEls.month.innerHTML = Array.from({ length: 12 }, (_, index) => {
         const value = String(index + 1).padStart(2, "0");
         return `<option value="${value}">${escape(monthLabelShort(value))}</option>`;
       }).join("");
       filterEls.month.value = selectedMonth;
+      if (filterEls.bookingStatuses) {
+        const selectedStatuses = new Set(
+          (Array.isArray(filterState.bookingStatuses) && filterState.bookingStatuses.length
+            ? filterState.bookingStatuses
+            : state.guestsBiTmtBookingStatuses
+          ).map((status) => clean(status)).filter(Boolean)
+        );
+        Array.from(filterEls.bookingStatuses.options || []).forEach((option) => {
+          option.selected = selectedStatuses.has(clean(option.value));
+        });
+      }
     }
     if (filterEls.ha) {
       filterEls.ha.value = clean(filterState.ha).toUpperCase() === "H" || clean(filterState.ha).toUpperCase() === "A"
@@ -20548,8 +20606,9 @@ function renderGuestsBi() {
   }
   const bookingRows = Array.isArray(state.guestsBiTmtBookingsRows) ? state.guestsBiTmtBookingsRows : [];
   if (els.guestsBiTmtBookingsCount) {
-    const yearMonth = `${clean(state.guestsBiYear) || String(new Date().getUTCFullYear())}-${clean(state.guestsBiTmtMonth || defaultGuestsBiCurrentMonth()).padStart(2, "0")}`;
-    els.guestsBiTmtBookingsCount.textContent = `${bookingRows.length} channel${bookingRows.length === 1 ? "" : "s"} | ${yearMonth}`;
+    const yearMonth = `${clean(guestsBiFilterState("tmt").year || state.guestsBiYear || defaultGuestsBiPreviousYear())}-${clean(state.guestsBiTmtMonth || defaultGuestsBiPreviousMonthNumber()).padStart(2, "0")}`;
+    const statusCount = currentGuestsBiTmtBookingStatuses().length;
+    els.guestsBiTmtBookingsCount.textContent = `${bookingRows.length} channel${bookingRows.length === 1 ? "" : "s"} | ${yearMonth} | ${statusCount} status${statusCount === 1 ? "" : "es"}`;
   }
   if (els.guestsBiTmtBookingsRows) {
     els.guestsBiTmtBookingsRows.innerHTML = bookingRows.length
