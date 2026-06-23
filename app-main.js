@@ -1122,6 +1122,7 @@ const state = {
   importDataTab: "import",
   importDataType: "fdm-accounts",
   importDataViewType: "fdm-accounts",
+  importDataViewFilters: {},
   importDataPreviewRows: [],
   importDataRawText: "",
   importDataFiles: [],
@@ -1511,6 +1512,8 @@ const els = {
   importDataType: document.getElementById("import-data-type"),
   importDataMeta: document.getElementById("import-data-meta"),
   importDataViewType: document.getElementById("import-data-view-type"),
+  importDataViewDateFrom: document.getElementById("import-data-view-date-from"),
+  importDataViewDateTo: document.getElementById("import-data-view-date-to"),
   importDataViewDescription: document.getElementById("import-data-view-description"),
   importDataViewStatus: document.getElementById("import-data-view-status"),
   importDataDropzone: document.getElementById("import-data-dropzone"),
@@ -2301,6 +2304,8 @@ function bindEvents() {
   els.importDataTabFdmAccounts?.addEventListener("click", () => setImportDataType("fdm-accounts"));
   els.importDataType?.addEventListener("change", onImportDataTypeChange);
   els.importDataViewType?.addEventListener("change", onImportDataViewTypeChange);
+  els.importDataViewDateFrom?.addEventListener("change", onImportDataViewFilterChange);
+  els.importDataViewDateTo?.addEventListener("change", onImportDataViewFilterChange);
   els.importDataBrowse?.addEventListener("click", () => els.importDataInput?.click());
   els.importDataInput?.addEventListener("change", onImportDataFilesPicked);
   els.importDataPreview?.addEventListener("click", previewImportData);
@@ -18988,10 +18993,36 @@ async function loadImportDataSettings({ silent = false } = {}) {
   }
 }
 
+function importDataViewFilterState(type = state.importDataViewType) {
+  const normalizedType = normalizeImportDataTypeClient(type);
+  state.importDataViewFilters = state.importDataViewFilters || {};
+  if (!state.importDataViewFilters[normalizedType]) {
+    state.importDataViewFilters[normalizedType] = { dateFrom: "", dateTo: "" };
+  }
+  return state.importDataViewFilters[normalizedType];
+}
+
+function currentImportDataViewFilters(type = state.importDataViewType) {
+  const filterState = importDataViewFilterState(type);
+  return {
+    dateFrom: clean(els.importDataViewDateFrom?.value || filterState.dateFrom),
+    dateTo: clean(els.importDataViewDateTo?.value || filterState.dateTo),
+  };
+}
+
+function buildImportDataRowsUrl(type = state.importDataViewType) {
+  const normalizedType = normalizeImportDataTypeClient(type);
+  const filters = currentImportDataViewFilters(normalizedType);
+  const params = new URLSearchParams({ type: normalizedType });
+  if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+  if (filters.dateTo) params.set("date_to", filters.dateTo);
+  return `/api/import-data?${params.toString()}`;
+}
+
 async function loadImportDataRows({ silent = false, type = state.importDataViewType } = {}) {
   try {
     const normalizedType = normalizeImportDataTypeClient(type);
-    const result = await api(`/api/import-data?type=${encodeURIComponent(normalizedType)}`);
+    const result = await api(buildImportDataRowsUrl(normalizedType));
     state.importDataRows = Array.isArray(result?.rows) ? result.rows : [];
     state.importDataLoaded = true;
     renderImportData();
@@ -19064,12 +19095,24 @@ function setImportDataViewType(type) {
   state.importDataEditingId = "";
   state.importDataEditDraft = null;
   if (els.importDataViewType) els.importDataViewType.value = state.importDataViewType;
+  const filters = importDataViewFilterState(state.importDataViewType);
+  if (els.importDataViewDateFrom) els.importDataViewDateFrom.value = clean(filters.dateFrom);
+  if (els.importDataViewDateTo) els.importDataViewDateTo.value = clean(filters.dateTo);
   loadImportDataRows({ silent: true, type: state.importDataViewType }).catch(() => {});
   renderImportData();
 }
 
 function onImportDataViewTypeChange() {
   setImportDataViewType(els.importDataViewType?.value);
+}
+
+function onImportDataViewFilterChange() {
+  const filters = importDataViewFilterState(state.importDataViewType);
+  filters.dateFrom = clean(els.importDataViewDateFrom?.value);
+  filters.dateTo = clean(els.importDataViewDateTo?.value);
+  state.importDataEditingId = "";
+  state.importDataEditDraft = null;
+  loadImportDataRows({ silent: true, type: state.importDataViewType }).catch(() => {});
 }
 
 function onImportDataSettingsInput(event) {
@@ -19851,6 +19894,9 @@ function renderImportData() {
   if (els.importDataDescription) els.importDataDescription.textContent = importDataTypeDescription(state.importDataType);
   if (els.importDataMeta) els.importDataMeta.textContent = formatImportDataMetaValue(state.importDataType, state.importDataMetaByType?.[state.importDataType] || {});
   if (els.importDataViewDescription) els.importDataViewDescription.textContent = importDataTypeDescription(state.importDataViewType);
+  const viewFilters = importDataViewFilterState(state.importDataViewType);
+  if (els.importDataViewDateFrom) els.importDataViewDateFrom.value = clean(viewFilters.dateFrom);
+  if (els.importDataViewDateTo) els.importDataViewDateTo.value = clean(viewFilters.dateTo);
   if (els.importDataImportPanel) els.importDataImportPanel.hidden = state.importDataTab !== "import";
   if (els.importDataViewPanel) els.importDataViewPanel.hidden = state.importDataTab !== "view";
   renderImportDataTableHead(els.importDataPreviewHead, importDataTypeDef(state.importDataType).previewColumns);

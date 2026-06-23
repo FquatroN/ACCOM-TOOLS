@@ -13,6 +13,7 @@ const IMPORT_DATA_CONFIG = {
   "fdm-accounts": {
     table: "import_fdm_accounts",
     sanitize: sanitizeFdmAccountsImportRow,
+    dateFilterColumn: "event_date",
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,import_batch,source_row_number",
     summaryQueries: {
@@ -24,6 +25,7 @@ const IMPORT_DATA_CONFIG = {
   "fdm-bookings": {
     table: "import_fdm_bookings",
     sanitize: sanitizeFdmBookingsImportRow,
+    dateFilterColumn: "check_in_date",
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,booking_number",
     onConflictColumns: ["booking_number"],
@@ -36,6 +38,7 @@ const IMPORT_DATA_CONFIG = {
   "fdm-sales": {
     table: "import_fdm_sales",
     sanitize: sanitizeFdmSalesImportRow,
+    dateFilterColumn: "sale_date",
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,reservation_id,sale_date,sale_time,sale_item,quantity,guest",
     summaryQueries: {
@@ -47,6 +50,7 @@ const IMPORT_DATA_CONFIG = {
   "cgd-extrato-ordem": {
     table: "import_cgd_extrato_ordem",
     sanitize: sanitizeCgdExtratoOrdemImportRow,
+    dateFilterColumn: "data",
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,row_key",
     onConflictColumns: ["row_key"],
@@ -85,6 +89,23 @@ function dedupeRowsByConflict(rows, columns) {
     map.set(buildConflictKey(row, columns), row);
     return map;
   }, new Map()).values());
+}
+
+function normalizeDateFilter(value) {
+  const raw = cleanText(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+}
+
+function buildImportDataListQuery(config, query = {}) {
+  const params = [config.listQuery];
+  const dateColumn = cleanText(config.dateFilterColumn);
+  if (dateColumn) {
+    const dateFrom = normalizeDateFilter(query?.date_from);
+    const dateTo = normalizeDateFilter(query?.date_to);
+    if (dateFrom) params.push(`${dateColumn}=gte.${encodeURIComponent(dateFrom)}`);
+    if (dateTo) params.push(`${dateColumn}=lte.${encodeURIComponent(dateTo)}`);
+  }
+  return params.filter(Boolean).join("&");
 }
 
 async function fetchImportDataMeta(type) {
@@ -135,7 +156,7 @@ module.exports = async function handler(req, res) {
         return;
       }
       const config = importDataConfig(type);
-      const rows = await restQuery(`${config.table}?${config.listQuery}`, { method: "GET" });
+      const rows = await restQuery(`${config.table}?${buildImportDataListQuery(config, req.query)}`, { method: "GET" });
       res.status(200).json({ type, rows: Array.isArray(rows) ? rows : [] });
       return;
     }
