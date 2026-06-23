@@ -4354,6 +4354,10 @@ select:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .guests-bi-tmt-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .service-return-grid-top,
   .service-return-grid-bottom {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4965,6 +4969,25 @@ button[id^="close-settings"] {
 
 .guests-bi-filters {
   grid-template-columns: 140px 110px 110px;
+}
+
+.guests-bi-tmt-filters {
+  grid-template-columns: 140px 110px 110px minmax(230px, 320px);
+  align-items: end;
+}
+
+.guests-bi-tmt-filters label {
+  min-width: 0;
+}
+
+.guests-bi-tmt-filters select {
+  min-width: 0;
+  width: 100%;
+}
+
+#guests-bi-tmt-filter-status {
+  height: 2.28rem;
+  overflow-y: auto;
 }
 
 .guests-bi-table th,
