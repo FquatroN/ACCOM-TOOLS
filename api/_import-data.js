@@ -8,6 +8,7 @@ const IMPORT_DATA_TYPES = [
   { key: "fdm-bookings", label: "FDM Bookings" },
   { key: "fdm-sales", label: "FDM Sales" },
   { key: "cgd-extrato-ordem", label: "CGD Extrato Ordem" },
+  { key: "cgd-cartao-credito", label: "CGD Cartao Credito" },
 ];
 
 const DEFAULT_IMPORT_DATA_SETTINGS = {
@@ -16,6 +17,7 @@ const DEFAULT_IMPORT_DATA_SETTINGS = {
     { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
     { type: "fdm-sales", description: "Import FDM sales lines from uploaded or pasted sales report exports." },
     { type: "cgd-extrato-ordem", description: "Import CGD Conta Ordem bank statement movements from uploaded or pasted extracts." },
+    { type: "cgd-cartao-credito", description: "Import CGD Cartao Credito statement movements from PDF, pasted text, or tabular files." },
   ],
 };
 
@@ -351,12 +353,52 @@ function sanitizeCgdExtratoOrdemImportRow(input = {}, meta = {}) {
   };
 }
 
+function sanitizeCgdCartaoCreditoImportRow(input = {}, meta = {}) {
+  const dataRaw = cleanText(input.dataRaw || input.data_raw || input.data || input.DATA);
+  const dataValorRaw = cleanText(input.dataValorRaw || input.data_valor_raw || input.dataValor || input.data_valor || input["Data Valor"]);
+  const descricao = cleanText(input.descricao || input.descrição || input.descritivo || input.description || input.DESCRICAO || input["Descrição"]);
+  const debitoInput = input.debito ?? input.débito ?? input.debit ?? input.DEBITO ?? input["Débito"];
+  const creditoInput = input.credito ?? input.crédito ?? input.credit ?? input.CREDITO ?? input["Crédito"];
+  const hasDebito = cleanText(debitoInput) !== "";
+  const hasCredito = cleanText(creditoInput) !== "";
+  const debito = hasDebito ? normalizeImportMoney(debitoInput) : null;
+  const credito = hasCredito ? normalizeImportMoney(creditoInput) : null;
+  if (!dataRaw) throw badRequest("Data is required.");
+  if (!dataValorRaw) throw badRequest("Data Valor is required.");
+  if (!descricao) throw badRequest("Descrição is required.");
+  if (!hasDebito && !hasCredito) throw badRequest("Débito or Crédito is required.");
+  if (hasDebito && !Number.isFinite(debito)) throw badRequest("Débito is invalid.");
+  if (hasCredito && !Number.isFinite(credito)) throw badRequest("Crédito is invalid.");
+  const data = normalizeImportCgdDate(dataRaw);
+  const dataValor = normalizeImportCgdDate(dataValorRaw);
+  if (!data) throw badRequest("Data is invalid.");
+  if (!dataValor) throw badRequest("Data Valor is invalid.");
+  const normalizedDebito = Number.isFinite(debito) ? Number(Number(debito).toFixed(2)) : null;
+  const normalizedCredito = Number.isFinite(credito) ? Number(Number(credito).toFixed(2)) : null;
+  return {
+    import_batch: cleanText(meta.importBatch),
+    source_type: "cgd-cartao-credito",
+    source_name: cleanText(meta.sourceName),
+    source_row_number: Number(meta.sourceRowNumber) || 0,
+    row_key: importDataRowKey([data, descricao, normalizedDebito ?? "", normalizedCredito ?? ""]),
+    data_raw: dataRaw,
+    data,
+    data_valor_raw: dataValorRaw,
+    data_valor: dataValor,
+    descricao,
+    debito: normalizedDebito,
+    credito: normalizedCredito,
+    raw_payload: input && typeof input === "object" ? input : {},
+  };
+}
+
 module.exports = {
   DEFAULT_IMPORT_DATA_SETTINGS,
   IMPORT_DATA_SETTINGS_KEY,
   IMPORT_DATA_TYPES,
   normalizeImportDataType,
   safeImportDataSettings,
+  sanitizeCgdCartaoCreditoImportRow,
   sanitizeCgdExtratoOrdemImportRow,
   sanitizeFdmAccountsImportRow,
   sanitizeFdmBookingsImportRow,

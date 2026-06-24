@@ -517,6 +517,7 @@ const DEFAULT_IMPORT_DATA_SETTINGS = {
     { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
     { type: "fdm-sales", description: "Import FDM sales lines from uploaded or pasted sales report exports." },
     { type: "cgd-extrato-ordem", description: "Import CGD Conta Ordem bank statement movements from uploaded or pasted extracts." },
+    { type: "cgd-cartao-credito", description: "Import CGD Cartao Credito statement movements from PDF, pasted text, or tabular files." },
   ],
 };
 
@@ -525,6 +526,7 @@ const IMPORT_DATA_TYPE_LABELS = {
   "fdm-bookings": "FDM Bookings",
   "fdm-sales": "FDM Sales",
   "cgd-extrato-ordem": "CGD Extrato Ordem",
+  "cgd-cartao-credito": "CGD Cartao Credito",
 };
 
 const IMPORT_DATA_TYPE_DEFS = {
@@ -674,6 +676,27 @@ const IMPORT_DATA_TYPE_DEFS = {
       { label: "Saldo", key: "saldo", format: "money", editable: true, inputType: "number", step: "0.01" },
     ],
   },
+  "cgd-cartao-credito": {
+    previewColumns: [
+      { label: "Row", key: "sourceRowNumber", format: "plain" },
+      { label: "Data", key: "dataRaw", format: "plain" },
+      { label: "Data Valor", key: "dataValorRaw", format: "plain" },
+      { label: "Descrição", key: "descricao", format: "plain" },
+      { label: "Débito", key: "debito", format: "money" },
+      { label: "Crédito", key: "credito", format: "money" },
+      { label: "Valor", key: "valor", format: "money" },
+      { label: "Validation", key: "validation", format: "validation" },
+    ],
+    viewColumns: [
+      { label: "Imported", key: "created_at", format: "datetime", editable: false },
+      { label: "Data", key: "data_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Data Valor", key: "data_valor_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Descrição", key: "descricao", format: "plain", editable: true, inputType: "text" },
+      { label: "Débito", key: "debito", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Crédito", key: "credito", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Valor", key: "valor", format: "money", editable: false },
+    ],
+  },
 };
 
 const IMPORT_DATA_META_LABELS = {
@@ -681,6 +704,7 @@ const IMPORT_DATA_META_LABELS = {
   "fdm-bookings": "Max Check-in Date",
   "fdm-sales": "Max Date",
   "cgd-extrato-ordem": "Max Data",
+  "cgd-cartao-credito": "Max Data",
 };
 
 const FINANCIAL_DOCS_DUPLICATE_CONFIRM_TEXT = "Possible duplicate found. Do you still want to save this document?";
@@ -18891,7 +18915,7 @@ function importDataTypeDef(type) {
 
 function importDataConfirmBatchSize(type) {
   const normalizedType = normalizeImportDataTypeClient(type);
-  if (normalizedType === "cgd-extrato-ordem") return 500;
+  if (normalizedType === "cgd-extrato-ordem" || normalizedType === "cgd-cartao-credito") return 500;
   return 1000;
 }
 
@@ -18939,7 +18963,7 @@ function formatImportDataMetaValue(type, meta = {}) {
       `${importDataMinMetaLabel(normalizedType)}: ${clean(meta.minCheckInDate) ? formatDateOnly(meta.minCheckInDate) : "-"}`,
     ].join("\n");
   }
-  if (normalizedType === "fdm-sales" || normalizedType === "cgd-extrato-ordem") {
+  if (normalizedType === "fdm-sales" || normalizedType === "cgd-extrato-ordem" || normalizedType === "cgd-cartao-credito") {
     return [
       importPart,
       `${importDataMetaLabel(normalizedType)}: ${clean(meta.maxDate) ? formatDateOnly(meta.maxDate) : "-"}`,
@@ -19174,11 +19198,24 @@ function importDataCgdExtratoOrdemValidationMessage(row) {
   return "Ready";
 }
 
+function importDataCgdCartaoCreditoValidationMessage(row) {
+  if (!clean(row.dataRaw)) return "Data is required.";
+  if (!clean(row.dataValorRaw)) return "Data Valor is required.";
+  if (!clean(row.descricao)) return "Descrição is required.";
+  const hasDebito = clean(row.debito) !== "";
+  const hasCredito = clean(row.credito) !== "";
+  if (!hasDebito && !hasCredito) return "Débito or Crédito is required.";
+  if (hasDebito && !Number.isFinite(Number(row.debito))) return "Débito is invalid.";
+  if (hasCredito && !Number.isFinite(Number(row.credito))) return "Crédito is invalid.";
+  return "Ready";
+}
+
 function importDataValidationMessage(type, row) {
   const normalizedType = normalizeImportDataTypeClient(type);
   if (normalizedType === "fdm-bookings") return importDataBookingsValidationMessage(row);
   if (normalizedType === "fdm-sales") return importDataSalesValidationMessage(row);
   if (normalizedType === "cgd-extrato-ordem") return importDataCgdExtratoOrdemValidationMessage(row);
+  if (normalizedType === "cgd-cartao-credito") return importDataCgdCartaoCreditoValidationMessage(row);
   return importDataAccountsValidationMessage(row);
 }
 
@@ -19389,6 +19426,21 @@ function parseImportDataCgdExtratoOrdemFieldMap(headerRow) {
   };
 }
 
+function parseImportDataCgdCartaoCreditoFieldMap(headerRow) {
+  const map = new Map();
+  headerRow.forEach((cell, index) => {
+    const key = clean(cell).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    map.set(key, index);
+  });
+  return {
+    data: map.get("data"),
+    dataValor: map.get("data valor") ?? map.get("datavalor"),
+    descricao: map.get("descricao") ?? map.get("descritivo") ?? map.get("description"),
+    debito: map.get("debito"),
+    credito: map.get("credito"),
+  };
+}
+
 function buildImportDataPreviewRowFdm(cells, fieldMap, sourceRowNumber) {
   const pick = (key) => {
     const index = fieldMap[key];
@@ -19492,6 +19544,48 @@ function buildImportDataPreviewRowCgdExtratoOrdem(cells, fieldMap, sourceRowNumb
   return row;
 }
 
+function buildImportDataPreviewRowCgdCartaoCredito(cells, fieldMap, sourceRowNumber) {
+  const pick = (key) => {
+    const index = fieldMap[key];
+    return index === undefined || index === null || index < 0 ? "" : String(cells[index] ?? "").trim();
+  };
+  const debito = pick("debito") === "" ? "" : normalizeImportDataMoneyClient(pick("debito"));
+  const credito = pick("credito") === "" ? "" : normalizeImportDataMoneyClient(pick("credito"));
+  const debitoValue = Number.isFinite(Number(debito)) ? Number(debito) : 0;
+  const creditoValue = Number.isFinite(Number(credito)) ? Number(credito) : 0;
+  const row = {
+    sourceRowNumber,
+    dataRaw: pick("data"),
+    dataValorRaw: pick("dataValor"),
+    descricao: pick("descricao"),
+    debito,
+    credito,
+    valor: debito !== "" || credito !== "" ? Number((creditoValue - debitoValue).toFixed(2)) : "",
+  };
+  row.validation = importDataValidationMessage("cgd-cartao-credito", row);
+  return row;
+}
+
+function buildImportDataPreviewRowCgdCartaoCreditoFromObject(item = {}, sourceRowNumber) {
+  const debitoRaw = item.debito ?? item.débito ?? item.debit;
+  const creditoRaw = item.credito ?? item.crédito ?? item.credit;
+  const debito = clean(debitoRaw) === "" || debitoRaw === null ? "" : normalizeImportDataMoneyClient(debitoRaw);
+  const credito = clean(creditoRaw) === "" || creditoRaw === null ? "" : normalizeImportDataMoneyClient(creditoRaw);
+  const debitoValue = Number.isFinite(Number(debito)) ? Number(debito) : 0;
+  const creditoValue = Number.isFinite(Number(credito)) ? Number(credito) : 0;
+  const row = {
+    sourceRowNumber,
+    dataRaw: clean(item.data || item.dataRaw || item.data_raw),
+    dataValorRaw: clean(item.dataValor || item.data_valor || item.dataValorRaw || item.data_valor_raw),
+    descricao: clean(item.descricao || item.descrição || item.description || item.descritivo),
+    debito,
+    credito,
+    valor: debito !== "" || credito !== "" ? Number((creditoValue - debitoValue).toFixed(2)) : "",
+  };
+  row.validation = importDataValidationMessage("cgd-cartao-credito", row);
+  return row;
+}
+
 function findImportDataCgdHeaderIndex(rows) {
   return rows.findIndex((row) => {
     const labels = (Array.isArray(row) ? row : []).map((cell) => clean(cell).toLowerCase());
@@ -19500,6 +19594,17 @@ function findImportDataCgdHeaderIndex(rows) {
       && labels.includes("descritivo")
       && labels.includes("montante")
       && labels.includes("saldo");
+  });
+}
+
+function findImportDataCgdCartaoCreditoHeaderIndex(rows) {
+  return rows.findIndex((row) => {
+    const labels = (Array.isArray(row) ? row : []).map((cell) => clean(cell).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+    return labels.includes("data")
+      && (labels.includes("data valor") || labels.includes("datavalor"))
+      && (labels.includes("descricao") || labels.includes("descritivo"))
+      && labels.includes("debito")
+      && labels.includes("credito");
   });
 }
 
@@ -19512,6 +19617,15 @@ function parseImportDataRowsFromTable(tableRows, type = state.importDataType) {
     if (headerIndex < 0 || !rows[headerIndex + 1]) return [];
     const fieldMap = parseImportDataCgdExtratoOrdemFieldMap(rows[headerIndex]);
     return rows.slice(headerIndex + 1).map((cells, index) => buildImportDataPreviewRowCgdExtratoOrdem(cells, fieldMap, headerIndex + index + 2));
+  }
+  if (normalizedType === "cgd-cartao-credito") {
+    const headerIndex = findImportDataCgdCartaoCreditoHeaderIndex(rows);
+    if (headerIndex < 0 || !rows[headerIndex + 1]) return [];
+    const fieldMap = parseImportDataCgdCartaoCreditoFieldMap(rows[headerIndex]);
+    return rows
+      .slice(headerIndex + 1)
+      .map((cells, index) => buildImportDataPreviewRowCgdCartaoCredito(cells, fieldMap, headerIndex + index + 2))
+      .filter((row) => clean(row.dataRaw) && clean(row.dataValorRaw) && clean(row.descricao) && (clean(row.debito) || clean(row.credito)));
   }
   if (normalizedType === "fdm-bookings") {
     const fieldMap = parseImportDataFdmBookingsFieldMap(rows[0]);
@@ -19553,9 +19667,28 @@ async function parseImportDataSpreadsheetFile(file) {
   return parseImportDataRowsFromTable(data, state.importDataType);
 }
 
+async function parseImportDataPdfFile(file) {
+  if (normalizeImportDataTypeClient(state.importDataType) !== "cgd-cartao-credito") {
+    throw new Error("PDF import is only supported for CGD Cartao Credito.");
+  }
+  const upload = await fileToUploadPayload(file);
+  const result = await api("/api/import-data-parse", {
+    method: "POST",
+    body: {
+      type: "cgd-cartao-credito",
+      file: upload,
+    },
+  });
+  const rows = Array.isArray(result?.rows) ? result.rows : [];
+  return rows
+    .map((row, index) => buildImportDataPreviewRowCgdCartaoCreditoFromObject(row, index + 1))
+    .filter((row) => clean(row.dataRaw) && clean(row.dataValorRaw) && clean(row.descricao) && (clean(row.debito) || clean(row.credito)));
+}
+
 async function parseImportDataFile(file) {
   const name = clean(file?.name).toLowerCase();
   if (/\.(xlsx|xls)$/i.test(name)) return parseImportDataSpreadsheetFile(file);
+  if (/\.pdf$/i.test(name) || clean(file?.type) === "application/pdf") return parseImportDataPdfFile(file);
   const text = await readFileAsTextClient(file);
   const rows = parseDelimitedTextTable(text);
   return parseImportDataRowsFromTable(rows, state.importDataType);

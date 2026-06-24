@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const { cleanText, parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
 const {
   normalizeImportDataType,
+  sanitizeCgdCartaoCreditoImportRow,
   sanitizeCgdExtratoOrdemImportRow,
   sanitizeFdmAccountsImportRow,
   sanitizeFdmBookingsImportRow,
@@ -50,6 +51,19 @@ const IMPORT_DATA_CONFIG = {
   "cgd-extrato-ordem": {
     table: "import_cgd_extrato_ordem",
     sanitize: sanitizeCgdExtratoOrdemImportRow,
+    dateFilterColumn: "data",
+    listQuery: "select=*&order=created_at.desc&limit=120",
+    insertSelect: "select=id,row_key",
+    onConflictColumns: ["row_key"],
+    summaryQueries: {
+      importDate: "select=created_at&order=created_at.desc&limit=1",
+      specificMax: "select=data&order=data.desc.nullslast,created_at.desc&limit=1",
+      specificMin: "select=data&order=data.asc.nullslast,created_at.asc&limit=1",
+    },
+  },
+  "cgd-cartao-credito": {
+    table: "import_cgd_cartao_credito",
+    sanitize: sanitizeCgdCartaoCreditoImportRow,
     dateFilterColumn: "data",
     listQuery: "select=*&order=created_at.desc&limit=120",
     insertSelect: "select=id,row_key",
@@ -131,7 +145,7 @@ async function fetchImportDataMeta(type) {
       minDate: cleanText(specificMinRow?.sale_date),
     };
   }
-  if (normalizedType === "cgd-extrato-ordem") {
+  if (normalizedType === "cgd-extrato-ordem" || normalizedType === "cgd-cartao-credito") {
     return {
       maxImportDate: cleanText(importRow?.created_at),
       maxDate: cleanText(specificMaxRow?.data),
