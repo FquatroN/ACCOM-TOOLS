@@ -516,6 +516,7 @@ const DEFAULT_IMPORT_DATA_SETTINGS = {
     { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
     { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
     { type: "fdm-sales", description: "Import FDM sales lines from uploaded or pasted sales report exports." },
+    { type: "fdm-occupancy-kpi", description: "Import FDM occupancy KPI monthly room-type metrics from pasted text or uploaded tabular files." },
     { type: "cgd-extrato-ordem", description: "Import CGD Conta Ordem bank statement movements from uploaded or pasted extracts." },
     { type: "cgd-cartao-credito", description: "Import CGD Cartao Credito statement movements from PDF, pasted text, or tabular files." },
   ],
@@ -525,6 +526,7 @@ const IMPORT_DATA_TYPE_LABELS = {
   "fdm-accounts": "FDM Accounts",
   "fdm-bookings": "FDM Bookings",
   "fdm-sales": "FDM Sales",
+  "fdm-occupancy-kpi": "FDM Occupancy KPI",
   "cgd-extrato-ordem": "CGD Extrato Ordem",
   "cgd-cartao-credito": "CGD Cartao Credito",
 };
@@ -657,6 +659,41 @@ const IMPORT_DATA_TYPE_DEFS = {
       { label: "Note", key: "note", format: "plain", editable: true, inputType: "text" },
     ],
   },
+  "fdm-occupancy-kpi": {
+    previewColumns: [
+      { label: "Row", key: "sourceRowNumber", format: "plain" },
+      { label: "Mês", key: "mesRaw", format: "plain" },
+      { label: "Room Type Orig", key: "roomTypeOrig", format: "plain" },
+      { label: "Occup %", key: "occupPercent", format: "number" },
+      { label: "Charge", key: "charge", format: "money" },
+      { label: "Average", key: "average", format: "money" },
+      { label: "RevPar", key: "revpar", format: "money" },
+      { label: "Booked", key: "booked", format: "number" },
+      { label: "OC combinada", key: "ocCombinada", format: "number" },
+      { label: "Property", key: "property", format: "plain" },
+      { label: "Type Orig", key: "typeOrig", format: "plain" },
+      { label: "Type", key: "type", format: "plain" },
+      { label: "Room Type", key: "roomType", format: "plain" },
+      { label: "Room Type Orig transf", key: "roomTypeOrigTransf", format: "plain" },
+      { label: "Validation", key: "validation", format: "validation" },
+    ],
+    viewColumns: [
+      { label: "Imported", key: "created_at", format: "datetime", editable: false },
+      { label: "Mês", key: "mes_raw", format: "plain", editable: true, inputType: "text" },
+      { label: "Room Type Orig", key: "room_type_orig", format: "plain", editable: true, inputType: "text" },
+      { label: "Occup %", key: "occup_percent", format: "number", editable: true, inputType: "number", step: "0.01" },
+      { label: "Charge", key: "charge", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Average", key: "average", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "RevPar", key: "revpar", format: "money", editable: true, inputType: "number", step: "0.01" },
+      { label: "Booked", key: "booked", format: "number", editable: true, inputType: "number", step: "1" },
+      { label: "OC combinada", key: "oc_combinada", format: "number", editable: true, inputType: "number", step: "0.01" },
+      { label: "Property", key: "property", format: "plain", editable: true, inputType: "text" },
+      { label: "Type Orig", key: "type_orig", format: "plain", editable: true, inputType: "text" },
+      { label: "Type", key: "type", format: "plain", editable: true, inputType: "text" },
+      { label: "Room Type", key: "room_type", format: "plain", editable: true, inputType: "text" },
+      { label: "Room Type Orig transf", key: "room_type_orig_transf", format: "plain", editable: true, inputType: "text" },
+    ],
+  },
   "cgd-extrato-ordem": {
     previewColumns: [
       { label: "Row", key: "sourceRowNumber", format: "plain" },
@@ -703,6 +740,7 @@ const IMPORT_DATA_META_LABELS = {
   "fdm-accounts": "Max Date Time",
   "fdm-bookings": "Max Check-in Date",
   "fdm-sales": "Max Date",
+  "fdm-occupancy-kpi": "Max Mês",
   "cgd-extrato-ordem": "Max Data",
   "cgd-cartao-credito": "Max Data",
 };
@@ -18963,7 +19001,7 @@ function formatImportDataMetaValue(type, meta = {}) {
       `${importDataMinMetaLabel(normalizedType)}: ${clean(meta.minCheckInDate) ? formatDateOnly(meta.minCheckInDate) : "-"}`,
     ].join("\n");
   }
-  if (normalizedType === "fdm-sales" || normalizedType === "cgd-extrato-ordem" || normalizedType === "cgd-cartao-credito") {
+  if (normalizedType === "fdm-sales" || normalizedType === "fdm-occupancy-kpi" || normalizedType === "cgd-extrato-ordem" || normalizedType === "cgd-cartao-credito") {
     return [
       importPart,
       `${importDataMetaLabel(normalizedType)}: ${clean(meta.maxDate) ? formatDateOnly(meta.maxDate) : "-"}`,
@@ -19189,6 +19227,12 @@ function importDataSalesValidationMessage(row) {
   return "Ready";
 }
 
+function importDataFdmOccupancyKpiValidationMessage(row) {
+  if (!clean(row.mesRaw)) return "Mês is required.";
+  if (!clean(row.roomTypeOrig)) return "Room Type Orig is required.";
+  return "Ready";
+}
+
 function importDataCgdExtratoOrdemValidationMessage(row) {
   if (!clean(row.dataRaw)) return "Data is required.";
   if (!clean(row.dataValorRaw)) return "Data Valor is required.";
@@ -19214,6 +19258,7 @@ function importDataValidationMessage(type, row) {
   const normalizedType = normalizeImportDataTypeClient(type);
   if (normalizedType === "fdm-bookings") return importDataBookingsValidationMessage(row);
   if (normalizedType === "fdm-sales") return importDataSalesValidationMessage(row);
+  if (normalizedType === "fdm-occupancy-kpi") return importDataFdmOccupancyKpiValidationMessage(row);
   if (normalizedType === "cgd-extrato-ordem") return importDataCgdExtratoOrdemValidationMessage(row);
   if (normalizedType === "cgd-cartao-credito") return importDataCgdCartaoCreditoValidationMessage(row);
   return importDataAccountsValidationMessage(row);
@@ -19412,6 +19457,39 @@ function parseImportDataFdmSalesFieldMap(headerRow) {
   };
 }
 
+function normalizeImportDataHeaderKeyClient(value) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/ãª/g, "e")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/aª/g, "e")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseImportDataFdmOccupancyKpiFieldMap(headerRow) {
+  const map = new Map();
+  headerRow.forEach((cell, index) => {
+    map.set(normalizeImportDataHeaderKeyClient(cell), index);
+  });
+  return {
+    mes: map.get("mes") ?? map.get("mês") ?? map.get("mãªs"),
+    roomTypeOrig: map.get("room type orig"),
+    occupPercent: map.get("occup %"),
+    charge: map.get("charge"),
+    average: map.get("average"),
+    revpar: map.get("revpar"),
+    booked: map.get("booked"),
+    ocCombinada: map.get("oc combinada"),
+    property: map.get("property"),
+    typeOrig: map.get("type orig"),
+    type: map.get("type"),
+    roomType: map.get("room type"),
+    roomTypeOrigTransf: map.get("room type orig transf"),
+  };
+}
+
 function parseImportDataCgdExtratoOrdemFieldMap(headerRow) {
   const map = new Map();
   headerRow.forEach((cell, index) => {
@@ -19527,6 +19605,31 @@ function buildImportDataPreviewRowSales(cells, fieldMap, sourceRowNumber) {
   return row;
 }
 
+function buildImportDataPreviewRowFdmOccupancyKpi(cells, fieldMap, sourceRowNumber) {
+  const pick = (key) => {
+    const index = fieldMap[key];
+    return index === undefined || index === null || index < 0 ? "" : String(cells[index] ?? "").trim();
+  };
+  const row = {
+    sourceRowNumber,
+    mesRaw: pick("mes"),
+    roomTypeOrig: pick("roomTypeOrig"),
+    occupPercent: pick("occupPercent") === "" ? "" : normalizeImportDataMoneyClient(pick("occupPercent")),
+    charge: pick("charge") === "" ? "" : normalizeImportDataMoneyClient(pick("charge")),
+    average: pick("average") === "" ? "" : normalizeImportDataMoneyClient(pick("average")),
+    revpar: pick("revpar") === "" ? "" : normalizeImportDataMoneyClient(pick("revpar")),
+    booked: pick("booked") === "" ? "" : normalizeImportDataIntegerClient(pick("booked")),
+    ocCombinada: pick("ocCombinada") === "" ? "" : normalizeImportDataMoneyClient(pick("ocCombinada")),
+    property: pick("property"),
+    typeOrig: pick("typeOrig"),
+    type: pick("type"),
+    roomType: pick("roomType"),
+    roomTypeOrigTransf: pick("roomTypeOrigTransf"),
+  };
+  row.validation = importDataValidationMessage("fdm-occupancy-kpi", row);
+  return row;
+}
+
 function buildImportDataPreviewRowCgdExtratoOrdem(cells, fieldMap, sourceRowNumber) {
   const pick = (key) => {
     const index = fieldMap[key];
@@ -19634,6 +19737,13 @@ function parseImportDataRowsFromTable(tableRows, type = state.importDataType) {
   if (normalizedType === "fdm-sales") {
     const fieldMap = parseImportDataFdmSalesFieldMap(rows[0]);
     return rows.slice(1).map((cells, index) => buildImportDataPreviewRowSales(cells, fieldMap, index + 2));
+  }
+  if (normalizedType === "fdm-occupancy-kpi") {
+    const fieldMap = parseImportDataFdmOccupancyKpiFieldMap(rows[0]);
+    return rows
+      .slice(1)
+      .map((cells, index) => buildImportDataPreviewRowFdmOccupancyKpi(cells, fieldMap, index + 2))
+      .filter((row) => clean(row.mesRaw) || clean(row.roomTypeOrig));
   }
   const fieldMap = parseImportDataFdmAccountsFieldMap(rows[0]);
   return rows.slice(1).map((cells, index) => buildImportDataPreviewRowFdm(cells, fieldMap, index + 2));

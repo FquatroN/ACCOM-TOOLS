@@ -7,6 +7,7 @@ const IMPORT_DATA_TYPES = [
   { key: "fdm-accounts", label: "FDM Accounts" },
   { key: "fdm-bookings", label: "FDM Bookings" },
   { key: "fdm-sales", label: "FDM Sales" },
+  { key: "fdm-occupancy-kpi", label: "FDM Occupancy KPI" },
   { key: "cgd-extrato-ordem", label: "CGD Extrato Ordem" },
   { key: "cgd-cartao-credito", label: "CGD Cartao Credito" },
 ];
@@ -16,6 +17,7 @@ const DEFAULT_IMPORT_DATA_SETTINGS = {
     { type: "fdm-accounts", description: "Import FDM account movements from pasted text or uploaded tabular files." },
     { type: "fdm-bookings", description: "Import FDM reservation bookings from uploaded or pasted reservation exports." },
     { type: "fdm-sales", description: "Import FDM sales lines from uploaded or pasted sales report exports." },
+    { type: "fdm-occupancy-kpi", description: "Import FDM occupancy KPI monthly room-type metrics from pasted text or uploaded tabular files." },
     { type: "cgd-extrato-ordem", description: "Import CGD Conta Ordem bank statement movements from uploaded or pasted extracts." },
     { type: "cgd-cartao-credito", description: "Import CGD Cartao Credito statement movements from PDF, pasted text, or tabular files." },
   ],
@@ -317,6 +319,54 @@ function sanitizeFdmSalesImportRow(input = {}, meta = {}) {
   };
 }
 
+function sanitizeFdmOccupancyKpiImportRow(input = {}, meta = {}) {
+  const mesRaw = cleanText(input.mesRaw || input.mes_raw || input.mes || input.month || input["Mês"] || input["MÃªs"]);
+  const mes = normalizeImportLooseDate(mesRaw);
+  const roomTypeOrig = cleanText(input.roomTypeOrig || input.room_type_orig || input["Room Type Orig"]);
+  const occupPercentRaw = input.occupPercent ?? input.occup_percent ?? input["Occup %"];
+  const chargeRaw = input.charge ?? input.Charge;
+  const averageRaw = input.average ?? input.Average;
+  const revparRaw = input.revpar ?? input.RevPar ?? input.REVPAR;
+  const bookedRaw = input.booked ?? input.Booked;
+  const ocCombinadaRaw = input.ocCombinada ?? input.oc_combinada ?? input["OC combinada"];
+
+  if (!mesRaw) throw badRequest("Mês is required.");
+  if (!mes) throw badRequest("Mês is invalid.");
+  if (!roomTypeOrig) throw badRequest("Room Type Orig is required.");
+
+  const booked = cleanText(bookedRaw) === "" ? null : Number.parseInt(cleanText(bookedRaw).replace(/[^\d-]/g, ""), 10);
+  const occupPercent = cleanText(occupPercentRaw) === "" ? null : normalizeImportDecimal(occupPercentRaw);
+  const ocCombinada = cleanText(ocCombinadaRaw) === "" ? null : normalizeImportDecimal(ocCombinadaRaw);
+  const charge = cleanText(chargeRaw) === "" ? null : normalizeImportMoney(chargeRaw);
+  const average = cleanText(averageRaw) === "" ? null : normalizeImportMoney(averageRaw);
+  const revpar = cleanText(revparRaw) === "" ? null : normalizeImportMoney(revparRaw);
+
+  if (cleanText(bookedRaw) !== "" && !Number.isFinite(booked)) throw badRequest("Booked is invalid.");
+
+  return {
+    import_batch: cleanText(meta.importBatch),
+    source_type: "fdm-occupancy-kpi",
+    source_name: cleanText(meta.sourceName),
+    source_row_number: Number(meta.sourceRowNumber) || 0,
+    row_key: importDataRowKey([mes, roomTypeOrig]),
+    mes_raw: mesRaw,
+    mes,
+    room_type_orig: roomTypeOrig,
+    occup_percent: Number.isFinite(occupPercent) ? occupPercent : null,
+    charge: Number.isFinite(charge) ? charge : null,
+    average: Number.isFinite(average) ? average : null,
+    revpar: Number.isFinite(revpar) ? revpar : null,
+    booked: Number.isFinite(booked) ? booked : null,
+    oc_combinada: Number.isFinite(ocCombinada) ? ocCombinada : null,
+    property: cleanText(input.property || input.Property),
+    type_orig: cleanText(input.typeOrig || input.type_orig || input["Type Orig"]),
+    type: cleanText(input.type || input.Type || input["Type "]),
+    room_type: cleanText(input.roomType || input.room_type || input["Room Type"]),
+    room_type_orig_transf: cleanText(input.roomTypeOrigTransf || input.room_type_orig_transf || input["Room Type Orig transf"]),
+    raw_payload: input && typeof input === "object" ? input : {},
+  };
+}
+
 function sanitizeCgdExtratoOrdemImportRow(input = {}, meta = {}) {
   const dataRaw = cleanText(input.dataRaw || input.data_raw || input.data || input.DATA);
   const dataValorRaw = cleanText(input.dataValorRaw || input.data_valor_raw || input.dataValor || input.datavalor || input.DATAVALOR);
@@ -402,6 +452,7 @@ module.exports = {
   sanitizeCgdExtratoOrdemImportRow,
   sanitizeFdmAccountsImportRow,
   sanitizeFdmBookingsImportRow,
+  sanitizeFdmOccupancyKpiImportRow,
   sanitizeFdmSalesImportRow,
   sanitizeImportDataSettings,
 };

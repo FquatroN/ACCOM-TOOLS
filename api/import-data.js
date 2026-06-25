@@ -7,6 +7,7 @@ const {
   sanitizeCgdExtratoOrdemImportRow,
   sanitizeFdmAccountsImportRow,
   sanitizeFdmBookingsImportRow,
+  sanitizeFdmOccupancyKpiImportRow,
   sanitizeFdmSalesImportRow,
 } = require("./_import-data");
 
@@ -46,6 +47,19 @@ const IMPORT_DATA_CONFIG = {
       importDate: "select=created_at&order=created_at.desc&limit=1",
       specificMax: "select=sale_date&order=sale_date.desc.nullslast,created_at.desc&limit=1",
       specificMin: "select=sale_date&order=sale_date.asc.nullslast,created_at.asc&limit=1",
+    },
+  },
+  "fdm-occupancy-kpi": {
+    table: "import_fdm_occupancy_kpi",
+    sanitize: sanitizeFdmOccupancyKpiImportRow,
+    dateFilterColumn: "mes",
+    listQuery: "select=*&order=created_at.desc&limit=120",
+    insertSelect: "select=id,row_key",
+    onConflictColumns: ["row_key"],
+    summaryQueries: {
+      importDate: "select=created_at&order=created_at.desc&limit=1",
+      specificMax: "select=mes&order=mes.desc.nullslast,created_at.desc&limit=1",
+      specificMin: "select=mes&order=mes.asc.nullslast,created_at.asc&limit=1",
     },
   },
   "cgd-extrato-ordem": {
@@ -143,6 +157,13 @@ async function fetchImportDataMeta(type) {
       maxImportDate: cleanText(importRow?.created_at),
       maxDate: cleanText(specificMaxRow?.sale_date),
       minDate: cleanText(specificMinRow?.sale_date),
+    };
+  }
+  if (normalizedType === "fdm-occupancy-kpi") {
+    return {
+      maxImportDate: cleanText(importRow?.created_at),
+      maxDate: cleanText(specificMaxRow?.mes),
+      minDate: cleanText(specificMinRow?.mes),
     };
   }
   if (normalizedType === "cgd-extrato-ordem" || normalizedType === "cgd-cartao-credito") {
