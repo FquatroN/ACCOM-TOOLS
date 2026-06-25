@@ -323,6 +323,71 @@ function buildGuestsBiIneFromSource(sourceRows, selectedYearMonth) {
   };
 }
 
+function detailsAgeSegment(age) {
+  if (!Number.isFinite(age)) return { label: "Unknown", sortOrder: 8 };
+  if (age <= 12) return { label: "0-12", sortOrder: 1 };
+  if (age <= 17) return { label: "13-17", sortOrder: 2 };
+  if (age <= 25) return { label: "18-25", sortOrder: 3 };
+  if (age <= 35) return { label: "26-35", sortOrder: 4 };
+  if (age <= 45) return { label: "36-45", sortOrder: 5 };
+  if (age <= 55) return { label: "46-55", sortOrder: 6 };
+  if (age <= 65) return { label: "56-65", sortOrder: 7 };
+  return { label: "66+", sortOrder: 8 };
+}
+
+function averageNumber(values) {
+  const safeValues = (Array.isArray(values) ? values : []).map((value) => Number(value)).filter(Number.isFinite);
+  if (!safeValues.length) return null;
+  return Number((safeValues.reduce((sum, value) => sum + value, 0) / safeValues.length).toFixed(2));
+}
+
+function buildGuestsBiDetailsFromSource(sourceRows, selectedYear) {
+  const rows = Array.isArray(sourceRows) ? sourceRows : [];
+  const years = [...new Set(
+    rows
+      .map((row) => clean(row?.check_in).slice(0, 4))
+      .filter((value) => /^\d{4}$/.test(value))
+  )].sort((a, b) => a.localeCompare(b));
+  const selectedRows = rows.filter((row) => clean(row?.check_in).slice(0, 4) === String(selectedYear));
+  const selectedAges = selectedRows.map((row) => ageAtDate(row?.birth_date, row?.check_in)).filter((age) => Number.isFinite(age));
+  const selectedStays = selectedRows.map((row) => diffDays(row?.check_in, row?.check_out)).filter((nights) => Number.isFinite(nights));
+  const segmentMap = new Map([
+    ["0-12", { ageSegment: "0-12", sortOrder: 1, guestCount: 0 }],
+    ["13-17", { ageSegment: "13-17", sortOrder: 2, guestCount: 0 }],
+    ["18-25", { ageSegment: "18-25", sortOrder: 3, guestCount: 0 }],
+    ["26-35", { ageSegment: "26-35", sortOrder: 4, guestCount: 0 }],
+    ["36-45", { ageSegment: "36-45", sortOrder: 5, guestCount: 0 }],
+    ["46-55", { ageSegment: "46-55", sortOrder: 6, guestCount: 0 }],
+    ["56-65", { ageSegment: "56-65", sortOrder: 7, guestCount: 0 }],
+    ["66+", { ageSegment: "66+", sortOrder: 8, guestCount: 0 }],
+    ["Unknown", { ageSegment: "Unknown", sortOrder: 9, guestCount: 0 }],
+  ]);
+  selectedRows.forEach((row) => {
+    const segment = detailsAgeSegment(ageAtDate(row?.birth_date, row?.check_in));
+    const bucket = segmentMap.get(segment.label) || segmentMap.get("Unknown");
+    bucket.guestCount += 1;
+  });
+  const trendRows = years.map((year) => {
+    const yearRows = rows.filter((row) => clean(row?.check_in).slice(0, 4) === year);
+    return {
+      year,
+      guestCount: yearRows.length,
+      averageAge: averageNumber(yearRows.map((row) => ageAtDate(row?.birth_date, row?.check_in))),
+      averageStay: averageNumber(yearRows.map((row) => diffDays(row?.check_in, row?.check_out))),
+    };
+  });
+  return {
+    year: String(selectedYear),
+    summary: {
+      guestCount: selectedRows.length,
+      averageAge: averageNumber(selectedAges),
+      averageStay: averageNumber(selectedStays),
+    },
+    ageSegments: [...segmentMap.values()],
+    trends: trendRows,
+  };
+}
+
 function buildGuestsBiFallbackPayload(sourceRows, selectedYear, selectedMonthFilterYear = "") {
   const rows = Array.isArray(sourceRows) ? sourceRows : [];
   const availableYears = [...new Set(
@@ -564,6 +629,47 @@ module.exports = async function handler(req, res) {
     } catch {
       inePayload = buildGuestsBiIneFromSource(fallbackSourceRows, selectedYearMonth);
     }
+    let detailsPayload;
+    try {
+      const detailsRows = await restQuery("rpc/guests_bi_details", {
+        method: "POST",
+        body: {
+          p_year: selectedYear,
+          ...(selectedHa ? { p_ha: selectedHa } : {}),
+        },
+      });
+      const mappedDetailsRows = Array.isArray(detailsRows) ? detailsRows : [];
+      const summaryRow = mappedDetailsRows.find((row) => clean(row?.section) === "summary") || {};
+      const ageSegments = mappedDetailsRows
+        .filter((row) => clean(row?.section) === "segment")
+        .sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0))
+        .map((row) => ({
+          ageSegment: clean(row?.age_segment),
+          sortOrder: Number(row?.sort_order || 0),
+          guestCount: Number(row?.guest_count || 0),
+        }));
+      const trends = mappedDetailsRows
+        .filter((row) => clean(row?.section) === "trend")
+        .sort((a, b) => Number(a?.chart_year || 0) - Number(b?.chart_year || 0))
+        .map((row) => ({
+          year: clean(row?.chart_year),
+          guestCount: Number(row?.guest_count || 0),
+          averageAge: row?.average_age === null || row?.average_age === undefined ? null : Number(row.average_age),
+          averageStay: row?.average_stay === null || row?.average_stay === undefined ? null : Number(row.average_stay),
+        }));
+      detailsPayload = {
+        year: String(selectedYear),
+        summary: {
+          guestCount: Number(summaryRow?.guest_count || 0),
+          averageAge: summaryRow?.average_age === null || summaryRow?.average_age === undefined ? null : Number(summaryRow.average_age),
+          averageStay: summaryRow?.average_stay === null || summaryRow?.average_stay === undefined ? null : Number(summaryRow.average_stay),
+        },
+        ageSegments,
+        trends,
+      };
+    } catch {
+      detailsPayload = buildGuestsBiDetailsFromSource(fallbackSourceRows, selectedYear);
+    }
     res.status(200).json({
       ...payload,
       nationalities: {
@@ -573,6 +679,7 @@ module.exports = async function handler(req, res) {
       },
       bookingsTmt: bookingsTmtPayload,
       ine: inePayload,
+      details: detailsPayload,
       ha: selectedHa,
     });
   } catch (error) {

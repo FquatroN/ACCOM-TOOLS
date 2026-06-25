@@ -3752,6 +3752,7 @@
                 <button id="guests-bi-tab-tmt" type="button" class="active-tab">TMT</button>
                 <button id="guests-bi-tab-nationalities" type="button" class="ghost">Nationalities</button>
                 <button id="guests-bi-tab-ine" type="button" class="ghost">INE</button>
+                <button id="guests-bi-tab-details" type="button" class="ghost">Details</button>
               </div>
             </div>
 
@@ -3951,6 +3952,69 @@
               </div>
             </div>
             <p id="guests-bi-ine-status" class="auth-status"></p>
+          </section>
+
+          <section id="guests-bi-panel-details" class="card" hidden>
+            <div class="bar">
+              <h2>Details</h2>
+              <div class="actions">
+                <p id="guests-bi-details-count">0 guests</p>
+              </div>
+            </div>
+            <div id="guests-bi-details-filters" class="grid filters guests-bi-filters">
+              <label>
+                Year
+                <select id="guests-bi-details-filter-year"></select>
+              </label>
+              <label>
+                HA
+                <select id="guests-bi-details-filter-ha">
+                  <option value="">All</option>
+                  <option value="H">H</option>
+                  <option value="A">A</option>
+                </select>
+              </label>
+            </div>
+            <div class="guests-bi-details-kpis">
+              <article>
+                <span>Average Age</span>
+                <strong id="guests-bi-details-average-age">-</strong>
+              </article>
+              <article>
+                <span>Average Stay</span>
+                <strong id="guests-bi-details-average-stay">-</strong>
+              </article>
+            </div>
+            <div class="guests-bi-line-card">
+              <div class="bar">
+                <h3>Ages per Segment</h3>
+              </div>
+              <div id="guests-bi-details-age-chart" class="guests-bi-details-bar-chart"></div>
+              <div class="table-wrap compact-table-wrap">
+                <table class="compact-table guests-bi-table">
+                  <thead>
+                    <tr>
+                      <th>Age Segment</th>
+                      <th>Guests</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guests-bi-details-age-rows"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="guests-bi-line-card">
+              <div class="bar">
+                <h3>Average Age Evolution</h3>
+              </div>
+              <div id="guests-bi-details-age-line" class="guests-bi-line-wrap guests-bi-line-wrap--single"></div>
+            </div>
+            <div class="guests-bi-line-card">
+              <div class="bar">
+                <h3>Average Stay Evolution</h3>
+              </div>
+              <div id="guests-bi-details-stay-line" class="guests-bi-line-wrap guests-bi-line-wrap--single"></div>
+            </div>
+            <p id="guests-bi-details-status" class="auth-status"></p>
           </section>
         </section>
       </section>
