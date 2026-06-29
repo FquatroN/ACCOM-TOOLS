@@ -1479,6 +1479,7 @@ const els = {
   financialDocsCategoryField: document.getElementById("financial-docs-category-field"),
   financialDocsChooseAttachment: document.getElementById("financial-docs-choose-attachment"),
   financialDocsDownloadFile: document.getElementById("financial-docs-download-file"),
+  financialDocsDeleteFile: document.getElementById("financial-docs-delete-file"),
   financialDocsFileSummary: document.getElementById("financial-docs-file-summary"),
   financialDocsPreview: document.getElementById("financial-docs-preview"),
   financialDocsHistoryRows: document.getElementById("financial-docs-history-rows"),
@@ -2370,6 +2371,7 @@ function bindEvents() {
   });
   els.financialDocsChooseAttachment?.addEventListener("click", () => triggerFinancialDocAttachmentPicker({ mode: "modal-attachment" }));
   els.financialDocsDownloadFile?.addEventListener("click", () => downloadFinancialDocFile());
+  els.financialDocsDeleteFile?.addEventListener("click", () => deleteFinancialDocAttachment());
   els.financialDocsSave?.addEventListener("click", saveFinancialDoc);
   els.financialDocsSettingsAttributesTab?.addEventListener("click", () => setFinancialDocsSettingsTab("attributes"));
   els.financialDocsSettingsRulesTab?.addEventListener("click", () => setFinancialDocsSettingsTab("rules"));
@@ -21498,7 +21500,10 @@ function renderFinancialDocAttachmentSummary() {
       ? `${draft.storedFilename || draft.originalFilename || "File attached"}`
       : "No file attached.";
   if (els.financialDocsFileSummary) els.financialDocsFileSummary.textContent = summary;
-  if (els.financialDocsDownloadFile) els.financialDocsDownloadFile.disabled = !attachment && !clean(draft.driveFileId);
+  const hasSavedAttachment = !!clean(draft.driveFileId);
+  const hasAttachment = !!attachment || hasSavedAttachment;
+  if (els.financialDocsDownloadFile) els.financialDocsDownloadFile.disabled = !hasAttachment;
+  if (els.financialDocsDeleteFile) els.financialDocsDeleteFile.disabled = !hasAttachment;
 }
 
 function renderFinancialDocEditor() {
@@ -22010,6 +22015,72 @@ async function downloadFinancialDocFile(rowOverride = null) {
     downloadBlob(draft.storedFilename || draft.originalFilename || "document.pdf", blob, blob.type || draft.mimeType || "application/octet-stream");
   } catch (error) {
     showToast(`Download failed: ${error.message}`, "error");
+  }
+}
+
+async function deleteFinancialDocAttachment() {
+  const draft = state.financialDocsDraft || emptyFinancialDocDraft();
+  const hasLocalAttachment = !!state.financialDocsAttachment;
+  const hasSavedAttachment = !!clean(draft.driveFileId);
+  if (!hasLocalAttachment && !hasSavedAttachment) return;
+
+  const confirmed = window.confirm(
+    hasSavedAttachment
+      ? "Delete the attached document?\n\nThis will remove it from Google Drive and clear it from this financial document."
+      : "Remove the selected attachment?"
+  );
+  if (!confirmed) return;
+
+  if (els.financialDocsDeleteFile) els.financialDocsDeleteFile.disabled = true;
+  setFinancialDocsModalStatus(hasSavedAttachment ? "Deleting attachment..." : "Removing attachment...");
+
+  try {
+    if (!hasSavedAttachment) {
+      if (state.financialDocsAttachment?.previewUrl) {
+        try {
+          URL.revokeObjectURL(state.financialDocsAttachment.previewUrl);
+        } catch {}
+      }
+      state.financialDocsAttachment = null;
+      if (els.financialDocsAttachmentInput) els.financialDocsAttachmentInput.value = "";
+      renderFinancialDocAttachmentSummary();
+      await renderFinancialDocPreview();
+      setFinancialDocsModalStatus("Attachment removed.");
+      return;
+    }
+
+    const result = await api(`/api/financial-docs-file?id=${encodeURIComponent(draft.id)}`, { method: "DELETE" });
+    const updated = normalizeFinancialDocRowClient(result?.row || {
+      ...draft,
+      driveFileId: "",
+      driveFolderId: "",
+      driveFileUrl: "",
+      originalFilename: "",
+      storedFilename: "",
+      mimeType: "",
+      fileSize: 0,
+      fileHash: "",
+      uploadedBy: "",
+      uploadedAt: "",
+    });
+    state.financialDocsDraft = updated;
+    state.financialDocsRows = state.financialDocsRows.map((row) => (clean(row.id) === clean(updated.id) ? updated : row));
+    if (state.financialDocsAttachment?.previewUrl) {
+      try {
+        URL.revokeObjectURL(state.financialDocsAttachment.previewUrl);
+      } catch {}
+    }
+    state.financialDocsAttachment = null;
+    if (els.financialDocsAttachmentInput) els.financialDocsAttachmentInput.value = "";
+    renderFinancialDocs();
+    renderFinancialDocEditor();
+    await renderFinancialDocPreview();
+    setFinancialDocsModalStatus("Attachment deleted.");
+    showToast("Attachment deleted.", "success");
+  } catch (error) {
+    setFinancialDocsModalStatus(`Delete attachment failed: ${error.message}`);
+    showToast(`Delete attachment failed: ${error.message}`, "error");
+    renderFinancialDocAttachmentSummary();
   }
 }
 
