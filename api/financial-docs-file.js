@@ -35,15 +35,15 @@ module.exports = async function handler(req, res) {
     if (req.method === "DELETE") {
       await deleteDriveFile(refreshed.accessToken, driveFileId);
       await updateFinancialDocumentRow(id, {
-        drive_file_id: null,
-        drive_folder_id: null,
-        drive_file_url: null,
-        original_filename: null,
-        stored_filename: null,
-        mime_type: null,
-        file_size: null,
-        file_hash: null,
-        uploaded_by: null,
+        drive_file_id: "",
+        drive_folder_id: "",
+        drive_file_url: "",
+        original_filename: "",
+        stored_filename: "",
+        mime_type: "",
+        file_size: 0,
+        file_hash: "",
+        uploaded_by: "",
         uploaded_at: null,
       });
       await insertFinancialDocumentHistory({
