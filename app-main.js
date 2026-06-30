@@ -8686,7 +8686,7 @@ async function deleteService() {
 
 function exportServicesToExcel() {
   const rows = getFilteredServices();
-  const headers = ["Request #", "Service Type", "Customer", "Date", "Time", "Pax", "Pick Up", "Flight Nr", "Drop Off", "Price"];
+  const headers = ["Request #", "Service Type", "Customer", "Date", "Time", "Pax", "Pick Up", "Flight Nr", "Drop Off", "Price", "Status"];
   const body = rows.map((row) => [
     row.requestNumber || "-",
     row.serviceType,
@@ -8698,6 +8698,7 @@ function exportServicesToExcel() {
     row.flightNumber || "-",
     row.dropoffLocation || "-",
     formatMoney(row.price),
+    row.status || "-",
   ]);
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers.map((header) => `<th>${escape(header)}</th>`).join("")}</tr></thead><tbody>${body.map((cols) => `<tr>${cols.map((value) => `<td>${escape(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
   downloadBlob(`services_${formatDate(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8;");
