@@ -1533,6 +1533,10 @@ const els = {
   guestsBiDetailsCount: document.getElementById("guests-bi-details-count"),
   guestsBiDetailsAverageAge: document.getElementById("guests-bi-details-average-age"),
   guestsBiDetailsAverageStay: document.getElementById("guests-bi-details-average-stay"),
+  guestsBiDetailsAverageAgeH: document.getElementById("guests-bi-details-average-age-h"),
+  guestsBiDetailsAverageStayH: document.getElementById("guests-bi-details-average-stay-h"),
+  guestsBiDetailsAverageAgeA: document.getElementById("guests-bi-details-average-age-a"),
+  guestsBiDetailsAverageStayA: document.getElementById("guests-bi-details-average-stay-a"),
   guestsBiDetailsAgeChart: document.getElementById("guests-bi-details-age-chart"),
   guestsBiDetailsAgeRows: document.getElementById("guests-bi-details-age-rows"),
   guestsBiDetailsAgeLine: document.getElementById("guests-bi-details-age-line"),
@@ -17538,7 +17542,29 @@ function normalizeFinancialDocHistoryClient(input = {}) {
   };
 }
 
+function latestFinancialDocDuplicateWarningMessage(history = [], fallbackMessage = "") {
+  const entries = (Array.isArray(history) ? history : [])
+    .filter((item) => {
+      const actionType = clean(item.actionType || item.action_type);
+      return actionType === "duplicate_warning" || actionType === "duplicate_warning_resolved";
+    })
+    .sort((a, b) => {
+      const left = Date.parse(clean(a.createdAt || a.created_at));
+      const right = Date.parse(clean(b.createdAt || b.created_at));
+      return (Number.isFinite(right) ? right : 0) - (Number.isFinite(left) ? left : 0);
+    });
+  const latest = entries[0];
+  const actionType = clean(latest?.actionType || latest?.action_type);
+  if (actionType === "duplicate_warning_resolved") return "";
+  if (actionType === "duplicate_warning") return clean(latest.message) || clean(fallbackMessage);
+  return clean(fallbackMessage);
+}
+
 function normalizeFinancialDocRowClient(input = {}) {
+  const history = Array.isArray(input.history) ? input.history.map(normalizeFinancialDocHistoryClient) : [];
+  const hasDuplicateWarningOverride =
+    Object.prototype.hasOwnProperty.call(input, "duplicateWarningMessage") ||
+    Object.prototype.hasOwnProperty.call(input, "duplicate_warning_message");
   const row = {
     ...emptyFinancialDocDraft(),
     id: clean(input.id),
@@ -17569,12 +17595,11 @@ function normalizeFinancialDocRowClient(input = {}) {
     uploadedAt: clean(input.uploadedAt || input.uploaded_at),
     ocrFields: input.ocrFields && typeof input.ocrFields === "object" ? input.ocrFields : (input.ocr_fields && typeof input.ocr_fields === "object" ? input.ocr_fields : {}),
     ocrRawText: clean(input.ocrRawText || input.ocr_raw_text),
-    duplicateWarningMessage: clean(input.duplicateWarningMessage || input.duplicate_warning_message),
-    history: Array.isArray(input.history) ? input.history.map(normalizeFinancialDocHistoryClient) : [],
+    duplicateWarningMessage: hasDuplicateWarningOverride
+      ? clean(input.duplicateWarningMessage || input.duplicate_warning_message)
+      : latestFinancialDocDuplicateWarningMessage(history),
+    history,
   };
-  if (!row.duplicateWarningMessage) {
-    row.duplicateWarningMessage = clean(row.history.find((item) => clean(item.actionType) === "duplicate_warning")?.message);
-  }
   return row;
 }
 
@@ -20777,55 +20802,164 @@ function formatGuestsBiDecimal(value, digits = 1) {
   return Number.isFinite(numeric) ? numeric.toFixed(digits) : "-";
 }
 
+function normalizeGuestsBiDetailsScope(value) {
+  const scope = clean(value).toUpperCase();
+  if (scope === "H" || scope === "A") return scope;
+  return "All";
+}
+
+function guestsBiDetailsSummaryScope(summary = {}, scope = "All") {
+  const normalizedScope = normalizeGuestsBiDetailsScope(scope);
+  const scopes = summary?.scopes && typeof summary.scopes === "object" ? summary.scopes : {};
+  if (scopes[normalizedScope]) return scopes[normalizedScope];
+  if (normalizedScope === "All") return summary || {};
+  return { guestCount: 0, averageAge: null, averageStay: null };
+}
+
+function aggregateGuestsBiDetailsAgeSegments(rows = []) {
+  const seed = [
+    ["0-12", 1],
+    ["13-17", 2],
+    ["18-25", 3],
+    ["26-35", 4],
+    ["36-45", 5],
+    ["46-55", 6],
+    ["56-65", 7],
+    ["66+", 8],
+    ["Unknown", 9],
+  ];
+  const map = new Map(seed.map(([ageSegment, sortOrder]) => [ageSegment, { ageSegment, sortOrder, all: 0, h: 0, a: 0 }]));
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const ageSegment = clean(row?.ageSegment || row?.age_segment) || "Unknown";
+    if (!map.has(ageSegment)) map.set(ageSegment, { ageSegment, sortOrder: Number(row?.sortOrder || row?.sort_order || 99), all: 0, h: 0, a: 0 });
+    const bucket = map.get(ageSegment);
+    const value = Number(row?.guestCount || row?.guest_count || 0);
+    const scope = normalizeGuestsBiDetailsScope(row?.haScope || row?.ha_scope);
+    if (scope === "H") bucket.h = value;
+    else if (scope === "A") bucket.a = value;
+    else bucket.all = value;
+  });
+  return [...map.values()]
+    .map((row) => ({
+      ...row,
+      all: row.all || row.h + row.a,
+    }))
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+}
+
 function renderGuestsBiDetailsBarChart(rows = []) {
-  const safeRows = Array.isArray(rows) ? rows : [];
+  const safeRows = aggregateGuestsBiDetailsAgeSegments(rows);
   if (!safeRows.length) return '<div class="empty">No age segment data found.</div>';
-  const maxValue = Math.max(1, ...safeRows.map((row) => Number(row?.guestCount || 0)));
-  return safeRows.map((row) => {
-    const value = Number(row?.guestCount || 0);
-    const width = Math.max(1, (value / maxValue) * 100);
-    return `<div class="guests-bi-details-bar-row">
-      <span>${escape(row?.ageSegment || "-")}</span>
+  const maxValue = Math.max(1, ...safeRows.flatMap((row) => [row.all, row.h, row.a].map((value) => Number(value || 0))));
+  const bar = (value, scope) => {
+    const numeric = Number(value || 0);
+    const width = numeric > 0 ? Math.max(1, (numeric / maxValue) * 100) : 0;
+    return `<div class="guests-bi-details-bar-mini guests-bi-details-bar-mini--${scope}">
+      <span>${escape(scope === "all" ? "All" : scope.toUpperCase())}</span>
       <div class="guests-bi-details-bar-track">
         <div class="guests-bi-details-bar-fill" style="width:${width}%"></div>
       </div>
-      <strong>${escape(String(value))}</strong>
+      <strong>${escape(String(numeric))}</strong>
+    </div>`;
+  };
+  return safeRows.map((row) => {
+    return `<div class="guests-bi-details-bar-row">
+      <span>${escape(row?.ageSegment || "-")}</span>
+      <div class="guests-bi-details-bar-stack">
+        ${bar(row.all, "all")}
+        ${bar(row.h, "h")}
+        ${bar(row.a, "a")}
+      </div>
     </div>`;
   }).join("");
+}
+
+function aggregateGuestsBiDetailsTrends(rows = []) {
+  const byYear = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const year = clean(row?.year || row?.chartYear || row?.chart_year);
+    if (!year) return;
+    if (!byYear.has(year)) byYear.set(year, { year, All: null, H: null, A: null });
+    const bucket = byYear.get(year);
+    const scope = normalizeGuestsBiDetailsScope(row?.haScope || row?.ha_scope);
+    bucket[scope] = {
+      guestCount: Number(row?.guestCount || row?.guest_count || 0),
+      averageAge: row?.averageAge === null || row?.averageAge === undefined ? null : Number(row.averageAge),
+      averageStay: row?.averageStay === null || row?.averageStay === undefined ? null : Number(row.averageStay),
+    };
+  });
+  return [...byYear.values()]
+    .map((row) => {
+      if (!row.All && (row.H || row.A)) {
+        const weighted = (field) => {
+          const parts = [row.H, row.A].filter((item) => item && Number.isFinite(Number(item[field])) && Number(item.guestCount || 0) > 0);
+          const totalGuests = parts.reduce((sum, item) => sum + Number(item.guestCount || 0), 0);
+          if (!totalGuests) return null;
+          return parts.reduce((sum, item) => sum + Number(item[field]) * Number(item.guestCount || 0), 0) / totalGuests;
+        };
+        row.All = {
+          guestCount: Number(row.H?.guestCount || 0) + Number(row.A?.guestCount || 0),
+          averageAge: weighted("averageAge"),
+          averageStay: weighted("averageStay"),
+        };
+      }
+      return row;
+    })
+    .sort((a, b) => clean(a.year).localeCompare(clean(b.year)));
+}
+
+function buildGuestsBiDetailsTrendSeries(trends = [], metric = "averageAge") {
+  const rows = aggregateGuestsBiDetailsTrends(trends);
+  const years = rows.map((row) => clean(row.year)).filter(Boolean);
+  const valueFor = (row, scope) => {
+    const value = row?.[scope]?.[metric];
+    return value === null || value === undefined ? 0 : Number(value || 0);
+  };
+  return {
+    years,
+    series: [
+      { countryLabel: "All", values: rows.map((row) => valueFor(row, "All")) },
+      { countryLabel: "H", values: rows.map((row) => valueFor(row, "H")) },
+      { countryLabel: "A", values: rows.map((row) => valueFor(row, "A")) },
+    ],
+  };
 }
 
 function renderGuestsBiDetails() {
   const summary = state.guestsBiDetailsSummary || { guestCount: 0, averageAge: null, averageStay: null };
   const ageSegments = Array.isArray(state.guestsBiDetailsAgeSegments) ? state.guestsBiDetailsAgeSegments : [];
   const trends = Array.isArray(state.guestsBiDetailsTrends) ? state.guestsBiDetailsTrends : [];
+  const summaryAll = guestsBiDetailsSummaryScope(summary, currentGuestsBiHa("details") || "All");
+  const summaryH = guestsBiDetailsSummaryScope(summary, "H");
+  const summaryA = guestsBiDetailsSummaryScope(summary, "A");
   if (els.guestsBiDetailsCount) {
-    const guestCount = Number(summary.guestCount || 0);
+    const guestCount = Number(summaryAll.guestCount || 0);
     els.guestsBiDetailsCount.textContent = `${guestCount} guest${guestCount === 1 ? "" : "s"}`;
   }
-  if (els.guestsBiDetailsAverageAge) els.guestsBiDetailsAverageAge.textContent = formatGuestsBiDecimal(summary.averageAge, 1);
-  if (els.guestsBiDetailsAverageStay) els.guestsBiDetailsAverageStay.textContent = `${formatGuestsBiDecimal(summary.averageStay, 1)} nights`;
+  if (els.guestsBiDetailsAverageAge) els.guestsBiDetailsAverageAge.textContent = formatGuestsBiDecimal(summaryAll.averageAge, 1);
+  if (els.guestsBiDetailsAverageStay) els.guestsBiDetailsAverageStay.textContent = `${formatGuestsBiDecimal(summaryAll.averageStay, 1)} nights`;
+  if (els.guestsBiDetailsAverageAgeH) els.guestsBiDetailsAverageAgeH.textContent = formatGuestsBiDecimal(summaryH.averageAge, 1);
+  if (els.guestsBiDetailsAverageStayH) els.guestsBiDetailsAverageStayH.textContent = `${formatGuestsBiDecimal(summaryH.averageStay, 1)} nights`;
+  if (els.guestsBiDetailsAverageAgeA) els.guestsBiDetailsAverageAgeA.textContent = formatGuestsBiDecimal(summaryA.averageAge, 1);
+  if (els.guestsBiDetailsAverageStayA) els.guestsBiDetailsAverageStayA.textContent = `${formatGuestsBiDecimal(summaryA.averageStay, 1)} nights`;
   if (els.guestsBiDetailsAgeChart) els.guestsBiDetailsAgeChart.innerHTML = renderGuestsBiDetailsBarChart(ageSegments);
   if (els.guestsBiDetailsAgeRows) {
-    els.guestsBiDetailsAgeRows.innerHTML = ageSegments.length
-      ? ageSegments.map((row) => `<tr>
+    const tableRows = aggregateGuestsBiDetailsAgeSegments(ageSegments);
+    els.guestsBiDetailsAgeRows.innerHTML = tableRows.length
+      ? tableRows.map((row) => `<tr>
         <td>${escape(row.ageSegment || "-")}</td>
-        <td>${escape(String(Number(row.guestCount || 0)))}</td>
+        <td>${escape(String(Number(row.all || 0)))}</td>
+        <td>${escape(String(Number(row.h || 0)))}</td>
+        <td>${escape(String(Number(row.a || 0)))}</td>
       </tr>`).join("")
-      : '<tr><td colspan="2" class="empty">No age segment data found.</td></tr>';
+      : '<tr><td colspan="4" class="empty">No age segment data found.</td></tr>';
   }
-  const trendYears = trends.map((row) => clean(row.year || row.chartYear)).filter(Boolean);
-  const ageSeries = [{
-    countryLabel: "Average Age",
-    values: trends.map((row) => row.averageAge === null || row.averageAge === undefined ? 0 : Number(row.averageAge || 0)),
-  }];
-  const staySeries = [{
-    countryLabel: "Average Stay",
-    values: trends.map((row) => row.averageStay === null || row.averageStay === undefined ? 0 : Number(row.averageStay || 0)),
-  }];
+  const ageTrend = buildGuestsBiDetailsTrendSeries(trends, "averageAge");
+  const stayTrend = buildGuestsBiDetailsTrendSeries(trends, "averageStay");
   if (els.guestsBiDetailsAgeLine) {
     els.guestsBiDetailsAgeLine.innerHTML = buildGuestsBiLineChartMarkup(
-      trendYears,
-      ageSeries,
+      ageTrend.years,
+      ageTrend.series,
       "No average age trend found.",
       "Average age evolution by year",
       "absolute",
@@ -20834,8 +20968,8 @@ function renderGuestsBiDetails() {
   }
   if (els.guestsBiDetailsStayLine) {
     els.guestsBiDetailsStayLine.innerHTML = buildGuestsBiLineChartMarkup(
-      trendYears,
-      staySeries,
+      stayTrend.years,
+      stayTrend.series,
       "No average stay trend found.",
       "Average stay evolution by year",
       "absolute",
@@ -20912,6 +21046,12 @@ function renderGuestsBi() {
     if (els.guestsBiDetailsStayLine) els.guestsBiDetailsStayLine.innerHTML = "";
     if (els.guestsBiNationalitiesCount) els.guestsBiNationalitiesCount.textContent = "0 countries";
     if (els.guestsBiDetailsCount) els.guestsBiDetailsCount.textContent = "0 guests";
+    if (els.guestsBiDetailsAverageAge) els.guestsBiDetailsAverageAge.textContent = "-";
+    if (els.guestsBiDetailsAverageStay) els.guestsBiDetailsAverageStay.textContent = "- nights";
+    if (els.guestsBiDetailsAverageAgeH) els.guestsBiDetailsAverageAgeH.textContent = "-";
+    if (els.guestsBiDetailsAverageStayH) els.guestsBiDetailsAverageStayH.textContent = "- nights";
+    if (els.guestsBiDetailsAverageAgeA) els.guestsBiDetailsAverageAgeA.textContent = "-";
+    if (els.guestsBiDetailsAverageStayA) els.guestsBiDetailsAverageStayA.textContent = "- nights";
     return;
   }
   const isTmt = state.guestsBiTab === "tmt";

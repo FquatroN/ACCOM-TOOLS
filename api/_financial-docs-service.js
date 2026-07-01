@@ -8,6 +8,7 @@ const {
   toClientDocument,
   toClientEntity,
   toClientHistory,
+  latestDuplicateWarningMessage,
   monthlyFolderKey,
   buildStoredFileName,
 } = require("./_financial-docs");
@@ -398,17 +399,18 @@ async function listFinancialDocuments(filters = {}) {
   if (!Array.isArray(rows) || !rows.length) return [];
   const ids = rows.map((row) => cleanText(row.id)).filter(Boolean);
   const warningRows = ids.length
-    ? await restQuery(`financial_document_history?select=document_id,message,created_at&action_type=eq.duplicate_warning&document_id=in.(${ids.map((id) => encodeURIComponent(id)).join(",")})&order=created_at.desc`, { method: "GET" })
+    ? await restQuery(`financial_document_history?select=document_id,action_type,message,created_at&action_type=in.(duplicate_warning,duplicate_warning_resolved)&document_id=in.(${ids.map((id) => encodeURIComponent(id)).join(",")})&order=created_at.desc`, { method: "GET" })
     : [];
-  const warningByDocumentId = new Map();
+  const historyByDocumentId = new Map();
   (Array.isArray(warningRows) ? warningRows : []).forEach((item) => {
     const documentId = cleanText(item.document_id || item.documentId);
-    if (!documentId || warningByDocumentId.has(documentId)) return;
-    warningByDocumentId.set(documentId, cleanText(item.message));
+    if (!documentId) return;
+    if (!historyByDocumentId.has(documentId)) historyByDocumentId.set(documentId, []);
+    historyByDocumentId.get(documentId).push(item);
   });
   return rows.map((row) => toClientDocument({
     ...row,
-    duplicate_warning_message: warningByDocumentId.get(cleanText(row.id)) || "",
+    duplicate_warning_message: latestDuplicateWarningMessage(historyByDocumentId.get(cleanText(row.id)) || []),
   }));
 }
 

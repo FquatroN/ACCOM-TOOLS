@@ -316,11 +316,32 @@ function findPossibleDuplicates(candidate, existingRows, { currentId = "", check
   return matches;
 }
 
+function latestDuplicateWarningMessage(history = [], fallbackMessage = "") {
+  const entries = (Array.isArray(history) ? history : [])
+    .filter((item) => {
+      const actionType = cleanText(item.actionType || item.action_type);
+      return actionType === "duplicate_warning" || actionType === "duplicate_warning_resolved";
+    })
+    .sort((a, b) => {
+      const left = Date.parse(cleanText(a.createdAt || a.created_at));
+      const right = Date.parse(cleanText(b.createdAt || b.created_at));
+      return (Number.isFinite(right) ? right : 0) - (Number.isFinite(left) ? left : 0);
+    });
+  const latest = entries[0];
+  const latestAction = cleanText(latest?.actionType || latest?.action_type);
+  if (latestAction === "duplicate_warning_resolved") return "";
+  if (latestAction === "duplicate_warning") return cleanText(latest.message) || cleanText(fallbackMessage);
+  return cleanText(fallbackMessage);
+}
+
 function toClientDocument(row = {}) {
   const history = Array.isArray(row.history) ? row.history.map(toClientHistory) : [];
-  const duplicateWarningMessage =
-    cleanText(row.duplicate_warning_message || row.duplicateWarningMessage) ||
-    cleanText(history.find((item) => cleanText(item.actionType || item.action_type) === "duplicate_warning")?.message);
+  const hasDuplicateWarningOverride =
+    Object.prototype.hasOwnProperty.call(row, "duplicate_warning_message") ||
+    Object.prototype.hasOwnProperty.call(row, "duplicateWarningMessage");
+  const duplicateWarningMessage = hasDuplicateWarningOverride
+    ? cleanText(row.duplicate_warning_message || row.duplicateWarningMessage)
+    : latestDuplicateWarningMessage(history);
   return {
     id: cleanText(row.id),
     createdAt: cleanText(row.created_at || row.createdAt),
@@ -390,6 +411,7 @@ module.exports = {
   normalizeEntityName,
   normalizeEntityNif,
   findPossibleDuplicates,
+  latestDuplicateWarningMessage,
   monthlyFolderKey,
   safeFinancialDocsSettings,
   sanitizeFinancialDocumentEntityInput,

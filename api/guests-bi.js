@@ -324,7 +324,7 @@ function buildGuestsBiIneFromSource(sourceRows, selectedYearMonth) {
 }
 
 function detailsAgeSegment(age) {
-  if (!Number.isFinite(age)) return { label: "Unknown", sortOrder: 8 };
+  if (!Number.isFinite(age)) return { label: "Unknown", sortOrder: 9 };
   if (age <= 12) return { label: "0-12", sortOrder: 1 };
   if (age <= 17) return { label: "13-17", sortOrder: 2 };
   if (age <= 25) return { label: "18-25", sortOrder: 3 };
@@ -335,55 +335,83 @@ function detailsAgeSegment(age) {
   return { label: "66+", sortOrder: 8 };
 }
 
+function detailsScopeRows(rows, selectedHa) {
+  const normalizedHa = parseHaValue(selectedHa);
+  if (normalizedHa) return [{ haScope: normalizedHa, rows: rows.filter((row) => clean(row?.ha).toUpperCase() === normalizedHa) }];
+  return [
+    { haScope: "All", rows },
+    { haScope: "H", rows: rows.filter((row) => clean(row?.ha).toUpperCase() === "H") },
+    { haScope: "A", rows: rows.filter((row) => clean(row?.ha).toUpperCase() === "A") },
+  ];
+}
+
 function averageNumber(values) {
   const safeValues = (Array.isArray(values) ? values : []).map((value) => Number(value)).filter(Number.isFinite);
   if (!safeValues.length) return null;
   return Number((safeValues.reduce((sum, value) => sum + value, 0) / safeValues.length).toFixed(2));
 }
 
-function buildGuestsBiDetailsFromSource(sourceRows, selectedYear) {
+function buildGuestsBiDetailsFromSource(sourceRows, selectedYear, selectedHa = "") {
   const rows = Array.isArray(sourceRows) ? sourceRows : [];
   const years = [...new Set(
     rows
       .map((row) => clean(row?.check_in).slice(0, 4))
       .filter((value) => /^\d{4}$/.test(value))
   )].sort((a, b) => a.localeCompare(b));
-  const selectedRows = rows.filter((row) => clean(row?.check_in).slice(0, 4) === String(selectedYear));
-  const selectedAges = selectedRows.map((row) => ageAtDate(row?.birth_date, row?.check_in)).filter((age) => Number.isFinite(age));
-  const selectedStays = selectedRows.map((row) => diffDays(row?.check_in, row?.check_out)).filter((nights) => Number.isFinite(nights));
-  const segmentMap = new Map([
-    ["0-12", { ageSegment: "0-12", sortOrder: 1, guestCount: 0 }],
-    ["13-17", { ageSegment: "13-17", sortOrder: 2, guestCount: 0 }],
-    ["18-25", { ageSegment: "18-25", sortOrder: 3, guestCount: 0 }],
-    ["26-35", { ageSegment: "26-35", sortOrder: 4, guestCount: 0 }],
-    ["36-45", { ageSegment: "36-45", sortOrder: 5, guestCount: 0 }],
-    ["46-55", { ageSegment: "46-55", sortOrder: 6, guestCount: 0 }],
-    ["56-65", { ageSegment: "56-65", sortOrder: 7, guestCount: 0 }],
-    ["66+", { ageSegment: "66+", sortOrder: 8, guestCount: 0 }],
-    ["Unknown", { ageSegment: "Unknown", sortOrder: 9, guestCount: 0 }],
-  ]);
-  selectedRows.forEach((row) => {
-    const segment = detailsAgeSegment(ageAtDate(row?.birth_date, row?.check_in));
-    const bucket = segmentMap.get(segment.label) || segmentMap.get("Unknown");
-    bucket.guestCount += 1;
-  });
-  const trendRows = years.map((year) => {
-    const yearRows = rows.filter((row) => clean(row?.check_in).slice(0, 4) === year);
-    return {
-      year,
-      guestCount: yearRows.length,
-      averageAge: averageNumber(yearRows.map((row) => ageAtDate(row?.birth_date, row?.check_in))),
-      averageStay: averageNumber(yearRows.map((row) => diffDays(row?.check_in, row?.check_out))),
-    };
-  });
-  return {
-    year: String(selectedYear),
-    summary: {
+  const scopes = detailsScopeRows(rows, selectedHa);
+  const segmentSeed = [
+    { ageSegment: "0-12", sortOrder: 1 },
+    { ageSegment: "13-17", sortOrder: 2 },
+    { ageSegment: "18-25", sortOrder: 3 },
+    { ageSegment: "26-35", sortOrder: 4 },
+    { ageSegment: "36-45", sortOrder: 5 },
+    { ageSegment: "46-55", sortOrder: 6 },
+    { ageSegment: "56-65", sortOrder: 7 },
+    { ageSegment: "66+", sortOrder: 8 },
+    { ageSegment: "Unknown", sortOrder: 9 },
+  ];
+  const summaryScopes = {};
+  const ageSegments = [];
+  const trendRows = [];
+  scopes.forEach((scope) => {
+    const selectedRows = scope.rows.filter((row) => clean(row?.check_in).slice(0, 4) === String(selectedYear));
+    const selectedAges = selectedRows.map((row) => ageAtDate(row?.birth_date, row?.check_in)).filter((age) => Number.isFinite(age));
+    const selectedStays = selectedRows.map((row) => diffDays(row?.check_in, row?.check_out)).filter((nights) => Number.isFinite(nights));
+    summaryScopes[scope.haScope] = {
+      haScope: scope.haScope,
       guestCount: selectedRows.length,
       averageAge: averageNumber(selectedAges),
       averageStay: averageNumber(selectedStays),
+    };
+    const segmentMap = new Map(segmentSeed.map((item) => [item.ageSegment, { ...item, haScope: scope.haScope, guestCount: 0 }]));
+    selectedRows.forEach((row) => {
+      const segment = detailsAgeSegment(ageAtDate(row?.birth_date, row?.check_in));
+      const bucket = segmentMap.get(segment.label) || segmentMap.get("Unknown");
+      bucket.guestCount += 1;
+    });
+    ageSegments.push(...segmentMap.values());
+    years.forEach((year) => {
+      const yearRows = scope.rows.filter((row) => clean(row?.check_in).slice(0, 4) === year);
+      trendRows.push({
+        year,
+        haScope: scope.haScope,
+        guestCount: yearRows.length,
+        averageAge: averageNumber(yearRows.map((row) => ageAtDate(row?.birth_date, row?.check_in))),
+        averageStay: averageNumber(yearRows.map((row) => diffDays(row?.check_in, row?.check_out))),
+      });
+    });
+  });
+  const primaryScope = parseHaValue(selectedHa) || "All";
+  const primarySummary = summaryScopes[primaryScope] || summaryScopes.All || { guestCount: 0, averageAge: null, averageStay: null };
+  return {
+    year: String(selectedYear),
+    summary: {
+      guestCount: primarySummary.guestCount || 0,
+      averageAge: primarySummary.averageAge ?? null,
+      averageStay: primarySummary.averageStay ?? null,
+      scopes: summaryScopes,
     },
-    ageSegments: [...segmentMap.values()],
+    ageSegments,
     trends: trendRows,
   };
 }
@@ -639,12 +667,26 @@ module.exports = async function handler(req, res) {
         },
       });
       const mappedDetailsRows = Array.isArray(detailsRows) ? detailsRows : [];
-      const summaryRow = mappedDetailsRows.find((row) => clean(row?.section) === "summary") || {};
+      const primaryScope = selectedHa || "All";
+      const summaryScopes = {};
+      mappedDetailsRows
+        .filter((row) => clean(row?.section) === "summary")
+        .forEach((row) => {
+          const haScope = clean(row?.ha_scope || row?.haScope || primaryScope) || primaryScope;
+          summaryScopes[haScope] = {
+            haScope,
+            guestCount: Number(row?.guest_count || 0),
+            averageAge: row?.average_age === null || row?.average_age === undefined ? null : Number(row.average_age),
+            averageStay: row?.average_stay === null || row?.average_stay === undefined ? null : Number(row.average_stay),
+          };
+        });
+      const summaryRow = summaryScopes[primaryScope] || summaryScopes.All || Object.values(summaryScopes)[0] || {};
       const ageSegments = mappedDetailsRows
         .filter((row) => clean(row?.section) === "segment")
         .sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0))
         .map((row) => ({
           ageSegment: clean(row?.age_segment),
+          haScope: clean(row?.ha_scope || row?.haScope || primaryScope) || primaryScope,
           sortOrder: Number(row?.sort_order || 0),
           guestCount: Number(row?.guest_count || 0),
         }));
@@ -653,6 +695,7 @@ module.exports = async function handler(req, res) {
         .sort((a, b) => Number(a?.chart_year || 0) - Number(b?.chart_year || 0))
         .map((row) => ({
           year: clean(row?.chart_year),
+          haScope: clean(row?.ha_scope || row?.haScope || primaryScope) || primaryScope,
           guestCount: Number(row?.guest_count || 0),
           averageAge: row?.average_age === null || row?.average_age === undefined ? null : Number(row.average_age),
           averageStay: row?.average_stay === null || row?.average_stay === undefined ? null : Number(row.average_stay),
@@ -660,15 +703,16 @@ module.exports = async function handler(req, res) {
       detailsPayload = {
         year: String(selectedYear),
         summary: {
-          guestCount: Number(summaryRow?.guest_count || 0),
-          averageAge: summaryRow?.average_age === null || summaryRow?.average_age === undefined ? null : Number(summaryRow.average_age),
-          averageStay: summaryRow?.average_stay === null || summaryRow?.average_stay === undefined ? null : Number(summaryRow.average_stay),
+          guestCount: Number(summaryRow?.guestCount || 0),
+          averageAge: summaryRow?.averageAge === null || summaryRow?.averageAge === undefined ? null : Number(summaryRow.averageAge),
+          averageStay: summaryRow?.averageStay === null || summaryRow?.averageStay === undefined ? null : Number(summaryRow.averageStay),
+          scopes: summaryScopes,
         },
         ageSegments,
         trends,
       };
     } catch {
-      detailsPayload = buildGuestsBiDetailsFromSource(fallbackSourceRows, selectedYear);
+      detailsPayload = buildGuestsBiDetailsFromSource(fallbackSourceRows, selectedYear, selectedHa);
     }
     res.status(200).json({
       ...payload,

@@ -294,6 +294,7 @@ module.exports = async function handler(req, res) {
         checksum: upload?.fileHash,
       });
       if (duplicates.length && !body?.confirmDuplicate) throw duplicateConflict(duplicates);
+      const existingWithHistory = await loadFinancialDocumentWithHistory(id);
 
       let updated = await updateFinancialDocumentRow(id, {
         ...buildDbPayload(sanitized, existing.created_by || userEmail),
@@ -318,6 +319,17 @@ module.exports = async function handler(req, res) {
           old_value: null,
           new_value: null,
           metadata: { duplicates },
+          created_by: userEmail,
+        });
+      } else if (cleanText(existingWithHistory?.duplicateWarningMessage)) {
+        historyEntries.push({
+          document_id: id,
+          action_type: "duplicate_warning_resolved",
+          field_name: "",
+          message: "Duplicate warning resolved.",
+          old_value: cleanText(existingWithHistory.duplicateWarningMessage),
+          new_value: null,
+          metadata: {},
           created_by: userEmail,
         });
       }
