@@ -10,6 +10,23 @@ const {
   updateFinancialDocumentRow,
 } = require("./_financial-docs-service");
 
+function contentDispositionFilename(value) {
+  const raw = cleanText(value) || "document.pdf";
+  const safeAscii = raw
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7e]+/g, " ")
+    .replace(/[\\"]/g, "")
+    .replace(/[;\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 150) || "document.pdf";
+  const encoded = encodeURIComponent(raw.replace(/[\r\n\t]+/g, " ").trim())
+    .replace(/['()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/\*/g, "%2A");
+  return `filename="${safeAscii}"; filename*=UTF-8''${encoded}`;
+}
+
 module.exports = async function handler(req, res) {
   try {
     const auth = await requireFeature(req, "app", "financial-docs");
@@ -70,7 +87,7 @@ module.exports = async function handler(req, res) {
     const download = cleanText(req.query?.download) === "1";
     const filename = cleanText(row.stored_filename || row.original_filename) || "document.pdf";
     res.setHeader("Content-Type", cleanText(row.mime_type) || file.mimeType || "application/pdf");
-    res.setHeader("Content-Disposition", `${download ? "attachment" : "inline"}; filename="${filename.replace(/"/g, "")}"`);
+    res.setHeader("Content-Disposition", `${download ? "attachment" : "inline"}; ${contentDispositionFilename(filename)}`);
     res.status(200).send(file.buffer);
   } catch (error) {
     sendError(res, error);
