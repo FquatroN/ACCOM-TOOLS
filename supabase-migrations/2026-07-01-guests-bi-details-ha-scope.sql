@@ -90,7 +90,7 @@ as $$
   )
   select
     'summary'::text as section,
-    scope.scope_sort_order::integer as sort_order,
+    scope.sort_order::integer as sort_order,
     scope.ha_scope,
     p_year::text as chart_year,
     null::text as age_segment,
@@ -99,13 +99,13 @@ as $$
     round(avg(selected.stay_nights)::numeric, 2) as average_stay
   from scope_seed scope
   left join selected on selected.ha_scope = scope.ha_scope
-  group by scope.scope_sort_order, scope.ha_scope
+  group by scope.sort_order, scope.ha_scope
 
   union all
 
   select
     'segment'::text as section,
-    (scope.scope_sort_order * 100 + seed.sort_order)::integer as sort_order,
+    (scope.sort_order * 100 + seed.sort_order)::integer as sort_order,
     scope.ha_scope,
     p_year::text as chart_year,
     seed.age_segment,
