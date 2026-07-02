@@ -25386,9 +25386,8 @@ function firstDayOfPreviousMonthIsoClient(todayIso = lisbonTodayIsoClient()) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
   const year = Number(raw.slice(0, 4));
   const month = Number(raw.slice(5, 7));
-  const previousMonth = month === 1 ? 12 : month - 1;
-  const previousYear = month === 1 ? year - 1 : year;
-  return `${String(previousYear).padStart(4, "0")}-${String(previousMonth).padStart(2, "0")}-01`;
+  const target = new Date(Date.UTC(year, month - 3, 1));
+  return `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, "0")}-01`;
 }
 
 function findHeaderIndex(header, candidates) {
