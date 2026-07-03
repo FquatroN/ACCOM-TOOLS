@@ -116,7 +116,7 @@ function findMatchingEntity(entities, doc) {
 async function ensureFinancialDocumentEntityForDoc(doc) {
   const supplierName = cleanText(doc?.supplierName || doc?.supplier_name);
   const supplierNif = cleanText(doc?.supplierNif || doc?.supplier_nif);
-  if (!supplierName || !supplierNif) {
+  if (!supplierName || !supplierNif || !normalizeEntityNif(supplierNif)) {
     return { entity: null, created: false };
   }
 
@@ -139,7 +139,7 @@ async function ensureFinancialDocumentEntityForDoc(doc) {
       const matched = findMatchingEntity(retryEntities, { supplierName, supplierNif });
       if (matched) return { entity: matched, created: false };
     }
-    throw error;
+    return { entity: null, created: false, error };
   }
 }
 
@@ -371,7 +371,13 @@ module.exports = async function handler(req, res) {
           created_by: userEmail,
         });
       } else if (cleanText(existing.drive_file_id)) {
-        const nextName = await renameExistingDriveFileIfNeeded(req, updated, settings);
+        let nextName = "";
+        let renameError = null;
+        try {
+          nextName = await renameExistingDriveFileIfNeeded(req, updated, settings);
+        } catch (error) {
+          renameError = error;
+        }
         if (nextName) {
           updated = await updateFinancialDocumentRow(id, { stored_filename: nextName });
           historyEntries.push({
@@ -382,6 +388,17 @@ module.exports = async function handler(req, res) {
             old_value: cleanText(existing.stored_filename),
             new_value: nextName,
             metadata: {},
+            created_by: userEmail,
+          });
+        } else if (renameError) {
+          historyEntries.push({
+            document_id: id,
+            action_type: "file_rename_failed",
+            field_name: "",
+            message: `Attachment rename failed: ${cleanText(renameError.message) || "Unknown error"}`,
+            old_value: cleanText(existing.stored_filename),
+            new_value: null,
+            metadata: { statusCode: renameError.statusCode || null },
             created_by: userEmail,
           });
         }

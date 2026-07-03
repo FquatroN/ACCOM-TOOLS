@@ -152,8 +152,30 @@ async function googleJson(url, accessToken, options = {}) {
     payload = { raw: text };
   }
   if (!response.ok) {
-    const error = new Error(payload?.error?.message || payload?.error || `Google API request failed (${response.status})`);
+    const detailParts = [];
+    if (payload?.error && typeof payload.error === "object") {
+      [payload.error.message, payload.error.status, payload.error.code]
+        .map(cleanText)
+        .filter(Boolean)
+        .forEach((item) => {
+          if (!detailParts.includes(item)) detailParts.push(item);
+        });
+      if (Array.isArray(payload.error.errors)) {
+        payload.error.errors.forEach((item) => {
+          [item.message, item.reason, item.location]
+            .map(cleanText)
+            .filter(Boolean)
+            .forEach((part) => {
+              if (!detailParts.includes(part)) detailParts.push(part);
+            });
+        });
+      }
+    } else if (cleanText(payload?.error)) {
+      detailParts.push(cleanText(payload.error));
+    }
+    const error = new Error(detailParts.join(" ") || `Google API request failed (${response.status})`);
     error.statusCode = response.status;
+    error.googlePayload = payload;
     throw error;
   }
   return payload;
