@@ -20,6 +20,17 @@ const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/file
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+const FINANCIAL_DOCUMENT_DUPLICATE_SELECT = [
+  "id",
+  "document_date",
+  "doc_number",
+  "supplier_nif",
+  "supplier_name",
+  "amount",
+  "document_type",
+  "status",
+  "file_hash",
+].join(",");
 
 function requireGoogleEnv() {
   const clientId = cleanText(process.env.GOOGLE_CLIENT_ID);
@@ -436,6 +447,63 @@ async function listFinancialDocuments(filters = {}) {
   }));
 }
 
+async function listPotentialDuplicateFinancialDocuments(candidate = {}) {
+  const supplierNif = cleanText(candidate.supplierNif || candidate.supplier_nif);
+  const docNumber = cleanText(candidate.docNumber || candidate.doc_number);
+  const documentType = cleanText(candidate.docType || candidate.document_type);
+  const documentDate = cleanText(candidate.documentDate || candidate.document_date);
+  const amount = Number(candidate.amount);
+  const fileHash = cleanText(candidate.fileHash || candidate.file_hash);
+  const paths = [];
+  const addPath = (params) => {
+    const safe = params.filter(Boolean);
+    if (!safe.length) return;
+    paths.push(`financial_documents?select=${FINANCIAL_DOCUMENT_DUPLICATE_SELECT}&${safe.join("&")}&limit=200`);
+  };
+  const amountFilter = Number.isFinite(amount) ? `amount=eq.${encodeURIComponent(amount.toFixed(2))}` : "";
+
+  if (supplierNif && docNumber && documentType) {
+    addPath([
+      `supplier_nif=eq.${encodeURIComponent(supplierNif)}`,
+      `doc_number=eq.${encodeURIComponent(docNumber)}`,
+      `document_type=eq.${encodeURIComponent(documentType)}`,
+    ]);
+  }
+  if (supplierNif && documentDate && amountFilter) {
+    addPath([
+      `supplier_nif=eq.${encodeURIComponent(supplierNif)}`,
+      `document_date=eq.${encodeURIComponent(documentDate)}`,
+      amountFilter,
+    ]);
+  }
+  if (fileHash) {
+    addPath([`file_hash=eq.${encodeURIComponent(fileHash)}`]);
+  }
+  if (docNumber && documentDate && amountFilter) {
+    addPath([
+      `doc_number=eq.${encodeURIComponent(docNumber)}`,
+      `document_date=eq.${encodeURIComponent(documentDate)}`,
+      amountFilter,
+    ]);
+  }
+  if (documentDate && amountFilter) {
+    addPath([
+      `document_date=eq.${encodeURIComponent(documentDate)}`,
+      amountFilter,
+    ]);
+  }
+
+  if (!paths.length) return [];
+  const seen = new Map();
+  const batches = await Promise.all(paths.map((path) => restQuery(path, { method: "GET" })));
+  batches.flat().forEach((row) => {
+    const id = cleanText(row?.id);
+    if (!id || seen.has(id)) return;
+    seen.set(id, row);
+  });
+  return [...seen.values()];
+}
+
 async function loadFinancialDocumentRowById(id) {
   const rows = await restQuery(`financial_documents?select=*&id=eq.${encodeURIComponent(id)}&limit=1`, { method: "GET" });
   return Array.isArray(rows) && rows[0] ? rows[0] : null;
@@ -524,6 +592,7 @@ module.exports = {
   loadFinancialDocsSettingsRecord,
   listFinancialDocumentEntities,
   listFinancialDocuments,
+  listPotentialDuplicateFinancialDocuments,
   redirectUri,
   refreshDriveAccessToken,
   renameExistingDriveFileIfNeeded,

@@ -18,6 +18,7 @@ const {
   insertFinancialDocumentHistory,
   listFinancialDocumentEntities,
   listFinancialDocuments,
+  listPotentialDuplicateFinancialDocuments,
   loadFinancialDocumentRowById,
   loadFinancialDocumentWithHistory,
   loadFinancialDocsSettings,
@@ -195,7 +196,11 @@ module.exports = async function handler(req, res) {
       const sanitized = sanitizeFinancialDocumentInput(body, settings);
       const upload = normalizeUpload(body?.attachmentUpload, userEmail);
       operationStep = "checking financial document duplicates";
-      const duplicates = findPossibleDuplicates(sanitized, await listFinancialDocuments(), {
+      const duplicateCandidates = await listPotentialDuplicateFinancialDocuments({
+        ...sanitized,
+        fileHash: upload?.fileHash,
+      });
+      const duplicates = findPossibleDuplicates(sanitized, duplicateCandidates, {
         checksum: upload?.fileHash,
       });
       if (duplicates.length && !body?.confirmDuplicate) throw duplicateConflict(duplicates);
@@ -308,7 +313,11 @@ module.exports = async function handler(req, res) {
       const sanitized = sanitizeFinancialDocumentInput(body, settings);
       const upload = normalizeUpload(body?.attachmentUpload, userEmail);
       operationStep = "checking financial document duplicates";
-      const duplicates = findPossibleDuplicates(sanitized, await listFinancialDocuments(), {
+      const duplicateCandidates = await listPotentialDuplicateFinancialDocuments({
+        ...sanitized,
+        fileHash: upload?.fileHash,
+      });
+      const duplicates = findPossibleDuplicates(sanitized, duplicateCandidates, {
         currentId: id,
         checksum: upload?.fileHash,
       });
