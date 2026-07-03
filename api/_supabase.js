@@ -363,11 +363,23 @@ async function restQuery(path, { method = "GET", body, preferRepresentation = fa
   }
 
   if (!response.ok) {
+    const detailParts = [];
+    if (payload && typeof payload === "object") {
+      [payload.message, payload.details, payload.hint, payload.code]
+        .map(cleanText)
+        .filter(Boolean)
+        .forEach((item) => {
+          if (!detailParts.includes(item)) detailParts.push(item);
+        });
+    } else if (cleanText(payload)) {
+      detailParts.push(cleanText(payload));
+    }
     const message =
-      (payload && (payload.message || payload.error || payload.hint || payload.details)) ||
+      detailParts.join(" ") ||
       `Supabase REST failed (${response.status})`;
     const error = new Error(message);
     error.statusCode = response.status;
+    error.supabasePayload = payload;
     throw error;
   }
 

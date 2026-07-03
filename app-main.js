@@ -18603,7 +18603,7 @@ function buildFinancialDocTableRow(row) {
       <td><input data-financial-doc-field="docNumber" data-id="${escape(row.id)}" type="text" value="${escape(row.docNumber)}" />${rowDuplicateWarning ? `<small class="financial-docs-duplicate-warning">${escape(rowDuplicateWarning)}</small>` : ""}</td>
       <td><input data-financial-doc-field="description" data-id="${escape(row.id)}" type="text" value="${escape(row.description)}" /></td>
       <td><input data-financial-doc-field="supplierName" data-id="${escape(row.id)}" type="text" list="financial-docs-entity-name-list" autocomplete="off" value="${escape(row.supplierName)}" /></td>
-      <td><input data-financial-doc-field="supplierNif" data-id="${escape(row.id)}" type="text" maxlength="15" list="financial-docs-entity-nif-list" autocomplete="off" value="${escape(row.supplierNif)}" /></td>
+      <td><input data-financial-doc-field="supplierNif" data-id="${escape(row.id)}" type="text" list="financial-docs-entity-nif-list" autocomplete="off" value="${escape(row.supplierNif)}" /></td>
       <td><input data-financial-doc-field="amount" data-id="${escape(row.id)}" type="number" step="0.01" value="${row.amount === "" ? "" : escape(String(row.amount))}" /></td>
       <td><input data-financial-doc-field="vatAmount" data-id="${escape(row.id)}" type="number" step="0.01" value="${row.vatAmount === "" ? "" : escape(String(row.vatAmount))}" /></td>
       <td><select data-financial-doc-field="payment" data-id="${escape(row.id)}">${financialDocSelectMarkup("payment", row.payment)}</select></td>
@@ -18650,7 +18650,7 @@ function buildFinancialDocInlineCreateRow() {
     <td><input data-financial-doc-new-field="docNumber" type="text" value="${escape(draft.docNumber)}" />${duplicateWarning ? `<small class="financial-docs-duplicate-warning">${escape(duplicateWarning)}</small>` : ""}</td>
     <td><input data-financial-doc-new-field="description" type="text" value="${escape(draft.description)}" /></td>
     <td><input data-financial-doc-new-field="supplierName" type="text" list="financial-docs-entity-name-list" autocomplete="off" value="${escape(draft.supplierName)}" /></td>
-    <td><input data-financial-doc-new-field="supplierNif" type="text" maxlength="15" list="financial-docs-entity-nif-list" autocomplete="off" value="${escape(draft.supplierNif)}" /></td>
+    <td><input data-financial-doc-new-field="supplierNif" type="text" list="financial-docs-entity-nif-list" autocomplete="off" value="${escape(draft.supplierNif)}" /></td>
     <td><input data-financial-doc-new-field="amount" type="number" step="0.01" value="${draft.amount === "" ? "" : escape(String(draft.amount))}" /></td>
     <td><input data-financial-doc-new-field="vatAmount" type="number" step="0.01" value="${draft.vatAmount === "" ? "" : escape(String(draft.vatAmount))}" /></td>
     <td><select data-financial-doc-new-field="payment">${financialDocSelectMarkup("payment", draft.payment)}</select></td>

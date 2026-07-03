@@ -150,9 +150,14 @@ begin
   value := replace(value, chr(160), '');
   value := regexp_replace(value, '\s+', '', 'g');
   value := replace(value, chr(8364), '');
+  value := regexp_replace(value, '[^0-9,.\-]', '', 'g');
 
-  if value = '' or value = '-' then
+  if value = '' then
     return null;
+  end if;
+
+  if value = '-' or (value !~ '[0-9]' and value like '%-%') then
+    return 0;
   end if;
 
   if value ~ '^-?[0-9]{1,3}(\.[0-9]{3})+,[0-9]+$'

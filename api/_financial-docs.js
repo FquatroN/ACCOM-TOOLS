@@ -153,7 +153,7 @@ function sanitizeFinancialDocumentInput(input = {}, settings = DEFAULT_FINANCIAL
     documentDate: normalizeDate(input.documentDate || input.date),
     docNumber: cleanText(input.docNumber || input.documentNumber),
     description: cleanText(input.description),
-    supplierNif: cleanText(input.supplierNif || input.nif).slice(0, 15),
+    supplierNif: cleanText(input.supplierNif || input.nif),
     supplierName: cleanText(input.supplierName || input.name),
     amount: normalizeMoney(input.amount, Number.NaN),
     vatAmount: cleanText(input.vatAmount) === "" ? null : normalizeMoney(input.vatAmount, Number.NaN),
