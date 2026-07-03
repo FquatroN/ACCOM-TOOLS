@@ -144,7 +144,9 @@ async function ensureFinancialDocumentEntityForDoc(doc) {
 }
 
 module.exports = async function handler(req, res) {
+  let operationStep = "";
   try {
+    operationStep = "checking financial documents access";
     const auth = await requireFeature(req, "app", "financial-docs");
     const userEmail = cleanText(auth.user?.email) || cleanText(auth.user?.id);
     const action = cleanText(req.query?.action).toLowerCase();
@@ -179,25 +181,32 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === "POST") {
+      operationStep = "reading financial document request";
       const body = await parseBody(req);
       if (action === "parse") {
+        operationStep = "parsing financial document attachment";
         const result = await financialDocsParseHandler.parseFinancialDocumentRequest(body);
         res.status(200).json(result);
         return;
       }
+      operationStep = "loading financial document settings";
       const settings = await loadFinancialDocsSettings();
+      operationStep = "validating financial document fields";
       const sanitized = sanitizeFinancialDocumentInput(body, settings);
       const upload = normalizeUpload(body?.attachmentUpload, userEmail);
+      operationStep = "checking financial document duplicates";
       const duplicates = findPossibleDuplicates(sanitized, await listFinancialDocuments(), {
         checksum: upload?.fileHash,
       });
       if (duplicates.length && !body?.confirmDuplicate) throw duplicateConflict(duplicates);
 
+      operationStep = "creating financial document";
       let created = await insertFinancialDocument({
         ...buildDbPayload(sanitized, userEmail),
         ocr_fields: body?.ocrFields && typeof body.ocrFields === "object" ? body.ocrFields : {},
         ocr_raw_text: cleanText(body?.ocrRawText),
       });
+      operationStep = "syncing financial document entity";
       const entitySync = await ensureFinancialDocumentEntityForDoc(created);
 
       const historyEntries = [{
@@ -241,7 +250,9 @@ module.exports = async function handler(req, res) {
       }
 
       if (upload) {
+        operationStep = "uploading financial document attachment";
         const attachmentFields = await attachDocumentFile(req, created, upload, settings);
+        operationStep = "saving financial document attachment fields";
         created = await updateFinancialDocumentRow(cleanText(created.id), attachmentFields);
         historyEntries.push({
           document_id: cleanText(created?.id),
@@ -268,39 +279,50 @@ module.exports = async function handler(req, res) {
         });
       }
 
+      operationStep = "saving financial document history";
       await insertFinancialDocumentHistory(historyEntries);
+      operationStep = "reloading financial document after save";
       const row = await loadFinancialDocumentWithHistory(cleanText(created.id));
       res.status(200).json({ row, duplicates });
       return;
     }
 
     if (req.method === "PUT") {
+      operationStep = "reading financial document id";
       const id = cleanText(req.query?.id || req.body?.id);
       if (!id) {
         res.status(400).json({ error: "Document id is required." });
         return;
       }
+      operationStep = "reading financial document request";
       const body = await parseBody(req);
+      operationStep = "loading existing financial document";
       const existing = await loadFinancialDocumentRowById(id);
       if (!existing) {
         res.status(404).json({ error: "Financial document not found." });
         return;
       }
+      operationStep = "loading financial document settings";
       const settings = await loadFinancialDocsSettings();
+      operationStep = "validating financial document fields";
       const sanitized = sanitizeFinancialDocumentInput(body, settings);
       const upload = normalizeUpload(body?.attachmentUpload, userEmail);
+      operationStep = "checking financial document duplicates";
       const duplicates = findPossibleDuplicates(sanitized, await listFinancialDocuments(), {
         currentId: id,
         checksum: upload?.fileHash,
       });
       if (duplicates.length && !body?.confirmDuplicate) throw duplicateConflict(duplicates);
+      operationStep = "loading financial document history";
       const existingWithHistory = await loadFinancialDocumentWithHistory(id);
 
+      operationStep = "updating financial document";
       let updated = await updateFinancialDocumentRow(id, {
         ...buildDbPayload(sanitized, existing.created_by || userEmail),
         ocr_fields: body?.ocrFields && typeof body.ocrFields === "object" ? body.ocrFields : (existing.ocr_fields || {}),
         ocr_raw_text: cleanText(body?.ocrRawText) || cleanText(existing.ocr_raw_text),
       });
+      operationStep = "syncing financial document entity";
       const entitySync = await ensureFinancialDocumentEntityForDoc(updated);
 
       const historyEntries = trackFieldChanges(existing, updated).map((item) => ({
@@ -352,10 +374,13 @@ module.exports = async function handler(req, res) {
 
       if (upload) {
         const oldDriveFileId = cleanText(existing.drive_file_id);
+        operationStep = "uploading financial document attachment";
         const attachmentFields = await attachDocumentFile(req, updated, upload, settings);
+        operationStep = "saving financial document attachment fields";
         updated = await updateFinancialDocumentRow(id, attachmentFields);
         if (oldDriveFileId && oldDriveFileId !== cleanText(attachmentFields.drive_file_id)) {
           try {
+            operationStep = "deleting replaced financial document attachment";
             const refreshed = await refreshDriveAccessToken(settings);
             await deleteDriveFile(refreshed.accessToken, oldDriveFileId);
           } catch {}
@@ -374,6 +399,7 @@ module.exports = async function handler(req, res) {
         let nextName = "";
         let renameError = null;
         try {
+          operationStep = "renaming financial document attachment";
           nextName = await renameExistingDriveFileIfNeeded(req, updated, settings);
         } catch (error) {
           renameError = error;
@@ -417,7 +443,9 @@ module.exports = async function handler(req, res) {
         });
       }
 
+      operationStep = "saving financial document history";
       if (historyEntries.length) await insertFinancialDocumentHistory(historyEntries);
+      operationStep = "reloading financial document after save";
       const row = await loadFinancialDocumentWithHistory(id);
       res.status(200).json({ row, duplicates });
       return;
@@ -450,6 +478,9 @@ module.exports = async function handler(req, res) {
     if (error.statusCode === 409) {
       res.status(409).json({ error: error.message, duplicates: error.duplicates || [] });
       return;
+    }
+    if (operationStep && error && !String(error.message || "").toLowerCase().includes(operationStep.toLowerCase())) {
+      error.message = `Failed while ${operationStep}: ${error.message || "Unexpected error"}`;
     }
     sendError(res, error);
   }
