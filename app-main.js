@@ -18956,8 +18956,8 @@ async function loadFinancialDocsData({ silent = false } = {}) {
 
 function ensureFinancialDocsDefaultFilters() {
   if (state.financialDocsFiltersInitialized) return;
-  if (els.financialDocsFilterCreatedFrom && !clean(els.financialDocsFilterCreatedFrom.value)) {
-    els.financialDocsFilterCreatedFrom.value = firstDayOfPreviousMonthIsoClient();
+  if (els.financialDocsFilterDateFrom && !clean(els.financialDocsFilterDateFrom.value)) {
+    els.financialDocsFilterDateFrom.value = firstDayOfPreviousMonthIsoClient();
   }
   state.financialDocsFiltersInitialized = true;
 }
