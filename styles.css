@@ -5093,7 +5093,8 @@ button[id^="close-settings"] {
   width: 100%;
 }
 
-#guests-bi-tmt-filter-status {
+#guests-bi-tmt-filter-status,
+#bookings-bi-filter-status {
   height: 2.28rem;
   overflow-y: auto;
 }

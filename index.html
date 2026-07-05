@@ -102,6 +102,7 @@
           </div>
           <div class="backoffice-top-links">
             <button id="nav-guests-bi" type="button" class="nav-link">Guests BI</button>
+            <button id="nav-bookings-bi" type="button" class="nav-link">Bookings BI</button>
           </div>
         </section>
 
@@ -4034,6 +4035,61 @@
               <div id="guests-bi-details-stay-line" class="guests-bi-line-wrap guests-bi-line-wrap--single"></div>
             </div>
             <p id="guests-bi-details-status" class="auth-status"></p>
+          </section>
+        </section>
+
+        <section id="view-bookings-bi" class="view" hidden>
+          <section class="feature-title">
+            <h2>Bookings BI</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Bookings BI</h2>
+              <div class="actions">
+                <button id="bookings-bi-tab-channels" type="button" class="active-tab">Channels</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="bookings-bi-panel-channels" class="card">
+            <div class="bar">
+              <h2>Channels</h2>
+              <div class="actions">
+                <p id="bookings-bi-channels-count">0 channels</p>
+              </div>
+            </div>
+            <div id="bookings-bi-channels-filters" class="grid filters guests-bi-filters guests-bi-tmt-filters">
+              <label>
+                Year
+                <select id="bookings-bi-filter-year"></select>
+              </label>
+              <label>
+                HA
+                <select id="bookings-bi-filter-ha">
+                  <option value="">All</option>
+                  <option value="H">H</option>
+                  <option value="A">A</option>
+                </select>
+              </label>
+              <label>
+                Status
+                <select id="bookings-bi-filter-status" multiple size="1">
+                  <option value="Checked Out" selected>Checked Out</option>
+                  <option value="Confirmed" selected>Confirmed</option>
+                  <option value="Arriving" selected>Arriving</option>
+                  <option value="Late" selected>Late</option>
+                  <option value="Leaving" selected>Leaving</option>
+                  <option value="Checked-in" selected>Checked-in</option>
+                  <option value="Checked In">Checked In</option>
+                  <option value="Unconfirmed">Unconfirmed</option>
+                  <option value="Cancelled">Cancelled</option>
+                  <option value="No Show">No Show</option>
+                </select>
+              </label>
+            </div>
+            <div id="bookings-bi-channels-pies" class="guests-bi-pies bookings-bi-pies"></div>
+            <p id="bookings-bi-status" class="auth-status"></p>
           </section>
         </section>
       </section>

@@ -17,7 +17,7 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "business-intelligence", "guests-bi"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "business-intelligence", "guests-bi", "bookings-bi"];
 const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
@@ -762,6 +762,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Import Data", kind: "app", key: "import-data" },
   { label: "App: Business Intelligence", kind: "app", key: "business-intelligence" },
   { label: "App: Guests BI", kind: "app", key: "guests-bi" },
+  { label: "App: Bookings BI", kind: "app", key: "bookings-bi" },
   { label: "App: Communications", kind: "app", key: "communications" },
   { label: "App: Guests", kind: "app", key: "guests" },
   { label: "App: Cash Control", kind: "app", key: "cash" },
@@ -1229,6 +1230,15 @@ const state = {
     details: { year: "", ha: "" },
   },
   guestsBiLastLoaded: { tab: "", year: "", yearMonth: "", monthYear: "", tmtMonth: "", tmtBookingStatuses: "", ha: "" },
+  bookingsBiLoaded: false,
+  bookingsBiLoading: false,
+  bookingsBiYear: "",
+  bookingsBiHa: "",
+  bookingsBiStatuses: ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in"],
+  bookingsBiYears: [],
+  bookingsBiChannelPieYears: [],
+  bookingsBiChannelPieCharts: [],
+  bookingsBiLastLoaded: { year: "", ha: "", statuses: "" },
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -1269,6 +1279,7 @@ const els = {
   navFinancialDocs: document.getElementById("nav-financial-docs"),
   navImportData: document.getElementById("nav-import-data"),
   navGuestsBi: document.getElementById("nav-guests-bi"),
+  navBookingsBi: document.getElementById("nav-bookings-bi"),
   navGuests: document.getElementById("nav-guests"),
   navCash: document.getElementById("nav-cash"),
   navLostFound: document.getElementById("nav-lost-found"),
@@ -1288,6 +1299,7 @@ const els = {
   viewFinancialDocs: document.getElementById("view-financial-docs"),
   viewImportData: document.getElementById("view-import-data"),
   viewGuestsBi: document.getElementById("view-guests-bi"),
+  viewBookingsBi: document.getElementById("view-bookings-bi"),
   viewGuests: document.getElementById("view-guests"),
   viewCash: document.getElementById("view-cash"),
   viewLostFound: document.getElementById("view-lost-found"),
@@ -1542,6 +1554,13 @@ const els = {
   guestsBiDetailsAgeLine: document.getElementById("guests-bi-details-age-line"),
   guestsBiDetailsStayLine: document.getElementById("guests-bi-details-stay-line"),
   guestsBiDetailsStatus: document.getElementById("guests-bi-details-status"),
+  bookingsBiTabChannels: document.getElementById("bookings-bi-tab-channels"),
+  bookingsBiFilterYear: document.getElementById("bookings-bi-filter-year"),
+  bookingsBiFilterHa: document.getElementById("bookings-bi-filter-ha"),
+  bookingsBiFilterStatus: document.getElementById("bookings-bi-filter-status"),
+  bookingsBiChannelsCount: document.getElementById("bookings-bi-channels-count"),
+  bookingsBiChannelsPies: document.getElementById("bookings-bi-channels-pies"),
+  bookingsBiStatus: document.getElementById("bookings-bi-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
   financialDocsEntitiesFilterSearch: document.getElementById("financial-docs-entities-filter-search"),
@@ -2173,7 +2192,7 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : "import-data";
-  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = "guests-bi";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = canUseGuestsBi() ? "guests-bi" : "bookings-bi";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   handleFinancialDocsDriveCallbackQuery();
@@ -2200,7 +2219,8 @@ async function init() {
   if (canApp("guests")) loadGuestsData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canAppFinancialDocs()) loadFinancialDocsData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canAppImportData()) ensureImportDataData().then(() => renderLayout()).catch(() => {});
-  if (canUseBusinessIntelligence()) loadGuestsBiData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canUseGuestsBi()) loadGuestsBiData({ silent: true }).then(() => renderLayout()).catch(() => {});
+  if (canUseBookingsBi()) loadBookingsBiData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("cash")) loadCashData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("maintenance")) loadMaintenanceData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
@@ -2216,6 +2236,7 @@ function bindEvents() {
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.navImportData?.addEventListener("click", () => setView("import-data"));
   els.navGuestsBi?.addEventListener("click", () => setView("guests-bi"));
+  els.navBookingsBi?.addEventListener("click", () => setView("bookings-bi"));
   els.backofficeBackToApp?.addEventListener("click", onLogoHomeClick);
   els.navGuests?.addEventListener("click", () => setView("guests"));
   els.navCash?.addEventListener("click", () => setView("cash"));
@@ -2287,6 +2308,10 @@ function bindEvents() {
   els.guestsBiLineModePercent?.addEventListener("click", () => setGuestsBiLineMode("percent"));
   els.guestsBiMonthLineModeAbsolute?.addEventListener("click", () => setGuestsBiMonthLineMode("absolute"));
   els.guestsBiMonthLineModePercent?.addEventListener("click", () => setGuestsBiMonthLineMode("percent"));
+  els.bookingsBiTabChannels?.addEventListener("click", () => renderBookingsBi());
+  els.bookingsBiFilterYear?.addEventListener("change", onBookingsBiFilterChange);
+  els.bookingsBiFilterHa?.addEventListener("change", onBookingsBiFilterChange);
+  els.bookingsBiFilterStatus?.addEventListener("change", onBookingsBiStatusChange);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -2912,7 +2937,15 @@ function canAppImportData() {
 }
 
 function canUseBusinessIntelligence() {
+  return canApp("business-intelligence") && (canApp("guests-bi") || canApp("bookings-bi"));
+}
+
+function canUseGuestsBi() {
   return canApp("business-intelligence") && canApp("guests-bi");
+}
+
+function canUseBookingsBi() {
+  return canApp("business-intelligence") && canApp("bookings-bi");
 }
 
 function canAccessGeneralSettings() {
@@ -2986,8 +3019,11 @@ function applyInitialRouteFromUrl() {
     if (view === "import-data" && canAppImportData()) {
       state.currentView = "import-data";
     }
-    if (view === "guests-bi" && canUseBusinessIntelligence()) {
+    if (view === "guests-bi" && canUseGuestsBi()) {
       state.currentView = "guests-bi";
+    }
+    if (view === "bookings-bi" && canUseBookingsBi()) {
+      state.currentView = "bookings-bi";
     }
     if (view === "hours" && canApp("hours")) {
       state.currentView = "hours";
@@ -3027,6 +3063,9 @@ function syncAppRoute() {
     } else if (state.currentView === "guests-bi") {
       url.searchParams.set("view", "guests-bi");
       url.searchParams.delete("service");
+    } else if (state.currentView === "bookings-bi") {
+      url.searchParams.set("view", "bookings-bi");
+      url.searchParams.delete("service");
     } else if (state.currentView === "hours") {
       url.searchParams.set("view", "hours");
       url.searchParams.delete("service");
@@ -3043,7 +3082,8 @@ async function setView(view) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
   if (view === "financial-docs" && !canAppFinancialDocs()) return showToast("No financial documents access.", "error");
   if (view === "import-data" && !canAppImportData()) return showToast("No import data access.", "error");
-  if (view === "guests-bi" && !canUseBusinessIntelligence()) return showToast("No Guests BI access.", "error");
+  if (view === "guests-bi" && !canUseGuestsBi()) return showToast("No Guests BI access.", "error");
+  if (view === "bookings-bi" && !canUseBookingsBi()) return showToast("No Bookings BI access.", "error");
   if (view === "guests" && !canApp("guests")) return showToast("No guests access.", "error");
   if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
@@ -3056,7 +3096,7 @@ async function setView(view) {
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
-  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "guests-bi") {
+  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi") {
     state.lastMainView = state.currentView;
   }
   const previousView = state.currentView;
@@ -3114,6 +3154,9 @@ async function setView(view) {
   if (view !== "guests-bi") {
     state.guestsBiLoading = false;
   }
+  if (view !== "bookings-bi") {
+    state.bookingsBiLoading = false;
+  }
   syncAppRoute();
   renderLayout();
   renderSettingsSection();
@@ -3166,6 +3209,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "guests-bi") {
     await ensureGuestsBiData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "bookings-bi") {
+    await ensureBookingsBiData();
     renderSettingsSection();
     render();
     return;
@@ -3286,6 +3335,18 @@ async function refreshCurrentViewData(reason = "timer") {
       await loadImportDataRows({ silent: true });
       state.importDataLoaded = true;
       renderImportData();
+      renderLayout();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
+    if (state.currentView === "guests-bi" && canUseGuestsBi()) {
+      await loadGuestsBiData({ silent: true, tab: state.guestsBiTab });
+      renderLayout();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
+    if (state.currentView === "bookings-bi" && canUseBookingsBi()) {
+      await loadBookingsBiData({ silent: true });
       renderLayout();
       state.lastAutoRefreshAt = now;
       return;
@@ -3619,6 +3680,7 @@ function renderLayout() {
   const financialDocs = state.currentView === "financial-docs";
   const importData = state.currentView === "import-data";
   const guestsBi = state.currentView === "guests-bi";
+  const bookingsBi = state.currentView === "bookings-bi";
   const backofficeSettings = state.currentView === "settings" && state.settingsSection === "financial-docs";
   const importDataSettings = state.currentView === "settings" && state.settingsSection === "import-data";
   const guests = state.currentView === "guests";
@@ -3634,12 +3696,13 @@ function renderLayout() {
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
   const backofficeMode = financialDocs || importData || backofficeSettings || importDataSettings;
-  const businessIntelligenceMode = guestsBi;
+  const businessIntelligenceMode = guestsBi || bookingsBi;
   const workspaceMode = backofficeMode || businessIntelligenceMode;
   const canComm = canApp("communications");
   const canFinancialDocs = canAppFinancialDocs();
   const canImportData = canAppImportData();
-  const canGuestsBi = canUseBusinessIntelligence();
+  const canGuestsBi = canUseGuestsBi();
+  const canBookingsBi = canUseBookingsBi();
   const canGuests = canApp("guests");
   const canCash = canApp("cash");
   const canLostFound = canApp("lost-found");
@@ -3661,6 +3724,7 @@ function renderLayout() {
   els.navFinancialDocs?.classList.toggle("active", financialDocs);
   els.navImportData?.classList.toggle("active", importData);
   els.navGuestsBi?.classList.toggle("active", guestsBi);
+  els.navBookingsBi?.classList.toggle("active", bookingsBi);
   els.navGuests?.classList.toggle("active", guests);
   els.navCash?.classList.toggle("active", cash);
   els.navLostFound.classList.toggle("active", lostFound);
@@ -3676,6 +3740,7 @@ function renderLayout() {
   if (els.navFinancialDocs) els.navFinancialDocs.hidden = !canFinancialDocs;
   if (els.navImportData) els.navImportData.hidden = !canImportData;
   if (els.navGuestsBi) els.navGuestsBi.hidden = !canGuestsBi;
+  if (els.navBookingsBi) els.navBookingsBi.hidden = !canBookingsBi;
   if (els.navGuests) els.navGuests.hidden = !canGuests;
   if (els.navCash) els.navCash.hidden = !canCash;
   els.navLostFound.hidden = !canLostFound;
@@ -3700,7 +3765,7 @@ function renderLayout() {
     els.openBackoffice.classList.toggle("active", backofficeMode);
   }
   if (els.openBusinessIntelligence) {
-    els.openBusinessIntelligence.hidden = !canGuestsBi;
+    els.openBusinessIntelligence.hidden = !canUseBusinessIntelligence();
     els.openBusinessIntelligence.classList.toggle("active", businessIntelligenceMode);
   }
   if (els.backofficeBackToApp) els.backofficeBackToApp.hidden = !(backofficeMode || settingsMode);
@@ -3713,6 +3778,7 @@ function renderLayout() {
   if (els.viewFinancialDocs) els.viewFinancialDocs.hidden = !financialDocs;
   if (els.viewImportData) els.viewImportData.hidden = !importData;
   if (els.viewGuestsBi) els.viewGuestsBi.hidden = !guestsBi;
+  if (els.viewBookingsBi) els.viewBookingsBi.hidden = !bookingsBi;
   if (els.viewGuests) els.viewGuests.hidden = !guests;
   if (els.viewCash) els.viewCash.hidden = !cash;
   els.viewLostFound.hidden = !lostFound;
@@ -4142,6 +4208,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-import-data="${id}"]`)?.checked) appFeatures.push("import-data");
   if (els.profilesBody.querySelector(`[data-profile-app-business-intelligence="${id}"]`)?.checked) appFeatures.push("business-intelligence");
   if (els.profilesBody.querySelector(`[data-profile-app-guests-bi="${id}"]`)?.checked) appFeatures.push("guests-bi");
+  if (els.profilesBody.querySelector(`[data-profile-app-bookings-bi="${id}"]`)?.checked) appFeatures.push("bookings-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-communications="${id}"]`)?.checked) appFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-app-guests="${id}"]`)?.checked) appFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-app-cash="${id}"]`)?.checked) appFeatures.push("cash");
@@ -18738,7 +18805,7 @@ function isBackofficeSettingsContext() {
 }
 
 function onLogoHomeClick() {
-  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "guests-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
+  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
   }
@@ -18778,10 +18845,10 @@ function openBackofficeHome() {
 
 function openBusinessIntelligenceHome() {
   if (!canUseBusinessIntelligence()) {
-    showToast("No Guests BI access.", "error");
+    showToast("No Business Intelligence access.", "error");
     return;
   }
-  setView("guests-bi");
+  setView(canUseGuestsBi() ? "guests-bi" : "bookings-bi");
 }
 
 function preferredMainAppView() {
@@ -20646,6 +20713,204 @@ function renderGuestsBiNationalityPies() {
     : '<div class="empty">No nationality distribution found.</div>';
 }
 
+function defaultBookingsBiStatuses() {
+  return ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in"];
+}
+
+function currentBookingsBiYear() {
+  const rawValue = els.bookingsBiFilterYear ? els.bookingsBiFilterYear.value : state.bookingsBiYear;
+  const value = clean(rawValue || state.bookingsBiYear || String(new Date().getFullYear()));
+  return /^\d{4}$/.test(value) ? value : String(new Date().getFullYear());
+}
+
+function currentBookingsBiHa() {
+  const rawValue = els.bookingsBiFilterHa ? els.bookingsBiFilterHa.value : state.bookingsBiHa;
+  const value = clean(rawValue).toUpperCase();
+  return value === "H" || value === "A" ? value : "";
+}
+
+function currentBookingsBiStatuses() {
+  if (els.bookingsBiFilterStatus) {
+    const selected = Array.from(els.bookingsBiFilterStatus.selectedOptions || [])
+      .map((option) => clean(option.value))
+      .filter(Boolean);
+    return selected.length ? selected : defaultBookingsBiStatuses();
+  }
+  return Array.isArray(state.bookingsBiStatuses) && state.bookingsBiStatuses.length
+    ? state.bookingsBiStatuses.map((status) => clean(status)).filter(Boolean)
+    : defaultBookingsBiStatuses();
+}
+
+function bookingsBiStatusFilterKey(statuses = []) {
+  return (Array.isArray(statuses) ? statuses : [])
+    .map((status) => clean(status))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .join("|");
+}
+
+function setBookingsBiStatus(message, type = "") {
+  if (!els.bookingsBiStatus) return;
+  els.bookingsBiStatus.textContent = message || "";
+  els.bookingsBiStatus.classList.toggle("error", type === "error");
+}
+
+function buildBookingsBiUrlClient() {
+  const params = new URLSearchParams();
+  const year = currentBookingsBiYear();
+  const ha = currentBookingsBiHa();
+  const statuses = currentBookingsBiStatuses();
+  if (year) params.set("year", year);
+  if (ha) params.set("ha", ha);
+  if (statuses.length) params.set("statuses", statuses.join(","));
+  const query = params.toString();
+  return `/api/bookings-bi${query ? `?${query}` : ""}`;
+}
+
+async function loadBookingsBiData({ silent = false } = {}) {
+  state.bookingsBiLoading = true;
+  try {
+    const result = await api(buildBookingsBiUrlClient());
+    state.bookingsBiYear = clean(result?.year) || currentBookingsBiYear();
+    state.bookingsBiHa = clean(result?.ha).toUpperCase();
+    state.bookingsBiStatuses = Array.isArray(result?.statuses)
+      ? result.statuses.map((status) => clean(status)).filter(Boolean)
+      : currentBookingsBiStatuses();
+    state.bookingsBiYears = Array.isArray(result?.years) ? result.years.map((year) => clean(year)).filter(Boolean) : [];
+    state.bookingsBiChannelPieYears = Array.isArray(result?.channels?.pieYears) ? result.channels.pieYears : [];
+    state.bookingsBiChannelPieCharts = Array.isArray(result?.channels?.pieCharts) ? result.channels.pieCharts : [];
+    state.bookingsBiLastLoaded = {
+      year: state.bookingsBiYear,
+      ha: state.bookingsBiHa,
+      statuses: bookingsBiStatusFilterKey(state.bookingsBiStatuses),
+    };
+    state.bookingsBiLoaded = true;
+    renderBookingsBi();
+    if (!silent) setBookingsBiStatus("Bookings BI loaded.");
+  } catch (error) {
+    state.bookingsBiLoaded = false;
+    state.bookingsBiChannelPieYears = [];
+    state.bookingsBiChannelPieCharts = [];
+    renderBookingsBi();
+    if (!silent) setBookingsBiStatus(`Failed to load Bookings BI: ${error.message}`, "error");
+  } finally {
+    state.bookingsBiLoading = false;
+  }
+}
+
+async function ensureBookingsBiData() {
+  if (!state.bookingsBiLoaded) await loadBookingsBiData({ silent: true });
+}
+
+function onBookingsBiFilterChange() {
+  state.bookingsBiYear = currentBookingsBiYear();
+  state.bookingsBiHa = currentBookingsBiHa();
+  loadBookingsBiData({ silent: true }).catch(() => {});
+}
+
+function onBookingsBiStatusChange() {
+  state.bookingsBiStatuses = currentBookingsBiStatuses();
+  loadBookingsBiData({ silent: true }).catch(() => {});
+}
+
+function bookingsBiPieSlices(chart) {
+  const rows = (Array.isArray(chart?.rows) ? [...chart.rows] : []).sort((a, b) => {
+    const labelA = clean(a?.channel) || "Unknown";
+    const labelB = clean(b?.channel) || "Unknown";
+    if (labelA === "Others" && labelB !== "Others") return 1;
+    if (labelB === "Others" && labelA !== "Others") return -1;
+    return Number(b?.bookingCount || 0) - Number(a?.bookingCount || 0) || labelA.localeCompare(labelB);
+  });
+  const total = rows.reduce((sum, row) => sum + Number(row?.bookingCount || 0), 0);
+  const palette = guestsBiColorPalette();
+  let offset = 0;
+  return rows.map((row, index) => {
+    const value = Number(row?.bookingCount || 0);
+    const fraction = total > 0 ? value / total : 0;
+    const start = offset;
+    const end = start + fraction;
+    offset = end;
+    return {
+      label: clean(row?.channel) || "Unknown",
+      value,
+      color: palette[index % palette.length],
+      start,
+      end,
+      percent: fraction * 100,
+    };
+  });
+}
+
+function renderBookingsBiChannelPies() {
+  if (!els.bookingsBiChannelsPies) return;
+  const charts = Array.isArray(state.bookingsBiChannelPieCharts) ? state.bookingsBiChannelPieCharts : [];
+  els.bookingsBiChannelsPies.innerHTML = charts.length
+    ? charts.map((chart) => {
+      const slices = bookingsBiPieSlices(chart);
+      const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+      const svg = total > 0
+        ? `<svg viewBox="0 0 140 140" class="guests-bi-pie-svg" aria-label="${escape(chart.year)} booking channel distribution">
+            ${slices.map((slice) => `<path d="${describePieSlice(slice)}" fill="${slice.color}"></path>`).join("")}
+            <circle cx="70" cy="70" r="26" fill="#fff8f0"></circle>
+            <text x="70" y="66" text-anchor="middle" class="guests-bi-pie-total">${escape(String(total))}</text>
+            <text x="70" y="82" text-anchor="middle" class="guests-bi-pie-total-label">bookings</text>
+          </svg>`
+        : `<div class="guests-bi-pie-empty">No data</div>`;
+      return `<article class="guests-bi-pie-card">
+          <div class="bar">
+            <h3>${escape(chart.year || "-")}</h3>
+            <p>${escape(String(total))} bookings</p>
+          </div>
+          <div class="guests-bi-pie-body">
+            <div class="guests-bi-pie-chart">${svg}</div>
+            <div class="guests-bi-pie-legend">
+              ${slices.map((slice) => `<div class="guests-bi-legend-item">
+                  <span class="guests-bi-legend-dot" style="background:${slice.color}"></span>
+                  <span class="guests-bi-legend-label">${escape(slice.label)}</span>
+                  <span class="guests-bi-legend-metric">
+                    <strong>${escape(String(slice.value))}</strong>
+                    <small>${escape(`${slice.percent.toFixed(1)}%`)}</small>
+                  </span>
+                </div>`).join("")}
+            </div>
+          </div>
+        </article>`;
+    }).join("")
+    : '<div class="empty">No booking channel distribution found.</div>';
+}
+
+function renderBookingsBi() {
+  const years = state.bookingsBiYears.length
+    ? state.bookingsBiYears
+    : Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() - index));
+  const selectedYear = currentBookingsBiYear();
+  if (els.bookingsBiTabChannels) {
+    els.bookingsBiTabChannels.classList.add("active-tab");
+    els.bookingsBiTabChannels.classList.remove("ghost");
+  }
+  if (els.bookingsBiFilterYear) {
+    const options = [...new Set([selectedYear, ...years].filter(Boolean))];
+    els.bookingsBiFilterYear.innerHTML = options.map((year) => `<option value="${escape(year)}">${escape(year)}</option>`).join("");
+    els.bookingsBiFilterYear.value = selectedYear;
+  }
+  if (els.bookingsBiFilterHa) {
+    els.bookingsBiFilterHa.value = currentBookingsBiHa();
+  }
+  if (els.bookingsBiFilterStatus) {
+    const selectedStatuses = new Set(currentBookingsBiStatuses());
+    Array.from(els.bookingsBiFilterStatus.options || []).forEach((option) => {
+      option.selected = selectedStatuses.has(clean(option.value));
+    });
+  }
+  const charts = Array.isArray(state.bookingsBiChannelPieCharts) ? state.bookingsBiChannelPieCharts : [];
+  const channelCount = new Set(charts.flatMap((chart) => (Array.isArray(chart.rows) ? chart.rows : []).map((row) => clean(row?.channel)).filter(Boolean))).size;
+  if (els.bookingsBiChannelsCount) {
+    const statusCount = currentBookingsBiStatuses().length;
+    els.bookingsBiChannelsCount.textContent = `${channelCount} channel${channelCount === 1 ? "" : "s"} | ${statusCount} status${statusCount === 1 ? "" : "es"}`;
+  }
+  renderBookingsBiChannelPies();
+}
+
 function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel, mode = "absolute", options = {}) {
   const xLabels = Array.isArray(labels) ? labels : [];
   const lineSeries = Array.isArray(series) ? series : [];
@@ -21025,7 +21290,7 @@ function exportGuestsBiIneToExcel() {
 }
 
 function renderGuestsBi() {
-  if (!canUseBusinessIntelligence()) {
+  if (!canUseGuestsBi()) {
     if (els.guestsBiRows) els.guestsBiRows.innerHTML = '<tr><td colspan="4" class="empty">Your profile has no access to Guests BI.</td></tr>';
     if (els.guestsBiTotals) els.guestsBiTotals.innerHTML = "";
     if (els.guestsBiTmtBookingsRows) els.guestsBiTmtBookingsRows.innerHTML = '<tr><td colspan="2" class="empty">Your profile has no access to Guests BI.</td></tr>';
@@ -22393,6 +22658,10 @@ function render() {
   }
   if (state.currentView === "guests-bi") {
     renderGuestsBi();
+    return;
+  }
+  if (state.currentView === "bookings-bi") {
+    renderBookingsBi();
     return;
   }
   if (state.currentView === "guests") {
