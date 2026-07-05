@@ -15,7 +15,7 @@ group by 1, 2, 3, 4;
 create or replace function public.bookings_bi_channels(
   p_year integer default extract(year from now())::integer,
   p_ha text default null,
-  p_statuses text[] default array['Checked Out', 'Confirmed', 'Arriving', 'Late', 'Leaving', 'Checked-in']
+  p_statuses text[] default array['Checked Out', 'Confirmed', 'Arriving', 'Late', 'Leaving', 'Checked-in', 'Checked In']
 )
 returns table (
   chart_year integer,

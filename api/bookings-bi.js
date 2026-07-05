@@ -17,7 +17,7 @@ function parseHaValue(value) {
 }
 
 function defaultStatuses() {
-  return ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in"];
+  return ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in", "Checked In"];
 }
 
 function parseStatuses(value) {

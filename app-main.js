@@ -1234,7 +1234,7 @@ const state = {
   bookingsBiLoading: false,
   bookingsBiYear: "",
   bookingsBiHa: "",
-  bookingsBiStatuses: ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in"],
+  bookingsBiStatuses: ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in", "Checked In"],
   bookingsBiYears: [],
   bookingsBiChannelPieYears: [],
   bookingsBiChannelPieCharts: [],
@@ -20714,7 +20714,7 @@ function renderGuestsBiNationalityPies() {
 }
 
 function defaultBookingsBiStatuses() {
-  return ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in"];
+  return ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in", "Checked In"];
 }
 
 function currentBookingsBiYear() {
