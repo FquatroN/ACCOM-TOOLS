@@ -13693,6 +13693,7 @@ function setGuestsSettingsStatus(message) {
 
 function buildGuestsApiQueryClient(filters = {}) {
   const params = new URLSearchParams();
+  if (typeof filters.showActive === "boolean") params.set("showActive", filters.showActive ? "1" : "0");
   if (clean(filters.ha)) params.set("ha", clean(filters.ha));
   if (clean(filters.search)) params.set("search", clean(filters.search));
   if (clean(filters.nationality)) params.set("nationality", clean(filters.nationality));

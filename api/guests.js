@@ -28,6 +28,7 @@ function shiftIsoDate(isoDate, days) {
 
 function normalizeGuestListFilters(query = {}) {
   return {
+    showActive: cleanQueryValue(query.showActive || query.show_active) !== "0",
     ha: cleanQueryValue(query.ha).toUpperCase(),
     search: cleanQueryValue(query.search),
     nationality: cleanQueryValue(query.nationality),
@@ -192,7 +193,30 @@ function mapGuestTableRow(row) {
 function buildGuestTableQuery(filters = {}, { recentOnly = false } = {}) {
   const safe = normalizeGuestListFilters(filters);
   const params = new URLSearchParams();
-  params.set("select", "*");
+  params.set("select", [
+    "id",
+    "ha",
+    "name",
+    "nationality",
+    "nationality_code",
+    "birth_date",
+    "birth_place",
+    "doc_number",
+    "doc_type",
+    "issuer_country",
+    "issuer_country_code",
+    "residence_country",
+    "residence_country_code",
+    "residence_city",
+    "check_in",
+    "check_out",
+    "sent_status",
+    "sent_at",
+    "send_error",
+    "send_batch_number",
+    "created_at",
+    "updated_at",
+  ].join(","));
   params.set("order", "check_in.desc,created_at.desc,name.asc");
   params.set("limit", "10000");
 
@@ -210,6 +234,10 @@ function buildGuestTableQuery(filters = {}, { recentOnly = false } = {}) {
     const nationality = sanitizeGuestFilterTerm(safe.nationality);
     if (nationality) expressions.push(`or(nationality.ilike.*${nationality}*,nationality_code.ilike.*${nationality}*)`);
   }
+  if (safe.showActive) {
+    const today = lisbonTodayIso();
+    if (today) expressions.push(`or(sent_status.neq.sent,check_out.is.null,check_out.gte.${today})`);
+  }
   if (recentOnly) {
     const cutoff = shiftIsoDate(lisbonTodayIso(), -60);
     if (cutoff) expressions.push(`or(check_out.gte.${cutoff},check_out.is.null)`);
@@ -221,7 +249,7 @@ function buildGuestTableQuery(filters = {}, { recentOnly = false } = {}) {
 async function loadGuestTableRows(filters = {}, options = {}) {
   const safe = normalizeGuestListFilters(filters);
   const mode = cleanId(options?.mode).toLowerCase();
-  const recentOnly = mode !== "all" && !hasExplicitGuestListFilters(safe);
+  const recentOnly = mode !== "all" && !safe.showActive && !hasExplicitGuestListFilters(safe);
   const rows = await restQuery(buildGuestTableQuery(safe, { recentOnly }), {
     method: "GET",
   });
