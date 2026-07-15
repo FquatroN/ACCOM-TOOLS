@@ -13986,6 +13986,7 @@ function onGuestsFilterInput(event) {
   state.guestsFilters.checkOutTo = clean(els.guestsFilterCheckoutTo?.value);
   if (event?.target === els.guestsShowActive) {
     renderGuests();
+    scheduleGuestsRowsReload({ silent: true });
     return;
   }
   renderGuests();

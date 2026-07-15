@@ -26,9 +26,21 @@ function shiftIsoDate(isoDate, days) {
   return date.toISOString().slice(0, 10);
 }
 
+function readGuestShowActiveFilter(query = {}) {
+  const hasCamel = Object.prototype.hasOwnProperty.call(query, "showActive");
+  const hasSnake = Object.prototype.hasOwnProperty.call(query, "show_active");
+  const raw = hasCamel ? query.showActive : hasSnake ? query.show_active : undefined;
+  if (typeof raw === "boolean") return { value: raw, explicit: true };
+  const text = cleanQueryValue(raw).toLowerCase();
+  if (!text) return { value: true, explicit: false };
+  return { value: !["0", "false", "no"].includes(text), explicit: true };
+}
+
 function normalizeGuestListFilters(query = {}) {
+  const showActiveFilter = readGuestShowActiveFilter(query);
   return {
-    showActive: cleanQueryValue(query.showActive || query.show_active) !== "0",
+    showActive: showActiveFilter.value,
+    showActiveExplicit: showActiveFilter.explicit,
     ha: cleanQueryValue(query.ha).toUpperCase(),
     search: cleanQueryValue(query.search),
     nationality: cleanQueryValue(query.nationality),
@@ -249,7 +261,7 @@ function buildGuestTableQuery(filters = {}, { recentOnly = false } = {}) {
 async function loadGuestTableRows(filters = {}, options = {}) {
   const safe = normalizeGuestListFilters(filters);
   const mode = cleanId(options?.mode).toLowerCase();
-  const recentOnly = mode !== "all" && !safe.showActive && !hasExplicitGuestListFilters(safe);
+  const recentOnly = mode !== "all" && !safe.showActive && !safe.showActiveExplicit && !hasExplicitGuestListFilters(safe);
   const rows = await restQuery(buildGuestTableQuery(safe, { recentOnly }), {
     method: "GET",
   });
