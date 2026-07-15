@@ -18020,6 +18020,7 @@ function normalizeFinancialDocImportType(value) {
   const normalized = clean(value).toLowerCase();
   if (normalized === "documents") return "documents";
   if (normalized === "recibos-staff") return "recibos-staff";
+  if (normalized === "rendas") return "rendas";
   return "ordenados";
 }
 
@@ -18027,6 +18028,7 @@ function financialDocImportTypeLabel(type) {
   const normalized = normalizeFinancialDocImportType(type);
   if (normalized === "documents") return "Documents";
   if (normalized === "recibos-staff") return "Recibos Staff";
+  if (normalized === "rendas") return "Rendas";
   return "Ordenados";
 }
 
