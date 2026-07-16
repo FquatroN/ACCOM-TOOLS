@@ -18,7 +18,7 @@ const DEFAULT_REVIEW_SOURCES = [
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
 const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "business-intelligence", "guests-bi", "bookings-bi"];
-const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -522,6 +522,56 @@ const DEFAULT_IMPORT_DATA_SETTINGS = {
   ],
 };
 
+const DEFAULT_BI_SALE_ITEM_CATEGORIES = [
+  ["Beer", "Drinks"],
+  ["Beer Mini", "Drinks"],
+  ["Carristur - YellowBus", "Tours"],
+  ["Coca-Cola", "Drinks"],
+  ["EarPlug", "Sales"],
+  ["Extra Accomodation", "Accomodation"],
+  ["Extra Breakfast", "Sales"],
+  ["Fanta", "Drinks"],
+  ["Gota - Surf", "Tours"],
+  ["Guarana", "Drinks"],
+  ["Indemnização - Danos", "Sales"],
+  ["Indemnização - Perda Chave", "Sales"],
+  ["Laundry", "Sales"],
+  ["Limpeza Extra", "Sales"],
+  ["Luggage", "Sales"],
+  ["Nespresso", "Sales"],
+  ["Oceanário Ticket", "Tours"],
+  ["Parking", "Sales"],
+  ["Printings", "Sales"],
+  ["PubCrawl - Discovery Lisbon", "Tours"],
+  ["Red Bull", "Drinks"],
+  ["Sangria Happy Hour", "Sales"],
+  ["Shampoo/Shower Gel", "Sales"],
+  ["Soap", "Sales"],
+  ["Souvenir - Caixa 5 Portos", "Sales"],
+  ["Souvenir - Copo Porto / Sagres", "Sales"],
+  ["Souvenir - Copo Shot Lisboa", "Sales"],
+  ["Souvenir - Iman", "Sales"],
+  ["Souvenir - Pin", "Sales"],
+  ["Souvenir - Postal", "Sales"],
+  ["Souvenir -Other", "Sales"],
+  ["Sprite/7UP", "Drinks"],
+  ["Sumol", "Drinks"],
+  ["TMT", "TMT"],
+  ["Tooth Brush Set", "Sales"],
+  ["Tour - Discovery - Boat Party", "Tours"],
+  ["Tour - Sintra - Keep It Local", "Tours"],
+  ["Towel", "Sales"],
+  ["Transfer - SmartBus", "Tours"],
+  ["Transfer - Uber", "Tours"],
+  ["Water", "Drinks"],
+  ["Wine - Large (75cl)", "Drinks"],
+  ["Wine - Small (37cl)", "Drinks"],
+].map(([saleItem, saleCategory]) => ({ saleItem, saleCategory }));
+
+const DEFAULT_BI_SETTINGS = {
+  saleItemCategories: clone(DEFAULT_BI_SALE_ITEM_CATEGORIES),
+};
+
 const IMPORT_DATA_TYPE_LABELS = {
   "fdm-accounts": "FDM Accounts",
   "fdm-bookings": "FDM Bookings",
@@ -780,6 +830,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "Settings: Guests", kind: "settings", key: "guests" },
   { label: "Settings: Financial Documents", kind: "settings", key: "financial-docs" },
   { label: "Settings: Import Data", kind: "settings", key: "import-data" },
+  { label: "Settings: BI-Settings", kind: "settings", key: "bi-settings" },
   { label: "Settings: Cash Control", kind: "settings", key: "cash" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
   { label: "Settings: Maintenance", kind: "settings", key: "maintenance" },
@@ -1179,6 +1230,8 @@ const state = {
   financialDocsImportSourceMode: "",
   importDataSettings: clone(DEFAULT_IMPORT_DATA_SETTINGS),
   importDataSettingsLoaded: false,
+  biSettings: clone(DEFAULT_BI_SETTINGS),
+  biSettingsLoaded: false,
   importDataRows: [],
   importDataLoaded: false,
   importDataMetaByType: {},
@@ -1316,6 +1369,7 @@ const els = {
   settingsMenuGuests: document.getElementById("settings-menu-guests"),
   settingsMenuFinancialDocs: document.getElementById("settings-menu-financial-docs"),
   settingsMenuImportData: document.getElementById("settings-menu-import-data"),
+  settingsMenuBiSettings: document.getElementById("settings-menu-bi-settings"),
   settingsMenuCash: document.getElementById("settings-menu-cash"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
   settingsMenuMaintenance: document.getElementById("settings-menu-maintenance"),
@@ -1409,6 +1463,7 @@ const els = {
   settingsViewGuests: document.getElementById("settings-view-guests"),
   settingsViewFinancialDocs: document.getElementById("settings-view-financial-docs"),
   settingsViewImportData: document.getElementById("settings-view-import-data"),
+  settingsViewBiSettings: document.getElementById("settings-view-bi-settings"),
   settingsViewCash: document.getElementById("settings-view-cash"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
   settingsViewMaintenance: document.getElementById("settings-view-maintenance"),
@@ -1427,6 +1482,7 @@ const els = {
   closeSettingsGuests: document.getElementById("close-settings-guests"),
   closeSettingsFinancialDocs: document.getElementById("close-settings-financial-docs"),
   closeSettingsImportData: document.getElementById("close-settings-import-data"),
+  closeSettingsBiSettings: document.getElementById("close-settings-bi-settings"),
   closeSettingsAdmin: document.getElementById("close-settings-admin"),
   closeSettingsReviews: document.getElementById("close-settings-reviews"),
   closeSettingsMaintenance: document.getElementById("close-settings-maintenance"),
@@ -1634,6 +1690,10 @@ const els = {
   importDataSaveSettings: document.getElementById("import-data-save-settings"),
   importDataSettingsBody: document.getElementById("import-data-settings-body"),
   importDataSettingsStatus: document.getElementById("import-data-settings-status"),
+  biSettingsSave: document.getElementById("bi-settings-save"),
+  biSettingsAddSaleCategory: document.getElementById("bi-settings-add-sale-category"),
+  biSettingsSaleCategoriesBody: document.getElementById("bi-settings-sale-categories-body"),
+  biSettingsStatus: document.getElementById("bi-settings-status"),
   generalEmailProvider: document.getElementById("general-email-provider"),
   generalEmailSmtpHost: document.getElementById("general-email-smtp-host"),
   generalEmailSmtpPort: document.getElementById("general-email-smtp-port"),
@@ -2199,7 +2259,8 @@ async function init() {
   if (!canAccessGeneralSettings() && canSettings("guests")) state.settingsSection = "guests";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && canSettings("financial-docs")) state.settingsSection = "financial-docs";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && canSettings("import-data")) state.settingsSection = "import-data";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("import-data") && canSettings("cash")) state.settingsSection = "cash";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("import-data") && canSettings("bi-settings")) state.settingsSection = "bi-settings";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("import-data") && !canSettings("bi-settings") && canSettings("cash")) state.settingsSection = "cash";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && !canSettings("groups") && canSettings("services")) state.settingsSection = "services";
@@ -2262,6 +2323,7 @@ function bindEvents() {
   els.closeSettings.addEventListener("click", () => setView("communications"));
   els.closeSettingsFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.closeSettingsImportData?.addEventListener("click", () => setView("import-data"));
+  els.closeSettingsBiSettings?.addEventListener("click", () => setView(canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : "communications"));
   els.closeSettingsCash?.addEventListener("click", () => setView("cash"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
   els.closeSettingsReviews.addEventListener("click", () => setView("reviews"));
@@ -2278,6 +2340,7 @@ function bindEvents() {
   els.settingsMenuGuests?.addEventListener("click", () => setSettingsSection("guests"));
   els.settingsMenuFinancialDocs?.addEventListener("click", () => setSettingsSection("financial-docs"));
   els.settingsMenuImportData?.addEventListener("click", () => setSettingsSection("import-data"));
+  els.settingsMenuBiSettings?.addEventListener("click", () => setSettingsSection("bi-settings"));
   els.settingsMenuCash?.addEventListener("click", () => setSettingsSection("cash"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
   els.settingsMenuMaintenance?.addEventListener("click", () => setSettingsSection("maintenance"));
@@ -2429,6 +2492,10 @@ function bindEvents() {
   els.importDataDropzone?.addEventListener("drop", onImportDataDrop);
   els.importDataSaveSettings?.addEventListener("click", saveImportDataSettings);
   els.importDataSettingsBody?.addEventListener("input", onImportDataSettingsInput);
+  els.biSettingsSave?.addEventListener("click", saveBiSettings);
+  els.biSettingsAddSaleCategory?.addEventListener("click", addBiSettingsSaleCategoryRow);
+  els.biSettingsSaleCategoriesBody?.addEventListener("input", onBiSettingsInput);
+  els.biSettingsSaleCategoriesBody?.addEventListener("click", onBiSettingsAction);
   els.importDataRows?.addEventListener("input", onImportDataViewInput);
   els.importDataRows?.addEventListener("click", onImportDataRowsClick);
   els.guestsTabList?.addEventListener("click", () => setGuestsScreen("list"));
@@ -2921,7 +2988,9 @@ function canApp(feature) {
 }
 
 function canSettings(feature) {
-  return state.access.settingsFeatures.includes(clean(feature).toLowerCase());
+  const normalized = clean(feature).toLowerCase();
+  if (normalized === "bi-settings" && canApp("business-intelligence")) return true;
+  return state.access.settingsFeatures.includes(normalized);
 }
 
 function canUseBackoffice() {
@@ -3104,10 +3173,12 @@ async function setView(view) {
   if (view === "settings") {
     if (previousView === "financial-docs" && canSettings("financial-docs")) state.settingsSection = "financial-docs";
     else if (previousView === "import-data" && canSettings("import-data")) state.settingsSection = "import-data";
+    else if ((previousView === "guests-bi" || previousView === "bookings-bi") && canSettings("bi-settings")) state.settingsSection = "bi-settings";
     else if (canAccessGeneralSettings()) state.settingsSection = "general";
     else if (canSettings("guests")) state.settingsSection = "guests";
     else if (canSettings("financial-docs")) state.settingsSection = "financial-docs";
     else if (canSettings("import-data")) state.settingsSection = "import-data";
+    else if (canSettings("bi-settings")) state.settingsSection = "bi-settings";
     else if (canSettings("cash")) state.settingsSection = "cash";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
     else if (canSettings("maintenance")) state.settingsSection = "maintenance";
@@ -3632,6 +3703,10 @@ async function ensureSettingsSectionData() {
     await ensureImportDataData();
     return;
   }
+  if (state.settingsSection === "bi-settings") {
+    await ensureBiSettingsData();
+    return;
+  }
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
     return;
@@ -3796,6 +3871,7 @@ function renderLayout() {
   if (els.settingsMenuGuests) els.settingsMenuGuests.hidden = !canSettings("guests");
   if (els.settingsMenuFinancialDocs) els.settingsMenuFinancialDocs.hidden = !canSettings("financial-docs");
   if (els.settingsMenuImportData) els.settingsMenuImportData.hidden = !canSettings("import-data");
+  if (els.settingsMenuBiSettings) els.settingsMenuBiSettings.hidden = !canSettings("bi-settings");
   if (els.settingsMenuCash) els.settingsMenuCash.hidden = !canSettings("cash");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
   if (els.settingsMenuMaintenance) els.settingsMenuMaintenance.hidden = !canSettings("maintenance");
@@ -3811,6 +3887,7 @@ function renderLayout() {
   els.settingsMenuGuests?.classList.toggle("active", state.settingsSection === "guests");
   els.settingsMenuFinancialDocs?.classList.toggle("active", state.settingsSection === "financial-docs");
   els.settingsMenuImportData?.classList.toggle("active", state.settingsSection === "import-data");
+  els.settingsMenuBiSettings?.classList.toggle("active", state.settingsSection === "bi-settings");
   els.settingsMenuCash?.classList.toggle("active", state.settingsSection === "cash");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
   els.settingsMenuMaintenance?.classList.toggle("active", state.settingsSection === "maintenance");
@@ -3830,6 +3907,7 @@ async function setSettingsSection(section) {
   if (section === "guests" && !canSettings("guests")) return;
   if (section === "financial-docs" && !canSettings("financial-docs")) return;
   if (section === "import-data" && !canSettings("import-data")) return;
+  if (section === "bi-settings" && !canSettings("bi-settings")) return;
   if (section === "communications" && !canSettings("communications")) return;
   if (section === "cash" && !canSettings("cash")) return;
   if (section === "reviews" && !canSettings("reviews")) return;
@@ -3845,6 +3923,7 @@ async function setSettingsSection(section) {
   if (section === "guests") state.guestsSettingsLoaded = false;
   if (section === "financial-docs") state.financialDocsSettingsLoaded = false;
   if (section === "import-data") state.importDataSettingsLoaded = false;
+  if (section === "bi-settings") state.biSettingsLoaded = false;
   if (section === "maintenance") state.maintenanceSettingsLoaded = false;
   state.settingsSection = section === "admin-users"
     ? "admin-users"
@@ -3854,6 +3933,8 @@ async function setSettingsSection(section) {
       ? "financial-docs"
     : section === "import-data"
       ? "import-data"
+    : section === "bi-settings"
+      ? "bi-settings"
     : section === "cash"
       ? "cash"
     : section === "maintenance"
@@ -3903,6 +3984,7 @@ function renderSettingsSection() {
   const isGuests = state.settingsSection === "guests" && canSettings("guests");
   const isFinancialDocs = state.settingsSection === "financial-docs" && canSettings("financial-docs");
   const isImportData = state.settingsSection === "import-data" && canSettings("import-data");
+  const isBiSettings = state.settingsSection === "bi-settings" && canSettings("bi-settings");
   const isComm = state.settingsSection === "communications" && canSettings("communications");
   const isCash = state.settingsSection === "cash" && canSettings("cash");
   const isReviews = state.settingsSection === "reviews" && canSettings("reviews");
@@ -3918,6 +4000,7 @@ function renderSettingsSection() {
   if (els.settingsViewGuests) els.settingsViewGuests.hidden = !isGuests;
   if (els.settingsViewFinancialDocs) els.settingsViewFinancialDocs.hidden = !isFinancialDocs;
   if (els.settingsViewImportData) els.settingsViewImportData.hidden = !isImportData;
+  if (els.settingsViewBiSettings) els.settingsViewBiSettings.hidden = !isBiSettings;
   els.settingsViewCommunications.hidden = !isComm;
   if (els.settingsViewCash) els.settingsViewCash.hidden = !isCash;
   els.settingsViewReviews.hidden = !isReviews;
@@ -3929,6 +4012,7 @@ function renderSettingsSection() {
   els.settingsViewBakery.hidden = !isBakery;
   els.settingsViewLaundry.hidden = !isLaundry;
   els.settingsViewAdminUsers.hidden = !isAdmin;
+  if (isBiSettings) renderBiSettings();
   if (isReviews) setReviewSettingsScreen(state.reviewSettingsScreen, false);
 }
 
@@ -18875,7 +18959,7 @@ function preferredMainAppView() {
 }
 
 function openSettingsFromCurrentContext() {
-  if (!state.access.settingsFeatures.length) {
+  if (!state.access.settingsFeatures.length && !canSettings("bi-settings")) {
     showToast("No settings access.", "error");
     return;
   }
@@ -18883,6 +18967,8 @@ function openSettingsFromCurrentContext() {
     state.settingsSection = "financial-docs";
   } else if (state.currentView === "import-data" && canSettings("import-data")) {
     state.settingsSection = "import-data";
+  } else if ((state.currentView === "guests-bi" || state.currentView === "bookings-bi") && canSettings("bi-settings")) {
+    state.settingsSection = "bi-settings";
   }
   setView("settings");
 }
@@ -19324,6 +19410,121 @@ async function saveImportDataSettings() {
     setImportDataSettingsStatus(`Save failed: ${error.message}`, "error");
     showToast(`Import Data settings save failed: ${error.message}`, "error");
   }
+}
+
+function normalizeBiSettingsClient(settings = {}) {
+  const rows = Array.isArray(settings?.saleItemCategories)
+    ? settings.saleItemCategories
+    : Array.isArray(settings?.sale_item_categories)
+      ? settings.sale_item_categories
+      : DEFAULT_BI_SALE_ITEM_CATEGORIES;
+  const seen = new Set();
+  const saleItemCategories = rows
+    .map((row) => ({
+      saleItem: clean(row?.saleItem || row?.sale_item || row?.SALE_ITEM),
+      saleCategory: clean(row?.saleCategory || row?.sale_category || row?.SALE_CATEGORY),
+    }))
+    .filter((row) => row.saleItem || row.saleCategory)
+    .filter((row) => {
+      const key = row.saleItem.toLowerCase();
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return {
+    saleItemCategories: saleItemCategories.length ? saleItemCategories : clone(DEFAULT_BI_SALE_ITEM_CATEGORIES),
+  };
+}
+
+function setBiSettingsStatus(message = "", tone = "") {
+  if (!els.biSettingsStatus) return;
+  els.biSettingsStatus.textContent = message;
+  els.biSettingsStatus.classList.toggle("status-error", tone === "error");
+}
+
+async function loadBiSettings({ silent = false } = {}) {
+  try {
+    const result = await api("/api/bi-settings");
+    state.biSettings = normalizeBiSettingsClient(result?.settings);
+    state.biSettingsLoaded = true;
+    renderBiSettings();
+    if (!silent) setBiSettingsStatus("BI settings loaded.");
+  } catch (error) {
+    state.biSettings = clone(DEFAULT_BI_SETTINGS);
+    state.biSettingsLoaded = false;
+    renderBiSettings();
+    if (!silent) setBiSettingsStatus(`Using default BI settings (${error.message}).`, "error");
+  }
+}
+
+async function ensureBiSettingsData() {
+  if (!canSettings("bi-settings")) return;
+  if (!state.biSettingsLoaded) {
+    await loadBiSettings({ silent: true });
+  }
+  renderBiSettings();
+}
+
+function onBiSettingsInput(event) {
+  const target = event?.target;
+  if (!(target instanceof HTMLElement)) return;
+  const index = Number(target.dataset?.biSaleCategoryIndex);
+  const field = clean(target.dataset?.biSaleCategoryField);
+  if (!Number.isInteger(index) || index < 0 || !["saleItem", "saleCategory"].includes(field)) return;
+  const rows = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
+  if (!rows[index]) rows[index] = { saleItem: "", saleCategory: "" };
+  rows[index][field] = String(target.value || "");
+  state.biSettings = normalizeBiSettingsClient({ saleItemCategories: rows });
+}
+
+function onBiSettingsAction(event) {
+  const button = event?.target instanceof HTMLElement ? event.target.closest("button[data-bi-settings-action]") : null;
+  if (!button) return;
+  const action = clean(button.dataset.biSettingsAction);
+  const index = Number(button.dataset.biSaleCategoryIndex);
+  if (action === "delete" && Number.isInteger(index) && index >= 0) {
+    const rows = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
+    rows.splice(index, 1);
+    state.biSettings = normalizeBiSettingsClient({ saleItemCategories: rows });
+    renderBiSettings();
+  }
+}
+
+function addBiSettingsSaleCategoryRow() {
+  const rows = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
+  rows.push({ saleItem: "", saleCategory: "" });
+  state.biSettings = { saleItemCategories: rows };
+  renderBiSettings();
+}
+
+async function saveBiSettings() {
+  try {
+    const result = await api("/api/bi-settings", {
+      method: "PUT",
+      body: { settings: normalizeBiSettingsClient(state.biSettings) },
+    });
+    state.biSettings = normalizeBiSettingsClient(result?.settings);
+    state.biSettingsLoaded = true;
+    renderBiSettings();
+    setBiSettingsStatus("BI settings saved.");
+    showToast("BI settings saved.", "success");
+  } catch (error) {
+    setBiSettingsStatus(`Save failed: ${error.message}`, "error");
+    showToast(`BI settings save failed: ${error.message}`, "error");
+  }
+}
+
+function renderBiSettings() {
+  if (!els.biSettingsSaleCategoriesBody) return;
+  const rows = Array.isArray(state.biSettings?.saleItemCategories) ? state.biSettings.saleItemCategories : [];
+  els.biSettingsSaleCategoriesBody.innerHTML = rows.length
+    ? rows.map((row, index) => `<tr>
+      <td><input type="text" data-bi-sale-category-index="${index}" data-bi-sale-category-field="saleItem" value="${escape(row.saleItem || "")}" /></td>
+      <td><input type="text" data-bi-sale-category-index="${index}" data-bi-sale-category-field="saleCategory" value="${escape(row.saleCategory || "")}" /></td>
+      <td class="row-actions"><button type="button" class="danger" data-bi-settings-action="delete" data-bi-sale-category-index="${index}">Delete</button></td>
+    </tr>`).join("")
+    : '<tr><td colspan="3" class="empty">No sale item categories configured.</td></tr>';
 }
 
 function importDataAccountsValidationMessage(row) {

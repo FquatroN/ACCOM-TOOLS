@@ -1,6 +1,6 @@
 const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const APP_FEATURES = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "business-intelligence", "guests-bi", "bookings-bi"];
-const SETTINGS_FEATURES = ["general", "communications", "guests", "financial-docs", "import-data", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const SETTINGS_FEATURES = ["general", "communications", "guests", "financial-docs", "import-data", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const FALLBACK_PROFILE = {
   id: "",
   name: "Full access (fallback)",
@@ -482,6 +482,7 @@ function hasFeature(access, area, feature) {
   const key = cleanText(feature).toLowerCase();
   if (!key) return false;
   if (area === "app") return (access?.appFeatures || []).includes(key);
+  if (area === "settings" && key === "bi-settings") return (access?.settingsFeatures || []).includes(key) || (access?.appFeatures || []).includes("business-intelligence");
   if (area === "settings") return (access?.settingsFeatures || []).includes(key);
   return false;
 }

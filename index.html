@@ -2118,6 +2118,9 @@
               <button id="settings-menu-import-data" type="button" class="nav-link">
                 Import Data
               </button>
+              <button id="settings-menu-bi-settings" type="button" class="nav-link">
+                BI-Settings
+              </button>
               <button id="settings-menu-cash" type="button" class="nav-link">
                 Cash Control
               </button>
@@ -2501,6 +2504,33 @@
                     <tbody id="import-data-settings-body"></tbody>
                   </table>
                   <p id="import-data-settings-status" class="auth-status"></p>
+                </section>
+              </div>
+
+              <div id="settings-view-bi-settings" hidden>
+                <div class="actions">
+                  <button id="close-settings-bi-settings" type="button" class="ghost">Back To App</button>
+                  <button id="bi-settings-save" type="button" class="ghost">Save Configuration</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar">
+                    <h3>BI Sale Item Categories</h3>
+                    <button id="bi-settings-add-sale-category" type="button" class="ghost">Add Row</button>
+                  </div>
+                  <p class="field-hint">Used to classify Sale Item values from the FDM Sales import data for BI reports.</p>
+                  <div class="table-wrap">
+                    <table class="settings-table">
+                      <thead>
+                        <tr>
+                          <th>SALE_ITEM</th>
+                          <th>SALE_CATEGORY</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="bi-settings-sale-categories-body"></tbody>
+                    </table>
+                  </div>
+                  <p id="bi-settings-status" class="auth-status"></p>
                 </section>
               </div>
 
