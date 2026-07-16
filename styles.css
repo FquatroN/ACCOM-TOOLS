@@ -5131,6 +5131,55 @@ button[id^="close-settings"] {
   font-weight: 700;
 }
 
+.financial-bi-pivot-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.financial-bi-pivot-table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+  font-size: 0.74rem;
+}
+
+.financial-bi-pivot-table th,
+.financial-bi-pivot-table td {
+  padding: 0.22rem 0.34rem;
+  white-space: nowrap;
+  min-width: 5.6rem;
+}
+
+.financial-bi-pivot-table th:first-child,
+.financial-bi-pivot-table td:first-child {
+  min-width: 7rem;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fffaf4;
+}
+
+.financial-bi-pivot-table thead th:first-child {
+  z-index: 2;
+}
+
+.financial-bi-year-row,
+.financial-bi-pivot-table tfoot tr {
+  font-weight: 700;
+  background: rgba(22, 119, 113, 0.08);
+}
+
+.financial-bi-total-cell,
+.financial-bi-grand-cell {
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.financial-bi-month-cell {
+  padding-left: 1rem !important;
+}
+
 .session-box .icon-btn.active {
   background: rgba(16, 37, 63, 0.12);
   color: var(--ink);

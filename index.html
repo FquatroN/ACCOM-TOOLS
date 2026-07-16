@@ -103,6 +103,7 @@
           <div class="backoffice-top-links">
             <button id="nav-guests-bi" type="button" class="nav-link">Guests BI</button>
             <button id="nav-bookings-bi" type="button" class="nav-link">Bookings BI</button>
+            <button id="nav-financial-bi" type="button" class="nav-link">Financial BI</button>
           </div>
         </section>
 
@@ -4121,6 +4122,48 @@
             </div>
             <div id="bookings-bi-channels-pies" class="guests-bi-pies bookings-bi-pies"></div>
             <p id="bookings-bi-status" class="auth-status"></p>
+          </section>
+        </section>
+
+        <section id="view-financial-bi" class="view" hidden>
+          <section class="feature-title">
+            <h2>Financial BI</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Financial BI</h2>
+              <div class="actions">
+                <button id="financial-bi-tab-results" type="button" class="active-tab">Results (Book&amp;Sales)</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="financial-bi-panel-results" class="card">
+            <div class="bar">
+              <h2>Results (Book&amp;Sales)</h2>
+              <div class="actions">
+                <p id="financial-bi-results-count">0 rows</p>
+              </div>
+            </div>
+            <div class="grid filters guests-bi-filters">
+              <label>
+                CC
+                <select id="financial-bi-filter-cc">
+                  <option value="">All</option>
+                  <option value="H">H</option>
+                  <option value="A">A</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-wrap compact-table-wrap financial-bi-pivot-wrap">
+              <table class="compact-table guests-bi-table financial-bi-pivot-table">
+                <thead id="financial-bi-results-head"></thead>
+                <tbody id="financial-bi-results-rows"></tbody>
+                <tfoot id="financial-bi-results-totals"></tfoot>
+              </table>
+            </div>
+            <p id="financial-bi-status" class="auth-status"></p>
           </section>
         </section>
       </section>
