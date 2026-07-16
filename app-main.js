@@ -2448,6 +2448,7 @@ function bindEvents() {
   els.financialDocsRows?.addEventListener("dragover", onFinancialDocTableDragOver);
   els.financialDocsRows?.addEventListener("dragleave", onFinancialDocTableDragLeave);
   els.financialDocsRows?.addEventListener("drop", onFinancialDocTableDrop);
+  els.financialDocsRows?.addEventListener("paste", onFinancialDocTablePaste);
   els.financialDocsMobileCards?.addEventListener("click", onFinancialDocTableAction);
   els.financialDocsModalClose?.addEventListener("click", closeFinancialDocModal);
   [
@@ -18779,7 +18780,7 @@ function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachme
   }
   return `<div class="financial-doc-file-cell">
     <button type="button" class="ghost financial-doc-file-browse" data-action="${action}" data-id="${escape(rowId)}">...</button>
-    <div class="file-dropzone financial-doc-file-dropzone" title="${isNew ? "Drop file here to parse" : "Drop file here to upload"}" data-financial-doc-dropzone="${escape(dropId)}" data-financial-doc-drop-kind="${isNew ? "parse" : "upload"}">+</div>
+    <div class="file-dropzone financial-doc-file-dropzone" tabindex="0" role="button" title="${isNew ? "Drop or paste file here to parse" : "Drop or paste file here to upload"}" aria-label="${isNew ? "Drop or paste file here to parse" : "Drop or paste file here to upload"}" data-financial-doc-dropzone="${escape(dropId)}" data-financial-doc-drop-kind="${isNew ? "parse" : "upload"}">+</div>
   </div>`;
 }
 
@@ -22981,13 +22982,8 @@ function onFinancialDocTableDragLeave(event) {
   zone.classList.remove("drag-over");
 }
 
-async function onFinancialDocTableDrop(event) {
-  const zone = event.target.closest("[data-financial-doc-dropzone]");
-  if (!zone) return;
-  event.preventDefault();
-  zone.classList.remove("drag-over");
-  const file = event.dataTransfer?.files?.[0];
-  if (!file) return;
+async function handleFinancialDocZoneFile(zone, file) {
+  if (!zone || !file) return;
   const kind = clean(zone.dataset.financialDocDropKind);
   const targetId = clean(zone.dataset.financialDocDropzone);
   try {
@@ -23002,6 +22998,34 @@ async function onFinancialDocTableDrop(event) {
     setFinancialDocsStatus(`${kind === "parse" ? "Parse" : "Upload"} failed: ${error.message}`);
     showToast(`Financial document ${kind === "parse" ? "parse" : "upload"} failed: ${error.message}`, "error");
   }
+}
+
+async function onFinancialDocTableDrop(event) {
+  const zone = event.target.closest("[data-financial-doc-dropzone]");
+  if (!zone) return;
+  event.preventDefault();
+  zone.classList.remove("drag-over");
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  await handleFinancialDocZoneFile(zone, file);
+}
+
+function getClipboardFiles(event) {
+  const clipboardFiles = Array.from(event.clipboardData?.files || []);
+  const itemFiles = Array.from(event.clipboardData?.items || [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+  return clipboardFiles.length ? clipboardFiles : itemFiles;
+}
+
+async function onFinancialDocTablePaste(event) {
+  const zone = event.target.closest("[data-financial-doc-dropzone]");
+  if (!zone) return;
+  const file = getClipboardFiles(event)[0];
+  if (!file) return;
+  event.preventDefault();
+  await handleFinancialDocZoneFile(zone, file);
 }
 
 function handleFinancialDocsDriveCallbackQuery() {
