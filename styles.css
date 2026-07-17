@@ -5144,13 +5144,13 @@ button[id^="close-settings"] {
   width: max-content;
   min-width: 112rem;
   table-layout: fixed;
-  font-size: 0.48rem;
+  font-size: 0.65rem;
   line-height: 1;
 }
 
 .financial-bi-pivot-table th,
 .financial-bi-pivot-table td {
-  font-size: 0.48rem !important;
+  font-size: 0.65rem !important;
   padding: 0.035rem 0.045rem;
   white-space: nowrap;
   min-width: 0;
