@@ -5143,7 +5143,7 @@ button[id^="close-settings"] {
   width: max-content;
   min-width: 100%;
   table-layout: auto;
-  font-size: 0.25rem;
+  font-size: 0.20rem;
   line-height: 1.05;
 }
 
