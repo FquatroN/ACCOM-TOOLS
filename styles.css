@@ -5134,34 +5134,44 @@ button[id^="close-settings"] {
 .financial-bi-pivot-wrap {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
+  max-height: calc(100vh - 22rem);
+  min-height: 28rem;
+  overflow: auto;
 }
 
 .financial-bi-pivot-table {
   width: max-content;
   min-width: 100%;
   table-layout: auto;
-  font-size: 0.66rem;
+  font-size: 0.34rem;
+  line-height: 1.05;
 }
 
 .financial-bi-pivot-table th,
 .financial-bi-pivot-table td {
-  padding: 0.18rem 0.28rem;
+  padding: 0.06rem 0.12rem;
   white-space: nowrap;
-  min-width: 5.1rem;
+  min-width: 3.55rem;
 }
 
 .financial-bi-pivot-table th:first-child,
 .financial-bi-pivot-table td:first-child {
-  min-width: 7rem;
+  min-width: 5.8rem;
   position: sticky;
   left: 0;
   z-index: 1;
   background: #fffaf4;
 }
 
+.financial-bi-pivot-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #fffaf4;
+}
+
 .financial-bi-pivot-table thead th:first-child {
-  z-index: 2;
+  z-index: 4;
 }
 
 .financial-bi-year-row,
@@ -5177,15 +5187,15 @@ button[id^="close-settings"] {
 }
 
 .financial-bi-month-cell {
-  padding-left: 1rem !important;
+  padding-left: 0.55rem !important;
 }
 
 .financial-bi-year-toggle {
-  min-height: 1.25rem;
-  padding: 0.04rem 0.28rem;
-  margin-right: 0.22rem;
-  border-radius: 0.35rem;
-  font-size: 0.68rem;
+  min-height: 0.75rem;
+  padding: 0 0.14rem;
+  margin-right: 0.12rem;
+  border-radius: 0.25rem;
+  font-size: 0.44rem;
   line-height: 1;
 }
 
