@@ -21193,7 +21193,9 @@ async function loadFinancialBiData({ silent = false } = {}) {
     const result = await api(buildFinancialBiUrlClient());
     state.financialBiRows = Array.isArray(result?.rows) ? result.rows : [];
     initializeFinancialBiFilters();
-    state.financialBiPivot = buildFinancialBiPivotClient(filteredFinancialBiRows());
+    state.financialBiPivot = state.financialBiRows.length
+      ? buildFinancialBiPivotClient(filteredFinancialBiRows())
+      : (result?.pivot && typeof result.pivot === "object" ? result.pivot : { incomeCategories: [], expenseCategories: [], years: [], totals: {} });
     state.financialBiLoaded = true;
     renderFinancialBi();
     if (!silent) setFinancialBiStatus("Financial BI loaded.");
@@ -21388,7 +21390,9 @@ function financialBiRowCells(bucket, categories, total, options = {}) {
 
 function renderFinancialBi() {
   initializeFinancialBiFilters();
-  state.financialBiPivot = buildFinancialBiPivotClient(filteredFinancialBiRows());
+  if (Array.isArray(state.financialBiRows) && state.financialBiRows.length) {
+    state.financialBiPivot = buildFinancialBiPivotClient(filteredFinancialBiRows());
+  }
   const pivot = state.financialBiPivot || {};
   const incomeCategories = Array.isArray(pivot.incomeCategories) ? pivot.incomeCategories : [];
   const expenseCategories = Array.isArray(pivot.expenseCategories) ? pivot.expenseCategories : [];

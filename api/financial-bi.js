@@ -131,10 +131,9 @@ module.exports = async function handler(req, res) {
     params.append("order", "month.asc");
     params.append("order", "type.asc");
     params.append("order", "category.asc");
+    params.set("limit", "50000");
 
-    const rows = normalizeRows(await restQuery(`bi_financial_analysis_sales?${params.toString()}`, {
-      headers: { Range: "0-99999" },
-    }));
+    const rows = normalizeRows(await restQuery(`bi_financial_analysis_sales?${params.toString()}`));
 
     res.status(200).json({
       rows,
