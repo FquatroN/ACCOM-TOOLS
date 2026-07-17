@@ -4,11 +4,6 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
-function parseCcValue(value) {
-  const raw = clean(value).toUpperCase();
-  return raw === "H" || raw === "A" ? raw : "";
-}
-
 function parseNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -130,19 +125,18 @@ module.exports = async function handler(req, res) {
 
     await requireFeature(req, "app", "financial-bi");
 
-    const cc = parseCcValue(req.query?.cc);
     const params = new URLSearchParams();
     params.set("select", "type,year,month,year_month,cc,category,total_amount");
-    if (cc) params.set("cc", `eq.${cc}`);
     params.append("order", "year.asc");
     params.append("order", "month.asc");
     params.append("order", "type.asc");
     params.append("order", "category.asc");
 
-    const rows = normalizeRows(await restQuery(`bi_financial_analysis_sales?${params.toString()}`));
+    const rows = normalizeRows(await restQuery(`bi_financial_analysis_sales?${params.toString()}`, {
+      headers: { Range: "0-99999" },
+    }));
 
     res.status(200).json({
-      cc,
       rows,
       pivot: buildPivot(rows),
     });

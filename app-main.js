@@ -1296,6 +1296,9 @@ const state = {
   financialBiLoaded: false,
   financialBiLoading: false,
   financialBiCc: "",
+  financialBiYearFrom: "",
+  financialBiYearTo: "",
+  financialBiExpandedYears: {},
   financialBiRows: [],
   financialBiPivot: { incomeCategories: [], expenseCategories: [], years: [], totals: {} },
   lastMainView: "communications",
@@ -1626,6 +1629,8 @@ const els = {
   bookingsBiChannelsPies: document.getElementById("bookings-bi-channels-pies"),
   bookingsBiStatus: document.getElementById("bookings-bi-status"),
   financialBiTabResults: document.getElementById("financial-bi-tab-results"),
+  financialBiFilterYearFrom: document.getElementById("financial-bi-filter-year-from"),
+  financialBiFilterYearTo: document.getElementById("financial-bi-filter-year-to"),
   financialBiFilterCc: document.getElementById("financial-bi-filter-cc"),
   financialBiResultsCount: document.getElementById("financial-bi-results-count"),
   financialBiResultsHead: document.getElementById("financial-bi-results-head"),
@@ -2393,7 +2398,10 @@ function bindEvents() {
   els.bookingsBiFilterHa?.addEventListener("change", onBookingsBiFilterChange);
   els.bookingsBiFilterStatus?.addEventListener("change", onBookingsBiStatusChange);
   els.financialBiTabResults?.addEventListener("click", () => renderFinancialBi());
+  els.financialBiFilterYearFrom?.addEventListener("change", onFinancialBiFilterChange);
+  els.financialBiFilterYearTo?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCc?.addEventListener("change", onFinancialBiFilterChange);
+  els.financialBiResultsRows?.addEventListener("click", onFinancialBiResultsClick);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -21176,22 +21184,16 @@ function setFinancialBiStatus(message, type = "") {
 }
 
 function buildFinancialBiUrlClient() {
-  const params = new URLSearchParams();
-  const cc = currentFinancialBiCc();
-  if (cc === "H" || cc === "A") params.set("cc", cc);
-  const query = params.toString();
-  return `/api/financial-bi${query ? `?${query}` : ""}`;
+  return "/api/financial-bi";
 }
 
 async function loadFinancialBiData({ silent = false } = {}) {
   state.financialBiLoading = true;
   try {
     const result = await api(buildFinancialBiUrlClient());
-    state.financialBiCc = clean(result?.cc).toUpperCase();
     state.financialBiRows = Array.isArray(result?.rows) ? result.rows : [];
-    state.financialBiPivot = result?.pivot && typeof result.pivot === "object"
-      ? result.pivot
-      : { incomeCategories: [], expenseCategories: [], years: [], totals: {} };
+    initializeFinancialBiFilters();
+    state.financialBiPivot = buildFinancialBiPivotClient(filteredFinancialBiRows());
     state.financialBiLoaded = true;
     renderFinancialBi();
     if (!silent) setFinancialBiStatus("Financial BI loaded.");
@@ -21212,7 +21214,161 @@ async function ensureFinancialBiData() {
 
 function onFinancialBiFilterChange() {
   state.financialBiCc = currentFinancialBiCc();
-  loadFinancialBiData({ silent: true }).catch(() => {});
+  state.financialBiYearFrom = clean(els.financialBiFilterYearFrom?.value);
+  state.financialBiYearTo = clean(els.financialBiFilterYearTo?.value);
+  state.financialBiPivot = buildFinancialBiPivotClient(filteredFinancialBiRows());
+  renderFinancialBi();
+}
+
+function financialBiAvailableYears() {
+  const currentYear = new Date().getFullYear();
+  const defaultYears = Array.from({ length: 5 }, (_, index) => currentYear - 4 + index);
+  const years = [...new Set([
+    ...defaultYears,
+    ...(Array.isArray(state.financialBiRows) ? state.financialBiRows : [])
+    .map((row) => Number(row?.year || 0))
+    .filter((year) => Number.isFinite(year) && year > 0),
+  ])].sort((a, b) => a - b);
+  return years.length ? years : defaultYears;
+}
+
+function initializeFinancialBiFilters() {
+  const years = financialBiAvailableYears();
+  const currentYear = new Date().getFullYear();
+  const defaultFrom = String(currentYear - 4);
+  const defaultTo = String(currentYear);
+  if (!clean(state.financialBiYearFrom)) state.financialBiYearFrom = years.includes(Number(defaultFrom)) ? defaultFrom : String(years[0] || currentYear - 4);
+  if (!clean(state.financialBiYearTo)) state.financialBiYearTo = years.includes(Number(defaultTo)) ? defaultTo : String(years[years.length - 1] || currentYear);
+  if (!state.financialBiExpandedYears || !Object.keys(state.financialBiExpandedYears).length) {
+    state.financialBiExpandedYears = {
+      [String(currentYear)]: true,
+      [String(currentYear - 1)]: true,
+    };
+  }
+}
+
+function currentFinancialBiYearRange() {
+  initializeFinancialBiFilters();
+  const from = Number.parseInt(state.financialBiYearFrom, 10);
+  const to = Number.parseInt(state.financialBiYearTo, 10);
+  const years = financialBiAvailableYears();
+  const fallbackFrom = Number(years[0] || new Date().getFullYear() - 4);
+  const fallbackTo = Number(years[years.length - 1] || new Date().getFullYear());
+  const start = Number.isFinite(from) ? from : fallbackFrom;
+  const end = Number.isFinite(to) ? to : fallbackTo;
+  return start <= end ? { from: start, to: end } : { from: end, to: start };
+}
+
+function filteredFinancialBiRows() {
+  const cc = clean(state.financialBiCc).toUpperCase();
+  const { from, to } = currentFinancialBiYearRange();
+  return (Array.isArray(state.financialBiRows) ? state.financialBiRows : []).filter((row) => {
+    const year = Number(row?.year || 0);
+    if (!Number.isFinite(year) || year < from || year > to) return false;
+    if ((cc === "H" || cc === "A") && clean(row?.cc).toUpperCase() !== cc) return false;
+    return true;
+  });
+}
+
+function sortFinancialBiCategory(a, b, type = "") {
+  const left = clean(a);
+  const right = clean(b);
+  if (type === "INCOME") {
+    if (left === "Accomodation" && right !== "Accomodation") return -1;
+    if (right === "Accomodation" && left !== "Accomodation") return 1;
+  }
+  if (!left && right) return 1;
+  if (!right && left) return -1;
+  return left.localeCompare(right);
+}
+
+function emptyFinancialBiTotals() {
+  return {
+    income: {},
+    expense: {},
+    incomeTotal: 0,
+    expenseTotal: 0,
+    grandTotal: 0,
+  };
+}
+
+function addFinancialBiAmount(bucket, category, amount) {
+  const key = clean(category);
+  bucket[key] = Number(bucket[key] || 0) + Number(amount || 0);
+}
+
+function buildFinancialBiPivotClient(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const incomeCategories = [...new Set(sourceRows.filter((row) => clean(row?.type).toUpperCase() === "INCOME").map((row) => clean(row?.category)))]
+    .sort((a, b) => sortFinancialBiCategory(a, b, "INCOME"));
+  const expenseCategories = [...new Set(sourceRows.filter((row) => clean(row?.type).toUpperCase() === "EXPENSE").map((row) => clean(row?.category)))]
+    .sort((a, b) => sortFinancialBiCategory(a, b, "EXPENSE"));
+  const yearMap = new Map();
+  const totals = emptyFinancialBiTotals();
+  sourceRows.forEach((row) => {
+    const year = Number(row?.year || 0);
+    const month = Number(row?.month || 0);
+    if (!year || !month) return;
+    const yearKey = String(year);
+    const monthKey = String(month).padStart(2, "0");
+    if (!yearMap.has(yearKey)) yearMap.set(yearKey, { year, months: new Map(), ...emptyFinancialBiTotals() });
+    const yearBucket = yearMap.get(yearKey);
+    if (!yearBucket.months.has(monthKey)) yearBucket.months.set(monthKey, { year, month, yearMonth: clean(row?.yearMonth) || `${year}-${monthKey}`, ...emptyFinancialBiTotals() });
+    const monthBucket = yearBucket.months.get(monthKey);
+    const isExpense = clean(row?.type).toUpperCase() === "EXPENSE";
+    const groupKey = isExpense ? "expense" : "income";
+    const totalKey = isExpense ? "expenseTotal" : "incomeTotal";
+    const amount = Number(row?.totalAmount || 0);
+    addFinancialBiAmount(monthBucket[groupKey], row?.category, amount);
+    addFinancialBiAmount(yearBucket[groupKey], row?.category, amount);
+    addFinancialBiAmount(totals[groupKey], row?.category, amount);
+    monthBucket[totalKey] += amount;
+    yearBucket[totalKey] += amount;
+    totals[totalKey] += amount;
+  });
+  const years = Array.from(yearMap.values()).sort((a, b) => Number(a.year) - Number(b.year)).map((year) => ({
+    ...year,
+    months: Array.from(year.months.values()).sort((a, b) => Number(a.month) - Number(b.month)).map((month) => ({
+      ...month,
+      grandTotal: month.incomeTotal - month.expenseTotal,
+    })),
+    grandTotal: year.incomeTotal - year.expenseTotal,
+  }));
+  return {
+    incomeCategories,
+    expenseCategories,
+    years,
+    totals: {
+      ...totals,
+      grandTotal: totals.incomeTotal - totals.expenseTotal,
+    },
+  };
+}
+
+function renderFinancialBiYearFilters() {
+  const years = financialBiAvailableYears();
+  initializeFinancialBiFilters();
+  const options = years.map((year) => `<option value="${escape(String(year))}">${escape(String(year))}</option>`).join("");
+  if (els.financialBiFilterYearFrom) {
+    els.financialBiFilterYearFrom.innerHTML = options;
+    els.financialBiFilterYearFrom.value = state.financialBiYearFrom;
+  }
+  if (els.financialBiFilterYearTo) {
+    els.financialBiFilterYearTo.innerHTML = options;
+    els.financialBiFilterYearTo.value = state.financialBiYearTo;
+  }
+}
+
+function onFinancialBiResultsClick(event) {
+  const button = event.target.closest("[data-financial-bi-toggle-year]");
+  if (!button) return;
+  const year = clean(button.dataset.financialBiToggleYear);
+  if (!year) return;
+  state.financialBiExpandedYears = {
+    ...(state.financialBiExpandedYears || {}),
+    [year]: !state.financialBiExpandedYears?.[year],
+  };
+  renderFinancialBi();
 }
 
 function financialBiAmount(value, { showZero = false } = {}) {
@@ -21231,6 +21387,8 @@ function financialBiRowCells(bucket, categories, total, options = {}) {
 }
 
 function renderFinancialBi() {
+  initializeFinancialBiFilters();
+  state.financialBiPivot = buildFinancialBiPivotClient(filteredFinancialBiRows());
   const pivot = state.financialBiPivot || {};
   const incomeCategories = Array.isArray(pivot.incomeCategories) ? pivot.incomeCategories : [];
   const expenseCategories = Array.isArray(pivot.expenseCategories) ? pivot.expenseCategories : [];
@@ -21239,10 +21397,11 @@ function renderFinancialBi() {
     els.financialBiTabResults.classList.add("active-tab");
     els.financialBiTabResults.classList.remove("ghost");
   }
+  renderFinancialBiYearFilters();
   if (els.financialBiFilterCc) els.financialBiFilterCc.value = currentFinancialBiCc() === "H" || currentFinancialBiCc() === "A" ? currentFinancialBiCc() : "";
   if (els.financialBiResultsCount) {
     const monthCount = years.reduce((sum, year) => sum + (Array.isArray(year?.months) ? year.months.length : 0), 0);
-    els.financialBiResultsCount.textContent = `${monthCount} row${monthCount === 1 ? "" : "s"}`;
+    els.financialBiResultsCount.textContent = `${monthCount} month${monthCount === 1 ? "" : "s"}`;
   }
   if (els.financialBiResultsHead) {
     const incomeSpan = Math.max(1, incomeCategories.length + 1);
@@ -21263,14 +21422,16 @@ function renderFinancialBi() {
   if (els.financialBiResultsRows) {
     els.financialBiResultsRows.innerHTML = years.length
       ? years.map((year) => {
-        const monthRows = (Array.isArray(year?.months) ? year.months : []).map((month) => `<tr>
+        const yearKey = String(year.year || "");
+        const expanded = !!state.financialBiExpandedYears?.[yearKey];
+        const monthRows = expanded ? (Array.isArray(year?.months) ? year.months : []).map((month) => `<tr>
             <td class="financial-bi-month-cell">${escape(String(Number(month.month || 0) || clean(month.yearMonth) || "-"))}</td>
             ${financialBiRowCells(month.income, incomeCategories, month.incomeTotal)}
             ${financialBiRowCells(month.expense, expenseCategories, month.expenseTotal)}
             <td class="financial-bi-grand-cell">${escape(financialBiAmount(month.grandTotal, { showZero: true }))}</td>
-          </tr>`).join("");
+          </tr>`).join("") : "";
         return `<tr class="financial-bi-year-row">
-            <td>${escape(String(year.year || "-"))}</td>
+            <td><button type="button" class="financial-bi-year-toggle" data-financial-bi-toggle-year="${escape(yearKey)}">${expanded ? "-" : "+"}</button> ${escape(String(year.year || "-"))}</td>
             ${financialBiRowCells(year.income, incomeCategories, year.incomeTotal, { showZero: true })}
             ${financialBiRowCells(year.expense, expenseCategories, year.expenseTotal, { showZero: true })}
             <td class="financial-bi-grand-cell">${escape(financialBiAmount(year.grandTotal, { showZero: true }))}</td>

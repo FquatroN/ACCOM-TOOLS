@@ -5141,14 +5141,14 @@ button[id^="close-settings"] {
   width: max-content;
   min-width: 100%;
   table-layout: auto;
-  font-size: 0.74rem;
+  font-size: 0.66rem;
 }
 
 .financial-bi-pivot-table th,
 .financial-bi-pivot-table td {
-  padding: 0.22rem 0.34rem;
+  padding: 0.18rem 0.28rem;
   white-space: nowrap;
-  min-width: 5.6rem;
+  min-width: 5.1rem;
 }
 
 .financial-bi-pivot-table th:first-child,
@@ -5178,6 +5178,15 @@ button[id^="close-settings"] {
 
 .financial-bi-month-cell {
   padding-left: 1rem !important;
+}
+
+.financial-bi-year-toggle {
+  min-height: 1.25rem;
+  padding: 0.04rem 0.28rem;
+  margin-right: 0.22rem;
+  border-radius: 0.35rem;
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 .session-box .icon-btn.active {
