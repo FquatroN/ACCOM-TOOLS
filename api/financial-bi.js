@@ -5,7 +5,15 @@ function clean(value) {
 }
 
 function parseNumber(value) {
-  const num = Number(value);
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const raw = clean(value);
+  if (!raw) return 0;
+  const normalized = raw
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(",", ".");
+  const num = Number(normalized);
   return Number.isFinite(num) ? num : 0;
 }
 
@@ -121,6 +129,22 @@ function buildPivot(rows) {
   };
 }
 
+async function loadAllFinancialBiRows() {
+  const pageSize = 1000;
+  const allRows = [];
+  for (let offset = 0; offset < 200000; offset += pageSize) {
+    const params = new URLSearchParams();
+    params.set("select", "*");
+    params.set("limit", String(pageSize));
+    params.set("offset", String(offset));
+    const page = await restQuery(`bi_financial_analysis_sales?${params.toString()}`);
+    const rows = Array.isArray(page) ? page : [];
+    allRows.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return allRows;
+}
+
 module.exports = async function handler(req, res) {
   try {
     if (req.method !== "GET") {
@@ -132,14 +156,11 @@ module.exports = async function handler(req, res) {
 
     await requireFeature(req, "app", "financial-bi");
 
-    const params = new URLSearchParams();
-    params.set("select", "*");
-    params.set("limit", "50000");
-
-    const rows = normalizeRows(await restQuery(`bi_financial_analysis_sales?${params.toString()}`))
+    const rows = normalizeRows(await loadAllFinancialBiRows())
       .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.month) - Number(b.month) || clean(a.type).localeCompare(clean(b.type)) || clean(a.category).localeCompare(clean(b.category)));
 
     res.status(200).json({
+      rowCount: rows.length,
       rows,
       pivot: buildPivot(rows),
     });
