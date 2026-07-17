@@ -5151,7 +5151,7 @@ button[id^="close-settings"] {
 .financial-bi-pivot-table th,
 .financial-bi-pivot-table td {
   font-size: 0.70rem !important;
-  padding: 0.035rem 0.045rem;
+  padding: 0.14rem 0.045rem;
   white-space: nowrap;
   min-width: 0;
   width: 3.05rem;
@@ -5192,6 +5192,14 @@ button[id^="close-settings"] {
 .financial-bi-grand-cell {
   font-weight: 700;
   background: rgba(15, 23, 42, 0.06);
+}
+
+.financial-bi-grand-positive {
+  color: #13795b;
+}
+
+.financial-bi-grand-negative {
+  color: #c62828;
 }
 
 .financial-bi-month-cell {

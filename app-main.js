@@ -21383,6 +21383,13 @@ function financialBiCategoryLabel(value) {
   return clean(value) || "(blank)";
 }
 
+function financialBiGrandTotalClass(value) {
+  const num = Number(value || 0);
+  if (num > 0) return "financial-bi-grand-cell financial-bi-grand-positive";
+  if (num < 0) return "financial-bi-grand-cell financial-bi-grand-negative";
+  return "financial-bi-grand-cell";
+}
+
 function financialBiRowCells(bucket, categories, total, options = {}) {
   const values = categories.map((category) => `<td>${escape(financialBiAmount(bucket?.[category], options))}</td>`).join("");
   return `${values}<td class="financial-bi-total-cell">${escape(financialBiAmount(total, { showZero: true }))}</td>`;
@@ -21432,13 +21439,13 @@ function renderFinancialBi() {
             <td class="financial-bi-month-cell">${escape(String(Number(month.month || 0) || clean(month.yearMonth) || "-"))}</td>
             ${financialBiRowCells(month.income, incomeCategories, month.incomeTotal)}
             ${financialBiRowCells(month.expense, expenseCategories, month.expenseTotal)}
-            <td class="financial-bi-grand-cell">${escape(financialBiAmount(month.grandTotal, { showZero: true }))}</td>
+            <td class="${financialBiGrandTotalClass(month.grandTotal)}">${escape(financialBiAmount(month.grandTotal, { showZero: true }))}</td>
           </tr>`).join("") : "";
         return `<tr class="financial-bi-year-row">
             <td><button type="button" class="financial-bi-year-toggle" data-financial-bi-toggle-year="${escape(yearKey)}">${expanded ? "-" : "+"}</button> ${escape(String(year.year || "-"))}</td>
             ${financialBiRowCells(year.income, incomeCategories, year.incomeTotal, { showZero: true })}
             ${financialBiRowCells(year.expense, expenseCategories, year.expenseTotal, { showZero: true })}
-            <td class="financial-bi-grand-cell">${escape(financialBiAmount(year.grandTotal, { showZero: true }))}</td>
+            <td class="${financialBiGrandTotalClass(year.grandTotal)}">${escape(financialBiAmount(year.grandTotal, { showZero: true }))}</td>
           </tr>${monthRows}`;
       }).join("")
       : `<tr><td colspan="${incomeCategories.length + expenseCategories.length + 4}" class="empty">No Financial BI rows found.</td></tr>`;
@@ -21449,7 +21456,7 @@ function renderFinancialBi() {
       <td>Total</td>
       ${financialBiRowCells(totals.income, incomeCategories, totals.incomeTotal, { showZero: true })}
       ${financialBiRowCells(totals.expense, expenseCategories, totals.expenseTotal, { showZero: true })}
-      <td class="financial-bi-grand-cell">${escape(financialBiAmount(totals.grandTotal, { showZero: true }))}</td>
+      <td class="${financialBiGrandTotalClass(totals.grandTotal)}">${escape(financialBiAmount(totals.grandTotal, { showZero: true }))}</td>
     </tr>`;
   }
 }
