@@ -5144,7 +5144,7 @@ button[id^="close-settings"] {
   width: max-content;
   min-width: 112rem;
   table-layout: fixed;
-  font-size: 0.09rem;
+  font-size: 0.06rem;
   line-height: 1;
 }
 
