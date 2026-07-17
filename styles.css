@@ -5137,14 +5137,14 @@ button[id^="close-settings"] {
   max-height: calc(100vh - 22rem);
   min-height: 28rem;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 .financial-bi-pivot-table {
-  width: 100%;
-  min-width: 0;
+  width: max-content;
+  min-width: 112rem;
   table-layout: fixed;
-  font-size: 0.11rem;
+  font-size: 0.09rem;
   line-height: 1;
 }
 
@@ -5153,14 +5153,16 @@ button[id^="close-settings"] {
   padding: 0.035rem 0.045rem;
   white-space: nowrap;
   min-width: 0;
-  max-width: 2.4rem;
+  width: 3.05rem;
+  max-width: 3.05rem;
   overflow: hidden;
   text-overflow: clip;
 }
 
 .financial-bi-pivot-table th:first-child,
 .financial-bi-pivot-table td:first-child {
-  width: 3.2rem;
+  width: 4.2rem;
+  max-width: 4.2rem;
   min-width: 0;
   position: sticky;
   left: 0;
