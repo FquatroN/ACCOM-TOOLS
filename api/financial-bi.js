@@ -9,15 +9,22 @@ function parseNumber(value) {
   return Number.isFinite(num) ? num : 0;
 }
 
+function firstValue(row, keys) {
+  for (const key of keys) {
+    if (row && Object.prototype.hasOwnProperty.call(row, key) && row[key] !== null && row[key] !== undefined) return row[key];
+  }
+  return "";
+}
+
 function normalizeRows(rows) {
   return (Array.isArray(rows) ? rows : []).map((row) => ({
-    type: clean(row?.type || row?.TYPE).toUpperCase() === "EXPENSE" ? "EXPENSE" : "INCOME",
-    year: Number.parseInt(row?.year, 10) || 0,
-    month: Number.parseInt(row?.month, 10) || 0,
-    yearMonth: clean(row?.year_month || row?.yearMonth),
-    cc: clean(row?.cc).toUpperCase(),
-    category: clean(row?.category || row?.sale_category),
-    totalAmount: parseNumber(row?.total_amount || row?.totalAmount),
+    type: clean(firstValue(row, ["type", "TYPE", "Type"])).toUpperCase() === "EXPENSE" ? "EXPENSE" : "INCOME",
+    year: Number.parseInt(firstValue(row, ["year", "YEAR", "Year"]), 10) || 0,
+    month: Number.parseInt(firstValue(row, ["month", "MONTH", "Month"]), 10) || 0,
+    yearMonth: clean(firstValue(row, ["year_month", "yearMonth", "YEAR_MONTH", "YearMonth"])),
+    cc: clean(firstValue(row, ["cc", "CC"])).toUpperCase(),
+    category: clean(firstValue(row, ["category", "CATEGORY", "Category", "sale_category", "saleCategory"])),
+    totalAmount: parseNumber(firstValue(row, ["total_amount", "totalAmount", "TOTAL_AMOUNT", "total_charge", "total_sales", "total"])),
   })).filter((row) => row.year && row.month);
 }
 
@@ -126,14 +133,11 @@ module.exports = async function handler(req, res) {
     await requireFeature(req, "app", "financial-bi");
 
     const params = new URLSearchParams();
-    params.set("select", "type,year,month,year_month,cc,category,total_amount");
-    params.append("order", "year.asc");
-    params.append("order", "month.asc");
-    params.append("order", "type.asc");
-    params.append("order", "category.asc");
+    params.set("select", "*");
     params.set("limit", "50000");
 
-    const rows = normalizeRows(await restQuery(`bi_financial_analysis_sales?${params.toString()}`));
+    const rows = normalizeRows(await restQuery(`bi_financial_analysis_sales?${params.toString()}`))
+      .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.month) - Number(b.month) || clean(a.type).localeCompare(clean(b.type)) || clean(a.category).localeCompare(clean(b.category)));
 
     res.status(200).json({
       rows,

@@ -21204,7 +21204,7 @@ async function loadFinancialBiData({ silent = false } = {}) {
     state.financialBiRows = [];
     state.financialBiPivot = { incomeCategories: [], expenseCategories: [], years: [], totals: {} };
     renderFinancialBi();
-    if (!silent) setFinancialBiStatus(`Failed to load Financial BI: ${error.message}`, "error");
+    setFinancialBiStatus(`Failed to load Financial BI: ${error.message}`, "error");
   } finally {
     state.financialBiLoading = false;
   }
