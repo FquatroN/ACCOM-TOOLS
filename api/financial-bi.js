@@ -149,32 +149,9 @@ function financialBiFilters(req) {
   };
 }
 
-function viewFilterParams(filters, offset, limit) {
-  const params = new URLSearchParams();
-  params.set("select", "*");
-  params.set("year", `gte.${filters.yearFrom}`);
-  params.append("year", `lte.${filters.yearTo}`);
-  if (filters.cc) params.set("cc", `eq.${filters.cc}`);
-  params.set("limit", String(limit));
-  params.set("offset", String(offset));
-  return params;
-}
-
-async function loadFinancialBiRowsFromView(filters) {
-  const pageSize = 2000;
-  const allRows = [];
-  for (let offset = 0; offset < 200000; offset += pageSize) {
-    const page = await restQuery(`bi_financial_analysis_sales?${viewFilterParams(filters, offset, pageSize).toString()}`);
-    const rows = Array.isArray(page) ? page : [];
-    allRows.push(...rows);
-    if (rows.length < pageSize) break;
-  }
-  return allRows;
-}
-
 async function loadFinancialBiRows(filters) {
   try {
-    const rows = await restQuery("rpc/get_bi_financial_analysis_sales", {
+    const payload = await restQuery("rpc/get_bi_financial_analysis_sales_payload", {
       method: "POST",
       body: {
         p_year_from: filters.yearFrom,
@@ -182,12 +159,33 @@ async function loadFinancialBiRows(filters) {
         p_cc: filters.cc || null,
       },
     });
-    return Array.isArray(rows) ? rows : [];
+    const firstRow = Array.isArray(payload) ? payload[0] : payload;
+    if (!firstRow || !Array.isArray(firstRow.rows)) {
+      const invalidPayload = new Error("Financial BI returned an invalid aggregate payload.");
+      invalidPayload.statusCode = 502;
+      throw invalidPayload;
+    }
+    return firstRow.rows;
   } catch (error) {
     const message = clean(error.message).toLowerCase();
     const isMissingRpc = error.statusCode === 404 || message.includes("could not find the function") || message.includes("schema cache");
     if (!isMissingRpc) throw error;
-    return loadFinancialBiRowsFromView(filters);
+
+    const legacyRows = await restQuery("rpc/get_bi_financial_analysis_sales", {
+      method: "POST",
+      body: {
+        p_year_from: filters.yearFrom,
+        p_year_to: filters.yearTo,
+        p_cc: filters.cc || null,
+      },
+    });
+    const rows = Array.isArray(legacyRows) ? legacyRows : [];
+    if (rows.length >= 1000) {
+      const truncated = new Error("Financial BI database migration is required to load the complete result set.");
+      truncated.statusCode = 503;
+      throw truncated;
+    }
+    return rows;
   }
 }
 
@@ -203,8 +201,14 @@ module.exports = async function handler(req, res) {
     await requireFeature(req, "app", "financial-bi");
 
     const filters = financialBiFilters(req);
+    console.log("[financial-bi] loading aggregates", filters);
     const rows = normalizeRows(await loadFinancialBiRows(filters))
       .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.month) - Number(b.month) || clean(a.type).localeCompare(clean(b.type)) || clean(a.category).localeCompare(clean(b.category)));
+    const typeCounts = rows.reduce((counts, row) => {
+      counts[row.type] = (counts[row.type] || 0) + 1;
+      return counts;
+    }, {});
+    console.log("[financial-bi] aggregates loaded", { rowCount: rows.length, typeCounts });
 
     res.status(200).json({
       rowCount: rows.length,
@@ -213,6 +217,7 @@ module.exports = async function handler(req, res) {
       pivot: buildPivot(rows),
     });
   } catch (error) {
+    console.error("[financial-bi] load failed", { message: error.message, statusCode: error.statusCode });
     sendError(res, error);
   }
 };
