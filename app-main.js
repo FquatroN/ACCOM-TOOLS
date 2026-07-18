@@ -21184,7 +21184,14 @@ function setFinancialBiStatus(message, type = "") {
 }
 
 function buildFinancialBiUrlClient() {
-  return "/api/financial-bi";
+  initializeFinancialBiFilters();
+  const params = new URLSearchParams();
+  const { from, to } = currentFinancialBiYearRange();
+  params.set("yearFrom", String(from));
+  params.set("yearTo", String(to));
+  const cc = currentFinancialBiCc();
+  if (cc === "H" || cc === "A") params.set("cc", cc);
+  return `/api/financial-bi?${params.toString()}`;
 }
 
 async function loadFinancialBiData({ silent = false } = {}) {
@@ -21218,8 +21225,7 @@ function onFinancialBiFilterChange() {
   state.financialBiCc = currentFinancialBiCc();
   state.financialBiYearFrom = clean(els.financialBiFilterYearFrom?.value);
   state.financialBiYearTo = clean(els.financialBiFilterYearTo?.value);
-  state.financialBiPivot = buildFinancialBiPivotClient(filteredFinancialBiRows());
-  renderFinancialBi();
+  loadFinancialBiData({ silent: true });
 }
 
 function financialBiAvailableYears() {

@@ -129,20 +129,66 @@ function buildPivot(rows) {
   };
 }
 
-async function loadAllFinancialBiRows() {
-  const pageSize = 1000;
+function parseYear(value, fallback) {
+  const year = Number.parseInt(value, 10);
+  return Number.isFinite(year) && year >= 2000 && year <= 2100 ? year : fallback;
+}
+
+function financialBiFilters(req) {
+  const currentYear = new Date().getFullYear();
+  const query = req.query || {};
+  const rawFrom = Array.isArray(query.yearFrom) ? query.yearFrom[0] : query.yearFrom;
+  const rawTo = Array.isArray(query.yearTo) ? query.yearTo[0] : query.yearTo;
+  const from = parseYear(rawFrom, currentYear - 4);
+  const to = parseYear(rawTo, currentYear);
+  const cc = clean(Array.isArray(query.cc) ? query.cc[0] : query.cc).toUpperCase();
+  return {
+    yearFrom: Math.min(from, to),
+    yearTo: Math.max(from, to),
+    cc: cc === "H" || cc === "A" ? cc : "",
+  };
+}
+
+function viewFilterParams(filters, offset, limit) {
+  const params = new URLSearchParams();
+  params.set("select", "*");
+  params.set("year", `gte.${filters.yearFrom}`);
+  params.append("year", `lte.${filters.yearTo}`);
+  if (filters.cc) params.set("cc", `eq.${filters.cc}`);
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  return params;
+}
+
+async function loadFinancialBiRowsFromView(filters) {
+  const pageSize = 2000;
   const allRows = [];
   for (let offset = 0; offset < 200000; offset += pageSize) {
-    const params = new URLSearchParams();
-    params.set("select", "*");
-    params.set("limit", String(pageSize));
-    params.set("offset", String(offset));
-    const page = await restQuery(`bi_financial_analysis_sales?${params.toString()}`);
+    const page = await restQuery(`bi_financial_analysis_sales?${viewFilterParams(filters, offset, pageSize).toString()}`);
     const rows = Array.isArray(page) ? page : [];
     allRows.push(...rows);
     if (rows.length < pageSize) break;
   }
   return allRows;
+}
+
+async function loadFinancialBiRows(filters) {
+  try {
+    const rows = await restQuery("rpc/get_bi_financial_analysis_sales", {
+      method: "POST",
+      body: {
+        p_year_from: filters.yearFrom,
+        p_year_to: filters.yearTo,
+        p_cc: filters.cc || null,
+      },
+    });
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    const message = clean(error.message).toLowerCase();
+    const isMissingRpc = error.statusCode === 404 || message.includes("could not find the function") || message.includes("schema cache");
+    if (!isMissingRpc) throw error;
+    return loadFinancialBiRowsFromView(filters);
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -156,11 +202,13 @@ module.exports = async function handler(req, res) {
 
     await requireFeature(req, "app", "financial-bi");
 
-    const rows = normalizeRows(await loadAllFinancialBiRows())
+    const filters = financialBiFilters(req);
+    const rows = normalizeRows(await loadFinancialBiRows(filters))
       .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.month) - Number(b.month) || clean(a.type).localeCompare(clean(b.type)) || clean(a.category).localeCompare(clean(b.category)));
 
     res.status(200).json({
       rowCount: rows.length,
+      filters,
       rows,
       pivot: buildPivot(rows),
     });
