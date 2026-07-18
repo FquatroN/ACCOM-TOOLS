@@ -1295,6 +1295,10 @@ const state = {
   bookingsBiLastLoaded: { year: "", ha: "", statuses: "" },
   financialBiLoaded: false,
   financialBiLoading: false,
+  financialBiLoadPromise: null,
+  financialBiRequestKey: "",
+  financialBiRequestToken: 0,
+  financialBiLoadedKey: "",
   financialBiCc: "",
   financialBiYearFrom: "",
   financialBiYearTo: "",
@@ -2300,9 +2304,6 @@ async function init() {
   if (canApp("guests")) loadGuestsData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canAppFinancialDocs()) loadFinancialDocsData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canAppImportData()) ensureImportDataData().then(() => renderLayout()).catch(() => {});
-  if (canUseGuestsBi()) loadGuestsBiData({ silent: true }).then(() => renderLayout()).catch(() => {});
-  if (canUseBookingsBi()) loadBookingsBiData({ silent: true }).then(() => renderLayout()).catch(() => {});
-  if (canUseFinancialBi()) loadFinancialBiData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("cash")) loadCashData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("maintenance")) loadMaintenanceData({ silent: true }).then(() => renderLayout()).catch(() => {});
   if (canApp("shopping")) loadShoppingData({ silent: true }).then(() => renderLayout()).catch(() => {});
@@ -21195,30 +21196,55 @@ function buildFinancialBiUrlClient() {
 }
 
 async function loadFinancialBiData({ silent = false } = {}) {
-  state.financialBiLoading = true;
-  try {
-    const result = await api(buildFinancialBiUrlClient());
-    state.financialBiRows = Array.isArray(result?.rows) ? result.rows : [];
-    initializeFinancialBiFilters();
-    state.financialBiPivot = state.financialBiRows.length
-      ? buildFinancialBiPivotClient(filteredFinancialBiRows())
-      : (result?.pivot && typeof result.pivot === "object" ? result.pivot : { incomeCategories: [], expenseCategories: [], years: [], totals: {} });
-    state.financialBiLoaded = true;
-    renderFinancialBi();
-    if (!silent) setFinancialBiStatus("Financial BI loaded.");
-  } catch (error) {
-    state.financialBiLoaded = false;
-    state.financialBiRows = [];
-    state.financialBiPivot = { incomeCategories: [], expenseCategories: [], years: [], totals: {} };
-    renderFinancialBi();
-    setFinancialBiStatus(`Failed to load Financial BI: ${error.message}`, "error");
-  } finally {
-    state.financialBiLoading = false;
+  const requestUrl = buildFinancialBiUrlClient();
+  if (
+    state.financialBiLoadPromise
+    && state.financialBiRequestKey === requestUrl
+  ) {
+    return state.financialBiLoadPromise;
   }
+
+  const requestToken = Number(state.financialBiRequestToken || 0) + 1;
+  state.financialBiRequestToken = requestToken;
+  state.financialBiRequestKey = requestUrl;
+  state.financialBiLoading = true;
+  const loadPromise = (async () => {
+    try {
+      const result = await api(requestUrl);
+      if (requestToken !== state.financialBiRequestToken) return;
+      state.financialBiRows = Array.isArray(result?.rows) ? result.rows : [];
+      initializeFinancialBiFilters();
+      state.financialBiPivot = state.financialBiRows.length
+        ? buildFinancialBiPivotClient(filteredFinancialBiRows())
+        : (result?.pivot && typeof result.pivot === "object" ? result.pivot : { incomeCategories: [], expenseCategories: [], years: [], totals: {} });
+      state.financialBiLoaded = true;
+      state.financialBiLoadedKey = requestUrl;
+      renderFinancialBi();
+      if (!silent) setFinancialBiStatus("Financial BI loaded.");
+    } catch (error) {
+      if (requestToken !== state.financialBiRequestToken) return;
+      if (!state.financialBiLoaded) {
+        state.financialBiRows = [];
+        state.financialBiPivot = { incomeCategories: [], expenseCategories: [], years: [], totals: {} };
+      }
+      renderFinancialBi();
+      setFinancialBiStatus(`Failed to load Financial BI: ${error.message}`, "error");
+    } finally {
+      if (requestToken === state.financialBiRequestToken) {
+        state.financialBiLoading = false;
+        state.financialBiLoadPromise = null;
+      }
+    }
+  })();
+  state.financialBiLoadPromise = loadPromise;
+  return loadPromise;
 }
 
 async function ensureFinancialBiData() {
-  if (!state.financialBiLoaded) await loadFinancialBiData({ silent: true });
+  const requestUrl = buildFinancialBiUrlClient();
+  if (!state.financialBiLoaded || state.financialBiLoadedKey !== requestUrl) {
+    await loadFinancialBiData({ silent: true });
+  }
 }
 
 function onFinancialBiFilterChange() {

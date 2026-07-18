@@ -1,5 +1,9 @@
 const { requireFeature, restQuery, sendError } = require("./_supabase");
 
+const FINANCIAL_BI_CACHE_TTL_MS = 60 * 1000;
+const financialBiCache = new Map();
+const financialBiLoads = new Map();
+
 function clean(value) {
   return String(value ?? "").trim();
 }
@@ -189,6 +193,36 @@ async function loadFinancialBiRows(filters) {
   }
 }
 
+function financialBiCacheKey(filters) {
+  return `${filters.yearFrom}:${filters.yearTo}:${filters.cc || "ALL"}`;
+}
+
+async function loadCachedFinancialBiRows(filters) {
+  const key = financialBiCacheKey(filters);
+  const now = Date.now();
+  for (const [cacheKey, cached] of financialBiCache.entries()) {
+    if (!cached || cached.expiresAt <= now) financialBiCache.delete(cacheKey);
+  }
+  const cached = financialBiCache.get(key);
+  if (cached) {
+    console.log("[financial-bi] aggregate cache hit", { key, rowCount: cached.rows.length });
+    return cached.rows;
+  }
+  if (financialBiLoads.has(key)) {
+    console.log("[financial-bi] joining in-flight aggregate", { key });
+    return financialBiLoads.get(key);
+  }
+
+  const load = loadFinancialBiRows(filters)
+    .then((rows) => {
+      financialBiCache.set(key, { rows, expiresAt: Date.now() + FINANCIAL_BI_CACHE_TTL_MS });
+      return rows;
+    })
+    .finally(() => financialBiLoads.delete(key));
+  financialBiLoads.set(key, load);
+  return load;
+}
+
 module.exports = async function handler(req, res) {
   try {
     if (req.method !== "GET") {
@@ -202,7 +236,7 @@ module.exports = async function handler(req, res) {
 
     const filters = financialBiFilters(req);
     console.log("[financial-bi] loading aggregates", filters);
-    const rows = normalizeRows(await loadFinancialBiRows(filters))
+    const rows = normalizeRows(await loadCachedFinancialBiRows(filters))
       .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.month) - Number(b.month) || clean(a.type).localeCompare(clean(b.type)) || clean(a.category).localeCompare(clean(b.category)));
     const typeCounts = rows.reduce((counts, row) => {
       counts[row.type] = (counts[row.type] || 0) + 1;
