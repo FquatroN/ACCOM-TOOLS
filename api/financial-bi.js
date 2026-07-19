@@ -236,8 +236,10 @@ module.exports = async function handler(req, res) {
 
     const filters = financialBiFilters(req);
     console.log("[financial-bi] loading aggregates", filters);
-    const rows = normalizeRows(await loadCachedFinancialBiRows(filters))
+    const comparisonFilters = { ...filters, yearFrom: Math.max(2000, filters.yearFrom - 1) };
+    const comparisonRows = normalizeRows(await loadCachedFinancialBiRows(comparisonFilters))
       .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.month) - Number(b.month) || clean(a.type).localeCompare(clean(b.type)) || clean(a.category).localeCompare(clean(b.category)));
+    const rows = comparisonRows.filter((row) => Number(row.year) >= filters.yearFrom && Number(row.year) <= filters.yearTo);
     const typeCounts = rows.reduce((counts, row) => {
       counts[row.type] = (counts[row.type] || 0) + 1;
       return counts;
@@ -248,6 +250,7 @@ module.exports = async function handler(req, res) {
       rowCount: rows.length,
       filters,
       rows,
+      comparisonRows,
       pivot: buildPivot(rows),
     });
   } catch (error) {

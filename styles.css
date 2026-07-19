@@ -5215,6 +5215,183 @@ button[id^="close-settings"] {
   line-height: 1;
 }
 
+.financial-bi-performance-card {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 95% 0%, rgba(20, 125, 117, 0.1), transparent 28%),
+    linear-gradient(145deg, #fffdf9 0%, #fff8ef 100%);
+}
+
+.financial-bi-performance-heading {
+  align-items: flex-start;
+}
+
+.financial-bi-performance-heading h3 {
+  margin: 0;
+}
+
+.financial-bi-performance-heading p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.financial-bi-performance-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0.8rem 0 1rem;
+}
+
+.financial-bi-performance-kpi {
+  position: relative;
+  overflow: hidden;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.financial-bi-performance-kpi::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.28rem;
+  background: #147d75;
+}
+
+.financial-bi-performance-expense::before {
+  background: #d97706;
+}
+
+.financial-bi-performance-result::before {
+  background: #198754;
+}
+
+.financial-bi-performance-result-negative::before {
+  background: #c62828;
+}
+
+.financial-bi-performance-kpi > small {
+  display: block;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.financial-bi-performance-kpi strong {
+  display: block;
+  margin: 0.18rem 0 0.3rem;
+  font-size: clamp(1.05rem, 1.8vw, 1.45rem);
+}
+
+.financial-bi-performance-kpi div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.38rem;
+}
+
+.financial-bi-performance-kpi div small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.financial-bi-variation {
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.financial-bi-variation-positive {
+  color: #13795b;
+}
+
+.financial-bi-variation-negative {
+  color: #c62828;
+}
+
+.financial-bi-variation-neutral {
+  color: var(--muted);
+}
+
+.financial-bi-performance-chart {
+  min-height: 20rem;
+  padding: 0.7rem 0.8rem 0.2rem;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.financial-bi-performance-svg {
+  display: block;
+  width: 100%;
+  max-height: 21rem;
+}
+
+.financial-bi-chart-grid {
+  stroke: rgba(15, 23, 42, 0.1);
+  stroke-width: 1;
+}
+
+.financial-bi-chart-zero {
+  stroke: rgba(15, 23, 42, 0.42);
+  stroke-width: 1.4;
+}
+
+.financial-bi-chart-axis-label,
+.financial-bi-chart-category {
+  fill: #5e554d;
+  font-size: 12px;
+}
+
+.financial-bi-chart-category {
+  font-weight: 700;
+}
+
+.financial-bi-chart-legend {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.financial-bi-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.financial-bi-chart-legend i {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 0.2rem;
+  background: #147d75;
+}
+
+.financial-bi-chart-legend .financial-bi-legend-previous {
+  opacity: 0.3;
+}
+
+@media (max-width: 720px) {
+  .financial-bi-performance-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .financial-bi-performance-chart {
+    min-height: 15rem;
+    overflow-x: auto;
+  }
+
+  .financial-bi-performance-svg {
+    min-width: 42rem;
+  }
+}
+
 .session-box .icon-btn.active {
   background: rgba(16, 37, 63, 0.12);
   color: var(--ink);

@@ -1304,6 +1304,7 @@ const state = {
   financialBiYearTo: "",
   financialBiExpandedYears: {},
   financialBiRows: [],
+  financialBiComparisonRows: [],
   financialBiPivot: { incomeCategories: [], expenseCategories: [], years: [], totals: {} },
   lastMainView: "communications",
   currentView: "communications",
@@ -1640,6 +1641,9 @@ const els = {
   financialBiResultsHead: document.getElementById("financial-bi-results-head"),
   financialBiResultsRows: document.getElementById("financial-bi-results-rows"),
   financialBiResultsTotals: document.getElementById("financial-bi-results-totals"),
+  financialBiPerformancePeriod: document.getElementById("financial-bi-performance-period"),
+  financialBiPerformanceKpis: document.getElementById("financial-bi-performance-kpis"),
+  financialBiPerformanceChart: document.getElementById("financial-bi-performance-chart"),
   financialBiStatus: document.getElementById("financial-bi-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
@@ -21219,6 +21223,7 @@ async function loadFinancialBiData({ silent = false } = {}) {
       const result = await api(requestUrl);
       if (requestToken !== state.financialBiRequestToken) return;
       state.financialBiRows = Array.isArray(result?.rows) ? result.rows : [];
+      state.financialBiComparisonRows = Array.isArray(result?.comparisonRows) ? result.comparisonRows : state.financialBiRows;
       initializeFinancialBiFilters();
       state.financialBiPivot = state.financialBiRows.length
         ? buildFinancialBiPivotClient(filteredFinancialBiRows())
@@ -21231,6 +21236,7 @@ async function loadFinancialBiData({ silent = false } = {}) {
       if (requestToken !== state.financialBiRequestToken) return;
       if (!state.financialBiLoaded) {
         state.financialBiRows = [];
+        state.financialBiComparisonRows = [];
         state.financialBiPivot = { incomeCategories: [], expenseCategories: [], years: [], totals: {} };
       }
       renderFinancialBi();
@@ -21433,6 +21439,148 @@ function financialBiRowCells(bucket, categories, total, options = {}) {
   return `${values}<td class="financial-bi-total-cell">${escape(financialBiAmount(total, { showZero: true }))}</td>`;
 }
 
+function financialBiPeriodTotals(rows, { fromYear, toYear, endMonth }) {
+  const totals = { income: 0, expense: 0, result: 0 };
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const year = Number(row?.year || 0);
+    const month = Number(row?.month || 0);
+    if (!year || !month || year < fromYear || year > toYear || (year === toYear && month > endMonth)) return;
+    const amount = Number(row?.totalAmount || 0);
+    if (clean(row?.type).toUpperCase() === "EXPENSE") totals.expense += amount;
+    else totals.income += amount;
+  });
+  totals.result = totals.income - totals.expense;
+  return totals;
+}
+
+function financialBiMonthLabel(month) {
+  return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Math.max(1, Math.min(12, Number(month || 1))) - 1];
+}
+
+function financialBiCompactAmount(value) {
+  const amount = Number(value || 0);
+  try {
+    return new Intl.NumberFormat("pt-PT", {
+      style: "currency",
+      currency: "EUR",
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(amount);
+  } catch {
+    return formatMoney(amount);
+  }
+}
+
+function buildFinancialBiPerformanceComparison() {
+  const { from, to } = currentFinancialBiYearRange();
+  const now = new Date();
+  const endMonth = to === now.getFullYear() ? now.getMonth() + 1 : 12;
+  const rows = Array.isArray(state.financialBiComparisonRows) ? state.financialBiComparisonRows : [];
+  const cc = clean(state.financialBiCc).toUpperCase();
+  const scopedRows = rows.filter((row) => !(cc === "H" || cc === "A") || clean(row?.cc).toUpperCase() === cc);
+  const current = financialBiPeriodTotals(scopedRows, { fromYear: from, toYear: to, endMonth });
+  const previous = financialBiPeriodTotals(scopedRows, { fromYear: from - 1, toYear: to - 1, endMonth });
+  const periodEnd = `${financialBiMonthLabel(endMonth)} ${to}`;
+  const previousEnd = `${financialBiMonthLabel(endMonth)} ${to - 1}`;
+  return {
+    current,
+    previous,
+    currentLabel: `Jan ${from} - ${periodEnd}`,
+    previousLabel: `Jan ${from - 1} - ${previousEnd}`,
+    hasData: [...Object.values(current), ...Object.values(previous)].some((value) => Math.abs(Number(value || 0)) >= 0.005),
+  };
+}
+
+function financialBiVariation(current, previous) {
+  const currentValue = Number(current || 0);
+  const previousValue = Number(previous || 0);
+  const delta = currentValue - previousValue;
+  const reliablePercent = Math.abs(previousValue) >= 0.005 && previousValue > 0;
+  return {
+    delta,
+    percent: reliablePercent ? (delta / Math.abs(previousValue)) * 100 : null,
+  };
+}
+
+function financialBiVariationMarkup(current, previous, metric) {
+  const variation = financialBiVariation(current, previous);
+  const favorable = metric === "expense" ? variation.delta < 0 : variation.delta > 0;
+  const unfavorable = metric === "expense" ? variation.delta > 0 : variation.delta < 0;
+  const className = favorable ? "financial-bi-variation-positive" : unfavorable ? "financial-bi-variation-negative" : "financial-bi-variation-neutral";
+  const sign = variation.delta > 0 ? "+" : "";
+  const label = variation.percent === null
+    ? `${sign}${formatMoney(variation.delta)}`
+    : `${variation.percent > 0 ? "+" : ""}${variation.percent.toFixed(1)}%`;
+  return `<span class="financial-bi-variation ${className}">${escape(label)}</span><small>vs homologous period</small>`;
+}
+
+function buildFinancialBiPerformanceChartMarkup(comparison) {
+  if (!comparison?.hasData) return '<div class="empty">No Financial BI comparison data found.</div>';
+  const metrics = [
+    { key: "income", label: "Income", color: "#147d75" },
+    { key: "expense", label: "Expense", color: "#d97706" },
+    { key: "result", label: "Result", color: Number(comparison.current.result || 0) < 0 ? "#c62828" : "#198754" },
+  ];
+  const values = metrics.flatMap((metric) => [Number(comparison.current[metric.key] || 0), Number(comparison.previous[metric.key] || 0)]);
+  let minValue = Math.min(0, ...values);
+  let maxValue = Math.max(0, ...values);
+  if (Math.abs(maxValue - minValue) < 0.005) maxValue = minValue + 1;
+  const padding = Math.max(Math.abs(minValue), Math.abs(maxValue)) * 0.08;
+  minValue -= minValue < 0 ? padding : 0;
+  maxValue += padding;
+  const width = 900;
+  const height = 300;
+  const margin = { top: 36, right: 24, bottom: 54, left: 72 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const yFor = (value) => margin.top + ((maxValue - Number(value || 0)) / (maxValue - minValue)) * plotHeight;
+  const zeroY = yFor(0);
+  const groupWidth = plotWidth / metrics.length;
+  const barWidth = Math.min(58, groupWidth * 0.23);
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    const value = maxValue - (maxValue - minValue) * ratio;
+    const y = margin.top + plotHeight * ratio;
+    return `<line x1="${margin.left}" y1="${y.toFixed(2)}" x2="${width - margin.right}" y2="${y.toFixed(2)}" class="financial-bi-chart-grid"/><text x="${margin.left - 10}" y="${(y + 4).toFixed(2)}" text-anchor="end" class="financial-bi-chart-axis-label">${escape(financialBiCompactAmount(value))}</text>`;
+  }).join("");
+  const bars = metrics.map((metric, index) => {
+    const center = margin.left + groupWidth * (index + 0.5);
+    const currentValue = Number(comparison.current[metric.key] || 0);
+    const previousValue = Number(comparison.previous[metric.key] || 0);
+    const makeBar = (value, x, opacity, seriesLabel) => {
+      const valueY = yFor(value);
+      const y = value >= 0 ? valueY : zeroY;
+      const barHeight = Math.max(1, Math.abs(zeroY - valueY));
+      const color = metric.key === "result" ? (value < 0 ? "#c62828" : "#198754") : metric.color;
+      return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx="5" fill="${color}" opacity="${opacity}"><title>${escape(`${metric.label} - ${seriesLabel}: ${formatMoney(value)}`)}</title></rect>`;
+    };
+    return `${makeBar(previousValue, center - barWidth - 4, 0.3, comparison.previousLabel)}${makeBar(currentValue, center + 4, 1, comparison.currentLabel)}<text x="${center.toFixed(2)}" y="${height - 22}" text-anchor="middle" class="financial-bi-chart-category">${escape(metric.label)}</text>`;
+  }).join("");
+  return `<div class="financial-bi-chart-legend"><span><i class="financial-bi-legend-current"></i>${escape(comparison.currentLabel)}</span><span><i class="financial-bi-legend-previous"></i>${escape(comparison.previousLabel)}</span></div>
+    <svg class="financial-bi-performance-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Income, expense and result compared with the homologous period">
+      ${grid}
+      <line x1="${margin.left}" y1="${zeroY.toFixed(2)}" x2="${width - margin.right}" y2="${zeroY.toFixed(2)}" class="financial-bi-chart-zero"/>
+      ${bars}
+    </svg>`;
+}
+
+function renderFinancialBiPerformance() {
+  const comparison = buildFinancialBiPerformanceComparison();
+  if (els.financialBiPerformancePeriod) els.financialBiPerformancePeriod.textContent = `${comparison.currentLabel} compared with ${comparison.previousLabel}`;
+  if (els.financialBiPerformanceKpis) {
+    els.financialBiPerformanceKpis.innerHTML = [
+      { key: "income", label: "Total Income" },
+      { key: "expense", label: "Total Expense" },
+      { key: "result", label: "Result" },
+    ].map((metric) => `<article class="financial-bi-performance-kpi financial-bi-performance-${metric.key}${metric.key === "result" && Number(comparison.current.result || 0) < 0 ? " financial-bi-performance-result-negative" : ""}">
+      <small>${escape(metric.label)}</small>
+      <strong>${escape(formatMoney(comparison.current[metric.key]))}</strong>
+      <div>${financialBiVariationMarkup(comparison.current[metric.key], comparison.previous[metric.key], metric.key)}</div>
+    </article>`).join("");
+  }
+  if (els.financialBiPerformanceChart) els.financialBiPerformanceChart.innerHTML = buildFinancialBiPerformanceChartMarkup(comparison);
+}
+
 function renderFinancialBi() {
   initializeFinancialBiFilters();
   if (Array.isArray(state.financialBiRows) && state.financialBiRows.length) {
@@ -21497,6 +21645,7 @@ function renderFinancialBi() {
       <td class="${financialBiGrandTotalClass(totals.grandTotal)}">${escape(financialBiAmount(totals.grandTotal, { showZero: true }))}</td>
     </tr>`;
   }
+  renderFinancialBiPerformance();
 }
 
 function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel, mode = "absolute", options = {}) {
