@@ -21472,8 +21472,9 @@ function financialBiCompactAmount(value) {
 }
 
 function buildFinancialBiPerformanceComparison() {
-  const { from, to } = currentFinancialBiYearRange();
   const now = new Date();
+  const graphYearTo = now.getFullYear();
+  const graphYearFrom = graphYearTo - 9;
   const completedMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const completedYear = completedMonthDate.getFullYear();
   const completedMonth = completedMonthDate.getMonth() + 1;
@@ -21484,7 +21485,7 @@ function buildFinancialBiPerformanceComparison() {
   const ytdPrevious = financialBiPeriodTotals(scopedRows, { fromYear: completedYear - 1, toYear: completedYear - 1, endMonth: completedMonth });
   const monthCurrent = financialBiPeriodTotals(scopedRows, { fromYear: completedYear, toYear: completedYear, fromMonth: completedMonth, endMonth: completedMonth });
   const monthPrevious = financialBiPeriodTotals(scopedRows, { fromYear: completedYear - 1, toYear: completedYear - 1, fromMonth: completedMonth, endMonth: completedMonth });
-  const years = Array.from({ length: Math.max(0, to - from + 1) }, (_, index) => from + index).map((year) => ({
+  const years = Array.from({ length: 10 }, (_, index) => graphYearFrom + index).map((year) => ({
     year,
     totals: financialBiPeriodTotals(scopedRows, { fromYear: year, toYear: year }),
     previousTotals: financialBiPeriodTotals(scopedRows, { fromYear: year - 1, toYear: year - 1 }),
@@ -21583,7 +21584,7 @@ function buildFinancialBiPerformanceChartMarkup(comparison) {
 
 function renderFinancialBiPerformance() {
   const comparison = buildFinancialBiPerformanceComparison();
-  if (els.financialBiPerformancePeriod) els.financialBiPerformancePeriod.textContent = `Cards through ${comparison.monthLabel}. Chart uses full-year totals for the selected years.`;
+  if (els.financialBiPerformancePeriod) els.financialBiPerformancePeriod.textContent = `Cards through ${comparison.monthLabel}. Chart uses full-year totals for the last 10 years.`;
   if (els.financialBiPerformanceKpis) {
     els.financialBiPerformanceKpis.innerHTML = [
       { key: "income", label: "Total Income YTD", current: comparison.ytdCurrent, previous: comparison.ytdPrevious, period: comparison.ytdLabel },

@@ -239,7 +239,7 @@ module.exports = async function handler(req, res) {
     const currentYear = new Date().getFullYear();
     const comparisonFilters = {
       ...filters,
-      yearFrom: Math.max(2000, Math.min(filters.yearFrom - 1, currentYear - 1)),
+      yearFrom: Math.max(2000, Math.min(filters.yearFrom - 1, currentYear - 10)),
       yearTo: Math.max(filters.yearTo, currentYear),
     };
     const comparisonRows = normalizeRows(await loadCachedFinancialBiRows(comparisonFilters))
