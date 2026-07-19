@@ -333,6 +333,28 @@ async function updateGuestTableRow(id, record, existing = {}) {
   });
 }
 
+async function updateBlankGuestTableFields(ids, { checkOut = "", ha = "" } = {}) {
+  const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).map(cleanId).filter(Boolean))];
+  const chunks = [];
+  for (let index = 0; index < uniqueIds.length; index += 100) chunks.push(uniqueIds.slice(index, index + 100));
+  const updatedAt = new Date().toISOString();
+  for (const chunk of chunks) {
+    const idFilter = chunk.map((id) => encodeURIComponent(id)).join(",");
+    if (checkOut) {
+      await restQuery(`guest_records?id=in.(${idFilter})&check_out=is.null`, {
+        method: "PATCH",
+        body: { check_out: checkOut, updated_at: updatedAt },
+      });
+    }
+    if (ha) {
+      await restQuery(`guest_records?id=in.(${idFilter})&or=(ha.is.null,ha.eq.)`, {
+        method: "PATCH",
+        body: { ha, updated_at: updatedAt },
+      });
+    }
+  }
+}
+
 async function deleteGuestTableRow(id) {
   await restQuery(`guest_records?id=eq.${encodeURIComponent(id)}`, {
     method: "DELETE",
@@ -424,12 +446,41 @@ module.exports = async function handler(req, res) {
 
     if (req.method === "PUT") {
       const id = cleanId(req.query?.id);
+      const body = await parseBody(req);
+      const current = await loadRowsAndSettings({}, { mode: "all" });
+      if (cleanId(body?.action).toLowerCase() === "copy_down") {
+        const targetIds = [...new Set((Array.isArray(body?.targetIds) ? body.targetIds : []).map(cleanId).filter(Boolean))];
+        const checkOut = cleanId(body?.checkOut);
+        const ha = cleanId(body?.ha).toUpperCase();
+        if (!targetIds.length || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut) || !["H", "A"].includes(ha)) {
+          res.status(400).json({ error: "Valid target guest ids, check-out date and HA are required." });
+          return;
+        }
+        if (current.mode === "legacy") {
+          const { rowId, payload } = await loadGuestsPayloadRow();
+          const targetIdSet = new Set(targetIds);
+          const nextRows = payload.rows.map((row) => {
+            if (!targetIdSet.has(cleanId(row.id))) return row;
+            return sanitizeGuestRecord({
+              ...row,
+              checkOut: cleanId(row.checkOut) || checkOut,
+              ha: cleanId(row.ha) || ha,
+              updatedAt: new Date().toISOString(),
+            }, row);
+          });
+          const saved = await saveGuestsPayload(rowId, { ...payload, rows: nextRows });
+          res.status(200).json({ rows: scopeGuestListRows(saved.rows, responseFilters), settings: saved.settings, countries: COUNTRIES });
+          return;
+        }
+        await updateBlankGuestTableFields(targetIds, { checkOut, ha });
+        const rows = await loadGuestTableRows(responseFilters);
+        res.status(200).json({ rows, settings: current.settings, countries: COUNTRIES });
+        return;
+      }
       if (!id) {
         res.status(400).json({ error: "Guest id is required." });
         return;
       }
-      const body = await parseBody(req);
-      const current = await loadRowsAndSettings({}, { mode: "all" });
       if (current.mode === "legacy") {
         const { rowId, payload } = await loadGuestsPayloadRow();
         const existing = payload.rows.find((item) => cleanId(item.id) === id);

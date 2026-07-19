@@ -14638,39 +14638,38 @@ function guestQuickFieldMarkup(record, field) {
   return `<input data-guests-quick-input="${escape(field)}" data-id="${escape(record.id)}" type="date" value="${escape(record[field])}" />`;
 }
 
-function guestNearbyCheckoutValue(record, nearbyRecord) {
-  if (clean(record?.checkOut)) return "";
-  return clean(nearbyRecord?.checkOut);
+function guestNearbyCopyValues(record, nearbyRecord) {
+  if (clean(record?.checkOut)) return null;
+  const checkOut = clean(nearbyRecord?.checkOut);
+  if (!checkOut) return null;
+  return { checkOut, ha: normalizeGuestHAClient(nearbyRecord?.ha) };
 }
 
-function findNearbyGuestCheckoutValue(rows, index) {
+function findNearbyGuestCopySource(rows, index) {
   for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    const value = clean(rows[cursor]?.checkOut);
-    if (value) return value;
+    if (clean(rows[cursor]?.checkOut)) return rows[cursor];
   }
   for (let cursor = index + 1; cursor < rows.length; cursor += 1) {
-    const value = clean(rows[cursor]?.checkOut);
-    if (value) return value;
+    if (clean(rows[cursor]?.checkOut)) return rows[cursor];
   }
-  return "";
+  return null;
 }
 
-function guestCheckoutCopyLinkMarkup(value, attributes = "") {
-  const normalized = clean(value);
-  if (!normalized) return "";
-  return `<button type="button" class="guest-copy-link" data-guests-action="copy-checkout" data-value="${escape(normalized)}"${attributes ? ` ${attributes}` : ""}>copy</button>`;
+function guestCheckoutCopyLinkMarkup(values, attributes = "") {
+  if (!values?.checkOut || !values?.ha) return "";
+  return `<button type="button" class="guest-copy-link" data-guests-action="copy-checkout" data-check-out="${escape(values.checkOut)}" data-ha="${escape(values.ha)}"${attributes ? ` ${attributes}` : ""}>copy</button>`;
 }
 
 function guestCheckoutReadOnlyMarkup(record, nearbyRecord) {
-  const copyValue = guestNearbyCheckoutValue(record, nearbyRecord);
-  const copyLink = guestCheckoutCopyLinkMarkup(copyValue, `data-id="${escape(record.id)}"`);
+  const copyValues = guestNearbyCopyValues(record, nearbyRecord);
+  const copyLink = guestCheckoutCopyLinkMarkup(copyValues, `data-id="${escape(record.id)}"`);
   if (!copyLink) return guestQuickFieldMarkup(record, "checkOut");
   return `<div class="guest-checkout-stack">${guestQuickFieldMarkup(record, "checkOut")}${copyLink}</div>`;
 }
 
 function guestCheckoutEditMarkup(record, draft, nearbyRecord) {
-  const copyValue = guestNearbyCheckoutValue(draft, nearbyRecord);
-  const copyLink = guestCheckoutCopyLinkMarkup(copyValue, `data-id="${escape(record.id)}" data-scope="edit"`);
+  const copyValues = guestNearbyCopyValues(draft, nearbyRecord);
+  const copyLink = guestCheckoutCopyLinkMarkup(copyValues, `data-id="${escape(record.id)}" data-scope="edit"`);
   if (!copyLink) {
     return `<input data-field="checkOut" data-scope="edit" data-id="${escape(record.id)}" type="date" value="${escape(draft.checkOut)}" />`;
   }
@@ -14684,7 +14683,7 @@ function rerenderGuestDisplayRow(id) {
   const index = rows.findIndex((item) => clean(item.id) === recordId);
   if (index === -1) return false;
   const record = rows[index];
-  const nearbyRecord = { checkOut: findNearbyGuestCheckoutValue(rows, index) };
+  const nearbyRecord = findNearbyGuestCopySource(rows, index);
   const nextTableRow = state.guestsEditingId === record.id ? buildGuestsEditableRow(record, nearbyRecord) : buildGuestsReadOnlyRow(record, nearbyRecord);
   const currentTableRow = els.guestsRows?.querySelector(`[data-guest-row-id="${CSS.escape(recordId)}"]`);
   if (currentTableRow) currentTableRow.replaceWith(nextTableRow);
@@ -14803,20 +14802,27 @@ async function onGuestsAction(event) {
   const action = clean(button.dataset.guestsAction);
   const id = clean(button.dataset.id);
   if (action === "copy-checkout") {
-    const value = clean(button.dataset.value);
+    const checkOut = clean(button.dataset.checkOut);
+    const ha = normalizeGuestHAClient(button.dataset.ha);
     const scope = clean(button.dataset.scope);
-    if (!value) return;
-    if (scope === "edit" && id && state.guestsEditingId === id && state.guestsEditDraft) {
-      state.guestsEditDraft.checkOut = value;
-      renderGuests();
-      return;
-    }
-    if (!id) return;
+    if (!id || !checkOut) return;
+    const rows = getFilteredGuestsRows();
+    const rowIndex = rows.findIndex((row) => clean(row.id) === id);
+    if (rowIndex < 0) return;
+    const targetIds = rows.slice(rowIndex).map((row) => clean(row.id)).filter(Boolean);
     try {
-      await saveGuestQuickEdit(id, "checkOut", value);
+      const result = await api(buildGuestsApiPathClient("/api/guests", state.guestsFilters), {
+        method: "PUT",
+        body: { action: "copy_down", targetIds, checkOut, ha },
+      });
+      applyGuestsRecordsResultClient(result);
+      if (scope === "edit" && state.guestsEditingId === id && state.guestsEditDraft) {
+        if (!clean(state.guestsEditDraft.checkOut)) state.guestsEditDraft.checkOut = checkOut;
+        if (!clean(state.guestsEditDraft.ha)) state.guestsEditDraft.ha = ha;
+      }
       clearGuestsQuickEdit();
       renderGuests();
-      setGuestsStatus("Check-out copied from previous record.");
+      setGuestsStatus("Check-out and HA copied into empty fields in this row and the rows below.");
     } catch (e) {
       clearGuestsQuickEdit();
       renderGuests();
@@ -15458,7 +15464,7 @@ function renderGuests() {
     return;
   }
   rows.forEach((record, index) => {
-    const nearbyRecord = { checkOut: findNearbyGuestCheckoutValue(rows, index) };
+    const nearbyRecord = findNearbyGuestCopySource(rows, index);
     els.guestsRows.appendChild(state.guestsEditingId === record.id ? buildGuestsEditableRow(record, nearbyRecord) : buildGuestsReadOnlyRow(record, nearbyRecord));
   });
 }
