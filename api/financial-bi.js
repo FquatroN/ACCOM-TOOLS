@@ -236,7 +236,12 @@ module.exports = async function handler(req, res) {
 
     const filters = financialBiFilters(req);
     console.log("[financial-bi] loading aggregates", filters);
-    const comparisonFilters = { ...filters, yearFrom: Math.max(2000, filters.yearFrom - 1) };
+    const currentYear = new Date().getFullYear();
+    const comparisonFilters = {
+      ...filters,
+      yearFrom: Math.max(2000, Math.min(filters.yearFrom - 1, currentYear - 1)),
+      yearTo: Math.max(filters.yearTo, currentYear),
+    };
     const comparisonRows = normalizeRows(await loadCachedFinancialBiRows(comparisonFilters))
       .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.month) - Number(b.month) || clean(a.type).localeCompare(clean(b.type)) || clean(a.category).localeCompare(clean(b.category)));
     const rows = comparisonRows.filter((row) => Number(row.year) >= filters.yearFrom && Number(row.year) <= filters.yearTo);

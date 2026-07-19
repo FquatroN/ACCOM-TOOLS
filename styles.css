@@ -5285,8 +5285,15 @@ button[id^="close-settings"] {
 
 .financial-bi-performance-kpi strong {
   display: block;
-  margin: 0.18rem 0 0.3rem;
+  margin: 0.18rem 0 0.08rem;
   font-size: clamp(1.05rem, 1.8vw, 1.45rem);
+}
+
+.financial-bi-performance-card-period {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--muted);
+  font-size: 0.66rem;
 }
 
 .financial-bi-performance-kpi div {
@@ -5345,6 +5352,20 @@ button[id^="close-settings"] {
 .financial-bi-chart-category {
   fill: #5e554d;
   font-size: 12px;
+}
+
+.financial-bi-chart-percent {
+  font-size: 10px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(255, 253, 249, 0.94);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.financial-bi-chart-point {
+  stroke: #fffdf9;
+  stroke-width: 2;
 }
 
 .financial-bi-chart-category {
