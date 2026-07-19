@@ -7,7 +7,6 @@ const {
   safeFinancialDocsSettings,
   toClientDocument,
   toClientEntity,
-  toClientHistory,
   latestDuplicateWarningMessage,
   monthlyFolderKey,
   buildStoredFileName,
@@ -513,9 +512,10 @@ async function loadFinancialDocumentWithHistory(id) {
   const row = await loadFinancialDocumentRowById(id);
   if (!row) return null;
   const historyRows = await restQuery(`financial_document_history?select=*&document_id=eq.${encodeURIComponent(id)}&order=created_at.desc`, { method: "GET" });
-  const mapped = toClientDocument(row);
-  mapped.history = Array.isArray(historyRows) ? historyRows.map(toClientHistory) : [];
-  return mapped;
+  return toClientDocument({
+    ...row,
+    history: Array.isArray(historyRows) ? historyRows : [],
+  });
 }
 
 async function insertFinancialDocument(body) {
