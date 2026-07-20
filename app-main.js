@@ -1300,6 +1300,7 @@ const state = {
   financialBiRequestToken: 0,
   financialBiLoadedKey: "",
   financialBiCc: "",
+  financialBiCategories: [],
   financialBiYearFrom: "",
   financialBiYearTo: "",
   financialBiExpandedYears: {},
@@ -1637,6 +1638,7 @@ const els = {
   financialBiFilterYearFrom: document.getElementById("financial-bi-filter-year-from"),
   financialBiFilterYearTo: document.getElementById("financial-bi-filter-year-to"),
   financialBiFilterCc: document.getElementById("financial-bi-filter-cc"),
+  financialBiFilterCategory: document.getElementById("financial-bi-filter-category"),
   financialBiResultsCount: document.getElementById("financial-bi-results-count"),
   financialBiResultsHead: document.getElementById("financial-bi-results-head"),
   financialBiResultsRows: document.getElementById("financial-bi-results-rows"),
@@ -2406,6 +2408,7 @@ function bindEvents() {
   els.financialBiFilterYearFrom?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterYearTo?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCc?.addEventListener("change", onFinancialBiFilterChange);
+  els.financialBiFilterCategory?.addEventListener("change", onFinancialBiCategoryChange);
   els.financialBiResultsRows?.addEventListener("click", onFinancialBiResultsClick);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
@@ -21188,6 +21191,19 @@ function currentFinancialBiCc() {
   return clean(state.financialBiCc).toUpperCase();
 }
 
+const FINANCIAL_BI_ALL_CATEGORY = "__all__";
+const FINANCIAL_BI_BLANK_CATEGORY = "__blank__";
+
+function financialBiCategoryKey(value) {
+  return clean(value) || FINANCIAL_BI_BLANK_CATEGORY;
+}
+
+function currentFinancialBiCategories() {
+  return Array.isArray(state.financialBiCategories)
+    ? state.financialBiCategories.map((category) => clean(category)).filter(Boolean)
+    : [];
+}
+
 function setFinancialBiStatus(message, type = "") {
   if (!els.financialBiStatus) return;
   els.financialBiStatus.textContent = message || "";
@@ -21266,6 +21282,18 @@ function onFinancialBiFilterChange() {
   loadFinancialBiData({ silent: true });
 }
 
+function onFinancialBiCategoryChange() {
+  const selected = Array.from(els.financialBiFilterCategory?.selectedOptions || [])
+    .map((option) => clean(option.value))
+    .filter(Boolean);
+  const selectedSpecific = selected.filter((category) => category !== FINANCIAL_BI_ALL_CATEGORY);
+  const previouslySpecific = currentFinancialBiCategories().length > 0;
+  if (selected.includes(FINANCIAL_BI_ALL_CATEGORY) && previouslySpecific) state.financialBiCategories = [];
+  else if (selectedSpecific.length) state.financialBiCategories = selectedSpecific;
+  else state.financialBiCategories = [];
+  renderFinancialBi();
+}
+
 function financialBiAvailableYears() {
   const currentYear = new Date().getFullYear();
   const defaultYears = Array.from({ length: 5 }, (_, index) => currentYear - 4 + index);
@@ -21307,11 +21335,13 @@ function currentFinancialBiYearRange() {
 
 function filteredFinancialBiRows() {
   const cc = clean(state.financialBiCc).toUpperCase();
+  const selectedCategories = new Set(currentFinancialBiCategories());
   const { from, to } = currentFinancialBiYearRange();
   return (Array.isArray(state.financialBiRows) ? state.financialBiRows : []).filter((row) => {
     const year = Number(row?.year || 0);
     if (!Number.isFinite(year) || year < from || year > to) return false;
     if ((cc === "H" || cc === "A") && clean(row?.cc).toUpperCase() !== cc) return false;
+    if (selectedCategories.size && !selectedCategories.has(financialBiCategoryKey(row?.category))) return false;
     return true;
   });
 }
@@ -21405,6 +21435,31 @@ function renderFinancialBiYearFilters() {
   }
 }
 
+function financialBiAvailableCategories() {
+  return [...new Set((Array.isArray(state.financialBiComparisonRows) ? state.financialBiComparisonRows : [])
+    .map((row) => financialBiCategoryKey(row?.category)))]
+    .sort((left, right) => sortFinancialBiCategory(
+      left === FINANCIAL_BI_BLANK_CATEGORY ? "" : left,
+      right === FINANCIAL_BI_BLANK_CATEGORY ? "" : right,
+    ));
+}
+
+function renderFinancialBiCategoryFilter() {
+  if (!els.financialBiFilterCategory) return;
+  const available = financialBiAvailableCategories();
+  const availableSet = new Set(available);
+  const selected = currentFinancialBiCategories().filter((category) => availableSet.has(category));
+  state.financialBiCategories = selected;
+  const selectedSet = new Set(selected);
+  els.financialBiFilterCategory.innerHTML = `<option value="${FINANCIAL_BI_ALL_CATEGORY}">All</option>${available.map((category) => {
+    const label = category === FINANCIAL_BI_BLANK_CATEGORY ? "(blank)" : category;
+    return `<option value="${escape(category)}">${escape(label)}</option>`;
+  }).join("")}`;
+  Array.from(els.financialBiFilterCategory.options || []).forEach((option) => {
+    option.selected = selectedSet.size ? selectedSet.has(clean(option.value)) : clean(option.value) === FINANCIAL_BI_ALL_CATEGORY;
+  });
+}
+
 function onFinancialBiResultsClick(event) {
   const button = event.target.closest("[data-financial-bi-toggle-year]");
   if (!button) return;
@@ -21480,7 +21535,12 @@ function buildFinancialBiPerformanceComparison() {
   const completedMonth = completedMonthDate.getMonth() + 1;
   const rows = Array.isArray(state.financialBiComparisonRows) ? state.financialBiComparisonRows : [];
   const cc = clean(state.financialBiCc).toUpperCase();
-  const scopedRows = rows.filter((row) => !(cc === "H" || cc === "A") || clean(row?.cc).toUpperCase() === cc);
+  const selectedCategories = new Set(currentFinancialBiCategories());
+  const scopedRows = rows.filter((row) => {
+    if ((cc === "H" || cc === "A") && clean(row?.cc).toUpperCase() !== cc) return false;
+    if (selectedCategories.size && !selectedCategories.has(financialBiCategoryKey(row?.category))) return false;
+    return true;
+  });
   const ytdCurrent = financialBiPeriodTotals(scopedRows, { fromYear: completedYear, toYear: completedYear, endMonth: completedMonth });
   const ytdPrevious = financialBiPeriodTotals(scopedRows, { fromYear: completedYear - 1, toYear: completedYear - 1, endMonth: completedMonth });
   const monthCurrent = financialBiPeriodTotals(scopedRows, { fromYear: completedYear, toYear: completedYear, fromMonth: completedMonth, endMonth: completedMonth });
@@ -21605,6 +21665,7 @@ function renderFinancialBiPerformance() {
 
 function renderFinancialBi() {
   initializeFinancialBiFilters();
+  renderFinancialBiCategoryFilter();
   if (Array.isArray(state.financialBiRows) && state.financialBiRows.length) {
     state.financialBiPivot = buildFinancialBiPivotClient(filteredFinancialBiRows());
   }

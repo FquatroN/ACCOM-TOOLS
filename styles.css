@@ -5140,6 +5140,21 @@ button[id^="close-settings"] {
   overflow-x: auto;
 }
 
+.financial-bi-filters {
+  grid-template-columns: 8rem 8rem 7rem minmax(12rem, 1fr);
+  align-items: end;
+}
+
+.financial-bi-filters select[multiple] {
+  min-height: 2.45rem;
+}
+
+@media (max-width: 760px) {
+  .financial-bi-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .financial-bi-pivot-table {
   width: max-content;
   min-width: 112rem;
