@@ -77,7 +77,8 @@ function sefDocType(value) {
 }
 
 function normalizeHA(value) {
-  return cleanText(value).toUpperCase() === "A" ? "A" : "H";
+  const normalized = cleanText(value).toUpperCase();
+  return normalized === "H" || normalized === "A" ? normalized : "";
 }
 
 function normalizeDocNumber(value) {

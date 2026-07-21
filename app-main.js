@@ -13627,7 +13627,7 @@ function normalizeGuestApiCallClient(input = {}) {
 function emptyGuestDraft() {
   const today = lisbonTodayIsoClient();
   return {
-    ha: "H",
+    ha: "",
     name: "",
     nationality: "",
     nationalityCode: "",
@@ -13722,7 +13722,8 @@ function coerceGuestDocTypeClient(value) {
 }
 
 function normalizeGuestHAClient(value) {
-  return clean(value).toUpperCase() === "A" ? "A" : "H";
+  const normalized = clean(value).toUpperCase();
+  return normalized === "H" || normalized === "A" ? normalized : "";
 }
 
 function normalizeGuestDocNumberClient(value) {
@@ -14636,11 +14637,11 @@ function guestQuickFieldMarkup(record, field) {
   }
   const isEditing = clean(state.guestsQuickEditId) === clean(record.id) && clean(state.guestsQuickEditField) === clean(field);
   if (!isEditing) {
-    const display = field === "ha" ? normalizeGuestHAClient(record.ha) : clean(record[field]) || "-";
+    const display = field === "ha" ? normalizeGuestHAClient(record.ha) || "-" : clean(record[field]) || "-";
     return `<button type="button" class="ghost guest-quick-trigger" data-guests-quick-start="${escape(field)}" data-id="${escape(record.id)}">${escape(display)}</button>`;
   }
   if (field === "ha") {
-    return `<select data-guests-quick-input="ha" data-id="${escape(record.id)}"><option value="H" ${normalizeGuestHAClient(record.ha) === "H" ? "selected" : ""}>H</option><option value="A" ${normalizeGuestHAClient(record.ha) === "A" ? "selected" : ""}>A</option></select>`;
+    return `<select data-guests-quick-input="ha" data-id="${escape(record.id)}"><option value=""></option><option value="H" ${normalizeGuestHAClient(record.ha) === "H" ? "selected" : ""}>H</option><option value="A" ${normalizeGuestHAClient(record.ha) === "A" ? "selected" : ""}>A</option></select>`;
   }
   return `<input data-guests-quick-input="${escape(field)}" data-id="${escape(record.id)}" type="date" value="${escape(record[field])}" />`;
 }
@@ -14953,7 +14954,7 @@ function buildGuestsInlineRow() {
   const draft = state.guestsDraft || emptyGuestDraft();
   const tr = document.createElement("tr");
   tr.className = "inline-editor sticky-new-row";
-  tr.innerHTML = `<td><select data-field="ha" data-scope="new" tabindex="-1"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
+  tr.innerHTML = `<td><select data-field="ha" data-scope="new" tabindex="-1"><option value=""></option><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
     <td><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></td>
     <td><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
     <td><input data-field="birthDate" data-scope="new" type="text" value="${escape(draft.birthDate)}" /></td>
@@ -15004,7 +15005,7 @@ function buildGuestsEditableRow(record, previousRecord = null) {
   tr.className = "inline-editor";
   tr.dataset.guestRowId = record.id;
   const nameCell = `<div class="guest-name-stack"><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" />${guestAlertsMarkup(meta)}</div>`;
-  tr.innerHTML = `<td><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
+  tr.innerHTML = `<td><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value=""></option><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></td>
     <td>${nameCell}</td>
     <td><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></td>
     <td><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.birthDate)}" /></td>
@@ -15025,7 +15026,7 @@ function buildGuestsInlineCard() {
   const card = document.createElement("article");
   card.className = "guests-mobile-card";
   card.innerHTML = `<div class="communication-mobile-grid">
-      <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="new" tabindex="-1"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
+      <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="new" tabindex="-1"><option value=""></option><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
       <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><input data-field="name" data-scope="new" value="${escape(draft.name)}" /></label>
       <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="new" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
       <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="new" type="text" value="${escape(draft.birthDate)}" /></label>
@@ -15083,7 +15084,7 @@ function buildGuestsEditableCard(record) {
   card.className = "guests-mobile-card";
   card.dataset.guestRowId = record.id;
   card.innerHTML = `<div class="communication-mobile-grid">
-      <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
+      <label class="communication-mobile-field"><small>HA</small><select data-field="ha" data-scope="edit" data-id="${escape(record.id)}"><option value=""></option><option value="H" ${draft.ha === "H" ? "selected" : ""}>H</option><option value="A" ${draft.ha === "A" ? "selected" : ""}>A</option></select></label>
       <label class="communication-mobile-field communication-mobile-field-full"><small>Name</small><div class="guest-name-stack"><input data-field="name" data-scope="edit" data-id="${escape(record.id)}" value="${escape(draft.name)}" />${guestAlertsMarkup(meta)}</div></label>
       <label class="communication-mobile-field"><small>Nationality</small><input data-field="nationality" data-scope="edit" data-id="${escape(record.id)}" list="guests-country-list" value="${escape(draft.nationality)}" /></label>
       <label class="communication-mobile-field"><small>Birth Date</small><input data-field="birthDate" data-scope="edit" data-id="${escape(record.id)}" type="text" value="${escape(draft.birthDate)}" /></label>

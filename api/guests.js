@@ -164,6 +164,11 @@ function isMissingGuestsTableError(error) {
 
 function mapGuestsSchemaError(error) {
   const message = String(error?.message || "");
+  if (message.includes('null value in column "ha" of relation "guest_records" violates not-null constraint')) {
+    const next = new Error("The Guests table still requires HA. Please run the migration file 2026-07-21-guests-ha-optional.sql in Supabase.");
+    next.statusCode = 400;
+    return next;
+  }
   if (
     message.includes('null value in column "check_out" of relation "guest_records" violates not-null constraint') ||
     message.includes('null value in column "check_in" of relation "guest_records" violates not-null constraint')
@@ -293,7 +298,7 @@ async function findDuplicateGuestTableRow(record, excludeId = "") {
 function buildGuestTableBody(record, existing = {}) {
   return {
     id: cleanId(record.id || existing.id) || undefined,
-    ha: record.ha,
+    ha: record.ha || null,
     name: record.name,
     nationality: record.nationality || "",
     nationality_code: record.nationalityCode || "",
