@@ -14235,11 +14235,13 @@ function guestRowMetaClient(record) {
     .find((match) => match.reason);
   const birthdayAlert = guestBirthdayAlertClient(record);
   const age = guestAgeClient(record.birthDate);
+  const missingHa = !normalizeGuestHAClient(record?.ha);
   const missingCheckout = !clean(record?.checkOut);
   return {
     blacklistMatch,
     birthdayAlert,
     age,
+    missingHa,
     missingCheckout,
     isBlacklisted: !!blacklistMatch,
   };
@@ -14285,6 +14287,7 @@ function guestAlertsMarkup(meta) {
   const alerts = [];
   if (meta?.blacklistMatch) alerts.push(`<span class="guest-alert-chip guest-alert-blacklist" title="${escape(guestBlacklistTooltipClient(meta.blacklistMatch))}"><span class="guest-alert-icon">\u26d4</span><span class="guest-alert-text">Blacklist</span></span>`);
   if (meta?.birthdayAlert) alerts.push(`<span class="guest-alert-chip guest-alert-birthday${meta.birthdayAlert === "Birthday Today" ? " guest-alert-birthday-today" : ""}" title="${escape(meta.birthdayAlert)}"><span class="guest-alert-icon">\ud83c\udf82</span><span class="guest-alert-text">${escape(meta.birthdayAlert)}</span></span>`);
+  if (meta?.missingHa) alerts.push('<span class="guest-alert-chip guest-alert-missing-co" title="Missing HA"><span class="guest-alert-text">missing HA</span></span>');
   if (meta?.missingCheckout) alerts.push('<span class="guest-alert-chip guest-alert-missing-co" title="Missing check-out date"><span class="guest-alert-text">missing CO date</span></span>');
   return alerts.length ? `<div class="guest-alerts">${alerts.join("")}</div>` : "";
 }
