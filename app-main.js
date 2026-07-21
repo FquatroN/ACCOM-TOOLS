@@ -1286,6 +1286,7 @@ const state = {
   guestsBiLastLoaded: { tab: "", year: "", yearMonth: "", monthYear: "", tmtMonth: "", tmtBookingStatuses: "", ha: "" },
   bookingsBiLoaded: false,
   bookingsBiLoading: false,
+  bookingsBiTab: "channels",
   bookingsBiYear: "",
   bookingsBiHa: "",
   bookingsBiStatuses: ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in", "Checked In"],
@@ -1293,6 +1294,16 @@ const state = {
   bookingsBiChannelPieYears: [],
   bookingsBiChannelPieCharts: [],
   bookingsBiLastLoaded: { year: "", ha: "", statuses: "" },
+  bookingsBiWindowLoaded: false,
+  bookingsBiWindowLoading: false,
+  bookingsBiWindowYear: "",
+  bookingsBiWindowHa: "",
+  bookingsBiWindowStatuses: ["Checked Out", "Confirmed", "Arriving", "Late", "Leaving", "Checked-in", "Checked In"],
+  bookingsBiWindowYears: [],
+  bookingsBiWindowSummary: {},
+  bookingsBiWindowDistribution: [],
+  bookingsBiWindowMonths: [],
+  bookingsBiWindowChannels: [],
   financialBiLoaded: false,
   financialBiLoading: false,
   financialBiLoadPromise: null,
@@ -1628,11 +1639,23 @@ const els = {
   guestsBiDetailsStayLine: document.getElementById("guests-bi-details-stay-line"),
   guestsBiDetailsStatus: document.getElementById("guests-bi-details-status"),
   bookingsBiTabChannels: document.getElementById("bookings-bi-tab-channels"),
+  bookingsBiTabBookingWindow: document.getElementById("bookings-bi-tab-booking-window"),
   bookingsBiFilterYear: document.getElementById("bookings-bi-filter-year"),
   bookingsBiFilterHa: document.getElementById("bookings-bi-filter-ha"),
   bookingsBiFilterStatus: document.getElementById("bookings-bi-filter-status"),
   bookingsBiChannelsCount: document.getElementById("bookings-bi-channels-count"),
   bookingsBiChannelsPies: document.getElementById("bookings-bi-channels-pies"),
+  bookingsBiPanelChannels: document.getElementById("bookings-bi-panel-channels"),
+  bookingsBiPanelBookingWindow: document.getElementById("bookings-bi-panel-booking-window"),
+  bookingsBiWindowFilterYear: document.getElementById("bookings-bi-window-filter-year"),
+  bookingsBiWindowFilterHa: document.getElementById("bookings-bi-window-filter-ha"),
+  bookingsBiWindowFilterStatus: document.getElementById("bookings-bi-window-filter-status"),
+  bookingsBiWindowCount: document.getElementById("bookings-bi-window-count"),
+  bookingsBiWindowKpis: document.getElementById("bookings-bi-window-kpis"),
+  bookingsBiWindowDistribution: document.getElementById("bookings-bi-window-distribution"),
+  bookingsBiWindowTrend: document.getElementById("bookings-bi-window-trend"),
+  bookingsBiWindowChannels: document.getElementById("bookings-bi-window-channels"),
+  bookingsBiWindowStatus: document.getElementById("bookings-bi-window-status"),
   bookingsBiStatus: document.getElementById("bookings-bi-status"),
   financialBiTabResults: document.getElementById("financial-bi-tab-results"),
   financialBiFilterYearFrom: document.getElementById("financial-bi-filter-year-from"),
@@ -2400,10 +2423,14 @@ function bindEvents() {
   els.guestsBiLineModePercent?.addEventListener("click", () => setGuestsBiLineMode("percent"));
   els.guestsBiMonthLineModeAbsolute?.addEventListener("click", () => setGuestsBiMonthLineMode("absolute"));
   els.guestsBiMonthLineModePercent?.addEventListener("click", () => setGuestsBiMonthLineMode("percent"));
-  els.bookingsBiTabChannels?.addEventListener("click", () => renderBookingsBi());
+  els.bookingsBiTabChannels?.addEventListener("click", () => setBookingsBiTab("channels"));
+  els.bookingsBiTabBookingWindow?.addEventListener("click", () => setBookingsBiTab("booking-window"));
   els.bookingsBiFilterYear?.addEventListener("change", onBookingsBiFilterChange);
   els.bookingsBiFilterHa?.addEventListener("change", onBookingsBiFilterChange);
   els.bookingsBiFilterStatus?.addEventListener("change", onBookingsBiStatusChange);
+  els.bookingsBiWindowFilterYear?.addEventListener("change", onBookingsBiWindowFilterChange);
+  els.bookingsBiWindowFilterHa?.addEventListener("change", onBookingsBiWindowFilterChange);
+  els.bookingsBiWindowFilterStatus?.addEventListener("change", onBookingsBiWindowFilterChange);
   els.financialBiTabResults?.addEventListener("click", () => renderFinancialBi());
   els.financialBiFilterYearFrom?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterYearTo?.addEventListener("change", onFinancialBiFilterChange);
@@ -3276,6 +3303,7 @@ async function setView(view) {
   }
   if (view !== "bookings-bi") {
     state.bookingsBiLoading = false;
+    state.bookingsBiWindowLoading = false;
   }
   if (view !== "financial-bi") {
     state.financialBiLoading = false;
@@ -21020,6 +21048,30 @@ function currentBookingsBiStatuses() {
     : defaultBookingsBiStatuses();
 }
 
+function currentBookingsBiWindowYear() {
+  const rawValue = els.bookingsBiWindowFilterYear ? els.bookingsBiWindowFilterYear.value : state.bookingsBiWindowYear;
+  const value = clean(rawValue || state.bookingsBiWindowYear || String(new Date().getFullYear()));
+  return /^\d{4}$/.test(value) ? value : String(new Date().getFullYear());
+}
+
+function currentBookingsBiWindowHa() {
+  const rawValue = els.bookingsBiWindowFilterHa ? els.bookingsBiWindowFilterHa.value : state.bookingsBiWindowHa;
+  const value = clean(rawValue).toUpperCase();
+  return value === "H" || value === "A" ? value : "";
+}
+
+function currentBookingsBiWindowStatuses() {
+  if (els.bookingsBiWindowFilterStatus) {
+    const selected = Array.from(els.bookingsBiWindowFilterStatus.selectedOptions || [])
+      .map((option) => clean(option.value))
+      .filter(Boolean);
+    return selected.length ? selected : defaultBookingsBiStatuses();
+  }
+  return Array.isArray(state.bookingsBiWindowStatuses) && state.bookingsBiWindowStatuses.length
+    ? state.bookingsBiWindowStatuses.map((status) => clean(status)).filter(Boolean)
+    : defaultBookingsBiStatuses();
+}
+
 function bookingsBiStatusFilterKey(statuses = []) {
   return (Array.isArray(statuses) ? statuses : [])
     .map((status) => clean(status))
@@ -21034,6 +21086,12 @@ function setBookingsBiStatus(message, type = "") {
   els.bookingsBiStatus.classList.toggle("error", type === "error");
 }
 
+function setBookingsBiWindowStatus(message, type = "") {
+  if (!els.bookingsBiWindowStatus) return;
+  els.bookingsBiWindowStatus.textContent = message || "";
+  els.bookingsBiWindowStatus.classList.toggle("error", type === "error");
+}
+
 function buildBookingsBiUrlClient() {
   const params = new URLSearchParams();
   const year = currentBookingsBiYear();
@@ -21044,6 +21102,18 @@ function buildBookingsBiUrlClient() {
   if (statuses.length) params.set("statuses", statuses.join(","));
   const query = params.toString();
   return `/api/bookings-bi${query ? `?${query}` : ""}`;
+}
+
+function buildBookingsBiWindowUrlClient() {
+  const params = new URLSearchParams();
+  const year = currentBookingsBiWindowYear();
+  const ha = currentBookingsBiWindowHa();
+  const statuses = currentBookingsBiWindowStatuses();
+  params.set("tab", "booking-window");
+  if (year) params.set("year", year);
+  if (ha) params.set("ha", ha);
+  if (statuses.length) params.set("statuses", statuses.join(","));
+  return `/api/bookings-bi?${params.toString()}`;
 }
 
 async function loadBookingsBiData({ silent = false } = {}) {
@@ -21081,6 +21151,36 @@ async function ensureBookingsBiData() {
   if (!state.bookingsBiLoaded) await loadBookingsBiData({ silent: true });
 }
 
+async function loadBookingsBiWindowData({ silent = false } = {}) {
+  state.bookingsBiWindowLoading = true;
+  try {
+    const result = await api(buildBookingsBiWindowUrlClient());
+    state.bookingsBiWindowYear = clean(result?.year) || currentBookingsBiWindowYear();
+    state.bookingsBiWindowHa = clean(result?.ha).toUpperCase();
+    state.bookingsBiWindowStatuses = Array.isArray(result?.statuses)
+      ? result.statuses.map((status) => clean(status)).filter(Boolean)
+      : currentBookingsBiWindowStatuses();
+    state.bookingsBiWindowYears = Array.isArray(result?.years) ? result.years.map((year) => clean(year)).filter(Boolean) : [];
+    state.bookingsBiWindowSummary = result?.summary && typeof result.summary === "object" ? result.summary : {};
+    state.bookingsBiWindowDistribution = Array.isArray(result?.distribution) ? result.distribution : [];
+    state.bookingsBiWindowMonths = Array.isArray(result?.months) ? result.months : [];
+    state.bookingsBiWindowChannels = Array.isArray(result?.channels) ? result.channels : [];
+    state.bookingsBiWindowLoaded = true;
+    renderBookingsBi();
+    if (!silent) setBookingsBiWindowStatus("Booking-window analysis loaded.");
+  } catch (error) {
+    state.bookingsBiWindowLoaded = false;
+    state.bookingsBiWindowSummary = {};
+    state.bookingsBiWindowDistribution = [];
+    state.bookingsBiWindowMonths = [];
+    state.bookingsBiWindowChannels = [];
+    renderBookingsBi();
+    if (!silent) setBookingsBiWindowStatus(`Failed to load booking-window analysis: ${error.message}`, "error");
+  } finally {
+    state.bookingsBiWindowLoading = false;
+  }
+}
+
 function onBookingsBiFilterChange() {
   state.bookingsBiYear = currentBookingsBiYear();
   state.bookingsBiHa = currentBookingsBiHa();
@@ -21090,6 +21190,23 @@ function onBookingsBiFilterChange() {
 function onBookingsBiStatusChange() {
   state.bookingsBiStatuses = currentBookingsBiStatuses();
   loadBookingsBiData({ silent: true }).catch(() => {});
+}
+
+function onBookingsBiWindowFilterChange() {
+  state.bookingsBiWindowYear = currentBookingsBiWindowYear();
+  state.bookingsBiWindowHa = currentBookingsBiWindowHa();
+  state.bookingsBiWindowStatuses = currentBookingsBiWindowStatuses();
+  loadBookingsBiWindowData({ silent: true }).catch(() => {});
+}
+
+function setBookingsBiTab(tab) {
+  state.bookingsBiTab = tab === "booking-window" ? "booking-window" : "channels";
+  renderBookingsBi();
+  if (state.bookingsBiTab === "booking-window") {
+    if (!state.bookingsBiWindowLoaded) loadBookingsBiWindowData({ silent: true }).catch(() => {});
+  } else if (!state.bookingsBiLoaded) {
+    loadBookingsBiData({ silent: true }).catch(() => {});
+  }
 }
 
 function bookingsBiPieSlices(chart) {
@@ -21158,15 +21275,102 @@ function renderBookingsBiChannelPies() {
     : '<div class="empty">No booking channel distribution found.</div>';
 }
 
+function formatBookingsBiWindowDays(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toFixed(1)} days` : "-";
+}
+
+function formatBookingsBiWindowPercent(value, total) {
+  const safeTotal = Number(total || 0);
+  return safeTotal > 0 ? `${((Number(value || 0) / safeTotal) * 100).toFixed(1)}%` : "0.0%";
+}
+
+function renderBookingsBiWindow() {
+  const years = state.bookingsBiWindowYears.length
+    ? state.bookingsBiWindowYears
+    : Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() - index));
+  const selectedYear = currentBookingsBiWindowYear();
+  const selectedHa = currentBookingsBiWindowHa();
+  const selectedStatuses = new Set(currentBookingsBiWindowStatuses());
+  if (els.bookingsBiWindowFilterYear) {
+    const options = [...new Set([selectedYear, ...years].filter(Boolean))];
+    els.bookingsBiWindowFilterYear.innerHTML = options.map((year) => `<option value="${escape(year)}">${escape(year)}</option>`).join("");
+    els.bookingsBiWindowFilterYear.value = selectedYear;
+  }
+  if (els.bookingsBiWindowFilterHa) els.bookingsBiWindowFilterHa.value = selectedHa;
+  if (els.bookingsBiWindowFilterStatus) {
+    Array.from(els.bookingsBiWindowFilterStatus.options || []).forEach((option) => {
+      option.selected = selectedStatuses.has(clean(option.value));
+    });
+  }
+  const summary = state.bookingsBiWindowSummary || {};
+  const bookingCount = Number(summary.booking_count ?? summary.bookingCount ?? 0);
+  const sameDayCount = Number(summary.same_day_count ?? summary.sameDayCount ?? 0);
+  const within7DaysCount = Number(summary.within_7_days_count ?? summary.within7DaysCount ?? 0);
+  const over30DaysCount = Number(summary.over_30_days_count ?? summary.over30DaysCount ?? 0);
+  if (els.bookingsBiWindowCount) {
+    const statusCount = selectedStatuses.size;
+    els.bookingsBiWindowCount.textContent = `${bookingCount} booking${bookingCount === 1 ? "" : "s"} | ${statusCount} status${statusCount === 1 ? "" : "es"}`;
+  }
+  if (els.bookingsBiWindowKpis) {
+    els.bookingsBiWindowKpis.innerHTML = [
+      ["Bookings", String(bookingCount)],
+      ["Average window", formatBookingsBiWindowDays(summary.average_days ?? summary.averageDays)],
+      ["Median window", formatBookingsBiWindowDays(summary.median_days ?? summary.medianDays)],
+      ["Same-day bookings", formatBookingsBiWindowPercent(sameDayCount, bookingCount)],
+      ["Booked ≤ 7 days", formatBookingsBiWindowPercent(within7DaysCount, bookingCount)],
+      ["Booked 31+ days", formatBookingsBiWindowPercent(over30DaysCount, bookingCount)],
+    ].map(([label, value]) => `<article><span>${escape(label)}</span><strong>${escape(value)}</strong></article>`).join("");
+  }
+  const distribution = Array.isArray(state.bookingsBiWindowDistribution) ? state.bookingsBiWindowDistribution : [];
+  if (els.bookingsBiWindowDistribution) {
+    const maxValue = Math.max(1, ...distribution.map((row) => Number(row?.bookingCount ?? row?.booking_count ?? 0)));
+    els.bookingsBiWindowDistribution.innerHTML = distribution.length
+      ? distribution.map((row) => {
+        const count = Number(row?.bookingCount ?? row?.booking_count ?? 0);
+        const width = Math.max(0, Math.min(100, (count / maxValue) * 100));
+        return `<div class="guests-bi-details-bar-row"><strong>${escape(clean(row?.label) || "-")}</strong><div class="guests-bi-details-bar-stack"><div class="guests-bi-details-bar-mini"><span></span><div class="guests-bi-details-bar-track"><div class="guests-bi-details-bar-fill" style="width:${width.toFixed(2)}%"></div></div><strong>${escape(`${count} (${formatBookingsBiWindowPercent(count, bookingCount)})`)}</strong></div></div></div>`;
+      }).join("")
+      : '<div class="empty">No booking-window distribution found.</div>';
+  }
+  const months = Array.isArray(state.bookingsBiWindowMonths) ? state.bookingsBiWindowMonths : [];
+  if (els.bookingsBiWindowTrend) {
+    els.bookingsBiWindowTrend.innerHTML = buildGuestsBiLineChartMarkup(
+      months.map((row) => clean(row?.bookingMonth ?? row?.booking_month)),
+      [{ countryLabel: "Average days", values: months.map((row) => Number(row?.averageDays ?? row?.average_days ?? 0)) }],
+      "No booking-window monthly trend found.",
+      "Average booking window by booking month",
+      "absolute",
+      { decimalPlaces: 1 }
+    );
+  }
+  const channels = Array.isArray(state.bookingsBiWindowChannels) ? state.bookingsBiWindowChannels : [];
+  if (els.bookingsBiWindowChannels) {
+    els.bookingsBiWindowChannels.innerHTML = channels.length
+      ? channels.map((row) => {
+        const count = Number(row?.bookingCount ?? row?.booking_count ?? 0);
+        return `<tr><td>${escape(clean(row?.channel ?? row?.channel_label) || "Unknown")}</td><td>${escape(String(count))}</td><td>${escape(formatBookingsBiWindowDays(row?.averageDays ?? row?.average_days))}</td><td>${escape(formatBookingsBiWindowDays(row?.medianDays ?? row?.median_days))}</td><td>${escape(formatBookingsBiWindowPercent(row?.sameDayCount ?? row?.same_day_count, count))}</td><td>${escape(formatBookingsBiWindowPercent(row?.within7DaysCount ?? row?.within_7_days_count, count))}</td><td>${escape(formatBookingsBiWindowPercent(row?.over30DaysCount ?? row?.over_30_days_count, count))}</td></tr>`;
+      }).join("")
+      : '<tr><td colspan="7" class="empty">No booking-window channel data found.</td></tr>';
+  }
+}
+
 function renderBookingsBi() {
+  const isBookingWindow = state.bookingsBiTab === "booking-window";
   const years = state.bookingsBiYears.length
     ? state.bookingsBiYears
     : Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() - index));
   const selectedYear = currentBookingsBiYear();
   if (els.bookingsBiTabChannels) {
-    els.bookingsBiTabChannels.classList.add("active-tab");
-    els.bookingsBiTabChannels.classList.remove("ghost");
+    els.bookingsBiTabChannels.classList.toggle("active-tab", !isBookingWindow);
+    els.bookingsBiTabChannels.classList.toggle("ghost", isBookingWindow);
   }
+  if (els.bookingsBiTabBookingWindow) {
+    els.bookingsBiTabBookingWindow.classList.toggle("active-tab", isBookingWindow);
+    els.bookingsBiTabBookingWindow.classList.toggle("ghost", !isBookingWindow);
+  }
+  if (els.bookingsBiPanelChannels) els.bookingsBiPanelChannels.hidden = isBookingWindow;
+  if (els.bookingsBiPanelBookingWindow) els.bookingsBiPanelBookingWindow.hidden = !isBookingWindow;
   if (els.bookingsBiFilterYear) {
     const options = [...new Set([selectedYear, ...years].filter(Boolean))];
     els.bookingsBiFilterYear.innerHTML = options.map((year) => `<option value="${escape(year)}">${escape(year)}</option>`).join("");
@@ -21188,6 +21392,7 @@ function renderBookingsBi() {
     els.bookingsBiChannelsCount.textContent = `${channelCount} channel${channelCount === 1 ? "" : "s"} | ${statusCount} status${statusCount === 1 ? "" : "es"}`;
   }
   renderBookingsBiChannelPies();
+  renderBookingsBiWindow();
 }
 
 function currentFinancialBiCc() {

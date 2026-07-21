@@ -59,6 +59,17 @@ function buildPieCharts(rows, pieYears) {
   });
 }
 
+function normalizeBookingWindowResult(result = {}) {
+  const source = Array.isArray(result) ? result[0] || {} : result || {};
+  return {
+    years: Array.isArray(source.years) ? source.years.map((year) => String(year)).filter(Boolean) : [],
+    summary: source.summary && typeof source.summary === "object" ? source.summary : {},
+    distribution: Array.isArray(source.distribution) ? source.distribution : [],
+    months: Array.isArray(source.months) ? source.months : [],
+    channels: Array.isArray(source.channels) ? source.channels : [],
+  };
+}
+
 module.exports = async function handler(req, res) {
   try {
     if (req.method !== "GET") {
@@ -73,6 +84,24 @@ module.exports = async function handler(req, res) {
     const selectedYear = parseYearValue(req.query?.year);
     const selectedHa = parseHaValue(req.query?.ha);
     const statuses = parseStatuses(req.query?.statuses || req.query?.booking_statuses);
+    const tab = clean(req.query?.tab).toLowerCase();
+    if (tab === "booking-window") {
+      const bookingWindow = normalizeBookingWindowResult(await restQuery("rpc/bookings_bi_booking_window", {
+        method: "POST",
+        body: {
+          p_year: selectedYear,
+          p_ha: selectedHa || null,
+          p_statuses: statuses,
+        },
+      }));
+      res.status(200).json({
+        year: String(selectedYear),
+        ha: selectedHa,
+        statuses,
+        ...bookingWindow,
+      });
+      return;
+    }
     const rpcRows = await restQuery("rpc/bookings_bi_channels", {
       method: "POST",
       body: {

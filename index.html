@@ -4080,6 +4080,7 @@
               <h2>Bookings BI</h2>
               <div class="actions">
                 <button id="bookings-bi-tab-channels" type="button" class="active-tab">Channels</button>
+                <button id="bookings-bi-tab-booking-window" type="button" class="ghost">Booking Window</button>
               </div>
             </div>
           </section>
@@ -4122,6 +4123,63 @@
             </div>
             <div id="bookings-bi-channels-pies" class="guests-bi-pies bookings-bi-pies"></div>
             <p id="bookings-bi-status" class="auth-status"></p>
+          </section>
+
+          <section id="bookings-bi-panel-booking-window" class="card" hidden>
+            <div class="bar">
+              <h2>Booking Window</h2>
+              <div class="actions">
+                <p id="bookings-bi-window-count">0 bookings</p>
+              </div>
+            </div>
+            <div class="grid filters guests-bi-filters guests-bi-tmt-filters">
+              <label>
+                Year (Booking Date)
+                <select id="bookings-bi-window-filter-year"></select>
+              </label>
+              <label>
+                HA
+                <select id="bookings-bi-window-filter-ha">
+                  <option value="">All</option>
+                  <option value="H">H</option>
+                  <option value="A">A</option>
+                </select>
+              </label>
+              <label>
+                Status
+                <select id="bookings-bi-window-filter-status" multiple size="1">
+                  <option value="Checked Out" selected>Checked Out</option>
+                  <option value="Confirmed" selected>Confirmed</option>
+                  <option value="Arriving" selected>Arriving</option>
+                  <option value="Late" selected>Late</option>
+                  <option value="Leaving" selected>Leaving</option>
+                  <option value="Checked-in" selected>Checked-in</option>
+                  <option value="Checked In" selected>Checked In</option>
+                  <option value="Unconfirmed">Unconfirmed</option>
+                  <option value="Cancelled">Cancelled</option>
+                  <option value="No Show">No Show</option>
+                </select>
+              </label>
+            </div>
+            <div id="bookings-bi-window-kpis" class="guests-bi-details-kpis"></div>
+            <section class="guests-bi-line-card">
+              <div class="bar"><h3>Booking Window Distribution</h3></div>
+              <div id="bookings-bi-window-distribution" class="guests-bi-details-bar-chart"></div>
+            </section>
+            <section class="guests-bi-line-card">
+              <div class="bar"><h3>Average Booking Window by Booking Month</h3></div>
+              <div id="bookings-bi-window-trend" class="guests-bi-line-wrap"></div>
+            </section>
+            <section class="guests-bi-line-card">
+              <div class="bar"><h3>Channel Comparison</h3></div>
+              <div class="table-wrap compact-table-wrap">
+                <table class="compact-table guests-bi-table">
+                  <thead><tr><th>Channel</th><th>Bookings</th><th>Avg. Window</th><th>Median</th><th>Same Day</th><th>≤ 7 Days</th><th>31+ Days</th></tr></thead>
+                  <tbody id="bookings-bi-window-channels"></tbody>
+                </table>
+              </div>
+            </section>
+            <p id="bookings-bi-window-status" class="auth-status"></p>
           </section>
         </section>
 
