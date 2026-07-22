@@ -1304,6 +1304,7 @@ const state = {
   bookingsBiWindowDistribution: [],
   bookingsBiWindowMonths: [],
   bookingsBiWindowChannels: [],
+  bookingsBiWindowYearTrend: [],
   financialBiLoaded: false,
   financialBiLoading: false,
   financialBiLoadPromise: null,
@@ -21165,6 +21166,7 @@ async function loadBookingsBiWindowData({ silent = false } = {}) {
     state.bookingsBiWindowDistribution = Array.isArray(result?.distribution) ? result.distribution : [];
     state.bookingsBiWindowMonths = Array.isArray(result?.months) ? result.months : [];
     state.bookingsBiWindowChannels = Array.isArray(result?.channels) ? result.channels : [];
+    state.bookingsBiWindowYearTrend = Array.isArray(result?.yearTrend) ? result.yearTrend : [];
     state.bookingsBiWindowLoaded = true;
     renderBookingsBi();
     if (!silent) setBookingsBiWindowStatus("Booking-window analysis loaded.");
@@ -21174,6 +21176,7 @@ async function loadBookingsBiWindowData({ silent = false } = {}) {
     state.bookingsBiWindowDistribution = [];
     state.bookingsBiWindowMonths = [];
     state.bookingsBiWindowChannels = [];
+    state.bookingsBiWindowYearTrend = [];
     renderBookingsBi();
     if (!silent) setBookingsBiWindowStatus(`Failed to load booking-window analysis: ${error.message}`, "error");
   } finally {
@@ -21333,13 +21336,21 @@ function renderBookingsBiWindow() {
       }).join("")
       : '<div class="empty">No booking-window distribution found.</div>';
   }
-  const months = Array.isArray(state.bookingsBiWindowMonths) ? state.bookingsBiWindowMonths : [];
+  const yearTrend = Array.isArray(state.bookingsBiWindowYearTrend) ? state.bookingsBiWindowYearTrend : [];
   if (els.bookingsBiWindowTrend) {
+    const trendYears = [...new Set(yearTrend.map((row) => clean(row?.bookingYear ?? row?.booking_year)).filter(Boolean))]
+      .sort((a, b) => Number(a) - Number(b));
     els.bookingsBiWindowTrend.innerHTML = buildGuestsBiLineChartMarkup(
-      months.map((row) => clean(row?.bookingMonth ?? row?.booking_month)),
-      [{ countryLabel: "Average days", values: months.map((row) => Number(row?.averageDays ?? row?.average_days ?? 0)) }],
-      "No booking-window monthly trend found.",
-      "Average booking window by booking month",
+      trendYears,
+      ["H", "A"].map((ha) => ({
+        countryLabel: ha,
+        values: trendYears.map((year) => {
+          const row = yearTrend.find((item) => clean(item?.bookingYear ?? item?.booking_year) === year && clean(item?.ha).toUpperCase() === ha);
+          return Number(row?.averageDays ?? row?.average_days ?? 0);
+        }),
+      })),
+      "No yearly H/A booking-window trend found.",
+      "Average booking window by year for H and A",
       "absolute",
       { decimalPlaces: 1 }
     );

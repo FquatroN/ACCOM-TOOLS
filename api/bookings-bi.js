@@ -67,6 +67,7 @@ function normalizeBookingWindowResult(result = {}) {
     distribution: Array.isArray(source.distribution) ? source.distribution : [],
     months: Array.isArray(source.months) ? source.months : [],
     channels: Array.isArray(source.channels) ? source.channels : [],
+    yearTrend: Array.isArray(source.yearTrend) ? source.yearTrend : [],
   };
 }
 
