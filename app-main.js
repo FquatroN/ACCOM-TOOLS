@@ -21346,13 +21346,13 @@ function renderBookingsBiWindow() {
         countryLabel: ha,
         values: trendYears.map((year) => {
           const row = yearTrend.find((item) => clean(item?.bookingYear ?? item?.booking_year) === year && clean(item?.ha).toUpperCase() === ha);
-          return Number(row?.averageDays ?? row?.average_days ?? 0);
+          return Number(row?.medianDays ?? row?.median_days ?? 0);
         }),
       })),
       "No yearly H/A booking-window trend found.",
-      "Average booking window by year for H and A",
+      "Median booking window by year for H and A",
       "absolute",
-      { decimalPlaces: 1 }
+      { decimalPlaces: 1, showPointLabels: true }
     );
   }
   const channels = Array.isArray(state.bookingsBiWindowChannels) ? state.bookingsBiWindowChannels : [];
@@ -22007,6 +22007,7 @@ function buildGuestsBiLineChartMarkup(labels, series, emptyMessage, ariaLabel, m
         <title>${escape(formatPointTooltip(path.label, xLabels[index] || "", value))}</title>
         <circle cx="${xFor(index)}" cy="${yFor(value)}" r="8" fill="transparent"></circle>
         <circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${path.color}"></circle>
+        ${options.showPointLabels ? `<text x="${xFor(index)}" y="${Math.max(margin.top + 10, yFor(value) - 8)}" text-anchor="middle" class="guests-bi-point-label">${escape(formatAxisValue(value))}</text>` : ""}
       </g>`).join("")).join("")}
     </svg>
     <div class="guests-bi-line-legend">
