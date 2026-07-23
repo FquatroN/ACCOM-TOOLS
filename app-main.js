@@ -1541,6 +1541,7 @@ const els = {
   financialDocsFilterCategory: document.getElementById("financial-docs-filter-category"),
   financialDocsFilterStatus: document.getElementById("financial-docs-filter-status"),
   financialDocsCount: document.getElementById("financial-docs-count"),
+  financialDocsDraftCount: document.getElementById("financial-docs-draft-count"),
   financialDocsPanelList: document.getElementById("financial-docs-panel-list"),
   financialDocsPanelResume: document.getElementById("financial-docs-panel-resume"),
   financialDocsRows: document.getElementById("financial-docs-rows"),
@@ -22872,6 +22873,7 @@ function renderFinancialDocsMobileCards(rows) {
 function renderFinancialDocs() {
   if (!canAppFinancialDocs()) {
     if (els.financialDocsCount) els.financialDocsCount.textContent = "0 records";
+    if (els.financialDocsDraftCount) els.financialDocsDraftCount.textContent = "0 drafts";
     if (els.financialDocsRows) els.financialDocsRows.innerHTML = '<tr><td colspan="16" class="empty">Your profile has no access to Financial Documents.</td></tr>';
     if (els.financialDocsMobileCards) els.financialDocsMobileCards.innerHTML = '<div class="services-mobile-empty">Your profile has no access to Financial Documents.</div>';
     if (els.financialDocsResumeRows) els.financialDocsResumeRows.innerHTML = '<tr><td colspan="2" class="empty">Your profile has no access to Financial Documents.</td></tr>';
@@ -22890,6 +22892,7 @@ function renderFinancialDocs() {
   els.financialDocsTabResume?.classList.toggle("ghost", !isResume);
   if (els.financialDocsPanelList) els.financialDocsPanelList.hidden = isResume;
   if (els.financialDocsPanelResume) els.financialDocsPanelResume.hidden = !isResume;
+  if (els.financialDocsDraftCount) els.financialDocsDraftCount.hidden = isResume;
   const rows = getFilteredFinancialDocs();
   if (isResume) {
     const summary = getFinancialDocsResumeRows();
@@ -22898,6 +22901,10 @@ function renderFinancialDocs() {
     return;
   }
   if (els.financialDocsCount) els.financialDocsCount.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  if (els.financialDocsDraftCount) {
+    const draftCount = rows.filter((row) => clean(row?.status).toLowerCase() === "draft").length;
+    els.financialDocsDraftCount.textContent = `${draftCount} draft${draftCount === 1 ? "" : "s"}`;
+  }
   if (els.financialDocsRows) {
     const inlineRow = buildFinancialDocInlineCreateRow();
     els.financialDocsRows.innerHTML = inlineRow + (rows.length

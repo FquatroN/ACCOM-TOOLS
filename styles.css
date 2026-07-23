@@ -1905,6 +1905,16 @@ select:disabled {
   stroke-linejoin: round;
 }
 
+.financial-docs-counts {
+  display: grid;
+  gap: 0.1rem;
+  text-align: right;
+}
+
+.financial-docs-counts p {
+  margin: 0;
+}
+
 .guests-bi-details-kpis {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
