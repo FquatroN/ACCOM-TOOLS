@@ -14292,8 +14292,10 @@ function getGuestsTopAlertsSummaryMarkup() {
   const birthdaysToday = rows.filter((row) => isGuestInHouseOnClient(row, todayIso) && guestBirthdayAlertClient(row, todayIso) === "Birthday Today").length;
   const birthdaysTomorrow = rows.filter((row) => isGuestInHouseOnClient(row, tomorrowIso) && guestBirthdayAlertClient(row, tomorrowIso) === "Birthday Today").length;
   const blacklistsInHouse = rows.filter((row) => isGuestInHouseOnClient(row, todayIso) && guestRowMetaClient(row).isBlacklisted).length;
-  const birthdayTodayLabel = birthdaysToday > 0 ? "<strong>Birthday Today</strong>" : "Birthday Today";
-  return `${birthdayTodayLabel}: ${birthdaysToday}; Birthdays tomorrow: ${birthdaysTomorrow}; Blacklists inhouse: ${blacklistsInHouse}`;
+  const birthdayTodaySummary = birthdaysToday > 0
+    ? `<span class="guests-birthday-today-summary">Birthday Today: ${birthdaysToday}</span>`
+    : `Birthday Today: ${birthdaysToday}`;
+  return `${birthdayTodaySummary}; Birthdays tomorrow: ${birthdaysTomorrow}; Blacklists inhouse: ${blacklistsInHouse}`;
 }
 
 function guestRowMetaClient(record) {
