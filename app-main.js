@@ -1339,6 +1339,7 @@ const state = {
   financialBiRows: [],
   financialBiComparisonRows: [],
   financialBiPivot: { incomeCategories: [], expenseCategories: [], years: [], totals: {} },
+  financialBiTab: "book-sales",
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -1680,6 +1681,8 @@ const els = {
   bookingsBiWindowStatus: document.getElementById("bookings-bi-window-status"),
   bookingsBiStatus: document.getElementById("bookings-bi-status"),
   financialBiTabResults: document.getElementById("financial-bi-tab-results"),
+  financialBiTabFdmAccounts: document.getElementById("financial-bi-tab-fdm-accounts"),
+  financialBiResultsTitle: document.getElementById("financial-bi-results-title"),
   financialBiFilterYearFrom: document.getElementById("financial-bi-filter-year-from"),
   financialBiFilterYearTo: document.getElementById("financial-bi-filter-year-to"),
   financialBiFilterCc: document.getElementById("financial-bi-filter-cc"),
@@ -2460,7 +2463,8 @@ function bindEvents() {
   els.bookingsBiWindowFilterYear?.addEventListener("change", onBookingsBiWindowFilterChange);
   els.bookingsBiWindowFilterHa?.addEventListener("change", onBookingsBiWindowFilterChange);
   els.bookingsBiWindowFilterStatus?.addEventListener("change", onBookingsBiWindowFilterChange);
-  els.financialBiTabResults?.addEventListener("click", () => renderFinancialBi());
+  els.financialBiTabResults?.addEventListener("click", () => setFinancialBiTab("book-sales"));
+  els.financialBiTabFdmAccounts?.addEventListener("click", () => setFinancialBiTab("fdm-accounts"));
   els.financialBiFilterYearFrom?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterYearTo?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCc?.addEventListener("change", onFinancialBiFilterChange);
@@ -21528,6 +21532,33 @@ function currentFinancialBiCc() {
   return clean(state.financialBiCc).toUpperCase();
 }
 
+function currentFinancialBiTab() {
+  return state.financialBiTab === "fdm-accounts" ? "fdm-accounts" : "book-sales";
+}
+
+function financialBiTabLabel() {
+  return currentFinancialBiTab() === "fdm-accounts" ? "Results (FDM Account)" : "Results (Book&Sales)";
+}
+
+function setFinancialBiTab(tab) {
+  const nextTab = tab === "fdm-accounts" ? "fdm-accounts" : "book-sales";
+  if (currentFinancialBiTab() === nextTab) {
+    renderFinancialBi();
+    return;
+  }
+  state.financialBiTab = nextTab;
+  state.financialBiCategories = [];
+  state.financialBiExpandedYears = {};
+  state.financialBiRows = [];
+  state.financialBiComparisonRows = [];
+  state.financialBiPivot = { incomeCategories: [], expenseCategories: [], years: [], totals: {} };
+  state.financialBiLoaded = false;
+  state.financialBiLoadedKey = "";
+  state.financialBiRequestToken = Number(state.financialBiRequestToken || 0) + 1;
+  renderFinancialBi();
+  loadFinancialBiData({ silent: true });
+}
+
 const FINANCIAL_BI_ALL_CATEGORY = "__all__";
 const FINANCIAL_BI_BLANK_CATEGORY = "__blank__";
 
@@ -21555,6 +21586,7 @@ function buildFinancialBiUrlClient() {
   params.set("yearTo", String(to));
   const cc = currentFinancialBiCc();
   if (cc === "H" || cc === "A") params.set("cc", cc);
+  if (currentFinancialBiTab() === "fdm-accounts") params.set("source", "fdm-accounts");
   return `/api/financial-bi?${params.toString()}`;
 }
 
@@ -22010,10 +22042,16 @@ function renderFinancialBi() {
   const incomeCategories = Array.isArray(pivot.incomeCategories) ? pivot.incomeCategories : [];
   const expenseCategories = Array.isArray(pivot.expenseCategories) ? pivot.expenseCategories : [];
   const years = Array.isArray(pivot.years) ? pivot.years : [];
+  const isFdmAccounts = currentFinancialBiTab() === "fdm-accounts";
   if (els.financialBiTabResults) {
-    els.financialBiTabResults.classList.add("active-tab");
-    els.financialBiTabResults.classList.remove("ghost");
+    els.financialBiTabResults.classList.toggle("active-tab", !isFdmAccounts);
+    els.financialBiTabResults.classList.toggle("ghost", isFdmAccounts);
   }
+  if (els.financialBiTabFdmAccounts) {
+    els.financialBiTabFdmAccounts.classList.toggle("active-tab", isFdmAccounts);
+    els.financialBiTabFdmAccounts.classList.toggle("ghost", !isFdmAccounts);
+  }
+  if (els.financialBiResultsTitle) els.financialBiResultsTitle.textContent = financialBiTabLabel();
   renderFinancialBiYearFilters();
   if (els.financialBiFilterCc) els.financialBiFilterCc.value = currentFinancialBiCc() === "H" || currentFinancialBiCc() === "A" ? currentFinancialBiCc() : "";
   if (els.financialBiResultsCount) {

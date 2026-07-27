@@ -146,16 +146,25 @@ function financialBiFilters(req) {
   const from = parseYear(rawFrom, currentYear - 4);
   const to = parseYear(rawTo, currentYear);
   const cc = clean(Array.isArray(query.cc) ? query.cc[0] : query.cc).toUpperCase();
+  const source = clean(Array.isArray(query.source) ? query.source[0] : query.source).toLowerCase();
   return {
     yearFrom: Math.min(from, to),
     yearTo: Math.max(from, to),
     cc: cc === "H" || cc === "A" ? cc : "",
+    source: source === "fdm-accounts" ? "fdm-accounts" : "book-sales",
   };
 }
 
 async function loadFinancialBiRows(filters) {
+  const source = filters.source === "fdm-accounts" ? "fdm-accounts" : "book-sales";
+  const payloadRpc = source === "fdm-accounts"
+    ? "rpc/get_bi_financial_analysis_fdm_accounts_payload"
+    : "rpc/get_bi_financial_analysis_sales_payload";
+  const legacyRpc = source === "fdm-accounts"
+    ? "rpc/get_bi_financial_analysis_fdm_accounts"
+    : "rpc/get_bi_financial_analysis_sales";
   try {
-    const payload = await restQuery("rpc/get_bi_financial_analysis_sales_payload", {
+    const payload = await restQuery(payloadRpc, {
       method: "POST",
       body: {
         p_year_from: filters.yearFrom,
@@ -175,7 +184,7 @@ async function loadFinancialBiRows(filters) {
     const isMissingRpc = error.statusCode === 404 || message.includes("could not find the function") || message.includes("schema cache");
     if (!isMissingRpc) throw error;
 
-    const legacyRows = await restQuery("rpc/get_bi_financial_analysis_sales", {
+    const legacyRows = await restQuery(legacyRpc, {
       method: "POST",
       body: {
         p_year_from: filters.yearFrom,
@@ -194,7 +203,7 @@ async function loadFinancialBiRows(filters) {
 }
 
 function financialBiCacheKey(filters) {
-  return `${filters.yearFrom}:${filters.yearTo}:${filters.cc || "ALL"}`;
+  return `${filters.source || "book-sales"}:${filters.yearFrom}:${filters.yearTo}:${filters.cc || "ALL"}`;
 }
 
 async function loadCachedFinancialBiRows(filters) {
