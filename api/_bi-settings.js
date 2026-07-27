@@ -48,8 +48,27 @@ const DEFAULT_BI_SALE_ITEM_CATEGORIES = [
   ["Wine - Small (37cl)", "Drinks"],
 ].map(([saleItem, saleCategory]) => ({ saleItem, saleCategory }));
 
+const DEFAULT_BI_FDM_ACCOUNT_CATEGORIES = [
+  ["POSSales", "Sales", true],
+  ["ReservationSales", "Sales", true],
+  ["ReservationPayments", "Reservation", true],
+  ["DepositReturn", "Deposit", false],
+  ["RefundsAndReturns", "Reservation", true],
+  ["DepositTaken", "Deposit", false],
+  ["TransferInFromAccount", "Transfer", false],
+  ["TransferOutToAccount", "Transfer", false],
+  ["StaffWithdrawals", "Deposit", false],
+  ["Compras", "Transfer", false],
+  ["StaffDeposit", "Deposit", false],
+  ["CancellationCharges", "Reservation", true],
+  ["Tip", "Sales", true],
+  ["Coffee Machine", "Sales", true],
+  ["NoShowCharges", "Reservation", true],
+].map(([category, macroCategory, isResult]) => ({ category, macroCategory, isResult }));
+
 const DEFAULT_BI_SETTINGS = {
   saleItemCategories: DEFAULT_BI_SALE_ITEM_CATEGORIES,
+  fdmAccountCategories: DEFAULT_BI_FDM_ACCOUNT_CATEGORIES,
 };
 
 function clone(value) {
@@ -58,13 +77,13 @@ function clone(value) {
 
 function sanitizeBiSettings(source = {}) {
   const settings = source && typeof source === "object" ? source : {};
-  const rawRows = Array.isArray(settings.saleItemCategories)
+  const rawSaleItemRows = Array.isArray(settings.saleItemCategories)
     ? settings.saleItemCategories
     : Array.isArray(settings.sale_item_categories)
       ? settings.sale_item_categories
       : DEFAULT_BI_SALE_ITEM_CATEGORIES;
-  const seen = new Set();
-  const saleItemCategories = rawRows
+  const seenSaleItems = new Set();
+  const saleItemCategories = rawSaleItemRows
     .map((row) => {
       const saleItem = cleanText(row?.saleItem || row?.sale_item || row?.SALE_ITEM);
       const saleCategory = cleanText(row?.saleCategory || row?.sale_category || row?.SALE_CATEGORY);
@@ -74,12 +93,35 @@ function sanitizeBiSettings(source = {}) {
     .filter((row) => {
       const key = row.saleItem.toLowerCase();
       if (!key) return true;
-      if (seen.has(key)) return false;
-      seen.add(key);
+      if (seenSaleItems.has(key)) return false;
+      seenSaleItems.add(key);
+      return true;
+    });
+  const rawFdmAccountRows = Array.isArray(settings.fdmAccountCategories)
+    ? settings.fdmAccountCategories
+    : Array.isArray(settings.fdm_account_categories)
+      ? settings.fdm_account_categories
+      : DEFAULT_BI_FDM_ACCOUNT_CATEGORIES;
+  const seenAccountCategories = new Set();
+  const fdmAccountCategories = rawFdmAccountRows
+    .map((row) => {
+      const category = cleanText(row?.category || row?.Category || row?.CATEGORY);
+      const macroCategory = cleanText(row?.macroCategory || row?.macro_category || row?.["Macro Category"] || row?.MACRO_CATEGORY);
+      const rawIsResult = row?.isResult ?? row?.is_result ?? row?.IsResult ?? row?.IS_RESULT;
+      const isResult = rawIsResult === true || ["yes", "true", "1", "y"].includes(cleanText(rawIsResult).toLowerCase());
+      return { category, macroCategory, isResult };
+    })
+    .filter((row) => row.category || row.macroCategory)
+    .filter((row) => {
+      const key = row.category.toLowerCase();
+      if (!key) return true;
+      if (seenAccountCategories.has(key)) return false;
+      seenAccountCategories.add(key);
       return true;
     });
   return {
     saleItemCategories: saleItemCategories.length ? saleItemCategories : clone(DEFAULT_BI_SALE_ITEM_CATEGORIES),
+    fdmAccountCategories: fdmAccountCategories.length ? fdmAccountCategories : clone(DEFAULT_BI_FDM_ACCOUNT_CATEGORIES),
   };
 }
 
@@ -91,6 +133,7 @@ module.exports = {
   BI_SETTINGS_KEY,
   DEFAULT_BI_SETTINGS,
   DEFAULT_BI_SALE_ITEM_CATEGORIES,
+  DEFAULT_BI_FDM_ACCOUNT_CATEGORIES,
   sanitizeBiSettings,
   safeBiSettings,
 };

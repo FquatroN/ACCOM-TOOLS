@@ -2511,9 +2511,11 @@
               <div id="settings-view-bi-settings" hidden>
                 <div class="actions">
                   <button id="close-settings-bi-settings" type="button" class="ghost">Back To App</button>
+                  <button id="bi-settings-sale-categories-tab" type="button" class="active-tab">Sale Item Categories</button>
+                  <button id="bi-settings-fdm-account-categories-tab" type="button" class="ghost">FDM Account Categories</button>
                   <button id="bi-settings-save" type="button" class="ghost">Save Configuration</button>
                 </div>
-                <section class="settings-block">
+                <section id="bi-settings-sale-categories-panel" class="settings-block">
                   <div class="bar">
                     <h3>BI Sale Item Categories</h3>
                     <button id="bi-settings-add-sale-category" type="button" class="ghost">Add Row</button>
@@ -2532,6 +2534,27 @@
                     </table>
                   </div>
                   <p id="bi-settings-status" class="auth-status"></p>
+                </section>
+                <section id="bi-settings-fdm-account-categories-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>FDM Account Categories</h3>
+                    <button id="bi-settings-add-fdm-account-category" type="button" class="ghost">Add Row</button>
+                  </div>
+                  <p class="field-hint">Matches the Category field from FDM Accounts import data for future BI reporting.</p>
+                  <div class="table-wrap">
+                    <table class="settings-table">
+                      <thead>
+                        <tr>
+                          <th>Category</th>
+                          <th>Macro Category</th>
+                          <th>IsResult</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="bi-settings-fdm-account-categories-body"></tbody>
+                    </table>
+                  </div>
+                  <p id="bi-settings-fdm-account-categories-status" class="auth-status"></p>
                 </section>
               </div>
 

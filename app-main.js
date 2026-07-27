@@ -568,8 +568,27 @@ const DEFAULT_BI_SALE_ITEM_CATEGORIES = [
   ["Wine - Small (37cl)", "Drinks"],
 ].map(([saleItem, saleCategory]) => ({ saleItem, saleCategory }));
 
+const DEFAULT_BI_FDM_ACCOUNT_CATEGORIES = [
+  ["POSSales", "Sales", true],
+  ["ReservationSales", "Sales", true],
+  ["ReservationPayments", "Reservation", true],
+  ["DepositReturn", "Deposit", false],
+  ["RefundsAndReturns", "Reservation", true],
+  ["DepositTaken", "Deposit", false],
+  ["TransferInFromAccount", "Transfer", false],
+  ["TransferOutToAccount", "Transfer", false],
+  ["StaffWithdrawals", "Deposit", false],
+  ["Compras", "Transfer", false],
+  ["StaffDeposit", "Deposit", false],
+  ["CancellationCharges", "Reservation", true],
+  ["Tip", "Sales", true],
+  ["Coffee Machine", "Sales", true],
+  ["NoShowCharges", "Reservation", true],
+].map(([category, macroCategory, isResult]) => ({ category, macroCategory, isResult }));
+
 const DEFAULT_BI_SETTINGS = {
   saleItemCategories: clone(DEFAULT_BI_SALE_ITEM_CATEGORIES),
+  fdmAccountCategories: clone(DEFAULT_BI_FDM_ACCOUNT_CATEGORIES),
 };
 
 const IMPORT_DATA_TYPE_LABELS = {
@@ -1233,6 +1252,7 @@ const state = {
   importDataSettingsLoaded: false,
   biSettings: clone(DEFAULT_BI_SETTINGS),
   biSettingsLoaded: false,
+  biSettingsTab: "sale-categories",
   importDataRows: [],
   importDataLoaded: false,
   importDataMetaByType: {},
@@ -1746,9 +1766,16 @@ const els = {
   importDataSettingsBody: document.getElementById("import-data-settings-body"),
   importDataSettingsStatus: document.getElementById("import-data-settings-status"),
   biSettingsSave: document.getElementById("bi-settings-save"),
+  biSettingsSaleCategoriesTab: document.getElementById("bi-settings-sale-categories-tab"),
+  biSettingsFdmAccountCategoriesTab: document.getElementById("bi-settings-fdm-account-categories-tab"),
+  biSettingsSaleCategoriesPanel: document.getElementById("bi-settings-sale-categories-panel"),
+  biSettingsFdmAccountCategoriesPanel: document.getElementById("bi-settings-fdm-account-categories-panel"),
   biSettingsAddSaleCategory: document.getElementById("bi-settings-add-sale-category"),
+  biSettingsAddFdmAccountCategory: document.getElementById("bi-settings-add-fdm-account-category"),
   biSettingsSaleCategoriesBody: document.getElementById("bi-settings-sale-categories-body"),
+  biSettingsFdmAccountCategoriesBody: document.getElementById("bi-settings-fdm-account-categories-body"),
   biSettingsStatus: document.getElementById("bi-settings-status"),
+  biSettingsFdmAccountCategoriesStatus: document.getElementById("bi-settings-fdm-account-categories-status"),
   generalEmailProvider: document.getElementById("general-email-provider"),
   generalEmailSmtpHost: document.getElementById("general-email-smtp-host"),
   generalEmailSmtpPort: document.getElementById("general-email-smtp-port"),
@@ -2558,9 +2585,15 @@ function bindEvents() {
   els.importDataSaveSettings?.addEventListener("click", saveImportDataSettings);
   els.importDataSettingsBody?.addEventListener("input", onImportDataSettingsInput);
   els.biSettingsSave?.addEventListener("click", saveBiSettings);
+  els.biSettingsSaleCategoriesTab?.addEventListener("click", () => setBiSettingsTab("sale-categories"));
+  els.biSettingsFdmAccountCategoriesTab?.addEventListener("click", () => setBiSettingsTab("fdm-account-categories"));
   els.biSettingsAddSaleCategory?.addEventListener("click", addBiSettingsSaleCategoryRow);
+  els.biSettingsAddFdmAccountCategory?.addEventListener("click", addBiSettingsFdmAccountCategoryRow);
   els.biSettingsSaleCategoriesBody?.addEventListener("input", onBiSettingsInput);
   els.biSettingsSaleCategoriesBody?.addEventListener("click", onBiSettingsAction);
+  els.biSettingsFdmAccountCategoriesBody?.addEventListener("input", onBiSettingsInput);
+  els.biSettingsFdmAccountCategoriesBody?.addEventListener("change", onBiSettingsInput);
+  els.biSettingsFdmAccountCategoriesBody?.addEventListener("click", onBiSettingsAction);
   els.importDataRows?.addEventListener("input", onImportDataViewInput);
   els.importDataRows?.addEventListener("click", onImportDataRowsClick);
   els.guestsTabList?.addEventListener("click", () => setGuestsScreen("list"));
@@ -19517,13 +19550,13 @@ async function saveImportDataSettings() {
 }
 
 function normalizeBiSettingsClient(settings = {}) {
-  const rows = Array.isArray(settings?.saleItemCategories)
+  const saleItemRows = Array.isArray(settings?.saleItemCategories)
     ? settings.saleItemCategories
     : Array.isArray(settings?.sale_item_categories)
       ? settings.sale_item_categories
       : DEFAULT_BI_SALE_ITEM_CATEGORIES;
-  const seen = new Set();
-  const saleItemCategories = rows
+  const seenSaleItems = new Set();
+  const saleItemCategories = saleItemRows
     .map((row) => ({
       saleItem: clean(row?.saleItem || row?.sale_item || row?.SALE_ITEM),
       saleCategory: clean(row?.saleCategory || row?.sale_category || row?.SALE_CATEGORY),
@@ -19532,19 +19565,46 @@ function normalizeBiSettingsClient(settings = {}) {
     .filter((row) => {
       const key = row.saleItem.toLowerCase();
       if (!key) return true;
-      if (seen.has(key)) return false;
-      seen.add(key);
+      if (seenSaleItems.has(key)) return false;
+      seenSaleItems.add(key);
+      return true;
+    });
+  const accountRows = Array.isArray(settings?.fdmAccountCategories)
+    ? settings.fdmAccountCategories
+    : Array.isArray(settings?.fdm_account_categories)
+      ? settings.fdm_account_categories
+      : DEFAULT_BI_FDM_ACCOUNT_CATEGORIES;
+  const seenAccountCategories = new Set();
+  const fdmAccountCategories = accountRows
+    .map((row) => {
+      const rawIsResult = row?.isResult ?? row?.is_result ?? row?.IsResult ?? row?.IS_RESULT;
+      return {
+        category: clean(row?.category || row?.Category || row?.CATEGORY),
+        macroCategory: clean(row?.macroCategory || row?.macro_category || row?.["Macro Category"] || row?.MACRO_CATEGORY),
+        isResult: rawIsResult === true || ["yes", "true", "1", "y"].includes(clean(rawIsResult).toLowerCase()),
+      };
+    })
+    .filter((row) => row.category || row.macroCategory)
+    .filter((row) => {
+      const key = row.category.toLowerCase();
+      if (!key) return true;
+      if (seenAccountCategories.has(key)) return false;
+      seenAccountCategories.add(key);
       return true;
     });
   return {
     saleItemCategories: saleItemCategories.length ? saleItemCategories : clone(DEFAULT_BI_SALE_ITEM_CATEGORIES),
+    fdmAccountCategories: fdmAccountCategories.length ? fdmAccountCategories : clone(DEFAULT_BI_FDM_ACCOUNT_CATEGORIES),
   };
 }
 
 function setBiSettingsStatus(message = "", tone = "") {
-  if (!els.biSettingsStatus) return;
-  els.biSettingsStatus.textContent = message;
-  els.biSettingsStatus.classList.toggle("status-error", tone === "error");
+  [els.biSettingsStatus, els.biSettingsFdmAccountCategoriesStatus]
+    .filter(Boolean)
+    .forEach((element) => {
+      element.textContent = message;
+      element.classList.toggle("status-error", tone === "error");
+    });
 }
 
 async function loadBiSettings({ silent = false } = {}) {
@@ -19573,32 +19633,58 @@ async function ensureBiSettingsData() {
 function onBiSettingsInput(event) {
   const target = event?.target;
   if (!(target instanceof HTMLElement)) return;
-  const index = Number(target.dataset?.biSaleCategoryIndex);
-  const field = clean(target.dataset?.biSaleCategoryField);
-  if (!Number.isInteger(index) || index < 0 || !["saleItem", "saleCategory"].includes(field)) return;
-  const rows = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
-  if (!rows[index]) rows[index] = { saleItem: "", saleCategory: "" };
-  rows[index][field] = String(target.value || "");
-  state.biSettings = normalizeBiSettingsClient({ saleItemCategories: rows });
+  const saleItemIndex = Number(target.dataset?.biSaleCategoryIndex);
+  const saleItemField = clean(target.dataset?.biSaleCategoryField);
+  if (Number.isInteger(saleItemIndex) && saleItemIndex >= 0 && ["saleItem", "saleCategory"].includes(saleItemField)) {
+    const saleItemCategories = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
+    if (!saleItemCategories[saleItemIndex]) saleItemCategories[saleItemIndex] = { saleItem: "", saleCategory: "" };
+    saleItemCategories[saleItemIndex][saleItemField] = String(target.value || "");
+    state.biSettings = normalizeBiSettingsClient({ ...state.biSettings, saleItemCategories });
+    return;
+  }
+  const accountIndex = Number(target.dataset?.biFdmAccountCategoryIndex);
+  const accountField = clean(target.dataset?.biFdmAccountCategoryField);
+  if (!Number.isInteger(accountIndex) || accountIndex < 0 || !["category", "macroCategory", "isResult"].includes(accountField)) return;
+  const fdmAccountCategories = Array.isArray(state.biSettings?.fdmAccountCategories) ? clone(state.biSettings.fdmAccountCategories) : [];
+  if (!fdmAccountCategories[accountIndex]) fdmAccountCategories[accountIndex] = { category: "", macroCategory: "", isResult: false };
+  fdmAccountCategories[accountIndex][accountField] = accountField === "isResult"
+    ? String(target.value || "").toLowerCase() === "yes"
+    : String(target.value || "");
+  state.biSettings = normalizeBiSettingsClient({ ...state.biSettings, fdmAccountCategories });
 }
 
 function onBiSettingsAction(event) {
   const button = event?.target instanceof HTMLElement ? event.target.closest("button[data-bi-settings-action]") : null;
   if (!button) return;
   const action = clean(button.dataset.biSettingsAction);
-  const index = Number(button.dataset.biSaleCategoryIndex);
-  if (action === "delete" && Number.isInteger(index) && index >= 0) {
-    const rows = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
-    rows.splice(index, 1);
-    state.biSettings = normalizeBiSettingsClient({ saleItemCategories: rows });
+  const saleItemIndex = Number(button.dataset.biSaleCategoryIndex);
+  if (action === "delete" && Number.isInteger(saleItemIndex) && saleItemIndex >= 0) {
+    const saleItemCategories = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
+    saleItemCategories.splice(saleItemIndex, 1);
+    state.biSettings = normalizeBiSettingsClient({ ...state.biSettings, saleItemCategories });
+    renderBiSettings();
+    return;
+  }
+  const accountIndex = Number(button.dataset.biFdmAccountCategoryIndex);
+  if (action === "delete-fdm-account-category" && Number.isInteger(accountIndex) && accountIndex >= 0) {
+    const fdmAccountCategories = Array.isArray(state.biSettings?.fdmAccountCategories) ? clone(state.biSettings.fdmAccountCategories) : [];
+    fdmAccountCategories.splice(accountIndex, 1);
+    state.biSettings = normalizeBiSettingsClient({ ...state.biSettings, fdmAccountCategories });
     renderBiSettings();
   }
 }
 
 function addBiSettingsSaleCategoryRow() {
-  const rows = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
-  rows.push({ saleItem: "", saleCategory: "" });
-  state.biSettings = { saleItemCategories: rows };
+  const saleItemCategories = Array.isArray(state.biSettings?.saleItemCategories) ? clone(state.biSettings.saleItemCategories) : [];
+  saleItemCategories.push({ saleItem: "", saleCategory: "" });
+  state.biSettings = { ...state.biSettings, saleItemCategories };
+  renderBiSettings();
+}
+
+function addBiSettingsFdmAccountCategoryRow() {
+  const fdmAccountCategories = Array.isArray(state.biSettings?.fdmAccountCategories) ? clone(state.biSettings.fdmAccountCategories) : [];
+  fdmAccountCategories.push({ category: "", macroCategory: "", isResult: false });
+  state.biSettings = { ...state.biSettings, fdmAccountCategories };
   renderBiSettings();
 }
 
@@ -19620,15 +19706,45 @@ async function saveBiSettings() {
 }
 
 function renderBiSettings() {
-  if (!els.biSettingsSaleCategoriesBody) return;
-  const rows = Array.isArray(state.biSettings?.saleItemCategories) ? state.biSettings.saleItemCategories : [];
-  els.biSettingsSaleCategoriesBody.innerHTML = rows.length
-    ? rows.map((row, index) => `<tr>
+  const saleItemCategories = Array.isArray(state.biSettings?.saleItemCategories) ? state.biSettings.saleItemCategories : [];
+  if (els.biSettingsSaleCategoriesBody) {
+    els.biSettingsSaleCategoriesBody.innerHTML = saleItemCategories.length
+    ? saleItemCategories.map((row, index) => `<tr>
       <td><input type="text" data-bi-sale-category-index="${index}" data-bi-sale-category-field="saleItem" value="${escape(row.saleItem || "")}" /></td>
       <td><input type="text" data-bi-sale-category-index="${index}" data-bi-sale-category-field="saleCategory" value="${escape(row.saleCategory || "")}" /></td>
       <td class="row-actions"><button type="button" class="danger" data-bi-settings-action="delete" data-bi-sale-category-index="${index}">Delete</button></td>
     </tr>`).join("")
     : '<tr><td colspan="3" class="empty">No sale item categories configured.</td></tr>';
+  }
+  const fdmAccountCategories = Array.isArray(state.biSettings?.fdmAccountCategories) ? state.biSettings.fdmAccountCategories : [];
+  if (els.biSettingsFdmAccountCategoriesBody) {
+    els.biSettingsFdmAccountCategoriesBody.innerHTML = fdmAccountCategories.length
+      ? fdmAccountCategories.map((row, index) => `<tr>
+        <td><input type="text" data-bi-fdm-account-category-index="${index}" data-bi-fdm-account-category-field="category" value="${escape(row.category || "")}" /></td>
+        <td><input type="text" data-bi-fdm-account-category-index="${index}" data-bi-fdm-account-category-field="macroCategory" value="${escape(row.macroCategory || "")}" /></td>
+        <td><select data-bi-fdm-account-category-index="${index}" data-bi-fdm-account-category-field="isResult">
+          <option value="yes"${row.isResult ? " selected" : ""}>Yes</option>
+          <option value="no"${row.isResult ? "" : " selected"}>No</option>
+        </select></td>
+        <td class="row-actions"><button type="button" class="danger" data-bi-settings-action="delete-fdm-account-category" data-bi-fdm-account-category-index="${index}">Delete</button></td>
+      </tr>`).join("")
+      : '<tr><td colspan="4" class="empty">No FDM account categories configured.</td></tr>';
+  }
+  setBiSettingsTab(state.biSettingsTab);
+}
+
+function setBiSettingsTab(tab) {
+  state.biSettingsTab = tab === "fdm-account-categories" ? "fdm-account-categories" : "sale-categories";
+  if (els.biSettingsSaleCategoriesTab) {
+    els.biSettingsSaleCategoriesTab.classList.toggle("active-tab", state.biSettingsTab === "sale-categories");
+    els.biSettingsSaleCategoriesTab.classList.toggle("ghost", state.biSettingsTab !== "sale-categories");
+  }
+  if (els.biSettingsFdmAccountCategoriesTab) {
+    els.biSettingsFdmAccountCategoriesTab.classList.toggle("active-tab", state.biSettingsTab === "fdm-account-categories");
+    els.biSettingsFdmAccountCategoriesTab.classList.toggle("ghost", state.biSettingsTab !== "fdm-account-categories");
+  }
+  if (els.biSettingsSaleCategoriesPanel) els.biSettingsSaleCategoriesPanel.hidden = state.biSettingsTab !== "sale-categories";
+  if (els.biSettingsFdmAccountCategoriesPanel) els.biSettingsFdmAccountCategoriesPanel.hidden = state.biSettingsTab !== "fdm-account-categories";
 }
 
 function importDataAccountsValidationMessage(row) {
