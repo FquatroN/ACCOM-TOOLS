@@ -179,12 +179,14 @@ const DEFAULT_SERVICE_PRICE_MATRIX = {
     "4-7": 55,
     "8-11": 90,
     "12-16": 110,
+    "17-19": 145,
   },
   returnTrip: {
     "1-3": 63,
     "4-7": 99,
     "8-11": 162,
     "12-16": 198,
+    "17-19": 261,
   },
 };
 
@@ -2066,10 +2068,12 @@ const els = {
   servicesPriceOneWay47: document.getElementById("services-price-oneway-4-7"),
   servicesPriceOneWay811: document.getElementById("services-price-oneway-8-11"),
   servicesPriceOneWay1216: document.getElementById("services-price-oneway-12-16"),
+  servicesPriceOneWay1719: document.getElementById("services-price-oneway-17-19"),
   servicesPriceReturn13: document.getElementById("services-price-return-1-3"),
   servicesPriceReturn47: document.getElementById("services-price-return-4-7"),
   servicesPriceReturn811: document.getElementById("services-price-return-8-11"),
   servicesPriceReturn1216: document.getElementById("services-price-return-12-16"),
+  servicesPriceReturn1719: document.getElementById("services-price-return-17-19"),
   shoppingTabCurrent: document.getElementById("shopping-tab-current"),
   shoppingTabHistory: document.getElementById("shopping-tab-history"),
   shoppingPanelCurrent: document.getElementById("shopping-panel-current"),
@@ -2978,7 +2982,7 @@ function bindEvents() {
   els.servicesApprovalReminderTestEmail?.addEventListener("input", onServiceSettingsInput);
   els.servicesApprovalReminderTest?.addEventListener("click", sendServiceApprovalReminderTest);
   els.servicesLiveFlightStatusEnabled?.addEventListener("input", onServiceSettingsInput);
-  [els.servicesPriceOneWay13, els.servicesPriceOneWay47, els.servicesPriceOneWay811, els.servicesPriceOneWay1216, els.servicesPriceReturn13, els.servicesPriceReturn47, els.servicesPriceReturn811, els.servicesPriceReturn1216].forEach((el) =>
+  [els.servicesPriceOneWay13, els.servicesPriceOneWay47, els.servicesPriceOneWay811, els.servicesPriceOneWay1216, els.servicesPriceOneWay1719, els.servicesPriceReturn13, els.servicesPriceReturn47, els.servicesPriceReturn811, els.servicesPriceReturn1216, els.servicesPriceReturn1719].filter(Boolean).forEach((el) =>
     el.addEventListener("input", onServiceSettingsInput)
   );
   els.servicesTemplateServiceType.addEventListener("input", onServiceSettingsTemplateChange);
@@ -7204,6 +7208,8 @@ function draftText(value) {
 function sanitizeServiceConfigClient(item = {}) {
   const serviceType = clean(item.serviceType || item.service_type);
   const airportTransfer = normalizeServiceBool(item.airportTransfer ?? item.airport_transfer);
+  const priceMode = normalizeServicePriceMode(item.priceMode || item.price_mode);
+  const airportMatrixDefaults = priceMode === "airport_matrix";
   return {
     id: clean(item.id) || serviceType.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
     serviceType,
@@ -7212,19 +7218,21 @@ function sanitizeServiceConfigClient(item = {}) {
     airportTransfer,
     hasReturn: normalizeServiceBool(item.hasReturn ?? item.has_return),
     approvedByDefault: normalizeServiceBool(item.approvedByDefault ?? item.approved_by_default),
-    priceMode: normalizeServicePriceMode(item.priceMode || item.price_mode),
+    priceMode,
     priceMatrix: {
       oneWay: {
         "1-3": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["1-3"] ?? item?.price_matrix?.oneWay?.["1-3"]) || 0),
         "4-7": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["4-7"] ?? item?.price_matrix?.oneWay?.["4-7"]) || 0),
         "8-11": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["8-11"] ?? item?.price_matrix?.oneWay?.["8-11"]) || 0),
         "12-16": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["12-16"] ?? item?.price_matrix?.oneWay?.["12-16"]) || 0),
+        "17-19": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["17-19"] ?? item?.price_matrix?.oneWay?.["17-19"] ?? (airportMatrixDefaults ? DEFAULT_SERVICE_PRICE_MATRIX.oneWay["17-19"] : 0)) || 0),
       },
       returnTrip: {
         "1-3": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["1-3"] ?? item?.price_matrix?.returnTrip?.["1-3"]) || 0),
         "4-7": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["4-7"] ?? item?.price_matrix?.returnTrip?.["4-7"]) || 0),
         "8-11": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["8-11"] ?? item?.price_matrix?.returnTrip?.["8-11"]) || 0),
         "12-16": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["12-16"] ?? item?.price_matrix?.returnTrip?.["12-16"]) || 0),
+        "17-19": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["17-19"] ?? item?.price_matrix?.returnTrip?.["17-19"] ?? (airportMatrixDefaults ? DEFAULT_SERVICE_PRICE_MATRIX.returnTrip["17-19"] : 0)) || 0),
       },
     },
     confirmationTemplate: clean(item.confirmationTemplate || item.confirmation_template) || defaultServiceConfirmationTemplate(serviceType || "Service", airportTransfer),
@@ -7724,7 +7732,8 @@ function serviceBandForPax(pax) {
   if (count <= 3) return "1-3";
   if (count <= 7) return "4-7";
   if (count <= 11) return "8-11";
-  return "12-16";
+  if (count <= 16) return "12-16";
+  return "17-19";
 }
 
 function serviceComputedPrice(config, pax, hasReturn) {
@@ -8408,10 +8417,12 @@ function renderServiceSettings() {
   els.servicesPriceOneWay47.value = airportConfig?.priceMatrix?.oneWay?.["4-7"] ?? 0;
   els.servicesPriceOneWay811.value = airportConfig?.priceMatrix?.oneWay?.["8-11"] ?? 0;
   els.servicesPriceOneWay1216.value = airportConfig?.priceMatrix?.oneWay?.["12-16"] ?? 0;
+  els.servicesPriceOneWay1719.value = airportConfig?.priceMatrix?.oneWay?.["17-19"] ?? DEFAULT_SERVICE_PRICE_MATRIX.oneWay["17-19"];
   els.servicesPriceReturn13.value = airportConfig?.priceMatrix?.returnTrip?.["1-3"] ?? 0;
   els.servicesPriceReturn47.value = airportConfig?.priceMatrix?.returnTrip?.["4-7"] ?? 0;
   els.servicesPriceReturn811.value = airportConfig?.priceMatrix?.returnTrip?.["8-11"] ?? 0;
   els.servicesPriceReturn1216.value = airportConfig?.priceMatrix?.returnTrip?.["12-16"] ?? 0;
+  els.servicesPriceReturn1719.value = airportConfig?.priceMatrix?.returnTrip?.["17-19"] ?? DEFAULT_SERVICE_PRICE_MATRIX.returnTrip["17-19"];
   renderServiceSettingsTemplateEditor();
   renderServiceSettingsTab();
 }
@@ -8446,10 +8457,12 @@ function onServiceSettingsInput() {
     airportConfig.priceMatrix.oneWay["4-7"] = Number(normalizeNumber(els.servicesPriceOneWay47.value) || 0);
     airportConfig.priceMatrix.oneWay["8-11"] = Number(normalizeNumber(els.servicesPriceOneWay811.value) || 0);
     airportConfig.priceMatrix.oneWay["12-16"] = Number(normalizeNumber(els.servicesPriceOneWay1216.value) || 0);
+    airportConfig.priceMatrix.oneWay["17-19"] = Number(normalizeNumber(els.servicesPriceOneWay1719.value) || 0);
     airportConfig.priceMatrix.returnTrip["1-3"] = Number(normalizeNumber(els.servicesPriceReturn13.value) || 0);
     airportConfig.priceMatrix.returnTrip["4-7"] = Number(normalizeNumber(els.servicesPriceReturn47.value) || 0);
     airportConfig.priceMatrix.returnTrip["8-11"] = Number(normalizeNumber(els.servicesPriceReturn811.value) || 0);
     airportConfig.priceMatrix.returnTrip["12-16"] = Number(normalizeNumber(els.servicesPriceReturn1216.value) || 0);
+    airportConfig.priceMatrix.returnTrip["17-19"] = Number(normalizeNumber(els.servicesPriceReturn1719.value) || 0);
   }
   const selectedTemplateConfig = currentServiceSettingsTemplateConfig();
   if (selectedTemplateConfig && els.servicesConfirmationTemplate) {

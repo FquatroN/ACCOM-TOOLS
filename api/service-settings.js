@@ -14,12 +14,14 @@ const DEFAULT_PRICE_MATRIX = {
     "4-7": 55,
     "8-11": 90,
     "12-16": 110,
+    "17-19": 145,
   },
   returnTrip: {
     "1-3": 63,
     "4-7": 99,
     "8-11": 162,
     "12-16": 198,
+    "17-19": 261,
   },
 };
 
@@ -191,20 +193,21 @@ function slugify(value) {
     .replace(/^-+|-+$/g, "");
 }
 
-function normalizePriceMatrix(value) {
+function normalizePriceMatrix(value, useAirportDefaults = false) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const normalizeBandGroup = (item) => {
+  const normalizeBandGroup = (item, fallback = {}) => {
     const group = item && typeof item === "object" && !Array.isArray(item) ? item : {};
     return {
       "1-3": Math.max(0, normalizeNumber(group["1-3"], 0)),
       "4-7": Math.max(0, normalizeNumber(group["4-7"], 0)),
       "8-11": Math.max(0, normalizeNumber(group["8-11"], 0)),
       "12-16": Math.max(0, normalizeNumber(group["12-16"], 0)),
+      "17-19": Math.max(0, normalizeNumber(group["17-19"], useAirportDefaults ? fallback["17-19"] : 0)),
     };
   };
   return {
-    oneWay: normalizeBandGroup(source.oneWay),
-    returnTrip: normalizeBandGroup(source.returnTrip),
+    oneWay: normalizeBandGroup(source.oneWay, DEFAULT_PRICE_MATRIX.oneWay),
+    returnTrip: normalizeBandGroup(source.returnTrip, DEFAULT_PRICE_MATRIX.returnTrip),
   };
 }
 
@@ -220,7 +223,7 @@ function normalizeServiceConfig(item = {}) {
     hasReturn: normalizeBool(item.hasReturn ?? item.has_return),
     approvedByDefault: normalizeBool(item.approvedByDefault ?? item.approved_by_default),
     priceMode: normalizePriceMode(item.priceMode || item.price_mode),
-    priceMatrix: normalizePriceMatrix(item.priceMatrix || item.price_matrix),
+    priceMatrix: normalizePriceMatrix(item.priceMatrix || item.price_matrix, normalizePriceMode(item.priceMode || item.price_mode) === "airport_matrix"),
     confirmationTemplate: cleanText(item.confirmationTemplate || item.confirmation_template) || (DEFAULT_SERVICE_TYPES.find((entry) => cleanText(entry.id) === cleanText(item.id) || cleanText(entry.serviceType) === serviceType)?.confirmationTemplate || (airportTransfer ? DEFAULT_SERVICE_TYPES[0].confirmationTemplate : DEFAULT_SERVICE_TYPES[2].confirmationTemplate)),
   };
 }
