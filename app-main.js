@@ -261,6 +261,14 @@ Saludos cordiales,
 Lisboa Central Hostel`,
 };
 
+function defaultServiceConfirmationTemplates(serviceType = "Service", airportTransfer = false) {
+  return {
+    en: defaultServiceConfirmationTemplate(serviceType, airportTransfer),
+    pt: SERVICE_CONFIRMATION_TEMPLATES.pt(airportTransfer),
+    es: SERVICE_CONFIRMATION_TEMPLATES.es(airportTransfer),
+  };
+}
+
 const DEFAULT_SERVICE_SETTINGS = {
   automaticEmailRecipients: [],
   approvalReminderEnabled: false,
@@ -279,6 +287,7 @@ const DEFAULT_SERVICE_SETTINGS = {
       priceMode: "airport_matrix",
       priceMatrix: clone(DEFAULT_SERVICE_PRICE_MATRIX),
       confirmationTemplate: defaultServiceConfirmationTemplate("Airport Transfer", true),
+      confirmationTemplates: defaultServiceConfirmationTemplates("Airport Transfer", true),
     },
     {
       id: "other-transfer",
@@ -291,6 +300,7 @@ const DEFAULT_SERVICE_SETTINGS = {
       priceMode: "open",
       priceMatrix: { oneWay: {}, returnTrip: {} },
       confirmationTemplate: defaultServiceConfirmationTemplate("Other Transfer", true),
+      confirmationTemplates: defaultServiceConfirmationTemplates("Other Transfer", true),
     },
     {
       id: "tour",
@@ -303,6 +313,7 @@ const DEFAULT_SERVICE_SETTINGS = {
       priceMode: "open",
       priceMatrix: { oneWay: {}, returnTrip: {} },
       confirmationTemplate: defaultServiceConfirmationTemplate("Tour", false),
+      confirmationTemplates: defaultServiceConfirmationTemplates("Tour", false),
     },
     {
       id: "boat-tour",
@@ -315,6 +326,7 @@ const DEFAULT_SERVICE_SETTINGS = {
       priceMode: "open",
       priceMatrix: { oneWay: {}, returnTrip: {} },
       confirmationTemplate: defaultServiceConfirmationTemplate("Boat Tour", false),
+      confirmationTemplates: defaultServiceConfirmationTemplates("Boat Tour", false),
     },
   ],
 };
@@ -2987,8 +2999,9 @@ function bindEvents() {
   );
   els.servicesTemplateServiceType.addEventListener("input", onServiceSettingsTemplateChange);
   els.servicesTemplateLanguage.addEventListener("input", () => {
+    onServiceSettingsInput();
     state.serviceSettingsTemplateLanguage = normalizeProposalLanguage(els.servicesTemplateLanguage.value);
-    renderServiceSettingsTemplatePreview();
+    renderServiceSettingsTemplateEditor();
   });
   els.servicesConfirmationTemplate.addEventListener("input", onServiceSettingsInput);
   els.servicesSaveSettings.addEventListener("click", saveServiceSettings);
@@ -7210,6 +7223,13 @@ function sanitizeServiceConfigClient(item = {}) {
   const airportTransfer = normalizeServiceBool(item.airportTransfer ?? item.airport_transfer);
   const priceMode = normalizeServicePriceMode(item.priceMode || item.price_mode);
   const airportMatrixDefaults = priceMode === "airport_matrix";
+  const defaultTemplates = defaultServiceConfirmationTemplates(serviceType || "Service", airportTransfer);
+  const sourceTemplates = item.confirmationTemplates || item.confirmation_templates || {};
+  const confirmationTemplates = {
+    en: clean(sourceTemplates.en || sourceTemplates.english || item.confirmationTemplate || item.confirmation_template) || defaultTemplates.en,
+    pt: clean(sourceTemplates.pt || sourceTemplates.portuguese) || defaultTemplates.pt,
+    es: clean(sourceTemplates.es || sourceTemplates.spanish) || defaultTemplates.es,
+  };
   return {
     id: clean(item.id) || serviceType.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
     serviceType,
@@ -7235,7 +7255,8 @@ function sanitizeServiceConfigClient(item = {}) {
         "17-19": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["17-19"] ?? item?.price_matrix?.returnTrip?.["17-19"] ?? (airportMatrixDefaults ? DEFAULT_SERVICE_PRICE_MATRIX.returnTrip["17-19"] : 0)) || 0),
       },
     },
-    confirmationTemplate: clean(item.confirmationTemplate || item.confirmation_template) || defaultServiceConfirmationTemplate(serviceType || "Service", airportTransfer),
+    confirmationTemplate: confirmationTemplates.en,
+    confirmationTemplates,
   };
 }
 
@@ -7717,10 +7738,9 @@ function currentServiceSettingsTemplateConfig() {
 function serviceConfirmationTemplate(config, language = "en") {
   const normalizedLanguage = normalizeServiceConfirmationLanguage(language);
   if (!config) return defaultServiceConfirmationTemplate("Service", false);
-  if ((normalizedLanguage === "pt" || normalizedLanguage === "es") && SERVICE_CONFIRMATION_TEMPLATES[normalizedLanguage]) {
-    return SERVICE_CONFIRMATION_TEMPLATES[normalizedLanguage](!!config.airportTransfer);
-  }
-  return clean(config.confirmationTemplate) || defaultServiceConfirmationTemplate(config.serviceType || "Service", !!config.airportTransfer);
+  const templates = config.confirmationTemplates || config.confirmation_templates || {};
+  const fallback = defaultServiceConfirmationTemplates(config.serviceType || "Service", !!config.airportTransfer);
+  return clean(templates[normalizedLanguage]) || fallback[normalizedLanguage] || fallback.en;
 }
 
 function serviceUsesFlightFields(config, serviceType) {
@@ -8449,6 +8469,7 @@ function onServiceSettingsInput() {
       approvedByDefault: !!els.servicesConfigsBody.querySelector(`[data-service-setting-approved="${index}"]`)?.checked,
       priceMode: clean(els.servicesConfigsBody.querySelector(`[data-service-setting-price-mode="${index}"]`)?.value),
       confirmationTemplate: config.confirmationTemplate,
+      confirmationTemplates: config.confirmationTemplates,
     });
   });
   const airportConfig = serviceConfigByType("Airport Transfer") || state.serviceSettings.serviceConfigs[0];
@@ -8466,7 +8487,13 @@ function onServiceSettingsInput() {
   }
   const selectedTemplateConfig = currentServiceSettingsTemplateConfig();
   if (selectedTemplateConfig && els.servicesConfirmationTemplate) {
-    selectedTemplateConfig.confirmationTemplate = els.servicesConfirmationTemplate.value;
+    const language = normalizeServiceConfirmationLanguage(state.serviceSettingsTemplateLanguage);
+    selectedTemplateConfig.confirmationTemplates = {
+      ...defaultServiceConfirmationTemplates(selectedTemplateConfig.serviceType || "Service", !!selectedTemplateConfig.airportTransfer),
+      ...(selectedTemplateConfig.confirmationTemplates || {}),
+      [language]: els.servicesConfirmationTemplate.value,
+    };
+    if (language === "en") selectedTemplateConfig.confirmationTemplate = els.servicesConfirmationTemplate.value;
   }
   state.serviceFlightStatuses.cache = {};
   state.serviceFlightStatuses.initialized = false;
@@ -8517,7 +8544,8 @@ function renderServiceSettingsTemplateEditor() {
   els.servicesTemplateServiceType.value = selectedId;
   if (els.servicesTemplateLanguage) els.servicesTemplateLanguage.value = normalizeServiceConfirmationLanguage(state.serviceSettingsTemplateLanguage);
   const config = currentServiceSettingsTemplateConfig();
-  els.servicesConfirmationTemplate.value = config ? serviceConfirmationTemplate(config) : "";
+  const language = normalizeServiceConfirmationLanguage(state.serviceSettingsTemplateLanguage);
+  els.servicesConfirmationTemplate.value = config ? serviceConfirmationTemplate(config, language) : "";
   renderServiceSettingsTemplatePreview();
 }
 
@@ -8530,9 +8558,7 @@ function renderServiceSettingsTemplatePreview() {
   }
   const draft = serviceTemplatePreviewDraft(config);
   const language = normalizeServiceConfirmationLanguage(state.serviceSettingsTemplateLanguage);
-  const template = language === "en"
-    ? (clean(els.servicesConfirmationTemplate.value) || serviceConfirmationTemplate(config, "en"))
-    : serviceConfirmationTemplate(config, language);
+  const template = clean(els.servicesConfirmationTemplate.value) || serviceConfirmationTemplate(config, language);
   els.servicesConfirmationTemplatePreview.innerHTML = `<h4>Preview</h4>${serviceConfirmationEmailHtmlFromTemplate(draft, template, config, language)}`;
 }
 

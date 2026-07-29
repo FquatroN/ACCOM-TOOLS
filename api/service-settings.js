@@ -214,6 +214,14 @@ function normalizePriceMatrix(value, useAirportDefaults = false) {
 function normalizeServiceConfig(item = {}) {
   const serviceType = cleanText(item.serviceType || item.service_type);
   const airportTransfer = normalizeBool(item.airportTransfer ?? item.airport_transfer);
+  const defaultConfig = DEFAULT_SERVICE_TYPES.find((entry) => cleanText(entry.id) === cleanText(item.id) || cleanText(entry.serviceType) === serviceType);
+  const defaultConfirmationTemplate = defaultConfig?.confirmationTemplate || (airportTransfer ? DEFAULT_SERVICE_TYPES[0].confirmationTemplate : DEFAULT_SERVICE_TYPES[2].confirmationTemplate);
+  const sourceTemplates = item.confirmationTemplates || item.confirmation_templates || {};
+  const confirmationTemplates = {
+    en: cleanText(sourceTemplates.en || sourceTemplates.english || item.confirmationTemplate || item.confirmation_template) || defaultConfirmationTemplate,
+    pt: cleanText(sourceTemplates.pt || sourceTemplates.portuguese),
+    es: cleanText(sourceTemplates.es || sourceTemplates.spanish),
+  };
   return {
     id: cleanText(item.id) || slugify(serviceType),
     serviceType,
@@ -224,7 +232,8 @@ function normalizeServiceConfig(item = {}) {
     approvedByDefault: normalizeBool(item.approvedByDefault ?? item.approved_by_default),
     priceMode: normalizePriceMode(item.priceMode || item.price_mode),
     priceMatrix: normalizePriceMatrix(item.priceMatrix || item.price_matrix, normalizePriceMode(item.priceMode || item.price_mode) === "airport_matrix"),
-    confirmationTemplate: cleanText(item.confirmationTemplate || item.confirmation_template) || (DEFAULT_SERVICE_TYPES.find((entry) => cleanText(entry.id) === cleanText(item.id) || cleanText(entry.serviceType) === serviceType)?.confirmationTemplate || (airportTransfer ? DEFAULT_SERVICE_TYPES[0].confirmationTemplate : DEFAULT_SERVICE_TYPES[2].confirmationTemplate)),
+    confirmationTemplate: confirmationTemplates.en,
+    confirmationTemplates,
   };
 }
 
