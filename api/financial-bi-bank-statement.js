@@ -13,6 +13,12 @@ function parseYear(value, fallback) {
   return Number.isFinite(year) && year >= 2000 && year <= 2100 ? year : fallback;
 }
 
+function nullableNumber(value) {
+  if (value === null || value === undefined || clean(value) === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function filtersFor(req) {
   const currentYear = new Date().getFullYear();
   const query = req.query || {};
@@ -29,10 +35,11 @@ function normalizeRows(rows) {
     month: Number.parseInt(row?.month, 10) || 0,
     yearMonth: clean(row?.year_month || row?.yearMonth),
     sumAmount: Number(row?.sum_amount || row?.sumAmount || 0),
-    averageAmount: Number(row?.average_amount || row?.averageAmount || 0),
-    minAmount: Number(row?.min_amount || row?.minAmount || 0),
-    maxAmount: Number(row?.max_amount || row?.maxAmount || 0),
-    transactionCount: Number(row?.transaction_count || row?.transactionCount || 0),
+    saldoSum: Number(row?.saldo_sum || row?.saldoSum || 0),
+    averageAmount: nullableNumber(row?.average_saldo ?? row?.averageAmount),
+    minAmount: nullableNumber(row?.min_saldo ?? row?.minAmount),
+    maxAmount: nullableNumber(row?.max_saldo ?? row?.maxAmount),
+    saldoCount: Number(row?.saldo_count || row?.saldoCount || 0),
   })).filter((row) => row.year && row.month);
 }
 

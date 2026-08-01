@@ -22205,9 +22205,15 @@ function bankStatementNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function bankStatementNullableNumber(value) {
+  if (value === null || value === undefined || clean(value) === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function buildFinancialBiBankStatementPivot(rows) {
   const yearMap = new Map();
-  const totals = { sumAmount: 0, transactionCount: 0, minAmount: null, maxAmount: null };
+  const totals = { sumAmount: 0, saldoSum: 0, saldoCount: 0, minAmount: null, maxAmount: null };
   (Array.isArray(rows) ? rows : []).forEach((source) => {
     const year = Number(source?.year || 0);
     const month = Number(source?.month || 0);
@@ -22217,33 +22223,40 @@ function buildFinancialBiBankStatementPivot(rows) {
       month,
       yearMonth: clean(source?.yearMonth || source?.year_month) || `${year}-${String(month).padStart(2, "0")}`,
       sumAmount: bankStatementNumber(source?.sumAmount ?? source?.sum_amount),
-      averageAmount: bankStatementNumber(source?.averageAmount ?? source?.average_amount),
-      minAmount: bankStatementNumber(source?.minAmount ?? source?.min_amount),
-      maxAmount: bankStatementNumber(source?.maxAmount ?? source?.max_amount),
-      transactionCount: Math.max(0, bankStatementNumber(source?.transactionCount ?? source?.transaction_count)),
+      saldoSum: bankStatementNumber(source?.saldoSum ?? source?.saldo_sum),
+      averageAmount: bankStatementNullableNumber(source?.averageAmount ?? source?.average_saldo),
+      minAmount: bankStatementNullableNumber(source?.minAmount ?? source?.min_saldo),
+      maxAmount: bankStatementNullableNumber(source?.maxAmount ?? source?.max_saldo),
+      saldoCount: Math.max(0, bankStatementNumber(source?.saldoCount ?? source?.saldo_count)),
     };
-    if (!yearMap.has(year)) yearMap.set(year, { year, months: [], sumAmount: 0, transactionCount: 0, minAmount: null, maxAmount: null });
+    if (!yearMap.has(year)) yearMap.set(year, { year, months: [], sumAmount: 0, saldoSum: 0, saldoCount: 0, minAmount: null, maxAmount: null });
     const yearBucket = yearMap.get(year);
     yearBucket.months.push(row);
     yearBucket.sumAmount += row.sumAmount;
-    yearBucket.transactionCount += row.transactionCount;
-    yearBucket.minAmount = yearBucket.minAmount === null ? row.minAmount : Math.min(yearBucket.minAmount, row.minAmount);
-    yearBucket.maxAmount = yearBucket.maxAmount === null ? row.maxAmount : Math.max(yearBucket.maxAmount, row.maxAmount);
+    yearBucket.saldoSum += row.saldoSum;
+    yearBucket.saldoCount += row.saldoCount;
+    if (row.saldoCount) {
+      yearBucket.minAmount = yearBucket.minAmount === null ? row.minAmount : Math.min(yearBucket.minAmount, row.minAmount);
+      yearBucket.maxAmount = yearBucket.maxAmount === null ? row.maxAmount : Math.max(yearBucket.maxAmount, row.maxAmount);
+    }
     totals.sumAmount += row.sumAmount;
-    totals.transactionCount += row.transactionCount;
-    totals.minAmount = totals.minAmount === null ? row.minAmount : Math.min(totals.minAmount, row.minAmount);
-    totals.maxAmount = totals.maxAmount === null ? row.maxAmount : Math.max(totals.maxAmount, row.maxAmount);
+    totals.saldoSum += row.saldoSum;
+    totals.saldoCount += row.saldoCount;
+    if (row.saldoCount) {
+      totals.minAmount = totals.minAmount === null ? row.minAmount : Math.min(totals.minAmount, row.minAmount);
+      totals.maxAmount = totals.maxAmount === null ? row.maxAmount : Math.max(totals.maxAmount, row.maxAmount);
+    }
   });
   const years = Array.from(yearMap.values()).sort((left, right) => Number(right.year) - Number(left.year)).map((year) => ({
     ...year,
-    averageAmount: year.transactionCount ? year.sumAmount / year.transactionCount : 0,
+    averageAmount: year.saldoCount ? year.saldoSum / year.saldoCount : 0,
     months: year.months.sort((left, right) => Number(right.month) - Number(left.month)),
   }));
   return {
     years,
     totals: {
       ...totals,
-      averageAmount: totals.transactionCount ? totals.sumAmount / totals.transactionCount : 0,
+      averageAmount: totals.saldoCount ? totals.saldoSum / totals.saldoCount : 0,
     },
   };
 }
@@ -22256,10 +22269,11 @@ function financialBiBankStatementAmountClass(value) {
 }
 
 function financialBiBankStatementCells(row) {
+  const balanceAmount = (value) => value === null || value === undefined ? "-" : formatMoney(bankStatementNumber(value));
   return `<td class="${financialBiBankStatementAmountClass(row?.sumAmount)}">${escape(formatMoney(bankStatementNumber(row?.sumAmount)))}</td>
-    <td>${escape(formatMoney(bankStatementNumber(row?.averageAmount)))}</td>
-    <td>${escape(formatMoney(bankStatementNumber(row?.minAmount)))}</td>
-    <td>${escape(formatMoney(bankStatementNumber(row?.maxAmount)))}</td>`;
+    <td>${escape(balanceAmount(row?.averageAmount))}</td>
+    <td>${escape(balanceAmount(row?.minAmount))}</td>
+    <td>${escape(balanceAmount(row?.maxAmount))}</td>`;
 }
 
 function buildFinancialBiBankStatementChartMarkup(months) {
@@ -22271,7 +22285,7 @@ function buildFinancialBiBankStatementChartMarkup(months) {
     { key: "minAmount", label: "Min", color: "#c62828" },
     { key: "maxAmount", label: "Max", color: "#d97706" },
   ];
-  const values = points.flatMap((point) => metrics.map((metric) => bankStatementNumber(point?.[metric.key])));
+  const values = points.flatMap((point) => metrics.map((metric) => bankStatementNullableNumber(point?.[metric.key])).filter((value) => value !== null));
   const minValue = Math.min(0, ...values);
   const maxValue = Math.max(0, ...values);
   const range = Math.max(1, maxValue - minValue);
@@ -22286,8 +22300,9 @@ function buildFinancialBiBankStatementChartMarkup(months) {
     return `<line x1="${margin.left}" y1="${y.toFixed(2)}" x2="${width - margin.right}" y2="${y.toFixed(2)}" class="financial-bi-chart-grid"/><text x="${margin.left - 8}" y="${(y + 4).toFixed(2)}" text-anchor="end" class="financial-bi-chart-axis-label">${escape(financialBiCompactAmount(value))}</text>`;
   }).join("");
   const series = metrics.map((metric) => {
-    const polyline = points.map((point, index) => `${xFor(index).toFixed(2)},${yFor(bankStatementNumber(point?.[metric.key])).toFixed(2)}`).join(" ");
-    const dots = points.map((point, index) => `<circle cx="${xFor(index).toFixed(2)}" cy="${yFor(bankStatementNumber(point?.[metric.key])).toFixed(2)}" r="4" fill="${metric.color}" class="financial-bi-chart-point"><title>${escape(`${metric.label} ${point.yearMonth}: ${formatMoney(bankStatementNumber(point?.[metric.key]))}`)}</title></circle>`).join("");
+    const metricPoints = points.map((point, index) => ({ point, index, value: bankStatementNullableNumber(point?.[metric.key]) })).filter((point) => point.value !== null);
+    const polyline = metricPoints.map(({ index, value }) => `${xFor(index).toFixed(2)},${yFor(value).toFixed(2)}`).join(" ");
+    const dots = metricPoints.map(({ point, index, value }) => `<circle cx="${xFor(index).toFixed(2)}" cy="${yFor(value).toFixed(2)}" r="4" fill="${metric.color}" class="financial-bi-chart-point"><title>${escape(`${metric.label} ${point.yearMonth}: ${formatMoney(value)}`)}</title></circle>`).join("");
     return `<polyline points="${polyline}" fill="none" stroke="${metric.color}" stroke-width="2.5"/>${dots}`;
   }).join("");
   const labels = points.map((point, index) => `<text x="${xFor(index).toFixed(2)}" y="${height - 18}" text-anchor="middle" class="financial-bi-chart-category">${escape(point.yearMonth)}</text>`).join("");
