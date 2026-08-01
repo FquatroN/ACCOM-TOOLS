@@ -22310,8 +22310,8 @@ function financialBiBankStatementCells(row) {
     <td>${escape(balanceAmount(row?.maxAmount))}</td>`;
 }
 
-function buildFinancialBiBankStatementChartMarkup(months) {
-  const points = Array.isArray(months) ? months.slice().sort((left, right) => String(left.yearMonth).localeCompare(String(right.yearMonth))) : [];
+function buildFinancialBiBankStatementChartMarkup(years) {
+  const points = Array.isArray(years) ? years.slice().sort((left, right) => Number(left.year) - Number(right.year)) : [];
   if (!points.length) return '<div class="empty">No Bank Statement data found.</div>';
   const metrics = [
     { key: "sumAmount", label: "Sum", color: "#147d75" },
@@ -22336,12 +22336,12 @@ function buildFinancialBiBankStatementChartMarkup(months) {
   const series = metrics.map((metric) => {
     const metricPoints = points.map((point, index) => ({ point, index, value: bankStatementNullableNumber(point?.[metric.key]) })).filter((point) => point.value !== null);
     const polyline = metricPoints.map(({ index, value }) => `${xFor(index).toFixed(2)},${yFor(value).toFixed(2)}`).join(" ");
-    const dots = metricPoints.map(({ point, index, value }) => `<circle cx="${xFor(index).toFixed(2)}" cy="${yFor(value).toFixed(2)}" r="4" fill="${metric.color}" class="financial-bi-chart-point"><title>${escape(`${metric.label} ${point.yearMonth}: ${formatMoney(value)}`)}</title></circle>`).join("");
+    const dots = metricPoints.map(({ point, index, value }) => `<circle cx="${xFor(index).toFixed(2)}" cy="${yFor(value).toFixed(2)}" r="4" fill="${metric.color}" class="financial-bi-chart-point"><title>${escape(`${metric.label} ${point.year}: ${formatMoney(value)}`)}</title></circle>`).join("");
     return `<polyline points="${polyline}" fill="none" stroke="${metric.color}" stroke-width="2.5"/>${dots}`;
   }).join("");
-  const labels = points.map((point, index) => `<text x="${xFor(index).toFixed(2)}" y="${height - 18}" text-anchor="middle" class="financial-bi-chart-category">${escape(point.yearMonth)}</text>`).join("");
+  const labels = points.map((point, index) => `<text x="${xFor(index).toFixed(2)}" y="${height - 18}" text-anchor="middle" class="financial-bi-chart-category">${escape(String(point.year))}</text>`).join("");
   return `<div class="financial-bi-chart-legend">${metrics.map((metric) => `<span><i style="background:${metric.color}"></i>${escape(metric.label)}</span>`).join("")}</div>
-    <svg class="financial-bi-performance-svg financial-bi-bank-statement-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Bank statement monthly sum, average, minimum and maximum">
+    <svg class="financial-bi-performance-svg financial-bi-bank-statement-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Bank statement annual sum, average, minimum and maximum">
       ${grid}${series}${labels}
     </svg>`;
 }
@@ -22374,7 +22374,7 @@ function renderFinancialBiBankStatement() {
     els.financialBiBankStatementTotals.innerHTML = `<tr><td>Total</td>${financialBiBankStatementCells(pivot.totals)}</tr>`;
   }
   if (els.financialBiBankStatementChart) {
-    els.financialBiBankStatementChart.innerHTML = buildFinancialBiBankStatementChartMarkup(pivot.years.flatMap((year) => year.months));
+    els.financialBiBankStatementChart.innerHTML = buildFinancialBiBankStatementChartMarkup(pivot.years);
   }
 }
 
