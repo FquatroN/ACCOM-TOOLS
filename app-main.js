@@ -1372,6 +1372,7 @@ const state = {
   financialBiCashAnalysisRows: [],
   financialBiCashAnalysisYearFrom: "",
   financialBiCashAnalysisYearTo: "",
+  financialBiCashAnalysisExpandedYears: {},
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -2530,6 +2531,7 @@ function bindEvents() {
   els.financialBiBankStatementRows?.addEventListener("click", onFinancialBiBankStatementRowsClick);
   els.financialBiCashAnalysisYearFrom?.addEventListener("change", onFinancialBiCashAnalysisFilterChange);
   els.financialBiCashAnalysisYearTo?.addEventListener("change", onFinancialBiCashAnalysisFilterChange);
+  els.financialBiCashAnalysisRows?.addEventListener("click", onFinancialBiCashAnalysisRowsClick);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -21698,6 +21700,12 @@ function initializeFinancialBiCashAnalysisFilters() {
   const currentYear = new Date().getFullYear();
   if (!clean(state.financialBiCashAnalysisYearFrom)) state.financialBiCashAnalysisYearFrom = String(currentYear - 5);
   if (!clean(state.financialBiCashAnalysisYearTo)) state.financialBiCashAnalysisYearTo = String(currentYear);
+  if (!Object.keys(state.financialBiCashAnalysisExpandedYears || {}).length) {
+    state.financialBiCashAnalysisExpandedYears = {
+      [String(currentYear)]: true,
+      [String(currentYear - 1)]: true,
+    };
+  }
 }
 
 function currentFinancialBiCashAnalysisYearRange() {
@@ -21757,6 +21765,17 @@ function onFinancialBiCashAnalysisFilterChange() {
   state.financialBiCashAnalysisYearFrom = clean(els.financialBiCashAnalysisYearFrom?.value);
   state.financialBiCashAnalysisYearTo = clean(els.financialBiCashAnalysisYearTo?.value);
   loadFinancialBiCashAnalysisData({ silent: true });
+}
+
+function onFinancialBiCashAnalysisRowsClick(event) {
+  const button = event.target.closest("[data-financial-bi-cash-toggle-year]");
+  const year = clean(button?.dataset.financialBiCashToggleYear);
+  if (!year) return;
+  state.financialBiCashAnalysisExpandedYears = {
+    ...(state.financialBiCashAnalysisExpandedYears || {}),
+    [year]: !state.financialBiCashAnalysisExpandedYears?.[year],
+  };
+  renderFinancialBiCashAnalysis();
 }
 
 function financialBiBankStatementAvailableYears() {
@@ -22506,6 +22525,15 @@ function financialBiCashAnalysisCells(row) {
     <td class="${financialBiCashAnalysisClass(analysis)}">${escape(formatMoney(analysis))}</td>`;
 }
 
+function sumFinancialBiCashAnalysisRows(rows) {
+  return (Array.isArray(rows) ? rows : []).reduce((sum, row) => ({
+    totalWithdrawals: sum.totalWithdrawals + financialBiCashAnalysisNumber(row?.totalWithdrawals ?? row?.total_withdrawals),
+    totalDeposits: sum.totalDeposits + financialBiCashAnalysisNumber(row?.totalDeposits ?? row?.total_deposits),
+    naoFaturado: sum.naoFaturado + financialBiCashAnalysisNumber(row?.naoFaturado ?? row?.nao_faturado),
+    analysis: sum.analysis + financialBiCashAnalysisNumber(row?.analysis),
+  }), { totalWithdrawals: 0, totalDeposits: 0, naoFaturado: 0, analysis: 0 });
+}
+
 function renderFinancialBiCashAnalysis() {
   initializeFinancialBiCashAnalysisFilters();
   const years = financialBiCashAnalysisAvailableYears();
@@ -22524,17 +22552,23 @@ function renderFinancialBiCashAnalysis() {
     .sort((left, right) => Number(right?.year || 0) - Number(left?.year || 0) || Number(right?.month || 0) - Number(left?.month || 0));
   if (els.financialBiCashAnalysisCount) els.financialBiCashAnalysisCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
   if (els.financialBiCashAnalysisRows) {
-    els.financialBiCashAnalysisRows.innerHTML = rows.length
-      ? rows.map((row) => `<tr><td>${escape(clean(row?.yearMonth ?? row?.year_month) || `${row?.year}-${String(row?.month || "").padStart(2, "0")}`)}</td>${financialBiCashAnalysisCells(row)}</tr>`).join("")
+    const yearGroups = new Map();
+    rows.forEach((row) => {
+      const year = Number(row?.year || 0);
+      if (!yearGroups.has(year)) yearGroups.set(year, []);
+      yearGroups.get(year).push(row);
+    });
+    els.financialBiCashAnalysisRows.innerHTML = yearGroups.size
+      ? Array.from(yearGroups.entries()).map(([year, months]) => {
+        const key = String(year);
+        const expanded = !!state.financialBiCashAnalysisExpandedYears?.[key];
+        const monthRows = expanded ? months.map((row) => `<tr><td class="financial-bi-month-cell">${escape(String(Number(row?.month || 0)))}</td>${financialBiCashAnalysisCells(row)}</tr>`).join("") : "";
+        return `<tr class="financial-bi-year-row"><td><button type="button" class="financial-bi-year-toggle" data-financial-bi-cash-toggle-year="${escape(key)}">${expanded ? "-" : "+"}</button> ${escape(key)}</td>${financialBiCashAnalysisCells(sumFinancialBiCashAnalysisRows(months))}</tr>${monthRows}`;
+      }).join("")
       : '<tr><td colspan="5" class="empty">No Cash Analysis rows found.</td></tr>';
   }
   if (els.financialBiCashAnalysisTotals) {
-    const totals = rows.reduce((sum, row) => ({
-      totalWithdrawals: sum.totalWithdrawals + financialBiCashAnalysisNumber(row?.totalWithdrawals ?? row?.total_withdrawals),
-      totalDeposits: sum.totalDeposits + financialBiCashAnalysisNumber(row?.totalDeposits ?? row?.total_deposits),
-      naoFaturado: sum.naoFaturado + financialBiCashAnalysisNumber(row?.naoFaturado ?? row?.nao_faturado),
-      analysis: sum.analysis + financialBiCashAnalysisNumber(row?.analysis),
-    }), { totalWithdrawals: 0, totalDeposits: 0, naoFaturado: 0, analysis: 0 });
+    const totals = sumFinancialBiCashAnalysisRows(rows);
     els.financialBiCashAnalysisTotals.innerHTML = `<tr><td>Total</td>${financialBiCashAnalysisCells(totals)}</tr>`;
   }
 }
