@@ -5174,8 +5174,71 @@ button[id^="close-settings"] {
   min-height: 2.45rem;
 }
 
+.financial-bi-bank-statement-filters {
+  grid-template-columns: 8rem 8rem;
+  align-items: end;
+}
+
+.financial-bi-bank-statement-wrap {
+  max-height: calc(100vh - 24rem);
+  min-height: 20rem;
+}
+
+.financial-bi-bank-statement-table {
+  width: 100%;
+  min-width: 42rem;
+  table-layout: fixed;
+}
+
+.financial-bi-bank-statement-table th,
+.financial-bi-bank-statement-table td {
+  padding: 0.3rem 0.45rem;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.financial-bi-bank-statement-table th:first-child,
+.financial-bi-bank-statement-table td:first-child {
+  width: 9rem;
+  text-align: left;
+}
+
+.financial-bi-bank-statement-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fffaf4;
+}
+
+.financial-bi-bank-statement-table tfoot tr {
+  font-weight: 700;
+  background: rgba(22, 119, 113, 0.08);
+}
+
+.financial-bi-bank-positive {
+  color: #13795b;
+  font-weight: 700;
+}
+
+.financial-bi-bank-negative {
+  color: #c62828;
+  font-weight: 700;
+}
+
+.financial-bi-bank-statement-chart-card {
+  margin-top: 1rem;
+}
+
+.financial-bi-bank-statement-svg {
+  min-width: 48rem;
+}
+
 @media (max-width: 760px) {
   .financial-bi-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .financial-bi-bank-statement-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

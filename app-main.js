@@ -1354,6 +1354,15 @@ const state = {
   financialBiComparisonRows: [],
   financialBiPivot: { incomeCategories: [], expenseCategories: [], years: [], totals: {} },
   financialBiTab: "book-sales",
+  financialBiBankStatementLoaded: false,
+  financialBiBankStatementLoading: false,
+  financialBiBankStatementLoadPromise: null,
+  financialBiBankStatementRequestKey: "",
+  financialBiBankStatementRequestToken: 0,
+  financialBiBankStatementRows: [],
+  financialBiBankStatementYearFrom: "",
+  financialBiBankStatementYearTo: "",
+  financialBiBankStatementExpandedYears: {},
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -1696,6 +1705,7 @@ const els = {
   bookingsBiStatus: document.getElementById("bookings-bi-status"),
   financialBiTabResults: document.getElementById("financial-bi-tab-results"),
   financialBiTabFdmAccounts: document.getElementById("financial-bi-tab-fdm-accounts"),
+  financialBiTabBankStatement: document.getElementById("financial-bi-tab-bank-statement"),
   financialBiResultsTitle: document.getElementById("financial-bi-results-title"),
   financialBiFilterYearFrom: document.getElementById("financial-bi-filter-year-from"),
   financialBiFilterYearTo: document.getElementById("financial-bi-filter-year-to"),
@@ -1709,6 +1719,14 @@ const els = {
   financialBiPerformanceKpis: document.getElementById("financial-bi-performance-kpis"),
   financialBiPerformanceChart: document.getElementById("financial-bi-performance-chart"),
   financialBiStatus: document.getElementById("financial-bi-status"),
+  financialBiBankStatementPanel: document.getElementById("financial-bi-panel-bank-statement"),
+  financialBiBankStatementYearFrom: document.getElementById("financial-bi-bank-statement-year-from"),
+  financialBiBankStatementYearTo: document.getElementById("financial-bi-bank-statement-year-to"),
+  financialBiBankStatementCount: document.getElementById("financial-bi-bank-statement-count"),
+  financialBiBankStatementRows: document.getElementById("financial-bi-bank-statement-rows"),
+  financialBiBankStatementTotals: document.getElementById("financial-bi-bank-statement-totals"),
+  financialBiBankStatementChart: document.getElementById("financial-bi-bank-statement-chart"),
+  financialBiBankStatementStatus: document.getElementById("financial-bi-bank-statement-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
   financialDocsEntitiesFilterSearch: document.getElementById("financial-docs-entities-filter-search"),
@@ -2481,11 +2499,15 @@ function bindEvents() {
   els.bookingsBiWindowFilterStatus?.addEventListener("change", onBookingsBiWindowFilterChange);
   els.financialBiTabResults?.addEventListener("click", () => setFinancialBiTab("book-sales"));
   els.financialBiTabFdmAccounts?.addEventListener("click", () => setFinancialBiTab("fdm-accounts"));
+  els.financialBiTabBankStatement?.addEventListener("click", () => setFinancialBiTab("bank-statement"));
   els.financialBiFilterYearFrom?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterYearTo?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCc?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCategory?.addEventListener("change", onFinancialBiCategoryChange);
   els.financialBiResultsRows?.addEventListener("click", onFinancialBiResultsClick);
+  els.financialBiBankStatementYearFrom?.addEventListener("change", onFinancialBiBankStatementFilterChange);
+  els.financialBiBankStatementYearTo?.addEventListener("change", onFinancialBiBankStatementFilterChange);
+  els.financialBiBankStatementRows?.addEventListener("click", onFinancialBiBankStatementRowsClick);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -21574,15 +21596,19 @@ function currentFinancialBiCc() {
 }
 
 function currentFinancialBiTab() {
-  return state.financialBiTab === "fdm-accounts" ? "fdm-accounts" : "book-sales";
+  if (state.financialBiTab === "fdm-accounts") return "fdm-accounts";
+  if (state.financialBiTab === "bank-statement") return "bank-statement";
+  return "book-sales";
 }
 
 function financialBiTabLabel() {
-  return currentFinancialBiTab() === "fdm-accounts" ? "Results (FDM Account)" : "Results (Book&Sales)";
+  if (currentFinancialBiTab() === "fdm-accounts") return "Results (FDM Account)";
+  if (currentFinancialBiTab() === "bank-statement") return "Bank Statement";
+  return "Results (Book&Sales)";
 }
 
 function setFinancialBiTab(tab) {
-  const nextTab = tab === "fdm-accounts" ? "fdm-accounts" : "book-sales";
+  const nextTab = tab === "fdm-accounts" || tab === "bank-statement" ? tab : "book-sales";
   if (currentFinancialBiTab() === nextTab) {
     renderFinancialBi();
     return;
@@ -21597,7 +21623,101 @@ function setFinancialBiTab(tab) {
   state.financialBiLoadedKey = "";
   state.financialBiRequestToken = Number(state.financialBiRequestToken || 0) + 1;
   renderFinancialBi();
-  loadFinancialBiData({ silent: true });
+  if (nextTab === "bank-statement") loadFinancialBiBankStatementData({ silent: true });
+  else loadFinancialBiData({ silent: true });
+}
+
+function financialBiBankStatementAvailableYears() {
+  const currentYear = new Date().getFullYear();
+  const defaults = Array.from({ length: currentYear - 1999 }, (_, index) => 2000 + index);
+  return [...new Set([
+    ...defaults,
+    ...(Array.isArray(state.financialBiBankStatementRows) ? state.financialBiBankStatementRows : [])
+      .map((row) => Number(row?.year || 0))
+      .filter((year) => Number.isFinite(year) && year > 0),
+  ])].sort((a, b) => a - b);
+}
+
+function initializeFinancialBiBankStatementFilters() {
+  const currentYear = new Date().getFullYear();
+  if (!clean(state.financialBiBankStatementYearFrom)) state.financialBiBankStatementYearFrom = String(currentYear - 10);
+  if (!clean(state.financialBiBankStatementYearTo)) state.financialBiBankStatementYearTo = String(currentYear);
+  if (!Object.keys(state.financialBiBankStatementExpandedYears || {}).length) {
+    state.financialBiBankStatementExpandedYears = {
+      [String(currentYear)]: true,
+      [String(currentYear - 1)]: true,
+    };
+  }
+}
+
+function currentFinancialBiBankStatementYearRange() {
+  initializeFinancialBiBankStatementFilters();
+  const years = financialBiBankStatementAvailableYears();
+  const rawFrom = Number.parseInt(state.financialBiBankStatementYearFrom, 10);
+  const rawTo = Number.parseInt(state.financialBiBankStatementYearTo, 10);
+  const from = Number.isFinite(rawFrom) ? rawFrom : years[0];
+  const to = Number.isFinite(rawTo) ? rawTo : years[years.length - 1];
+  return from <= to ? { from, to } : { from: to, to: from };
+}
+
+function buildFinancialBiBankStatementUrl() {
+  const { from, to } = currentFinancialBiBankStatementYearRange();
+  return `/api/financial-bi-bank-statement?yearFrom=${encodeURIComponent(from)}&yearTo=${encodeURIComponent(to)}`;
+}
+
+function setFinancialBiBankStatementStatus(message, type = "") {
+  if (!els.financialBiBankStatementStatus) return;
+  els.financialBiBankStatementStatus.textContent = message || "";
+  els.financialBiBankStatementStatus.classList.toggle("error", type === "error");
+}
+
+async function loadFinancialBiBankStatementData({ silent = false } = {}) {
+  const requestUrl = buildFinancialBiBankStatementUrl();
+  if (state.financialBiBankStatementLoadPromise && state.financialBiBankStatementRequestKey === requestUrl) {
+    return state.financialBiBankStatementLoadPromise;
+  }
+  state.financialBiBankStatementRequestKey = requestUrl;
+  const requestToken = Number(state.financialBiBankStatementRequestToken || 0) + 1;
+  state.financialBiBankStatementRequestToken = requestToken;
+  state.financialBiBankStatementLoading = true;
+  const loadPromise = api(requestUrl)
+    .then((result) => {
+      if (requestToken !== state.financialBiBankStatementRequestToken) return;
+      state.financialBiBankStatementRows = Array.isArray(result?.rows) ? result.rows : [];
+      state.financialBiBankStatementLoaded = true;
+      renderFinancialBi();
+      if (!silent) setFinancialBiBankStatementStatus("Bank Statement loaded.");
+    })
+    .catch((error) => {
+      if (requestToken !== state.financialBiBankStatementRequestToken) return;
+      if (!state.financialBiBankStatementLoaded) state.financialBiBankStatementRows = [];
+      renderFinancialBi();
+      setFinancialBiBankStatementStatus(`Failed to load Bank Statement: ${error.message}`, "error");
+    })
+    .finally(() => {
+      if (requestToken !== state.financialBiBankStatementRequestToken) return;
+      state.financialBiBankStatementLoading = false;
+      state.financialBiBankStatementLoadPromise = null;
+    });
+  state.financialBiBankStatementLoadPromise = loadPromise;
+  return loadPromise;
+}
+
+function onFinancialBiBankStatementFilterChange() {
+  state.financialBiBankStatementYearFrom = clean(els.financialBiBankStatementYearFrom?.value);
+  state.financialBiBankStatementYearTo = clean(els.financialBiBankStatementYearTo?.value);
+  loadFinancialBiBankStatementData({ silent: true });
+}
+
+function onFinancialBiBankStatementRowsClick(event) {
+  const button = event.target.closest("[data-financial-bi-bank-toggle-year]");
+  const year = clean(button?.dataset.financialBiBankToggleYear);
+  if (!year) return;
+  state.financialBiBankStatementExpandedYears = {
+    ...(state.financialBiBankStatementExpandedYears || {}),
+    [year]: !state.financialBiBankStatementExpandedYears?.[year],
+  };
+  renderFinancialBiBankStatement();
 }
 
 const FINANCIAL_BI_ALL_CATEGORY = "__all__";
@@ -21679,6 +21799,13 @@ async function loadFinancialBiData({ silent = false } = {}) {
 }
 
 async function ensureFinancialBiData() {
+  if (currentFinancialBiTab() === "bank-statement") {
+    const requestUrl = buildFinancialBiBankStatementUrl();
+    if (!state.financialBiBankStatementLoaded || state.financialBiBankStatementRequestKey !== requestUrl) {
+      await loadFinancialBiBankStatementData({ silent: true });
+    }
+    return;
+  }
   const requestUrl = buildFinancialBiUrlClient();
   if (!state.financialBiLoaded || state.financialBiLoadedKey !== requestUrl) {
     await loadFinancialBiData({ silent: true });
@@ -22073,7 +22200,158 @@ function renderFinancialBiPerformance() {
   if (els.financialBiPerformanceChart) els.financialBiPerformanceChart.innerHTML = buildFinancialBiPerformanceChartMarkup(comparison);
 }
 
+function bankStatementNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function buildFinancialBiBankStatementPivot(rows) {
+  const yearMap = new Map();
+  const totals = { sumAmount: 0, transactionCount: 0, minAmount: null, maxAmount: null };
+  (Array.isArray(rows) ? rows : []).forEach((source) => {
+    const year = Number(source?.year || 0);
+    const month = Number(source?.month || 0);
+    if (!year || !month) return;
+    const row = {
+      year,
+      month,
+      yearMonth: clean(source?.yearMonth || source?.year_month) || `${year}-${String(month).padStart(2, "0")}`,
+      sumAmount: bankStatementNumber(source?.sumAmount ?? source?.sum_amount),
+      averageAmount: bankStatementNumber(source?.averageAmount ?? source?.average_amount),
+      minAmount: bankStatementNumber(source?.minAmount ?? source?.min_amount),
+      maxAmount: bankStatementNumber(source?.maxAmount ?? source?.max_amount),
+      transactionCount: Math.max(0, bankStatementNumber(source?.transactionCount ?? source?.transaction_count)),
+    };
+    if (!yearMap.has(year)) yearMap.set(year, { year, months: [], sumAmount: 0, transactionCount: 0, minAmount: null, maxAmount: null });
+    const yearBucket = yearMap.get(year);
+    yearBucket.months.push(row);
+    yearBucket.sumAmount += row.sumAmount;
+    yearBucket.transactionCount += row.transactionCount;
+    yearBucket.minAmount = yearBucket.minAmount === null ? row.minAmount : Math.min(yearBucket.minAmount, row.minAmount);
+    yearBucket.maxAmount = yearBucket.maxAmount === null ? row.maxAmount : Math.max(yearBucket.maxAmount, row.maxAmount);
+    totals.sumAmount += row.sumAmount;
+    totals.transactionCount += row.transactionCount;
+    totals.minAmount = totals.minAmount === null ? row.minAmount : Math.min(totals.minAmount, row.minAmount);
+    totals.maxAmount = totals.maxAmount === null ? row.maxAmount : Math.max(totals.maxAmount, row.maxAmount);
+  });
+  const years = Array.from(yearMap.values()).sort((left, right) => Number(right.year) - Number(left.year)).map((year) => ({
+    ...year,
+    averageAmount: year.transactionCount ? year.sumAmount / year.transactionCount : 0,
+    months: year.months.sort((left, right) => Number(right.month) - Number(left.month)),
+  }));
+  return {
+    years,
+    totals: {
+      ...totals,
+      averageAmount: totals.transactionCount ? totals.sumAmount / totals.transactionCount : 0,
+    },
+  };
+}
+
+function financialBiBankStatementAmountClass(value) {
+  const number = bankStatementNumber(value);
+  if (number > 0) return "financial-bi-bank-positive";
+  if (number < 0) return "financial-bi-bank-negative";
+  return "";
+}
+
+function financialBiBankStatementCells(row) {
+  return `<td class="${financialBiBankStatementAmountClass(row?.sumAmount)}">${escape(formatMoney(bankStatementNumber(row?.sumAmount)))}</td>
+    <td>${escape(formatMoney(bankStatementNumber(row?.averageAmount)))}</td>
+    <td>${escape(formatMoney(bankStatementNumber(row?.minAmount)))}</td>
+    <td>${escape(formatMoney(bankStatementNumber(row?.maxAmount)))}</td>`;
+}
+
+function buildFinancialBiBankStatementChartMarkup(months) {
+  const points = Array.isArray(months) ? months.slice().sort((left, right) => String(left.yearMonth).localeCompare(String(right.yearMonth))) : [];
+  if (!points.length) return '<div class="empty">No Bank Statement data found.</div>';
+  const metrics = [
+    { key: "sumAmount", label: "Sum", color: "#147d75" },
+    { key: "averageAmount", label: "Average", color: "#2563eb" },
+    { key: "minAmount", label: "Min", color: "#c62828" },
+    { key: "maxAmount", label: "Max", color: "#d97706" },
+  ];
+  const values = points.flatMap((point) => metrics.map((metric) => bankStatementNumber(point?.[metric.key])));
+  const minValue = Math.min(0, ...values);
+  const maxValue = Math.max(0, ...values);
+  const range = Math.max(1, maxValue - minValue);
+  const width = Math.max(760, points.length * 68 + 90);
+  const height = 340;
+  const margin = { top: 20, right: 20, bottom: 54, left: 74 };
+  const xFor = (index) => margin.left + ((width - margin.left - margin.right) * (points.length === 1 ? 0.5 : index / (points.length - 1)));
+  const yFor = (value) => margin.top + ((maxValue - value) / range) * (height - margin.top - margin.bottom);
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = minValue + (range * index / 4);
+    const y = yFor(value);
+    return `<line x1="${margin.left}" y1="${y.toFixed(2)}" x2="${width - margin.right}" y2="${y.toFixed(2)}" class="financial-bi-chart-grid"/><text x="${margin.left - 8}" y="${(y + 4).toFixed(2)}" text-anchor="end" class="financial-bi-chart-axis-label">${escape(financialBiCompactAmount(value))}</text>`;
+  }).join("");
+  const series = metrics.map((metric) => {
+    const polyline = points.map((point, index) => `${xFor(index).toFixed(2)},${yFor(bankStatementNumber(point?.[metric.key])).toFixed(2)}`).join(" ");
+    const dots = points.map((point, index) => `<circle cx="${xFor(index).toFixed(2)}" cy="${yFor(bankStatementNumber(point?.[metric.key])).toFixed(2)}" r="4" fill="${metric.color}" class="financial-bi-chart-point"><title>${escape(`${metric.label} ${point.yearMonth}: ${formatMoney(bankStatementNumber(point?.[metric.key]))}`)}</title></circle>`).join("");
+    return `<polyline points="${polyline}" fill="none" stroke="${metric.color}" stroke-width="2.5"/>${dots}`;
+  }).join("");
+  const labels = points.map((point, index) => `<text x="${xFor(index).toFixed(2)}" y="${height - 18}" text-anchor="middle" class="financial-bi-chart-category">${escape(point.yearMonth)}</text>`).join("");
+  return `<div class="financial-bi-chart-legend">${metrics.map((metric) => `<span><i style="background:${metric.color}"></i>${escape(metric.label)}</span>`).join("")}</div>
+    <svg class="financial-bi-performance-svg financial-bi-bank-statement-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Bank statement monthly sum, average, minimum and maximum">
+      ${grid}${series}${labels}
+    </svg>`;
+}
+
+function renderFinancialBiBankStatement() {
+  initializeFinancialBiBankStatementFilters();
+  const years = financialBiBankStatementAvailableYears();
+  const options = years.map((year) => `<option value="${escape(String(year))}">${escape(String(year))}</option>`).join("");
+  if (els.financialBiBankStatementYearFrom) {
+    els.financialBiBankStatementYearFrom.innerHTML = options;
+    els.financialBiBankStatementYearFrom.value = state.financialBiBankStatementYearFrom;
+  }
+  if (els.financialBiBankStatementYearTo) {
+    els.financialBiBankStatementYearTo.innerHTML = options;
+    els.financialBiBankStatementYearTo.value = state.financialBiBankStatementYearTo;
+  }
+  const { from, to } = currentFinancialBiBankStatementYearRange();
+  const pivot = buildFinancialBiBankStatementPivot((state.financialBiBankStatementRows || []).filter((row) => Number(row?.year || 0) >= from && Number(row?.year || 0) <= to));
+  const monthCount = pivot.years.reduce((count, year) => count + year.months.length, 0);
+  if (els.financialBiBankStatementCount) els.financialBiBankStatementCount.textContent = `${monthCount} month${monthCount === 1 ? "" : "s"}`;
+  if (els.financialBiBankStatementRows) {
+    els.financialBiBankStatementRows.innerHTML = pivot.years.length ? pivot.years.map((year) => {
+      const key = String(year.year);
+      const expanded = !!state.financialBiBankStatementExpandedYears?.[key];
+      const months = expanded ? year.months.map((month) => `<tr><td class="financial-bi-month-cell">${escape(String(month.month))}</td>${financialBiBankStatementCells(month)}</tr>`).join("") : "";
+      return `<tr class="financial-bi-year-row"><td><button type="button" class="financial-bi-year-toggle" data-financial-bi-bank-toggle-year="${escape(key)}">${expanded ? "-" : "+"}</button> ${escape(key)}</td>${financialBiBankStatementCells(year)}</tr>${months}`;
+    }).join("") : '<tr><td colspan="5" class="empty">No Bank Statement rows found.</td></tr>';
+  }
+  if (els.financialBiBankStatementTotals) {
+    els.financialBiBankStatementTotals.innerHTML = `<tr><td>Total</td>${financialBiBankStatementCells(pivot.totals)}</tr>`;
+  }
+  if (els.financialBiBankStatementChart) {
+    els.financialBiBankStatementChart.innerHTML = buildFinancialBiBankStatementChartMarkup(pivot.years.flatMap((year) => year.months));
+  }
+}
+
 function renderFinancialBi() {
+  const isBankStatement = currentFinancialBiTab() === "bank-statement";
+  if (els.financialBiBankStatementPanel) els.financialBiBankStatementPanel.hidden = !isBankStatement;
+  if (els.financialBiTabBankStatement) {
+    els.financialBiTabBankStatement.classList.toggle("active-tab", isBankStatement);
+    els.financialBiTabBankStatement.classList.toggle("ghost", !isBankStatement);
+  }
+  if (isBankStatement) {
+    if (els.financialBiTabResults) {
+      els.financialBiTabResults.classList.remove("active-tab");
+      els.financialBiTabResults.classList.add("ghost");
+    }
+    if (els.financialBiTabFdmAccounts) {
+      els.financialBiTabFdmAccounts.classList.remove("active-tab");
+      els.financialBiTabFdmAccounts.classList.add("ghost");
+    }
+    const resultsPanel = document.getElementById("financial-bi-panel-results");
+    if (resultsPanel) resultsPanel.hidden = true;
+    renderFinancialBiBankStatement();
+    return;
+  }
+  const resultsPanel = document.getElementById("financial-bi-panel-results");
+  if (resultsPanel) resultsPanel.hidden = false;
   initializeFinancialBiFilters();
   renderFinancialBiCategoryFilter();
   if (Array.isArray(state.financialBiRows) && state.financialBiRows.length) {

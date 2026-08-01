@@ -4223,6 +4223,7 @@
               <div class="actions">
                 <button id="financial-bi-tab-results" type="button" class="active-tab">Results (Book&amp;Sales)</button>
                 <button id="financial-bi-tab-fdm-accounts" type="button" class="ghost">Results (FDM Account)</button>
+                <button id="financial-bi-tab-bank-statement" type="button" class="ghost">Bank Statement</button>
               </div>
             </div>
           </section>
@@ -4276,6 +4277,45 @@
               <div id="financial-bi-performance-chart" class="financial-bi-performance-chart"></div>
             </section>
             <p id="financial-bi-status" class="auth-status"></p>
+          </section>
+
+          <section id="financial-bi-panel-bank-statement" class="card" hidden>
+            <div class="bar">
+              <h2>Bank Statement</h2>
+              <div class="actions">
+                <p id="financial-bi-bank-statement-count">0 months</p>
+              </div>
+            </div>
+            <div class="grid filters guests-bi-filters financial-bi-bank-statement-filters">
+              <label>
+                Year From
+                <select id="financial-bi-bank-statement-year-from"></select>
+              </label>
+              <label>
+                Year To
+                <select id="financial-bi-bank-statement-year-to"></select>
+              </label>
+            </div>
+            <div class="table-wrap compact-table-wrap financial-bi-bank-statement-wrap">
+              <table class="compact-table guests-bi-table financial-bi-bank-statement-table">
+                <thead>
+                  <tr>
+                    <th>Year / Month</th>
+                    <th>Sum</th>
+                    <th>Average</th>
+                    <th>Min</th>
+                    <th>Max</th>
+                  </tr>
+                </thead>
+                <tbody id="financial-bi-bank-statement-rows"></tbody>
+                <tfoot id="financial-bi-bank-statement-totals"></tfoot>
+              </table>
+            </div>
+            <section class="financial-bi-bank-statement-chart-card" aria-labelledby="financial-bi-bank-statement-chart-title">
+              <div class="bar"><h3 id="financial-bi-bank-statement-chart-title">Bank Statement Trends</h3></div>
+              <div id="financial-bi-bank-statement-chart" class="financial-bi-performance-chart"></div>
+            </section>
+            <p id="financial-bi-bank-statement-status" class="auth-status"></p>
           </section>
         </section>
       </section>
