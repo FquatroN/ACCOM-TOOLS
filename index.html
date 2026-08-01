@@ -4233,6 +4233,7 @@
                 <button id="financial-bi-tab-results" type="button" class="active-tab">Results (Book&amp;Sales)</button>
                 <button id="financial-bi-tab-fdm-accounts" type="button" class="ghost">Results (FDM Account)</button>
                 <button id="financial-bi-tab-bank-statement" type="button" class="ghost">Bank Statement</button>
+                <button id="financial-bi-tab-cash-analysis" type="button" class="ghost">Cash Analysis</button>
               </div>
             </div>
           </section>
@@ -4325,6 +4326,31 @@
               <div id="financial-bi-bank-statement-chart" class="financial-bi-performance-chart"></div>
             </section>
             <p id="financial-bi-bank-statement-status" class="auth-status"></p>
+          </section>
+
+          <section id="financial-bi-panel-cash-analysis" class="card" hidden>
+            <div class="bar">
+              <h2>Cash Analysis</h2>
+              <div class="actions"><p id="financial-bi-cash-analysis-count">0 months</p></div>
+            </div>
+            <div class="grid filters guests-bi-filters financial-bi-cash-analysis-filters">
+              <label>
+                Year From
+                <select id="financial-bi-cash-analysis-year-from"></select>
+              </label>
+              <label>
+                Year To
+                <select id="financial-bi-cash-analysis-year-to"></select>
+              </label>
+            </div>
+            <div class="table-wrap compact-table-wrap financial-bi-cash-analysis-wrap">
+              <table class="compact-table guests-bi-table financial-bi-cash-analysis-table">
+                <thead><tr><th>Year / Month</th><th>Total Withdrawals</th><th>Total Deposits</th><th>Nao Faturado</th><th>Analysis</th></tr></thead>
+                <tbody id="financial-bi-cash-analysis-rows"></tbody>
+                <tfoot id="financial-bi-cash-analysis-totals"></tfoot>
+              </table>
+            </div>
+            <p id="financial-bi-cash-analysis-status" class="auth-status"></p>
           </section>
         </section>
       </section>
