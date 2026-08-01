@@ -5124,6 +5124,44 @@ button[id^="close-settings"] {
   overflow-y: auto;
 }
 
+.bookings-bi-channel-share-card {
+  margin-top: 1rem;
+}
+
+.bookings-bi-channel-share-wrap {
+  max-height: 32rem;
+}
+
+.bookings-bi-channel-share-table {
+  min-width: 58rem;
+  font-size: 0.78rem;
+}
+
+.bookings-bi-channel-share-table th,
+.bookings-bi-channel-share-table td {
+  padding: 0.28rem 0.4rem;
+  white-space: nowrap;
+}
+
+.bookings-bi-channel-share-table th:first-child,
+.bookings-bi-channel-share-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fffaf4;
+}
+
+.bookings-bi-channel-share-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fffaf4;
+}
+
+.bookings-bi-channel-share-table thead th:first-child {
+  z-index: 3;
+}
+
 .guests-bi-table th,
 .guests-bi-table td {
   text-align: right;

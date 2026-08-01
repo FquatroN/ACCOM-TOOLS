@@ -40,6 +40,14 @@ function normalizeRows(rows) {
   })).filter((row) => row.year && row.bookingCount > 0);
 }
 
+function normalizeMonthlyShareRows(rows) {
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    month: Number(row?.month || 0),
+    channel: clean(row?.channel_label || row?.channel) || "Unknown",
+    bookingCount: Number(row?.booking_count || row?.bookingCount || 0),
+  })).filter((row) => row.month >= 1 && row.month <= 12 && row.bookingCount > 0);
+}
+
 function buildPieCharts(rows, pieYears) {
   return pieYears.map((year) => {
     const byChannel = new Map();
@@ -103,14 +111,18 @@ module.exports = async function handler(req, res) {
       });
       return;
     }
-    const rpcRows = await restQuery("rpc/bookings_bi_channels", {
+    const params = {
       method: "POST",
       body: {
         p_year: selectedYear,
         p_ha: selectedHa || null,
         p_statuses: statuses,
       },
-    });
+    };
+    const [rpcRows, monthlyShareRows] = await Promise.all([
+      restQuery("rpc/bookings_bi_channels", params),
+      restQuery("rpc/bookings_bi_channel_monthly_share", params),
+    ]);
     const rows = normalizeRows(rpcRows);
     const pieYears = buildPieYears(selectedYear);
     const years = [...new Set([
@@ -126,6 +138,7 @@ module.exports = async function handler(req, res) {
       channels: {
         pieYears: pieYears.map(String),
         pieCharts: buildPieCharts(rows, pieYears),
+        monthlyShare: normalizeMonthlyShareRows(monthlyShareRows),
       },
     });
   } catch (error) {

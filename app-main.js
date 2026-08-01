@@ -1327,6 +1327,7 @@ const state = {
   bookingsBiYears: [],
   bookingsBiChannelPieYears: [],
   bookingsBiChannelPieCharts: [],
+  bookingsBiChannelMonthlyShare: [],
   bookingsBiLastLoaded: { year: "", ha: "", statuses: "" },
   bookingsBiWindowLoaded: false,
   bookingsBiWindowLoading: false,
@@ -1691,6 +1692,8 @@ const els = {
   bookingsBiFilterStatus: document.getElementById("bookings-bi-filter-status"),
   bookingsBiChannelsCount: document.getElementById("bookings-bi-channels-count"),
   bookingsBiChannelsPies: document.getElementById("bookings-bi-channels-pies"),
+  bookingsBiChannelShareHead: document.getElementById("bookings-bi-channel-share-head"),
+  bookingsBiChannelShareRows: document.getElementById("bookings-bi-channel-share-rows"),
   bookingsBiPanelChannels: document.getElementById("bookings-bi-panel-channels"),
   bookingsBiPanelBookingWindow: document.getElementById("bookings-bi-panel-booking-window"),
   bookingsBiWindowFilterYear: document.getElementById("bookings-bi-window-filter-year"),
@@ -21313,6 +21316,7 @@ async function loadBookingsBiData({ silent = false } = {}) {
     state.bookingsBiYears = Array.isArray(result?.years) ? result.years.map((year) => clean(year)).filter(Boolean) : [];
     state.bookingsBiChannelPieYears = Array.isArray(result?.channels?.pieYears) ? result.channels.pieYears : [];
     state.bookingsBiChannelPieCharts = Array.isArray(result?.channels?.pieCharts) ? result.channels.pieCharts : [];
+    state.bookingsBiChannelMonthlyShare = Array.isArray(result?.channels?.monthlyShare) ? result.channels.monthlyShare : [];
     state.bookingsBiLastLoaded = {
       year: state.bookingsBiYear,
       ha: state.bookingsBiHa,
@@ -21325,6 +21329,7 @@ async function loadBookingsBiData({ silent = false } = {}) {
     state.bookingsBiLoaded = false;
     state.bookingsBiChannelPieYears = [];
     state.bookingsBiChannelPieCharts = [];
+    state.bookingsBiChannelMonthlyShare = [];
     renderBookingsBi();
     if (!silent) setBookingsBiStatus(`Failed to load Bookings BI: ${error.message}`, "error");
   } finally {
@@ -21462,6 +21467,34 @@ function renderBookingsBiChannelPies() {
     : '<div class="empty">No booking channel distribution found.</div>';
 }
 
+function renderBookingsBiChannelMonthlyShare() {
+  const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  if (els.bookingsBiChannelShareHead) {
+    els.bookingsBiChannelShareHead.innerHTML = `<tr><th>Channel</th>${monthLabels.map((month) => `<th>${month}</th>`).join("")}</tr>`;
+  }
+  if (!els.bookingsBiChannelShareRows) return;
+  const rows = Array.isArray(state.bookingsBiChannelMonthlyShare) ? state.bookingsBiChannelMonthlyShare : [];
+  const totalsByMonth = Array.from({ length: 12 }, () => 0);
+  const channels = new Map();
+  rows.forEach((row) => {
+    const month = Number(row?.month || 0);
+    const count = Number(row?.bookingCount ?? row?.booking_count ?? 0);
+    if (month < 1 || month > 12 || !Number.isFinite(count) || count <= 0) return;
+    const channel = clean(row?.channel ?? row?.channel_label) || "Unknown";
+    if (!channels.has(channel)) channels.set(channel, Array.from({ length: 12 }, () => 0));
+    channels.get(channel)[month - 1] += count;
+    totalsByMonth[month - 1] += count;
+  });
+  const orderedChannels = Array.from(channels.entries())
+    .sort((left, right) => right[1].reduce((sum, value) => sum + value, 0) - left[1].reduce((sum, value) => sum + value, 0) || left[0].localeCompare(right[0]));
+  els.bookingsBiChannelShareRows.innerHTML = orderedChannels.length
+    ? orderedChannels.map(([channel, counts]) => `<tr><td>${escape(channel)}</td>${counts.map((count, index) => {
+      const total = totalsByMonth[index];
+      return `<td>${total ? escape(`${((count / total) * 100).toFixed(1)}%`) : "-"}</td>`;
+    }).join("")}</tr>`).join("")
+    : '<tr><td colspan="13" class="empty">No booking channel data found for the selected year.</td></tr>';
+}
+
 function formatBookingsBiWindowDays(value) {
   const number = Number(value);
   return Number.isFinite(number) ? `${number.toFixed(1)} days` : "-";
@@ -21587,6 +21620,7 @@ function renderBookingsBi() {
     els.bookingsBiChannelsCount.textContent = `${channelCount} channel${channelCount === 1 ? "" : "s"} | ${statusCount} status${statusCount === 1 ? "" : "es"}`;
   }
   renderBookingsBiChannelPies();
+  renderBookingsBiChannelMonthlyShare();
   renderBookingsBiWindow();
 }
 
