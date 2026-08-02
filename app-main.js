@@ -1379,7 +1379,7 @@ const state = {
   financialBiUtilitiesRequestKey: "",
   financialBiUtilitiesRequestToken: 0,
   financialBiUtilitiesRows: [],
-  financialBiUtilitiesSupplierNifs: [],
+  financialBiUtilitiesSuppliers: [],
   financialBiUtilitiesSupplierNif: "",
   financialBiUtilitiesYearFrom: "",
   financialBiUtilitiesYearTo: "",
@@ -22669,7 +22669,7 @@ async function loadFinancialBiUtilitiesData({ silent = false } = {}) {
     .then((result) => {
       if (requestToken !== state.financialBiUtilitiesRequestToken) return;
       state.financialBiUtilitiesRows = Array.isArray(result?.rows) ? result.rows : [];
-      state.financialBiUtilitiesSupplierNifs = Array.isArray(result?.supplierNifs) ? result.supplierNifs : [];
+      state.financialBiUtilitiesSuppliers = Array.isArray(result?.suppliers) ? result.suppliers : [];
       state.financialBiUtilitiesLoaded = true;
       renderFinancialBi();
       if (!silent) setFinancialBiUtilitiesStatus("Utilities loaded.");
@@ -22770,8 +22770,14 @@ function renderFinancialBiUtilities() {
     els.financialBiUtilitiesYearTo.value = state.financialBiUtilitiesYearTo;
   }
   if (els.financialBiUtilitiesSupplierNif) {
-    const values = [...new Set((state.financialBiUtilitiesSupplierNifs || []).map(clean).filter(Boolean))].sort((left, right) => left.localeCompare(right));
-    els.financialBiUtilitiesSupplierNif.innerHTML = `<option value="">All</option>${values.map((value) => `<option value="${escape(value)}">${escape(value)}</option>`).join("")}`;
+    const suppliers = (state.financialBiUtilitiesSuppliers || [])
+      .map((supplier) => ({ nif: clean(supplier?.nif), name: clean(supplier?.name) }))
+      .filter((supplier) => supplier.nif)
+      .sort((left, right) => left.nif.localeCompare(right.nif));
+    els.financialBiUtilitiesSupplierNif.innerHTML = `<option value="">All</option>${suppliers.map((supplier) => {
+      const label = supplier.name ? `${supplier.nif} - ${supplier.name}` : supplier.nif;
+      return `<option value="${escape(supplier.nif)}">${escape(label)}</option>`;
+    }).join("")}`;
     els.financialBiUtilitiesSupplierNif.value = state.financialBiUtilitiesSupplierNif;
   }
   const { from, to } = currentFinancialBiUtilitiesYearRange();

@@ -59,8 +59,11 @@ async function loadPayload(filters) {
     }
     const normalized = {
       rows: normalizeRows(first.rows),
-      supplierNifs: Array.isArray(first.supplier_nifs || first.supplierNifs)
-        ? (first.supplier_nifs || first.supplierNifs).map(clean).filter(Boolean)
+      suppliers: Array.isArray(first.suppliers)
+        ? first.suppliers.map((supplier) => ({
+          nif: clean(supplier?.nif),
+          name: clean(supplier?.name),
+        })).filter((supplier) => supplier.nif)
         : [],
     };
     cache.set(key, { payload: normalized, expiresAt: Date.now() + CACHE_TTL_MS });

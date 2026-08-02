@@ -41,14 +41,16 @@ group by
 order by year, month, cc;
 $$;
 
-create or replace function public.get_bi_financial_utilities_payload(
+drop function if exists public.get_bi_financial_utilities_payload(integer, integer, text);
+
+create function public.get_bi_financial_utilities_payload(
   p_year_from integer default extract(year from current_date)::integer - 10,
   p_year_to integer default extract(year from current_date)::integer,
   p_supplier_nif text default null
 )
 returns table (
   rows jsonb,
-  supplier_nifs jsonb
+  suppliers jsonb
 )
 language sql
 stable
@@ -59,14 +61,17 @@ select
     from public.get_bi_financial_utilities(p_year_from, p_year_to, p_supplier_nif) aggregate_row
   ), '[]'::jsonb) as rows,
   coalesce((
-    select jsonb_agg(supplier_nif order by supplier_nif)
+    select jsonb_agg(jsonb_build_object('nif', supplier_nif, 'name', supplier_name) order by supplier_nif)
     from (
-      select distinct btrim(document.supplier_nif) as supplier_nif
+      select
+        btrim(document.supplier_nif) as supplier_nif,
+        coalesce(min(nullif(btrim(document.supplier_name), '')), '') as supplier_name
       from public.financial_documents document
       where lower(btrim(coalesce(document.category, ''))) = 'utility'
         and nullif(btrim(coalesce(document.supplier_nif, '')), '') is not null
+      group by btrim(document.supplier_nif)
     ) suppliers
-  ), '[]'::jsonb) as supplier_nifs;
+  ), '[]'::jsonb) as suppliers;
 $$;
 
 grant execute on function public.get_bi_financial_utilities(integer, integer, text)
