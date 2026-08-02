@@ -15,6 +15,7 @@ const DEFAULT_PRICE_MATRIX = {
     "8-11": 90,
     "12-16": 110,
     "17-19": 145,
+    "20-23": 165,
   },
   returnTrip: {
     "1-3": 63,
@@ -22,6 +23,7 @@ const DEFAULT_PRICE_MATRIX = {
     "8-11": 162,
     "12-16": 198,
     "17-19": 261,
+    "20-23": 297,
   },
 };
 
@@ -203,6 +205,7 @@ function normalizePriceMatrix(value, useAirportDefaults = false) {
       "8-11": Math.max(0, normalizeNumber(group["8-11"], 0)),
       "12-16": Math.max(0, normalizeNumber(group["12-16"], 0)),
       "17-19": Math.max(0, normalizeNumber(group["17-19"], useAirportDefaults ? fallback["17-19"] : 0)),
+      "20-23": Math.max(0, normalizeNumber(group["20-23"], useAirportDefaults ? fallback["20-23"] : 0)),
     };
   };
   return {

@@ -180,6 +180,7 @@ const DEFAULT_SERVICE_PRICE_MATRIX = {
     "8-11": 90,
     "12-16": 110,
     "17-19": 145,
+    "20-23": 165,
   },
   returnTrip: {
     "1-3": 63,
@@ -187,6 +188,7 @@ const DEFAULT_SERVICE_PRICE_MATRIX = {
     "8-11": 162,
     "12-16": 198,
     "17-19": 261,
+    "20-23": 297,
   },
 };
 
@@ -2141,11 +2143,13 @@ const els = {
   servicesPriceOneWay811: document.getElementById("services-price-oneway-8-11"),
   servicesPriceOneWay1216: document.getElementById("services-price-oneway-12-16"),
   servicesPriceOneWay1719: document.getElementById("services-price-oneway-17-19"),
+  servicesPriceOneWay2023: document.getElementById("services-price-oneway-20-23"),
   servicesPriceReturn13: document.getElementById("services-price-return-1-3"),
   servicesPriceReturn47: document.getElementById("services-price-return-4-7"),
   servicesPriceReturn811: document.getElementById("services-price-return-8-11"),
   servicesPriceReturn1216: document.getElementById("services-price-return-12-16"),
   servicesPriceReturn1719: document.getElementById("services-price-return-17-19"),
+  servicesPriceReturn2023: document.getElementById("services-price-return-20-23"),
   shoppingTabCurrent: document.getElementById("shopping-tab-current"),
   shoppingTabHistory: document.getElementById("shopping-tab-history"),
   shoppingPanelCurrent: document.getElementById("shopping-panel-current"),
@@ -7320,6 +7324,7 @@ function sanitizeServiceConfigClient(item = {}) {
         "8-11": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["8-11"] ?? item?.price_matrix?.oneWay?.["8-11"]) || 0),
         "12-16": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["12-16"] ?? item?.price_matrix?.oneWay?.["12-16"]) || 0),
         "17-19": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["17-19"] ?? item?.price_matrix?.oneWay?.["17-19"] ?? (airportMatrixDefaults ? DEFAULT_SERVICE_PRICE_MATRIX.oneWay["17-19"] : 0)) || 0),
+        "20-23": Number(normalizeNumber(item?.priceMatrix?.oneWay?.["20-23"] ?? item?.price_matrix?.oneWay?.["20-23"] ?? (airportMatrixDefaults ? DEFAULT_SERVICE_PRICE_MATRIX.oneWay["20-23"] : 0)) || 0),
       },
       returnTrip: {
         "1-3": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["1-3"] ?? item?.price_matrix?.returnTrip?.["1-3"]) || 0),
@@ -7327,6 +7332,7 @@ function sanitizeServiceConfigClient(item = {}) {
         "8-11": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["8-11"] ?? item?.price_matrix?.returnTrip?.["8-11"]) || 0),
         "12-16": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["12-16"] ?? item?.price_matrix?.returnTrip?.["12-16"]) || 0),
         "17-19": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["17-19"] ?? item?.price_matrix?.returnTrip?.["17-19"] ?? (airportMatrixDefaults ? DEFAULT_SERVICE_PRICE_MATRIX.returnTrip["17-19"] : 0)) || 0),
+        "20-23": Number(normalizeNumber(item?.priceMatrix?.returnTrip?.["20-23"] ?? item?.price_matrix?.returnTrip?.["20-23"] ?? (airportMatrixDefaults ? DEFAULT_SERVICE_PRICE_MATRIX.returnTrip["20-23"] : 0)) || 0),
       },
     },
     confirmationTemplate: confirmationTemplates.en,
@@ -7827,7 +7833,8 @@ function serviceBandForPax(pax) {
   if (count <= 7) return "4-7";
   if (count <= 11) return "8-11";
   if (count <= 16) return "12-16";
-  return "17-19";
+  if (count <= 19) return "17-19";
+  return "20-23";
 }
 
 function serviceComputedPrice(config, pax, hasReturn) {
@@ -8512,11 +8519,13 @@ function renderServiceSettings() {
   els.servicesPriceOneWay811.value = airportConfig?.priceMatrix?.oneWay?.["8-11"] ?? 0;
   els.servicesPriceOneWay1216.value = airportConfig?.priceMatrix?.oneWay?.["12-16"] ?? 0;
   els.servicesPriceOneWay1719.value = airportConfig?.priceMatrix?.oneWay?.["17-19"] ?? DEFAULT_SERVICE_PRICE_MATRIX.oneWay["17-19"];
+  els.servicesPriceOneWay2023.value = airportConfig?.priceMatrix?.oneWay?.["20-23"] ?? DEFAULT_SERVICE_PRICE_MATRIX.oneWay["20-23"];
   els.servicesPriceReturn13.value = airportConfig?.priceMatrix?.returnTrip?.["1-3"] ?? 0;
   els.servicesPriceReturn47.value = airportConfig?.priceMatrix?.returnTrip?.["4-7"] ?? 0;
   els.servicesPriceReturn811.value = airportConfig?.priceMatrix?.returnTrip?.["8-11"] ?? 0;
   els.servicesPriceReturn1216.value = airportConfig?.priceMatrix?.returnTrip?.["12-16"] ?? 0;
   els.servicesPriceReturn1719.value = airportConfig?.priceMatrix?.returnTrip?.["17-19"] ?? DEFAULT_SERVICE_PRICE_MATRIX.returnTrip["17-19"];
+  els.servicesPriceReturn2023.value = airportConfig?.priceMatrix?.returnTrip?.["20-23"] ?? DEFAULT_SERVICE_PRICE_MATRIX.returnTrip["20-23"];
   renderServiceSettingsTemplateEditor();
   renderServiceSettingsTab();
 }
@@ -8553,11 +8562,13 @@ function onServiceSettingsInput() {
     airportConfig.priceMatrix.oneWay["8-11"] = Number(normalizeNumber(els.servicesPriceOneWay811.value) || 0);
     airportConfig.priceMatrix.oneWay["12-16"] = Number(normalizeNumber(els.servicesPriceOneWay1216.value) || 0);
     airportConfig.priceMatrix.oneWay["17-19"] = Number(normalizeNumber(els.servicesPriceOneWay1719.value) || 0);
+    airportConfig.priceMatrix.oneWay["20-23"] = Number(normalizeNumber(els.servicesPriceOneWay2023.value) || 0);
     airportConfig.priceMatrix.returnTrip["1-3"] = Number(normalizeNumber(els.servicesPriceReturn13.value) || 0);
     airportConfig.priceMatrix.returnTrip["4-7"] = Number(normalizeNumber(els.servicesPriceReturn47.value) || 0);
     airportConfig.priceMatrix.returnTrip["8-11"] = Number(normalizeNumber(els.servicesPriceReturn811.value) || 0);
     airportConfig.priceMatrix.returnTrip["12-16"] = Number(normalizeNumber(els.servicesPriceReturn1216.value) || 0);
     airportConfig.priceMatrix.returnTrip["17-19"] = Number(normalizeNumber(els.servicesPriceReturn1719.value) || 0);
+    airportConfig.priceMatrix.returnTrip["20-23"] = Number(normalizeNumber(els.servicesPriceReturn2023.value) || 0);
   }
   const selectedTemplateConfig = currentServiceSettingsTemplateConfig();
   if (selectedTemplateConfig && els.servicesConfirmationTemplate) {
