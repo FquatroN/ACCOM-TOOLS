@@ -4238,6 +4238,7 @@
                 <button id="financial-bi-tab-bank-statement" type="button" class="ghost">Bank Statement</button>
                 <button id="financial-bi-tab-cash-analysis" type="button" class="ghost">Cash Analysis</button>
                 <button id="financial-bi-tab-utilities" type="button" class="ghost">Utilities</button>
+                <button id="financial-bi-tab-items-revenue" type="button" class="ghost">Items Revenue</button>
               </div>
             </div>
           </section>
@@ -4399,6 +4400,34 @@
               </section>
             </div>
             <p id="financial-bi-utilities-status" class="auth-status"></p>
+          </section>
+
+          <section id="financial-bi-panel-items-revenue" class="card" hidden>
+            <div class="bar">
+              <h2>Items Revenue</h2>
+              <div class="actions"><p id="financial-bi-items-revenue-count">0 months</p></div>
+            </div>
+            <div class="grid filters guests-bi-filters financial-bi-items-revenue-filters">
+              <label>
+                Year From
+                <select id="financial-bi-items-revenue-year-from"></select>
+              </label>
+              <label>
+                Year To
+                <select id="financial-bi-items-revenue-year-to"></select>
+              </label>
+            </div>
+            <section class="financial-bi-items-revenue-card">
+              <h3>Nespresso</h3>
+              <div class="table-wrap compact-table-wrap financial-bi-items-revenue-wrap">
+                <table class="compact-table guests-bi-table financial-bi-items-revenue-table">
+                  <thead><tr><th>Year / Month</th><th>Sales</th><th>Buy</th><th>Revenue</th></tr></thead>
+                  <tbody id="financial-bi-items-revenue-nespresso-rows"></tbody>
+                  <tfoot id="financial-bi-items-revenue-nespresso-totals"></tfoot>
+                </table>
+              </div>
+            </section>
+            <p id="financial-bi-items-revenue-status" class="auth-status"></p>
           </section>
         </section>
       </section>
