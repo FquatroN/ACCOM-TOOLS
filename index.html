@@ -4234,6 +4234,7 @@
                 <button id="financial-bi-tab-fdm-accounts" type="button" class="ghost">Results (FDM Account)</button>
                 <button id="financial-bi-tab-bank-statement" type="button" class="ghost">Bank Statement</button>
                 <button id="financial-bi-tab-cash-analysis" type="button" class="ghost">Cash Analysis</button>
+                <button id="financial-bi-tab-utilities" type="button" class="ghost">Utilities</button>
               </div>
             </div>
           </section>
@@ -4351,6 +4352,50 @@
               </table>
             </div>
             <p id="financial-bi-cash-analysis-status" class="auth-status"></p>
+          </section>
+
+          <section id="financial-bi-panel-utilities" class="card" hidden>
+            <div class="bar">
+              <h2>Utilities</h2>
+              <div class="actions"><p id="financial-bi-utilities-count">0 months</p></div>
+            </div>
+            <div class="grid filters guests-bi-filters financial-bi-utilities-filters">
+              <label>
+                Supplier NIF
+                <select id="financial-bi-utilities-supplier-nif"><option value="">All</option></select>
+              </label>
+              <label>
+                Year From
+                <select id="financial-bi-utilities-year-from"></select>
+              </label>
+              <label>
+                Year To
+                <select id="financial-bi-utilities-year-to"></select>
+              </label>
+            </div>
+            <div class="financial-bi-utilities-grid">
+              <section class="financial-bi-utilities-card">
+                <h3>Total Amount</h3>
+                <div class="table-wrap compact-table-wrap financial-bi-utilities-wrap">
+                  <table class="compact-table guests-bi-table financial-bi-utilities-table">
+                    <thead><tr><th>Year / Month</th><th>H</th><th>A</th><th>Total</th></tr></thead>
+                    <tbody id="financial-bi-utilities-sum-rows"></tbody>
+                    <tfoot id="financial-bi-utilities-sum-totals"></tfoot>
+                  </table>
+                </div>
+              </section>
+              <section class="financial-bi-utilities-card">
+                <h3>Average Amount</h3>
+                <div class="table-wrap compact-table-wrap financial-bi-utilities-wrap">
+                  <table class="compact-table guests-bi-table financial-bi-utilities-table">
+                    <thead><tr><th>Year / Month</th><th>H</th><th>A</th><th>Total</th></tr></thead>
+                    <tbody id="financial-bi-utilities-average-rows"></tbody>
+                    <tfoot id="financial-bi-utilities-average-totals"></tfoot>
+                  </table>
+                </div>
+              </section>
+            </div>
+            <p id="financial-bi-utilities-status" class="auth-status"></p>
           </section>
         </section>
       </section>
