@@ -1380,7 +1380,7 @@ const state = {
   financialBiUtilitiesRequestToken: 0,
   financialBiUtilitiesRows: [],
   financialBiUtilitiesSuppliers: [],
-  financialBiUtilitiesSupplierNif: "",
+  financialBiUtilitiesSupplierNifs: [],
   financialBiUtilitiesYearFrom: "",
   financialBiUtilitiesYearTo: "",
   financialBiUtilitiesExpandedYears: {},
@@ -22648,7 +22648,9 @@ function currentFinancialBiUtilitiesYearRange() {
 function buildFinancialBiUtilitiesUrl() {
   const { from, to } = currentFinancialBiUtilitiesYearRange();
   const params = new URLSearchParams({ yearFrom: String(from), yearTo: String(to) });
-  if (clean(state.financialBiUtilitiesSupplierNif)) params.set("supplierNif", clean(state.financialBiUtilitiesSupplierNif));
+  [...new Set((state.financialBiUtilitiesSupplierNifs || []).map(clean).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right))
+    .forEach((supplierNif) => params.append("supplierNif", supplierNif));
   return `/api/financial-bi-utilities?${params.toString()}`;
 }
 
@@ -22690,7 +22692,9 @@ async function loadFinancialBiUtilitiesData({ silent = false } = {}) {
 }
 
 function onFinancialBiUtilitiesFilterChange() {
-  state.financialBiUtilitiesSupplierNif = clean(els.financialBiUtilitiesSupplierNif?.value);
+  state.financialBiUtilitiesSupplierNifs = Array.from(els.financialBiUtilitiesSupplierNif?.selectedOptions || [])
+    .map((option) => clean(option.value))
+    .filter(Boolean);
   state.financialBiUtilitiesYearFrom = clean(els.financialBiUtilitiesYearFrom?.value);
   state.financialBiUtilitiesYearTo = clean(els.financialBiUtilitiesYearTo?.value);
   loadFinancialBiUtilitiesData({ silent: true });
@@ -22774,11 +22778,11 @@ function renderFinancialBiUtilities() {
       .map((supplier) => ({ nif: clean(supplier?.nif), name: clean(supplier?.name) }))
       .filter((supplier) => supplier.nif)
       .sort((left, right) => left.nif.localeCompare(right.nif));
-    els.financialBiUtilitiesSupplierNif.innerHTML = `<option value="">All</option>${suppliers.map((supplier) => {
+    const selectedNifs = new Set((state.financialBiUtilitiesSupplierNifs || []).map(clean).filter(Boolean));
+    els.financialBiUtilitiesSupplierNif.innerHTML = suppliers.map((supplier) => {
       const label = supplier.name ? `${supplier.nif} - ${supplier.name}` : supplier.nif;
-      return `<option value="${escape(supplier.nif)}">${escape(label)}</option>`;
-    }).join("")}`;
-    els.financialBiUtilitiesSupplierNif.value = state.financialBiUtilitiesSupplierNif;
+      return `<option value="${escape(supplier.nif)}"${selectedNifs.has(supplier.nif) ? " selected" : ""}>${escape(label)}</option>`;
+    }).join("");
   }
   const { from, to } = currentFinancialBiUtilitiesYearRange();
   const rows = (Array.isArray(state.financialBiUtilitiesRows) ? state.financialBiUtilitiesRows : []).filter((row) => Number(row?.year || 0) >= from && Number(row?.year || 0) <= to);

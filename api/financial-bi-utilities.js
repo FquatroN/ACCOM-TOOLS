@@ -18,10 +18,10 @@ function filtersFor(req) {
   const query = req.query || {};
   const rawFrom = Array.isArray(query.yearFrom) ? query.yearFrom[0] : query.yearFrom;
   const rawTo = Array.isArray(query.yearTo) ? query.yearTo[0] : query.yearTo;
-  const supplierNif = clean(Array.isArray(query.supplierNif) ? query.supplierNif[0] : query.supplierNif);
+  const supplierNifs = [...new Set((Array.isArray(query.supplierNif) ? query.supplierNif : [query.supplierNif]).map(clean).filter(Boolean))].sort((left, right) => left.localeCompare(right));
   const from = parseYear(rawFrom, currentYear - 10);
   const to = parseYear(rawTo, currentYear);
-  return { yearFrom: Math.min(from, to), yearTo: Math.max(from, to), supplierNif };
+  return { yearFrom: Math.min(from, to), yearTo: Math.max(from, to), supplierNifs };
 }
 
 function normalizeRows(rows) {
@@ -36,7 +36,7 @@ function normalizeRows(rows) {
 }
 
 async function loadPayload(filters) {
-  const key = `${filters.yearFrom}:${filters.yearTo}:${filters.supplierNif}`;
+  const key = `${filters.yearFrom}:${filters.yearTo}:${filters.supplierNifs.join("|")}`;
   const now = Date.now();
   for (const [cacheKey, entry] of cache.entries()) {
     if (!entry || entry.expiresAt <= now) cache.delete(cacheKey);
@@ -48,7 +48,7 @@ async function loadPayload(filters) {
     body: {
       p_year_from: filters.yearFrom,
       p_year_to: filters.yearTo,
-      p_supplier_nif: filters.supplierNif || null,
+      p_supplier_nifs: filters.supplierNifs.length ? filters.supplierNifs : null,
     },
   }).then((payload) => {
     const first = Array.isArray(payload) ? payload[0] : payload;

@@ -5227,6 +5227,10 @@ button[id^="close-settings"] {
   align-items: end;
 }
 
+.financial-bi-utilities-filters select[multiple] {
+  min-height: 4.8rem;
+}
+
 .financial-bi-bank-statement-wrap {
   max-height: calc(100vh - 24rem);
   min-height: 20rem;
