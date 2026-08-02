@@ -28,6 +28,7 @@ function normalizeRows(rows) {
     const sales = Number(row?.sales || 0);
     const buy = Number(row?.buy || 0);
     return {
+      analysis: clean(row?.analysis || "nespresso").toLowerCase(),
       year: Number.parseInt(row?.year, 10) || 0,
       month: Number.parseInt(row?.month, 10) || 0,
       yearMonth: clean(row?.year_month || row?.yearMonth),

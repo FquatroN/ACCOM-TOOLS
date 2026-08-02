@@ -1787,6 +1787,10 @@ const els = {
   financialBiItemsRevenueCount: document.getElementById("financial-bi-items-revenue-count"),
   financialBiItemsRevenueNespressoRows: document.getElementById("financial-bi-items-revenue-nespresso-rows"),
   financialBiItemsRevenueNespressoTotals: document.getElementById("financial-bi-items-revenue-nespresso-totals"),
+  financialBiItemsRevenueNescafeMachineRows: document.getElementById("financial-bi-items-revenue-nescafe-machine-rows"),
+  financialBiItemsRevenueNescafeMachineTotals: document.getElementById("financial-bi-items-revenue-nescafe-machine-totals"),
+  financialBiItemsRevenueSouvenirsRows: document.getElementById("financial-bi-items-revenue-souvenirs-rows"),
+  financialBiItemsRevenueSouvenirsTotals: document.getElementById("financial-bi-items-revenue-souvenirs-totals"),
   financialBiItemsRevenueStatus: document.getElementById("financial-bi-items-revenue-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
@@ -2585,6 +2589,8 @@ function bindEvents() {
   els.financialBiItemsRevenueYearFrom?.addEventListener("change", onFinancialBiItemsRevenueFilterChange);
   els.financialBiItemsRevenueYearTo?.addEventListener("change", onFinancialBiItemsRevenueFilterChange);
   els.financialBiItemsRevenueNespressoRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
+  els.financialBiItemsRevenueNescafeMachineRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
+  els.financialBiItemsRevenueSouvenirsRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -22918,10 +22924,12 @@ function onFinancialBiItemsRevenueFilterChange() {
 function onFinancialBiItemsRevenueRowsClick(event) {
   const button = event.target.closest("[data-financial-bi-items-revenue-toggle-year]");
   const year = clean(button?.dataset.financialBiItemsRevenueToggleYear);
-  if (!year) return;
+  const analysis = clean(button?.dataset.financialBiItemsRevenueAnalysis);
+  if (!year || !analysis) return;
+  const key = `${analysis}:${year}`;
   state.financialBiItemsRevenueExpandedYears = {
     ...(state.financialBiItemsRevenueExpandedYears || {}),
-    [year]: !state.financialBiItemsRevenueExpandedYears?.[year],
+    [key]: !state.financialBiItemsRevenueExpandedYears?.[key],
   };
   renderFinancialBiItemsRevenue();
 }
@@ -22964,26 +22972,33 @@ function renderFinancialBiItemsRevenue() {
   const rows = (state.financialBiItemsRevenueRows || [])
     .filter((row) => Number(row?.year || 0) >= from && Number(row?.year || 0) <= to)
     .sort((left, right) => Number(right?.year || 0) - Number(left?.year || 0) || Number(right?.month || 0) - Number(left?.month || 0));
-  if (els.financialBiItemsRevenueCount) els.financialBiItemsRevenueCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
-  const yearGroups = new Map();
-  rows.forEach((row) => {
-    const year = Number(row?.year || 0);
-    if (!yearGroups.has(year)) yearGroups.set(year, []);
-    yearGroups.get(year).push(row);
+  const monthCount = new Set(rows.map((row) => clean(row?.yearMonth || `${row?.year}-${row?.month}`))).size;
+  if (els.financialBiItemsRevenueCount) els.financialBiItemsRevenueCount.textContent = `${monthCount} month${monthCount === 1 ? "" : "s"}`;
+  const analyses = [
+    { key: "nespresso", label: "Nespresso", rowsElement: els.financialBiItemsRevenueNespressoRows, totalsElement: els.financialBiItemsRevenueNespressoTotals },
+    { key: "nescafe_machine", label: "Nescafe Machine", rowsElement: els.financialBiItemsRevenueNescafeMachineRows, totalsElement: els.financialBiItemsRevenueNescafeMachineTotals },
+    { key: "souvenirs", label: "Souvenirs", rowsElement: els.financialBiItemsRevenueSouvenirsRows, totalsElement: els.financialBiItemsRevenueSouvenirsTotals },
+  ];
+  analyses.forEach(({ key: analysis, label, rowsElement, totalsElement }) => {
+    const analysisRows = rows.filter((row) => clean(row?.analysis).toLowerCase() === analysis);
+    const yearGroups = new Map();
+    analysisRows.forEach((row) => {
+      const year = Number(row?.year || 0);
+      if (!yearGroups.has(year)) yearGroups.set(year, []);
+      yearGroups.get(year).push(row);
+    });
+    if (rowsElement) {
+      rowsElement.innerHTML = yearGroups.size
+        ? Array.from(yearGroups.entries()).map(([year, months]) => {
+          const expandedKey = `${analysis}:${year}`;
+          const expanded = !!state.financialBiItemsRevenueExpandedYears?.[expandedKey];
+          const monthRows = expanded ? months.map((row) => `<tr><td class="financial-bi-month-cell">${escape(String(Number(row?.month || 0)))}</td>${financialBiItemsRevenueCells(row)}</tr>`).join("") : "";
+          return `<tr class="financial-bi-year-row"><td><button type="button" class="financial-bi-year-toggle" data-financial-bi-items-revenue-toggle-year="${escape(String(year))}" data-financial-bi-items-revenue-analysis="${escape(analysis)}">${expanded ? "-" : "+"}</button> ${escape(String(year))}</td>${financialBiItemsRevenueCells(sumFinancialBiItemsRevenueRows(months))}</tr>${monthRows}`;
+        }).join("")
+        : `<tr><td colspan="4" class="empty">No ${escape(label)} data found.</td></tr>`;
+    }
+    if (totalsElement) totalsElement.innerHTML = `<tr><td>Total</td>${financialBiItemsRevenueCells(sumFinancialBiItemsRevenueRows(analysisRows))}</tr>`;
   });
-  if (els.financialBiItemsRevenueNespressoRows) {
-    els.financialBiItemsRevenueNespressoRows.innerHTML = yearGroups.size
-      ? Array.from(yearGroups.entries()).map(([year, months]) => {
-        const key = String(year);
-        const expanded = !!state.financialBiItemsRevenueExpandedYears?.[key];
-        const monthRows = expanded ? months.map((row) => `<tr><td class="financial-bi-month-cell">${escape(String(Number(row?.month || 0)))}</td>${financialBiItemsRevenueCells(row)}</tr>`).join("") : "";
-        return `<tr class="financial-bi-year-row"><td><button type="button" class="financial-bi-year-toggle" data-financial-bi-items-revenue-toggle-year="${escape(key)}">${expanded ? "-" : "+"}</button> ${escape(key)}</td>${financialBiItemsRevenueCells(sumFinancialBiItemsRevenueRows(months))}</tr>${monthRows}`;
-      }).join("")
-      : '<tr><td colspan="4" class="empty">No Nespresso data found.</td></tr>';
-  }
-  if (els.financialBiItemsRevenueNespressoTotals) {
-    els.financialBiItemsRevenueNespressoTotals.innerHTML = `<tr><td>Total</td>${financialBiItemsRevenueCells(sumFinancialBiItemsRevenueRows(rows))}</tr>`;
-  }
 }
 
 function renderFinancialBi() {
