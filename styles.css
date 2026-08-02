@@ -5119,7 +5119,8 @@ button[id^="close-settings"] {
 }
 
 #guests-bi-tmt-filter-status,
-#bookings-bi-filter-status {
+#bookings-bi-filter-status,
+#financial-bi-utilities-supplier-nif {
   height: 2.28rem;
   overflow-y: auto;
 }
@@ -5225,10 +5226,6 @@ button[id^="close-settings"] {
 .financial-bi-utilities-filters {
   grid-template-columns: minmax(14rem, 1fr) 8rem 8rem;
   align-items: end;
-}
-
-.financial-bi-utilities-filters select[multiple] {
-  min-height: 4.8rem;
 }
 
 .financial-bi-bank-statement-wrap {
