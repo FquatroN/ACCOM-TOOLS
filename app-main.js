@@ -22452,6 +22452,7 @@ function buildFinancialBiBankStatementChartMarkup(years) {
   const margin = { top: 20, right: 20, bottom: 54, left: 74 };
   const xFor = (index) => margin.left + ((width - margin.left - margin.right) * (points.length === 1 ? 0.5 : index / (points.length - 1)));
   const yFor = (value) => margin.top + ((maxValue - value) / range) * (height - margin.top - margin.bottom);
+  const zeroY = yFor(0);
   const grid = Array.from({ length: 5 }, (_, index) => {
     const value = minValue + (range * index / 4);
     const y = yFor(value);
@@ -22466,7 +22467,7 @@ function buildFinancialBiBankStatementChartMarkup(years) {
   const labels = points.map((point, index) => `<text x="${xFor(index).toFixed(2)}" y="${height - 18}" text-anchor="middle" class="financial-bi-chart-category">${escape(String(point.year))}</text>`).join("");
   return `<div class="financial-bi-chart-legend">${metrics.map((metric) => `<span><i style="background:${metric.color}"></i>${escape(metric.label)}</span>`).join("")}</div>
     <svg class="financial-bi-performance-svg financial-bi-bank-statement-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Bank statement annual sum, average, minimum and maximum">
-      ${grid}${series}${labels}
+      ${grid}<line x1="${margin.left}" y1="${zeroY.toFixed(2)}" x2="${width - margin.right}" y2="${zeroY.toFixed(2)}" class="financial-bi-bank-statement-zero"/>${series}${labels}
     </svg>`;
 }
 

@@ -5322,6 +5322,11 @@ button[id^="close-settings"] {
   min-width: 48rem;
 }
 
+.financial-bi-bank-statement-zero {
+  stroke: #c62828;
+  stroke-width: 1;
+}
+
 @media (max-width: 760px) {
   .financial-bi-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
