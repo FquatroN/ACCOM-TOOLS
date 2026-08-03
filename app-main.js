@@ -1793,6 +1793,12 @@ const els = {
   financialBiItemsRevenueNescafeMachineTotals: document.getElementById("financial-bi-items-revenue-nescafe-machine-totals"),
   financialBiItemsRevenueSouvenirsRows: document.getElementById("financial-bi-items-revenue-souvenirs-rows"),
   financialBiItemsRevenueSouvenirsTotals: document.getElementById("financial-bi-items-revenue-souvenirs-totals"),
+  financialBiItemsRevenueToursDiscoveryRows: document.getElementById("financial-bi-items-revenue-tours-discovery-rows"),
+  financialBiItemsRevenueToursDiscoveryTotals: document.getElementById("financial-bi-items-revenue-tours-discovery-totals"),
+  financialBiItemsRevenueSmartbusRows: document.getElementById("financial-bi-items-revenue-smartbus-rows"),
+  financialBiItemsRevenueSmartbusTotals: document.getElementById("financial-bi-items-revenue-smartbus-totals"),
+  financialBiItemsRevenueUberRows: document.getElementById("financial-bi-items-revenue-uber-rows"),
+  financialBiItemsRevenueUberTotals: document.getElementById("financial-bi-items-revenue-uber-totals"),
   financialBiItemsRevenueStatus: document.getElementById("financial-bi-items-revenue-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
@@ -2593,6 +2599,9 @@ function bindEvents() {
   els.financialBiItemsRevenueNespressoRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
   els.financialBiItemsRevenueNescafeMachineRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
   els.financialBiItemsRevenueSouvenirsRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
+  els.financialBiItemsRevenueToursDiscoveryRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
+  els.financialBiItemsRevenueSmartbusRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
+  els.financialBiItemsRevenueUberRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -23036,6 +23045,9 @@ function renderFinancialBiItemsRevenue() {
     { key: "nespresso", label: "Nespresso", rowsElement: els.financialBiItemsRevenueNespressoRows, totalsElement: els.financialBiItemsRevenueNespressoTotals },
     { key: "nescafe_machine", label: "Nescafe Machine", rowsElement: els.financialBiItemsRevenueNescafeMachineRows, totalsElement: els.financialBiItemsRevenueNescafeMachineTotals },
     { key: "souvenirs", label: "Souvenirs", rowsElement: els.financialBiItemsRevenueSouvenirsRows, totalsElement: els.financialBiItemsRevenueSouvenirsTotals },
+    { key: "tours_discovery", label: "Tours Discovery", rowsElement: els.financialBiItemsRevenueToursDiscoveryRows, totalsElement: els.financialBiItemsRevenueToursDiscoveryTotals },
+    { key: "smartbus", label: "Smartbus", rowsElement: els.financialBiItemsRevenueSmartbusRows, totalsElement: els.financialBiItemsRevenueSmartbusTotals },
+    { key: "uber", label: "Uber", rowsElement: els.financialBiItemsRevenueUberRows, totalsElement: els.financialBiItemsRevenueUberTotals },
   ];
   analyses.forEach(({ key: analysis, label, rowsElement, totalsElement }) => {
     const analysisRows = rows.filter((row) => clean(row?.analysis).toLowerCase() === analysis);
