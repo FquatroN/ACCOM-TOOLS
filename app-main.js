@@ -1726,6 +1726,7 @@ const els = {
   bookingsBiChannelsPies: document.getElementById("bookings-bi-channels-pies"),
   bookingsBiChannelShareHead: document.getElementById("bookings-bi-channel-share-head"),
   bookingsBiChannelShareRows: document.getElementById("bookings-bi-channel-share-rows"),
+  bookingsBiChannelShareTrend: document.getElementById("bookings-bi-channel-share-trend"),
   bookingsBiPanelChannels: document.getElementById("bookings-bi-panel-channels"),
   bookingsBiPanelBookingWindow: document.getElementById("bookings-bi-panel-booking-window"),
   bookingsBiWindowFilterYear: document.getElementById("bookings-bi-window-filter-year"),
@@ -21557,7 +21558,7 @@ function renderBookingsBiChannelPies() {
     : '<div class="empty">No booking channel distribution found.</div>';
 }
 
-function renderBookingsBiChannelMonthlyShare() {
+function bookingsBiChannelMonthlyShareData() {
   const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const monthKeys = (Array.isArray(state.bookingsBiChannelMonthlyShareMonths) ? state.bookingsBiChannelMonthlyShareMonths : [])
     .filter((month) => /^\d{4}-\d{2}$/.test(clean(month)));
@@ -21571,10 +21572,6 @@ function renderBookingsBiChannelMonthlyShare() {
     const [year, monthNumber] = month.split("-").map(Number);
     return `${monthLabels[monthNumber - 1]} ${String(year).slice(-2)}`;
   });
-  if (els.bookingsBiChannelShareHead) {
-    els.bookingsBiChannelShareHead.innerHTML = `<tr><th>Channel</th>${labels.map((month) => `<th>${escape(month)}</th>`).join("")}</tr>`;
-  }
-  if (!els.bookingsBiChannelShareRows) return;
   const rows = Array.isArray(state.bookingsBiChannelMonthlyShare) ? state.bookingsBiChannelMonthlyShare : [];
   const totalsByMonth = Array.from({ length: rollingMonths.length }, () => 0);
   const channels = new Map();
@@ -21590,6 +21587,15 @@ function renderBookingsBiChannelMonthlyShare() {
   });
   const orderedChannels = Array.from(channels.entries())
     .sort((left, right) => right[1].reduce((sum, value) => sum + value, 0) - left[1].reduce((sum, value) => sum + value, 0) || left[0].localeCompare(right[0]));
+  return { labels, rollingMonths, totalsByMonth, orderedChannels };
+}
+
+function renderBookingsBiChannelMonthlyShare() {
+  const { labels, totalsByMonth, orderedChannels } = bookingsBiChannelMonthlyShareData();
+  if (els.bookingsBiChannelShareHead) {
+    els.bookingsBiChannelShareHead.innerHTML = `<tr><th>Channel</th>${labels.map((month) => `<th>${escape(month)}</th>`).join("")}</tr>`;
+  }
+  if (!els.bookingsBiChannelShareRows) return;
   els.bookingsBiChannelShareRows.innerHTML = orderedChannels.length
     ? orderedChannels.map(([channel, counts]) => `<tr><td>${escape(channel)}</td>${counts.map((count, index) => {
       const total = totalsByMonth[index];
@@ -21603,6 +21609,34 @@ function renderBookingsBiChannelMonthlyShare() {
       return `<td class="${changeClass}">${escape(`${share.toFixed(1)}%`)}${changeText}</td>`;
     }).join("")}</tr>`).join("")
     : '<tr><td colspan="13" class="empty">No booking channel data found for the previous 12 months.</td></tr>';
+}
+
+function renderBookingsBiChannelMonthlyShareTrend() {
+  if (!els.bookingsBiChannelShareTrend) return;
+  const { labels, orderedChannels } = bookingsBiChannelMonthlyShareData();
+  const topChannels = orderedChannels.slice(0, 8);
+  const topChannelNames = new Set(topChannels.map(([channel]) => channel));
+  const otherValues = Array.from({ length: labels.length }, () => 0);
+  orderedChannels.forEach(([channel, counts]) => {
+    if (topChannelNames.has(channel)) return;
+    counts.forEach((count, index) => {
+      otherValues[index] += Number(count || 0);
+    });
+  });
+  const series = topChannels.map(([channel, counts]) => ({
+    countryLabel: channel,
+    values: counts,
+  }));
+  if (otherValues.some((value) => value > 0)) {
+    series.push({ countryLabel: "Others", values: otherValues });
+  }
+  els.bookingsBiChannelShareTrend.innerHTML = buildGuestsBiLineChartMarkup(
+    labels,
+    series,
+    "No booking channel trend found for the previous 12 months.",
+    "Booking channel share by check-in month",
+    "percent"
+  );
 }
 
 function formatBookingsBiWindowDays(value) {
@@ -21731,6 +21765,7 @@ function renderBookingsBi() {
   }
   renderBookingsBiChannelPies();
   renderBookingsBiChannelMonthlyShare();
+  renderBookingsBiChannelMonthlyShareTrend();
   renderBookingsBiWindow();
 }
 
