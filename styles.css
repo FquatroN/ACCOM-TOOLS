@@ -5163,6 +5163,21 @@ button[id^="close-settings"] {
   z-index: 3;
 }
 
+.bookings-bi-channel-share-table td small {
+  display: block;
+  margin-top: 0.08rem;
+  font-size: 0.68em;
+  font-weight: 700;
+}
+
+.bookings-bi-share-up {
+  color: #087a49;
+}
+
+.bookings-bi-share-down {
+  color: #c23b38;
+}
+
 .guests-bi-table th,
 .guests-bi-table td {
   text-align: right;

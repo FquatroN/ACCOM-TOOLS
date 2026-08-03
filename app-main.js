@@ -1330,6 +1330,7 @@ const state = {
   bookingsBiChannelPieYears: [],
   bookingsBiChannelPieCharts: [],
   bookingsBiChannelMonthlyShare: [],
+  bookingsBiChannelMonthlyShareMonths: [],
   bookingsBiLastLoaded: { year: "", ha: "", statuses: "" },
   bookingsBiWindowLoaded: false,
   bookingsBiWindowLoading: false,
@@ -21404,6 +21405,7 @@ async function loadBookingsBiData({ silent = false } = {}) {
     state.bookingsBiChannelPieYears = Array.isArray(result?.channels?.pieYears) ? result.channels.pieYears : [];
     state.bookingsBiChannelPieCharts = Array.isArray(result?.channels?.pieCharts) ? result.channels.pieCharts : [];
     state.bookingsBiChannelMonthlyShare = Array.isArray(result?.channels?.monthlyShare) ? result.channels.monthlyShare : [];
+    state.bookingsBiChannelMonthlyShareMonths = Array.isArray(result?.channels?.monthlyShareMonths) ? result.channels.monthlyShareMonths : [];
     state.bookingsBiLastLoaded = {
       year: state.bookingsBiYear,
       ha: state.bookingsBiHa,
@@ -21417,6 +21419,7 @@ async function loadBookingsBiData({ silent = false } = {}) {
     state.bookingsBiChannelPieYears = [];
     state.bookingsBiChannelPieCharts = [];
     state.bookingsBiChannelMonthlyShare = [];
+    state.bookingsBiChannelMonthlyShareMonths = [];
     renderBookingsBi();
     if (!silent) setBookingsBiStatus(`Failed to load Bookings BI: ${error.message}`, "error");
   } finally {
@@ -21556,30 +21559,50 @@ function renderBookingsBiChannelPies() {
 
 function renderBookingsBiChannelMonthlyShare() {
   const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthKeys = (Array.isArray(state.bookingsBiChannelMonthlyShareMonths) ? state.bookingsBiChannelMonthlyShareMonths : [])
+    .filter((month) => /^\d{4}-\d{2}$/.test(clean(month)));
+  const rollingMonths = monthKeys.length === 12 ? monthKeys : Array.from({ length: 12 }, (_, index) => {
+    const date = new Date();
+    date.setDate(1);
+    date.setMonth(date.getMonth() - (12 - index));
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const labels = rollingMonths.map((month) => {
+    const [year, monthNumber] = month.split("-").map(Number);
+    return `${monthLabels[monthNumber - 1]} ${String(year).slice(-2)}`;
+  });
   if (els.bookingsBiChannelShareHead) {
-    els.bookingsBiChannelShareHead.innerHTML = `<tr><th>Channel</th>${monthLabels.map((month) => `<th>${month}</th>`).join("")}</tr>`;
+    els.bookingsBiChannelShareHead.innerHTML = `<tr><th>Channel</th>${labels.map((month) => `<th>${escape(month)}</th>`).join("")}</tr>`;
   }
   if (!els.bookingsBiChannelShareRows) return;
   const rows = Array.isArray(state.bookingsBiChannelMonthlyShare) ? state.bookingsBiChannelMonthlyShare : [];
-  const totalsByMonth = Array.from({ length: 12 }, () => 0);
+  const totalsByMonth = Array.from({ length: rollingMonths.length }, () => 0);
   const channels = new Map();
   rows.forEach((row) => {
-    const month = Number(row?.month || 0);
+    const month = clean(row?.yearMonth || row?.year_month);
+    const monthIndex = rollingMonths.indexOf(month);
     const count = Number(row?.bookingCount ?? row?.booking_count ?? 0);
-    if (month < 1 || month > 12 || !Number.isFinite(count) || count <= 0) return;
+    if (monthIndex < 0 || !Number.isFinite(count) || count <= 0) return;
     const channel = clean(row?.channel ?? row?.channel_label) || "Unknown";
-    if (!channels.has(channel)) channels.set(channel, Array.from({ length: 12 }, () => 0));
-    channels.get(channel)[month - 1] += count;
-    totalsByMonth[month - 1] += count;
+    if (!channels.has(channel)) channels.set(channel, Array.from({ length: rollingMonths.length }, () => 0));
+    channels.get(channel)[monthIndex] += count;
+    totalsByMonth[monthIndex] += count;
   });
   const orderedChannels = Array.from(channels.entries())
     .sort((left, right) => right[1].reduce((sum, value) => sum + value, 0) - left[1].reduce((sum, value) => sum + value, 0) || left[0].localeCompare(right[0]));
   els.bookingsBiChannelShareRows.innerHTML = orderedChannels.length
     ? orderedChannels.map(([channel, counts]) => `<tr><td>${escape(channel)}</td>${counts.map((count, index) => {
       const total = totalsByMonth[index];
-      return `<td>${total ? escape(`${((count / total) * 100).toFixed(1)}%`) : "-"}</td>`;
+      if (!total) return "<td>-</td>";
+      const share = (count / total) * 100;
+      const previousTotal = totalsByMonth[index - 1];
+      const previousShare = index > 0 && previousTotal ? (counts[index - 1] / previousTotal) * 100 : null;
+      const change = previousShare === null ? null : share - previousShare;
+      const changeClass = change > 0.05 ? "bookings-bi-share-up" : change < -0.05 ? "bookings-bi-share-down" : "";
+      const changeText = change === null || Math.abs(change) <= 0.05 ? "" : `<small>${escape(`${change > 0 ? "+" : ""}${change.toFixed(1)} pp`)}</small>`;
+      return `<td class="${changeClass}">${escape(`${share.toFixed(1)}%`)}${changeText}</td>`;
     }).join("")}</tr>`).join("")
-    : '<tr><td colspan="13" class="empty">No booking channel data found for the selected year.</td></tr>';
+    : '<tr><td colspan="13" class="empty">No booking channel data found for the previous 12 months.</td></tr>';
 }
 
 function formatBookingsBiWindowDays(value) {
