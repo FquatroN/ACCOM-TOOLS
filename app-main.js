@@ -3220,7 +3220,6 @@ function normalizeFeatureListClient(list, allowed) {
 
 function canApp(feature) {
   const normalized = clean(feature).toLowerCase();
-  if (normalized === "financial-bi" && state.access.appFeatures.includes("business-intelligence")) return true;
   return state.access.appFeatures.includes(normalized);
 }
 

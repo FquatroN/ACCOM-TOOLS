@@ -481,7 +481,6 @@ async function loadAccessForUser(userId) {
 function hasFeature(access, area, feature) {
   const key = cleanText(feature).toLowerCase();
   if (!key) return false;
-  if (area === "app" && key === "financial-bi") return (access?.appFeatures || []).includes(key) || (access?.appFeatures || []).includes("business-intelligence");
   if (area === "app") return (access?.appFeatures || []).includes(key);
   if (area === "settings" && key === "bi-settings") return (access?.settingsFeatures || []).includes(key) || (access?.appFeatures || []).includes("business-intelligence");
   if (area === "settings") return (access?.settingsFeatures || []).includes(key);
