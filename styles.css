@@ -5852,6 +5852,31 @@ button[id^="close-settings"] {
   vertical-align: middle;
 }
 
+.financial-docs-sort-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+  padding: 0;
+  text-align: inherit;
+  white-space: nowrap;
+}
+
+.financial-docs-sort-button:hover,
+.financial-docs-sort-button:focus-visible {
+  color: var(--brand);
+  outline: none;
+}
+
+.financial-docs-sort-indicator {
+  display: inline-block;
+  margin-left: 0.15rem;
+  min-width: 0.5rem;
+}
+
 .financial-docs-table th:nth-child(2),
 .financial-docs-table td:nth-child(2),
 .financial-docs-table th:nth-child(10),

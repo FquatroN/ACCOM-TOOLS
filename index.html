@@ -3403,16 +3403,16 @@
             <section id="financial-docs-panel-list">
               <div class="table-wrap financial-docs-table-wrap">
                 <table class="financial-docs-table">
-                  <thead>
+                  <thead id="financial-docs-table-head">
                     <tr>
-                      <th>Create Date</th>
+                      <th aria-sort="descending"><button type="button" class="financial-docs-sort-button" data-financial-doc-sort="created_at">Create Date <span class="financial-docs-sort-indicator" aria-hidden="true">v</span></button></th>
                       <th>CC</th>
-                      <th>Date</th>
+                      <th aria-sort="none"><button type="button" class="financial-docs-sort-button" data-financial-doc-sort="document_date">Date <span class="financial-docs-sort-indicator" aria-hidden="true"></span></button></th>
                       <th>Doc Number</th>
                       <th>Description</th>
-                      <th>Name</th>
-                      <th>Supplier NIF</th>
-                      <th>Amount</th>
+                      <th aria-sort="none"><button type="button" class="financial-docs-sort-button" data-financial-doc-sort="supplier_name">Name <span class="financial-docs-sort-indicator" aria-hidden="true"></span></button></th>
+                      <th aria-sort="none"><button type="button" class="financial-docs-sort-button" data-financial-doc-sort="supplier_nif">Supplier NIF <span class="financial-docs-sort-indicator" aria-hidden="true"></span></button></th>
+                      <th aria-sort="none"><button type="button" class="financial-docs-sort-button" data-financial-doc-sort="amount">Amount <span class="financial-docs-sort-indicator" aria-hidden="true"></span></button></th>
                       <th>VAT Amount</th>
                       <th>Payment</th>
                       <th>Type</th>

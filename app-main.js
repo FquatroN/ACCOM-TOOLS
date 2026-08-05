@@ -1233,6 +1233,8 @@ const state = {
   settings: clone(DEFAULT_SETTINGS),
   financialDocsSettings: clone(DEFAULT_FINANCIAL_DOCS_SETTINGS),
   financialDocsRows: [],
+  financialDocsSortBy: "created_at",
+  financialDocsSortDirection: "desc",
   financialDocEntities: [],
   financialDocsLoaded: false,
   financialDocsLoading: false,
@@ -1630,6 +1632,7 @@ const els = {
   financialDocsDraftCount: document.getElementById("financial-docs-draft-count"),
   financialDocsPanelList: document.getElementById("financial-docs-panel-list"),
   financialDocsPanelResume: document.getElementById("financial-docs-panel-resume"),
+  financialDocsTableHead: document.getElementById("financial-docs-table-head"),
   financialDocsRows: document.getElementById("financial-docs-rows"),
   financialDocsMobileCards: document.getElementById("financial-docs-mobile-cards"),
   financialDocsResumeCount: document.getElementById("financial-docs-resume-count"),
@@ -2672,6 +2675,7 @@ function bindEvents() {
   els.financialDocsParseInput?.addEventListener("change", onFinancialDocParsePicked);
   els.financialDocsAttachmentInput?.addEventListener("change", onFinancialDocAttachmentPicked);
   els.financialDocsImportInput?.addEventListener("change", onFinancialDocImportFilesPicked);
+  els.financialDocsTableHead?.addEventListener("click", onFinancialDocsSortClick);
   els.financialDocsRows?.addEventListener("click", onFinancialDocTableAction);
   els.financialDocsRows?.addEventListener("input", onFinancialDocTableInput);
   els.financialDocsRows?.addEventListener("change", onFinancialDocTableChange);
@@ -18986,12 +18990,70 @@ function onFinancialDocEntitiesAction(event) {
   }
 }
 
+const FINANCIAL_DOC_SORT_FIELDS = new Set(["created_at", "document_date", "supplier_name", "supplier_nif", "amount"]);
+
+function currentFinancialDocsSort() {
+  const sortBy = FINANCIAL_DOC_SORT_FIELDS.has(clean(state.financialDocsSortBy))
+    ? clean(state.financialDocsSortBy)
+    : "created_at";
+  return {
+    sortBy,
+    sortDirection: clean(state.financialDocsSortDirection).toLowerCase() === "asc" ? "asc" : "desc",
+  };
+}
+
+function financialDocSortValue(row, sortBy) {
+  if (sortBy === "created_at") return clean(row?.createdAt);
+  if (sortBy === "document_date") return clean(row?.documentDate);
+  if (sortBy === "supplier_name") return clean(row?.supplierName);
+  if (sortBy === "supplier_nif") return clean(row?.supplierNif);
+  if (sortBy === "amount") return row?.amount;
+  return "";
+}
+
+function compareFinancialDocSortValues(left, right, sortBy) {
+  if (sortBy === "amount") return Number(left) - Number(right);
+  if (sortBy === "created_at" || sortBy === "document_date") return Date.parse(left) - Date.parse(right);
+  return String(left).localeCompare(String(right), "pt-PT", { sensitivity: "base", numeric: true });
+}
+
 function sortFinancialDocRows(rows) {
+  const { sortBy, sortDirection } = currentFinancialDocsSort();
   return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
-    const at = Date.parse(clean(a.createdAt)) || 0;
-    const bt = Date.parse(clean(b.createdAt)) || 0;
-    return bt - at || clean(a.supplierName).localeCompare(clean(b.supplierName));
+    const left = financialDocSortValue(a, sortBy);
+    const right = financialDocSortValue(b, sortBy);
+    const leftEmpty = left === null || left === undefined || clean(left) === "";
+    const rightEmpty = right === null || right === undefined || clean(right) === "";
+    if (leftEmpty !== rightEmpty) return leftEmpty ? 1 : -1;
+    const comparison = leftEmpty ? 0 : compareFinancialDocSortValues(left, right, sortBy);
+    if (comparison) return sortDirection === "asc" ? comparison : -comparison;
+    const createdComparison = (Date.parse(clean(b?.createdAt)) || 0) - (Date.parse(clean(a?.createdAt)) || 0);
+    return createdComparison || clean(a?.id).localeCompare(clean(b?.id));
   });
+}
+
+function renderFinancialDocsSortHeaders() {
+  const { sortBy, sortDirection } = currentFinancialDocsSort();
+  els.financialDocsTableHead?.querySelectorAll("[data-financial-doc-sort]").forEach((button) => {
+    const active = clean(button.dataset.financialDocSort) === sortBy;
+    const indicator = button.querySelector(".financial-docs-sort-indicator");
+    if (indicator) indicator.textContent = active ? (sortDirection === "asc" ? "^" : "v") : "";
+    button.closest("th")?.setAttribute("aria-sort", active ? (sortDirection === "asc" ? "ascending" : "descending") : "none");
+  });
+}
+
+function onFinancialDocsSortClick(event) {
+  const button = event.target.closest("button[data-financial-doc-sort]");
+  const sortBy = clean(button?.dataset.financialDocSort);
+  if (!FINANCIAL_DOC_SORT_FIELDS.has(sortBy)) return;
+  const current = currentFinancialDocsSort();
+  state.financialDocsSortBy = sortBy;
+  state.financialDocsSortDirection = current.sortBy === sortBy
+    ? (current.sortDirection === "asc" ? "desc" : "asc")
+    : "asc";
+  state.financialDocsRows = sortFinancialDocRows(state.financialDocsRows);
+  renderFinancialDocs();
+  scheduleFinancialDocsReload({ silent: true });
 }
 
 function financialDocSelectMarkup(type, current = "", { blank = true } = {}) {
@@ -19397,6 +19459,7 @@ function currentFinancialDocsServerFilters() {
 
 function buildFinancialDocsListUrlClient() {
   const filters = currentFinancialDocsServerFilters();
+  const { sortBy, sortDirection } = currentFinancialDocsSort();
   const params = new URLSearchParams();
   if (filters.createdFrom) params.set("created_from", filters.createdFrom);
   if (filters.createdTo) params.set("created_to", filters.createdTo);
@@ -19409,6 +19472,8 @@ function buildFinancialDocsListUrlClient() {
   if (filters.fat) params.set("fat", filters.fat);
   if (filters.category) params.set("category", filters.category);
   if (filters.status) params.set("status", filters.status);
+  params.set("sort_by", sortBy);
+  params.set("sort_direction", sortDirection);
   const query = params.toString();
   return `/api/financial-docs${query ? `?${query}` : ""}`;
 }
@@ -24313,6 +24378,7 @@ function renderFinancialDocsMobileCards(rows) {
 }
 
 function renderFinancialDocs() {
+  renderFinancialDocsSortHeaders();
   if (!canAppFinancialDocs()) {
     if (els.financialDocsCount) els.financialDocsCount.textContent = "0 records";
     if (els.financialDocsDraftCount) els.financialDocsDraftCount.textContent = "0 drafts";

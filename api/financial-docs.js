@@ -176,6 +176,8 @@ module.exports = async function handler(req, res) {
         fat: cleanText(req.query?.fat),
         category: cleanText(req.query?.category),
         status: cleanText(req.query?.status),
+        sortBy: cleanText(req.query?.sort_by),
+        sortDirection: cleanText(req.query?.sort_direction),
       });
       res.status(200).json({ rows, settings: safeFinancialDocsSettings(settings) });
       return;

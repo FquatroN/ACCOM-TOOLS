@@ -397,7 +397,14 @@ function buildFinancialDocumentsListPath(filters = {}) {
     "uploaded_by",
     "uploaded_at",
   ].join(",");
-  const params = [`select=${listSelect}`, "order=created_at.desc"];
+  const allowedSortColumns = new Set(["created_at", "document_date", "supplier_name", "supplier_nif", "amount"]);
+  const requestedSortColumn = cleanText(filters.sortBy).toLowerCase();
+  const sortColumn = allowedSortColumns.has(requestedSortColumn) ? requestedSortColumn : "created_at";
+  const sortDirection = cleanText(filters.sortDirection).toLowerCase() === "asc" ? "asc" : "desc";
+  const order = sortColumn === "created_at"
+    ? `created_at.${sortDirection},id.desc`
+    : `${sortColumn}.${sortDirection}.nullslast,created_at.desc,id.desc`;
+  const params = [`select=${listSelect}`, `order=${order}`];
   const createdFrom = cleanText(filters.createdFrom);
   const createdTo = cleanText(filters.createdTo);
   const dateFrom = cleanText(filters.dateFrom);
