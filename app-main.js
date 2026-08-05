@@ -2069,6 +2069,7 @@ const els = {
   groupTotalValue: document.getElementById("group-total-value"),
   groupDepositPreview: document.getElementById("group-deposit-preview"),
   groupSave: document.getElementById("group-save"),
+  groupCopy: document.getElementById("group-copy"),
   groupDelete: document.getElementById("group-delete"),
   groupsShowActive: document.getElementById("groups-show-active"),
   groupsExportExcel: document.getElementById("groups-export-excel"),
@@ -3062,6 +3063,7 @@ function bindEvents() {
   els.groupRoomItemsBody.addEventListener("change", onGroupRoomItemInput);
   els.groupRoomItemsBody.addEventListener("click", onGroupRoomItemAction);
   els.groupSave.addEventListener("click", saveGroupProposal);
+  els.groupCopy.addEventListener("click", copyGroupProposal);
   els.groupDelete.addEventListener("click", deleteGroupProposal);
   els.groupsExportExcel.addEventListener("click", exportGroupsToExcel);
   els.groupsExportPdf.addEventListener("click", exportGroupsToPdf);
@@ -5242,6 +5244,7 @@ function renderGroupDraft() {
   renderGroupRoomItems();
   renderGroupTotals();
   renderGroupAuditHistory();
+  els.groupCopy.hidden = !draft.id;
   els.groupDelete.hidden = !draft.id || !isAdministratorProfile();
 }
 
@@ -5954,6 +5957,37 @@ async function saveGroupProposal() {
   } catch (e) {
     setGroupsStatus(`Could not save group proposal: ${e.message}`);
     showToast(`Could not save group proposal: ${e.message}`, "error");
+  }
+}
+
+async function copyGroupProposal() {
+  const source = clone(state.groupDraft);
+  if (!clean(source.id)) {
+    setGroupsStatus("Save the proposal before making a copy.");
+    showToast("Save the proposal before making a copy.", "error");
+    return;
+  }
+  state.groupDraft = {
+    ...source,
+    id: "",
+    creationDate: "",
+    name: `Copy ${clean(source.name)}`,
+    audit: [],
+  };
+  state.groupSelectedId = "";
+  const payload = groupDraftPayload(null);
+  if (!payload) return;
+  try {
+    await api("/api/groups", { method: "POST", body: payload });
+    state.groupsLoaded = false;
+    await loadGroups();
+    closeGroupModal();
+    resetGroupDraft();
+    setGroupsStatus("Group proposal copied.");
+    showToast("Group proposal copied.", "success");
+  } catch (e) {
+    setGroupsStatus(`Could not copy group proposal: ${e.message}`);
+    showToast(`Could not copy group proposal: ${e.message}`, "error");
   }
 }
 
