@@ -1358,6 +1358,15 @@ const state = {
   financialBiComparisonRows: [],
   financialBiPivot: { incomeCategories: [], expenseCategories: [], years: [], totals: {} },
   financialBiTab: "book-sales",
+  financialBiIncomeBookVsAccountsLoaded: false,
+  financialBiIncomeBookVsAccountsLoading: false,
+  financialBiIncomeBookVsAccountsLoadPromise: null,
+  financialBiIncomeBookVsAccountsRequestKey: "",
+  financialBiIncomeBookVsAccountsRequestToken: 0,
+  financialBiIncomeBookVsAccountsRows: [],
+  financialBiIncomeBookVsAccountsYearFrom: "",
+  financialBiIncomeBookVsAccountsYearTo: "",
+  financialBiIncomeBookVsAccountsExpandedYears: {},
   financialBiBankStatementLoaded: false,
   financialBiBankStatementLoading: false,
   financialBiBankStatementLoadPromise: null,
@@ -1741,6 +1750,7 @@ const els = {
   bookingsBiStatus: document.getElementById("bookings-bi-status"),
   financialBiTabResults: document.getElementById("financial-bi-tab-results"),
   financialBiTabFdmAccounts: document.getElementById("financial-bi-tab-fdm-accounts"),
+  financialBiTabIncomeBookVsAccounts: document.getElementById("financial-bi-tab-income-book-vs-accounts"),
   financialBiTabBankStatement: document.getElementById("financial-bi-tab-bank-statement"),
   financialBiTabCashAnalysis: document.getElementById("financial-bi-tab-cash-analysis"),
   financialBiTabUtilities: document.getElementById("financial-bi-tab-utilities"),
@@ -1758,6 +1768,14 @@ const els = {
   financialBiPerformanceKpis: document.getElementById("financial-bi-performance-kpis"),
   financialBiPerformanceChart: document.getElementById("financial-bi-performance-chart"),
   financialBiStatus: document.getElementById("financial-bi-status"),
+  financialBiIncomeBookVsAccountsPanel: document.getElementById("financial-bi-panel-income-book-vs-accounts"),
+  financialBiIncomeBookVsAccountsYearFrom: document.getElementById("financial-bi-income-book-vs-accounts-year-from"),
+  financialBiIncomeBookVsAccountsYearTo: document.getElementById("financial-bi-income-book-vs-accounts-year-to"),
+  financialBiIncomeBookVsAccountsCount: document.getElementById("financial-bi-income-book-vs-accounts-count"),
+  financialBiIncomeBookVsAccountsHead: document.getElementById("financial-bi-income-book-vs-accounts-head"),
+  financialBiIncomeBookVsAccountsRows: document.getElementById("financial-bi-income-book-vs-accounts-rows"),
+  financialBiIncomeBookVsAccountsTotals: document.getElementById("financial-bi-income-book-vs-accounts-totals"),
+  financialBiIncomeBookVsAccountsStatus: document.getElementById("financial-bi-income-book-vs-accounts-status"),
   financialBiBankStatementPanel: document.getElementById("financial-bi-panel-bank-statement"),
   financialBiBankStatementYearFrom: document.getElementById("financial-bi-bank-statement-year-from"),
   financialBiBankStatementYearTo: document.getElementById("financial-bi-bank-statement-year-to"),
@@ -2574,6 +2592,7 @@ function bindEvents() {
   els.bookingsBiWindowFilterStatus?.addEventListener("change", onBookingsBiWindowFilterChange);
   els.financialBiTabResults?.addEventListener("click", () => setFinancialBiTab("book-sales"));
   els.financialBiTabFdmAccounts?.addEventListener("click", () => setFinancialBiTab("fdm-accounts"));
+  els.financialBiTabIncomeBookVsAccounts?.addEventListener("click", () => setFinancialBiTab("income-book-vs-accounts"));
   els.financialBiTabBankStatement?.addEventListener("click", () => setFinancialBiTab("bank-statement"));
   els.financialBiTabCashAnalysis?.addEventListener("click", () => setFinancialBiTab("cash-analysis"));
   els.financialBiTabUtilities?.addEventListener("click", () => setFinancialBiTab("utilities"));
@@ -2582,6 +2601,9 @@ function bindEvents() {
   els.financialBiFilterYearTo?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCc?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCategory?.addEventListener("change", onFinancialBiCategoryChange);
+  els.financialBiIncomeBookVsAccountsYearFrom?.addEventListener("change", onFinancialBiIncomeBookVsAccountsFilterChange);
+  els.financialBiIncomeBookVsAccountsYearTo?.addEventListener("change", onFinancialBiIncomeBookVsAccountsFilterChange);
+  els.financialBiIncomeBookVsAccountsRows?.addEventListener("click", onFinancialBiIncomeBookVsAccountsRowsClick);
   els.financialBiResultsRows?.addEventListener("click", onFinancialBiResultsClick);
   els.financialBiBankStatementYearFrom?.addEventListener("change", onFinancialBiBankStatementFilterChange);
   els.financialBiBankStatementYearTo?.addEventListener("change", onFinancialBiBankStatementFilterChange);
@@ -21784,6 +21806,7 @@ function currentFinancialBiCc() {
 
 function currentFinancialBiTab() {
   if (state.financialBiTab === "fdm-accounts") return "fdm-accounts";
+  if (state.financialBiTab === "income-book-vs-accounts") return "income-book-vs-accounts";
   if (state.financialBiTab === "bank-statement") return "bank-statement";
   if (state.financialBiTab === "cash-analysis") return "cash-analysis";
   if (state.financialBiTab === "utilities") return "utilities";
@@ -21793,6 +21816,7 @@ function currentFinancialBiTab() {
 
 function financialBiTabLabel() {
   if (currentFinancialBiTab() === "fdm-accounts") return "Results (FDM Account)";
+  if (currentFinancialBiTab() === "income-book-vs-accounts") return "Income (Book vs Accounts)";
   if (currentFinancialBiTab() === "bank-statement") return "Bank Statement";
   if (currentFinancialBiTab() === "cash-analysis") return "Cash Analysis";
   if (currentFinancialBiTab() === "utilities") return "Utilities";
@@ -21801,7 +21825,7 @@ function financialBiTabLabel() {
 }
 
 function setFinancialBiTab(tab) {
-  const nextTab = tab === "fdm-accounts" || tab === "bank-statement" || tab === "cash-analysis" || tab === "utilities" || tab === "items-revenue" ? tab : "book-sales";
+  const nextTab = tab === "fdm-accounts" || tab === "income-book-vs-accounts" || tab === "bank-statement" || tab === "cash-analysis" || tab === "utilities" || tab === "items-revenue" ? tab : "book-sales";
   if (currentFinancialBiTab() === nextTab) {
     renderFinancialBi();
     return;
@@ -21816,11 +21840,159 @@ function setFinancialBiTab(tab) {
   state.financialBiLoadedKey = "";
   state.financialBiRequestToken = Number(state.financialBiRequestToken || 0) + 1;
   renderFinancialBi();
-  if (nextTab === "bank-statement") loadFinancialBiBankStatementData({ silent: true });
+  if (nextTab === "income-book-vs-accounts") loadFinancialBiIncomeBookVsAccountsData({ silent: true });
+  else if (nextTab === "bank-statement") loadFinancialBiBankStatementData({ silent: true });
   else if (nextTab === "cash-analysis") loadFinancialBiCashAnalysisData({ silent: true });
   else if (nextTab === "utilities") loadFinancialBiUtilitiesData({ silent: true });
   else if (nextTab === "items-revenue") loadFinancialBiItemsRevenueData({ silent: true });
   else loadFinancialBiData({ silent: true });
+}
+
+function financialBiIncomeBookVsAccountsAvailableYears() {
+  const currentYear = new Date().getFullYear();
+  const defaults = Array.from({ length: currentYear - 1999 }, (_, index) => 2000 + index);
+  return [...new Set([
+    ...defaults,
+    ...(Array.isArray(state.financialBiIncomeBookVsAccountsRows) ? state.financialBiIncomeBookVsAccountsRows : [])
+      .map((row) => Number(row?.year || 0))
+      .filter((year) => Number.isFinite(year) && year > 0),
+  ])].sort((a, b) => a - b);
+}
+
+function initializeFinancialBiIncomeBookVsAccountsFilters() {
+  const currentYear = new Date().getFullYear();
+  if (!clean(state.financialBiIncomeBookVsAccountsYearFrom)) state.financialBiIncomeBookVsAccountsYearFrom = String(currentYear - 5);
+  if (!clean(state.financialBiIncomeBookVsAccountsYearTo)) state.financialBiIncomeBookVsAccountsYearTo = String(currentYear);
+  if (!Object.keys(state.financialBiIncomeBookVsAccountsExpandedYears || {}).length) {
+    state.financialBiIncomeBookVsAccountsExpandedYears = { [String(currentYear)]: true, [String(currentYear - 1)]: true };
+  }
+}
+
+function currentFinancialBiIncomeBookVsAccountsYearRange() {
+  initializeFinancialBiIncomeBookVsAccountsFilters();
+  const years = financialBiIncomeBookVsAccountsAvailableYears();
+  const fromValue = Number.parseInt(state.financialBiIncomeBookVsAccountsYearFrom, 10);
+  const toValue = Number.parseInt(state.financialBiIncomeBookVsAccountsYearTo, 10);
+  const from = Number.isFinite(fromValue) ? fromValue : years[0];
+  const to = Number.isFinite(toValue) ? toValue : years[years.length - 1];
+  return from <= to ? { from, to } : { from: to, to: from };
+}
+
+function buildFinancialBiIncomeBookVsAccountsUrl() {
+  const { from, to } = currentFinancialBiIncomeBookVsAccountsYearRange();
+  return `/api/financial-bi-income-book-vs-accounts?yearFrom=${encodeURIComponent(from)}&yearTo=${encodeURIComponent(to)}`;
+}
+
+function setFinancialBiIncomeBookVsAccountsStatus(message, type = "") {
+  if (!els.financialBiIncomeBookVsAccountsStatus) return;
+  els.financialBiIncomeBookVsAccountsStatus.textContent = message || "";
+  els.financialBiIncomeBookVsAccountsStatus.classList.toggle("error", type === "error");
+}
+
+async function loadFinancialBiIncomeBookVsAccountsData({ silent = false } = {}) {
+  const requestUrl = buildFinancialBiIncomeBookVsAccountsUrl();
+  if (state.financialBiIncomeBookVsAccountsLoadPromise && state.financialBiIncomeBookVsAccountsRequestKey === requestUrl) return state.financialBiIncomeBookVsAccountsLoadPromise;
+  state.financialBiIncomeBookVsAccountsRequestKey = requestUrl;
+  const requestToken = Number(state.financialBiIncomeBookVsAccountsRequestToken || 0) + 1;
+  state.financialBiIncomeBookVsAccountsRequestToken = requestToken;
+  state.financialBiIncomeBookVsAccountsLoading = true;
+  const loadPromise = api(requestUrl)
+    .then((result) => {
+      if (requestToken !== state.financialBiIncomeBookVsAccountsRequestToken) return;
+      state.financialBiIncomeBookVsAccountsRows = Array.isArray(result?.rows) ? result.rows : [];
+      state.financialBiIncomeBookVsAccountsLoaded = true;
+      renderFinancialBi();
+      if (!silent) setFinancialBiIncomeBookVsAccountsStatus("Income comparison loaded.");
+    })
+    .catch((error) => {
+      if (requestToken !== state.financialBiIncomeBookVsAccountsRequestToken) return;
+      if (!state.financialBiIncomeBookVsAccountsLoaded) state.financialBiIncomeBookVsAccountsRows = [];
+      renderFinancialBi();
+      setFinancialBiIncomeBookVsAccountsStatus(`Failed to load Income comparison: ${error.message}`, "error");
+    })
+    .finally(() => {
+      if (requestToken !== state.financialBiIncomeBookVsAccountsRequestToken) return;
+      state.financialBiIncomeBookVsAccountsLoading = false;
+      state.financialBiIncomeBookVsAccountsLoadPromise = null;
+    });
+  state.financialBiIncomeBookVsAccountsLoadPromise = loadPromise;
+  return loadPromise;
+}
+
+function onFinancialBiIncomeBookVsAccountsFilterChange() {
+  state.financialBiIncomeBookVsAccountsYearFrom = clean(els.financialBiIncomeBookVsAccountsYearFrom?.value);
+  state.financialBiIncomeBookVsAccountsYearTo = clean(els.financialBiIncomeBookVsAccountsYearTo?.value);
+  loadFinancialBiIncomeBookVsAccountsData({ silent: true });
+}
+
+function onFinancialBiIncomeBookVsAccountsRowsClick(event) {
+  const button = event.target.closest("[data-financial-bi-income-book-vs-accounts-toggle-year]");
+  const year = clean(button?.dataset.financialBiIncomeBookVsAccountsToggleYear);
+  if (!year) return;
+  state.financialBiIncomeBookVsAccountsExpandedYears = {
+    ...(state.financialBiIncomeBookVsAccountsExpandedYears || {}),
+    [year]: !state.financialBiIncomeBookVsAccountsExpandedYears?.[year],
+  };
+  renderFinancialBiIncomeBookVsAccounts();
+}
+
+function financialBiIncomeBookVsAccountsNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function sumFinancialBiIncomeBookVsAccountsRows(rows) {
+  const keys = ["accommodation", "drinks", "bookingSales", "tmt", "tours", "incomeBookings", "reservation", "accountSales", "incomeAccounts", "difference"];
+  return (Array.isArray(rows) ? rows : []).reduce((total, row) => {
+    keys.forEach((key) => { total[key] += financialBiIncomeBookVsAccountsNumber(row?.[key]); });
+    return total;
+  }, Object.fromEntries(keys.map((key) => [key, 0])));
+}
+
+function financialBiIncomeBookVsAccountsCells(row) {
+  const value = (key) => escape(formatMoney(financialBiIncomeBookVsAccountsNumber(row?.[key])));
+  const difference = financialBiIncomeBookVsAccountsNumber(row?.difference);
+  return `<td>${value("accommodation")}</td><td>${value("drinks")}</td><td>${value("bookingSales")}</td><td>${value("tmt")}</td><td>${value("tours")}</td><td class="financial-bi-total-cell">${value("incomeBookings")}</td><td>${value("reservation")}</td><td>${value("accountSales")}</td><td class="financial-bi-total-cell">${value("incomeAccounts")}</td><td class="${financialBiGrandTotalClass(difference)}">${escape(formatMoney(difference))}</td>`;
+}
+
+function renderFinancialBiIncomeBookVsAccounts() {
+  initializeFinancialBiIncomeBookVsAccountsFilters();
+  const years = financialBiIncomeBookVsAccountsAvailableYears();
+  const options = years.map((year) => `<option value="${escape(String(year))}">${escape(String(year))}</option>`).join("");
+  if (els.financialBiIncomeBookVsAccountsYearFrom) {
+    els.financialBiIncomeBookVsAccountsYearFrom.innerHTML = options;
+    els.financialBiIncomeBookVsAccountsYearFrom.value = state.financialBiIncomeBookVsAccountsYearFrom;
+  }
+  if (els.financialBiIncomeBookVsAccountsYearTo) {
+    els.financialBiIncomeBookVsAccountsYearTo.innerHTML = options;
+    els.financialBiIncomeBookVsAccountsYearTo.value = state.financialBiIncomeBookVsAccountsYearTo;
+  }
+  const { from, to } = currentFinancialBiIncomeBookVsAccountsYearRange();
+  const rows = (state.financialBiIncomeBookVsAccountsRows || [])
+    .filter((row) => Number(row?.year || 0) >= from && Number(row?.year || 0) <= to)
+    .sort((left, right) => Number(right?.year || 0) - Number(left?.year || 0) || Number(right?.month || 0) - Number(left?.month || 0));
+  const yearGroups = new Map();
+  rows.forEach((row) => {
+    const year = Number(row?.year || 0);
+    if (!yearGroups.has(year)) yearGroups.set(year, []);
+    yearGroups.get(year).push(row);
+  });
+  if (els.financialBiIncomeBookVsAccountsCount) els.financialBiIncomeBookVsAccountsCount.textContent = `${rows.length} month${rows.length === 1 ? "" : "s"}`;
+  if (els.financialBiIncomeBookVsAccountsHead) {
+    els.financialBiIncomeBookVsAccountsHead.innerHTML = `<tr><th rowspan="2">Year / Month</th><th colspan="6">INCOME BOOKINGS</th><th colspan="3">INCOME ACCOUNT</th><th rowspan="2">Difference</th></tr><tr><th>Accomodation</th><th>Drinks</th><th>Sales</th><th>TMT</th><th>Tours</th><th>INCOME BOOKINGS</th><th>Reservation</th><th>Sales</th><th>INCOME ACCOUNT</th></tr>`;
+  }
+  if (els.financialBiIncomeBookVsAccountsRows) {
+    els.financialBiIncomeBookVsAccountsRows.innerHTML = yearGroups.size
+      ? Array.from(yearGroups.entries()).map(([year, months]) => {
+        const expanded = !!state.financialBiIncomeBookVsAccountsExpandedYears?.[String(year)];
+        const monthRows = expanded ? months.map((row) => `<tr><td class="financial-bi-month-cell">${escape(String(Number(row?.month || 0)))}</td>${financialBiIncomeBookVsAccountsCells(row)}</tr>`).join("") : "";
+        return `<tr class="financial-bi-year-row"><td><button type="button" class="financial-bi-year-toggle" data-financial-bi-income-book-vs-accounts-toggle-year="${escape(String(year))}">${expanded ? "-" : "+"}</button> ${escape(String(year))}</td>${financialBiIncomeBookVsAccountsCells(sumFinancialBiIncomeBookVsAccountsRows(months))}</tr>${monthRows}`;
+      }).join("")
+      : '<tr><td colspan="11" class="empty">No Income comparison rows found.</td></tr>';
+  }
+  if (els.financialBiIncomeBookVsAccountsTotals) {
+    els.financialBiIncomeBookVsAccountsTotals.innerHTML = `<tr><td>Total</td>${financialBiIncomeBookVsAccountsCells(sumFinancialBiIncomeBookVsAccountsRows(rows))}</tr>`;
+  }
 }
 
 function financialBiCashAnalysisAvailableYears() {
@@ -23071,6 +23243,7 @@ function renderFinancialBiItemsRevenue() {
 }
 
 function renderFinancialBi() {
+  const isIncomeBookVsAccounts = currentFinancialBiTab() === "income-book-vs-accounts";
   const isBankStatement = currentFinancialBiTab() === "bank-statement";
   const isCashAnalysis = currentFinancialBiTab() === "cash-analysis";
   const isUtilities = currentFinancialBiTab() === "utilities";
@@ -23079,6 +23252,11 @@ function renderFinancialBi() {
   if (els.financialBiCashAnalysisPanel) els.financialBiCashAnalysisPanel.hidden = !isCashAnalysis;
   if (els.financialBiUtilitiesPanel) els.financialBiUtilitiesPanel.hidden = !isUtilities;
   if (els.financialBiItemsRevenuePanel) els.financialBiItemsRevenuePanel.hidden = !isItemsRevenue;
+  if (els.financialBiIncomeBookVsAccountsPanel) els.financialBiIncomeBookVsAccountsPanel.hidden = !isIncomeBookVsAccounts;
+  if (els.financialBiTabIncomeBookVsAccounts) {
+    els.financialBiTabIncomeBookVsAccounts.classList.toggle("active-tab", isIncomeBookVsAccounts);
+    els.financialBiTabIncomeBookVsAccounts.classList.toggle("ghost", !isIncomeBookVsAccounts);
+  }
   if (els.financialBiTabBankStatement) {
     els.financialBiTabBankStatement.classList.toggle("active-tab", isBankStatement);
     els.financialBiTabBankStatement.classList.toggle("ghost", !isBankStatement);
@@ -23095,7 +23273,7 @@ function renderFinancialBi() {
     els.financialBiTabItemsRevenue.classList.toggle("active-tab", isItemsRevenue);
     els.financialBiTabItemsRevenue.classList.toggle("ghost", !isItemsRevenue);
   }
-  if (isBankStatement || isCashAnalysis || isUtilities || isItemsRevenue) {
+  if (isIncomeBookVsAccounts || isBankStatement || isCashAnalysis || isUtilities || isItemsRevenue) {
     if (els.financialBiTabResults) {
       els.financialBiTabResults.classList.remove("active-tab");
       els.financialBiTabResults.classList.add("ghost");
@@ -23103,6 +23281,10 @@ function renderFinancialBi() {
     if (els.financialBiTabFdmAccounts) {
       els.financialBiTabFdmAccounts.classList.remove("active-tab");
       els.financialBiTabFdmAccounts.classList.add("ghost");
+    }
+    if (!isIncomeBookVsAccounts && els.financialBiTabIncomeBookVsAccounts) {
+      els.financialBiTabIncomeBookVsAccounts.classList.remove("active-tab");
+      els.financialBiTabIncomeBookVsAccounts.classList.add("ghost");
     }
     if (isBankStatement && els.financialBiTabCashAnalysis) {
       els.financialBiTabCashAnalysis.classList.remove("active-tab");
@@ -23130,7 +23312,8 @@ function renderFinancialBi() {
     }
     const resultsPanel = document.getElementById("financial-bi-panel-results");
     if (resultsPanel) resultsPanel.hidden = true;
-    if (isBankStatement) renderFinancialBiBankStatement();
+    if (isIncomeBookVsAccounts) renderFinancialBiIncomeBookVsAccounts();
+    else if (isBankStatement) renderFinancialBiBankStatement();
     else if (isCashAnalysis) renderFinancialBiCashAnalysis();
     else if (isUtilities) renderFinancialBiUtilities();
     else renderFinancialBiItemsRevenue();
