@@ -23361,8 +23361,22 @@ function salesBiSalesPeriodTotal(rows, period) {
   }, 0);
 }
 
-function salesBiSalesCells(rows, periods) {
-  return periods.map((period) => `<td class="${period.month ? "" : "sales-bi-sales-year-total"}">${escape(formatMoney(salesBiSalesPeriodTotal(rows, period)))}</td>`).join("");
+function salesBiSalesCompletedMonthCount(year) {
+  const now = new Date();
+  return Number(year) === now.getFullYear() ? now.getMonth() : 12;
+}
+
+function salesBiSalesYearExpanded(year) {
+  return !!state.salesBiSalesExpandedYears?.[String(year)] && salesBiSalesCompletedMonthCount(year) > 0;
+}
+
+function formatSalesBiSalesAmount(value, { showZero = false } = {}) {
+  const amount = salesBiSalesNumber(value);
+  return !showZero && Math.abs(amount) < 0.005 ? "" : formatMoney(amount);
+}
+
+function salesBiSalesCells(rows, periods, { showZero = false } = {}) {
+  return periods.map((period) => `<td class="${period.month ? "" : "sales-bi-sales-year-total"}">${escape(formatSalesBiSalesAmount(salesBiSalesPeriodTotal(rows, period), { showZero }))}</td>`).join("");
 }
 
 function onSalesBiSalesTableClick(event) {
@@ -23401,12 +23415,16 @@ function renderSalesBiSales() {
     els.salesBiSalesYearTo.value = state.salesBiSalesYearTo;
   }
   const { from, to } = currentSalesBiSalesYearRange();
-  const rows = (state.salesBiSalesRows || []).filter((row) => Number(row?.year || 0) >= from && Number(row?.year || 0) <= to);
+  const rows = (state.salesBiSalesRows || []).filter((row) => {
+    const year = Number(row?.year || 0);
+    const month = Number(row?.month || 0);
+    return year >= from && year <= to && month > 0 && month <= salesBiSalesCompletedMonthCount(year);
+  });
   const visibleYears = Array.from({ length: to - from + 1 }, (_, index) => from + index);
   const periods = visibleYears.flatMap((year) => {
-    const expanded = !!state.salesBiSalesExpandedYears?.[String(year)];
+    const expanded = salesBiSalesYearExpanded(year);
     return expanded
-      ? Array.from({ length: 12 }, (_, index) => ({ year, month: index + 1, label: String(index + 1) }))
+      ? Array.from({ length: salesBiSalesCompletedMonthCount(year) }, (_, index) => ({ year, month: index + 1, label: String(index + 1) }))
       : [{ year, month: 0, label: "Total" }];
   });
   const categories = new Map();
@@ -23425,8 +23443,8 @@ function renderSalesBiSales() {
   if (els.salesBiSalesCount) els.salesBiSalesCount.textContent = `${itemCount} item${itemCount === 1 ? "" : "s"}`;
   if (els.salesBiSalesHead) {
     const yearHeaders = visibleYears.map((year) => {
-      const expanded = !!state.salesBiSalesExpandedYears?.[String(year)];
-      return `<th colspan="${expanded ? 12 : 1}"><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-year="${escape(String(year))}">${expanded ? "-" : "+"}</button> ${escape(String(year))}</th>`;
+      const expanded = salesBiSalesYearExpanded(year);
+      return `<th colspan="${expanded ? salesBiSalesCompletedMonthCount(year) : 1}"><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-year="${escape(String(year))}">${expanded ? "-" : "+"}</button> ${escape(String(year))}</th>`;
     }).join("");
     const periodHeaders = periods.map((period) => `<th>${escape(period.label)}</th>`).join("");
     els.salesBiSalesHead.innerHTML = `<tr><th rowspan="2">Category / Sale Item</th>${yearHeaders}<th rowspan="2">Total</th></tr><tr>${periodHeaders}</tr>`;
@@ -23438,18 +23456,18 @@ function renderSalesBiSales() {
         const itemRows = expanded
           ? Array.from(group.items.entries()).sort((left, right) => left[0].localeCompare(right[0])).map(([item, itemRows]) => {
             const itemTotal = itemRows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
-            return `<tr class="sales-bi-sales-item-row"><td>${escape(item)}</td>${salesBiSalesCells(itemRows, periods)}<td class="sales-bi-sales-global-total">${escape(formatMoney(itemTotal))}</td></tr>`;
+            return `<tr class="sales-bi-sales-item-row"><td>${escape(item)}</td>${salesBiSalesCells(itemRows, periods)}<td class="sales-bi-sales-global-total">${escape(formatSalesBiSalesAmount(itemTotal))}</td></tr>`;
           }).join("")
           : "";
         const total = group.rows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
         const label = group.category || "-";
-        return `<tr class="financial-bi-year-row sales-bi-sales-category-row"><td><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-category="${escape(key)}">${expanded ? "-" : "+"}</button> ${escape(label)}</td>${salesBiSalesCells(group.rows, periods)}<td class="sales-bi-sales-global-total">${escape(formatMoney(total))}</td></tr>${itemRows}`;
+        return `<tr class="financial-bi-year-row sales-bi-sales-category-row"><td><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-category="${escape(key)}">${expanded ? "-" : "+"}</button> ${escape(label)}</td>${salesBiSalesCells(group.rows, periods)}<td class="sales-bi-sales-global-total">${escape(formatSalesBiSalesAmount(total))}</td></tr>${itemRows}`;
       }).join("")
       : `<tr><td colspan="${periods.length + 2}" class="empty">No Sales rows found.</td></tr>`;
   }
   if (els.salesBiSalesTotals) {
     const grandTotal = rows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
-    els.salesBiSalesTotals.innerHTML = `<tr><td>Total</td>${salesBiSalesCells(rows, periods)}<td>${escape(formatMoney(grandTotal))}</td></tr>`;
+    els.salesBiSalesTotals.innerHTML = `<tr><td>Total</td>${salesBiSalesCells(rows, periods, { showZero: true })}<td>${escape(formatSalesBiSalesAmount(grandTotal, { showZero: true }))}</td></tr>`;
   }
 }
 
