@@ -206,11 +206,16 @@ function validateMutation(action, payload) {
 
 function mapRpcError(error) {
   const mapped = error instanceof Error ? error : new Error("Unexpected server error.");
-  if (mapped.statusCode) return mapped;
   const message = mapped.message || "Unexpected server error.";
-  if (/already reconciled|unique|conflict/i.test(message)) mapped.statusCode = 409;
-  else if (/invalid|required|not allowed|exactly one|must be|cannot|only|zero difference/i.test(message)) mapped.statusCode = 400;
-  else mapped.statusCode = 500;
+  if (/already reconciled|unique_violation|duplicate key|conflict/i.test(message)) {
+    mapped.statusCode = 409;
+  } else if (mapped.statusCode) {
+    mapped.statusCode = mapped.statusCode;
+  } else if (/invalid|required|not allowed|exactly one|must be|cannot|only|zero difference|reconciliation item not found|reconciliation not found|eligible|started reconciliations|complete reconciliations/i.test(message)) {
+    mapped.statusCode = 400;
+  } else {
+    mapped.statusCode = 500;
+  }
   return mapped;
 }
 

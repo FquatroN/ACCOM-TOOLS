@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   MIN_RECONCILIATION_DATE,
   calculateDifference,
+  mapRpcError,
   normalizeMatchingSourceTypes,
   normalizeSourceType,
   validateMutation,
@@ -121,6 +122,18 @@ test("workspace validation enforces source names and page bounds", () => {
     () => validateWorkspaceQuery({ source_type: "financial_documents", page: "101" }),
     /page/i,
   );
+});
+
+test("workspace rejects invalid source and oversized page", () => {
+  assert.throws(
+    () => validateWorkspaceQuery({ source_type: "wrong", page_size: "101" }),
+    /source type|page size/i,
+  );
+});
+
+test("RPC error mapping makes source locks conflicts and validation errors client-safe", () => {
+  assert.equal(mapRpcError(new Error("This record is already reconciled.")).statusCode, 409);
+  assert.equal(mapRpcError(new Error("Only started reconciliations can be edited or completed.")).statusCode, 400);
 });
 
 test("minimum reconciliation date is the documented 2026 eligibility floor", () => {
