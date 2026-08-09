@@ -23454,7 +23454,11 @@ function renderSalesBiSales() {
       ? orderedCategories.map(([key, group]) => {
         const expanded = !!state.salesBiSalesExpandedCategories?.[key];
         const itemRows = expanded
-          ? Array.from(group.items.entries()).sort((left, right) => left[0].localeCompare(right[0])).map(([item, itemRows]) => {
+          ? Array.from(group.items.entries()).sort((left, right) => {
+            const totalDifference = right[1].reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0)
+              - left[1].reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
+            return totalDifference || left[0].localeCompare(right[0]);
+          }).map(([item, itemRows]) => {
             const itemTotal = itemRows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
             return `<tr class="sales-bi-sales-item-row"><td>${escape(item)}</td>${salesBiSalesCells(itemRows, periods)}<td class="sales-bi-sales-global-total">${escape(formatSalesBiSalesAmount(itemTotal))}</td></tr>`;
           }).join("")
