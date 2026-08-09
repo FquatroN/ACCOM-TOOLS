@@ -5366,6 +5366,73 @@ button[id^="close-settings"] {
   background: rgba(22, 119, 113, 0.08);
 }
 
+.sales-bi-sales-wrap {
+  max-height: calc(100vh - 18rem);
+  min-height: 28rem;
+}
+
+.sales-bi-sales-table {
+  width: max-content;
+  min-width: 56rem;
+  font-size: 0.52rem;
+  table-layout: fixed;
+}
+
+.sales-bi-sales-table th,
+.sales-bi-sales-table td {
+  min-width: 2.8rem;
+  padding: 0.12rem 0.16rem;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.sales-bi-sales-table th:first-child,
+.sales-bi-sales-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 10rem;
+  min-width: 10rem;
+  max-width: 10rem;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  background: #fffdf9;
+}
+
+.sales-bi-sales-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fffaf4;
+}
+
+.sales-bi-sales-table thead th:first-child {
+  z-index: 3;
+}
+
+.sales-bi-sales-table tfoot tr {
+  font-weight: 700;
+  background: rgba(22, 119, 113, 0.08);
+}
+
+.sales-bi-sales-table tfoot td:first-child {
+  background: rgba(22, 119, 113, 0.08);
+}
+
+.sales-bi-sales-category-row td {
+  font-weight: 700;
+  background: rgba(22, 119, 113, 0.05);
+}
+
+.sales-bi-sales-category-row td:first-child {
+  background: #f3faf7;
+}
+
+.sales-bi-sales-item-row td:first-child {
+  padding-left: 1rem;
+}
+
 .financial-bi-bank-statement-table {
   width: 100%;
   min-width: 42rem;

@@ -1408,6 +1408,17 @@ const state = {
   financialBiItemsRevenueYearFrom: "",
   financialBiItemsRevenueYearTo: "",
   financialBiItemsRevenueExpandedYears: {},
+  salesBiTab: "sales",
+  salesBiSalesLoaded: false,
+  salesBiSalesLoading: false,
+  salesBiSalesLoadPromise: null,
+  salesBiSalesRequestKey: "",
+  salesBiSalesRequestToken: 0,
+  salesBiSalesRows: [],
+  salesBiSalesYearFrom: "",
+  salesBiSalesYearTo: "",
+  salesBiSalesExpandedYears: {},
+  salesBiSalesExpandedCategories: {},
   lastMainView: "communications",
   currentView: "communications",
   settingsSection: "general",
@@ -1473,6 +1484,7 @@ const els = {
   viewBookingsBi: document.getElementById("view-bookings-bi"),
   viewFinancialBi: document.getElementById("view-financial-bi"),
   financialBiPageTitle: document.getElementById("financial-bi-page-title"),
+  salesBiTabsCard: document.getElementById("sales-bi-tabs-card"),
   financialBiTabsCard: document.getElementById("financial-bi-tabs-card"),
   viewGuests: document.getElementById("view-guests"),
   viewCash: document.getElementById("view-cash"),
@@ -1761,6 +1773,8 @@ const els = {
   financialBiTabBankStatement: document.getElementById("financial-bi-tab-bank-statement"),
   financialBiTabCashAnalysis: document.getElementById("financial-bi-tab-cash-analysis"),
   financialBiTabUtilities: document.getElementById("financial-bi-tab-utilities"),
+  salesBiTabSales: document.getElementById("sales-bi-tab-sales"),
+  salesBiTabItemsRevenue: document.getElementById("sales-bi-tab-items-revenue"),
   financialBiResultsTitle: document.getElementById("financial-bi-results-title"),
   financialBiFilterYearFrom: document.getElementById("financial-bi-filter-year-from"),
   financialBiFilterYearTo: document.getElementById("financial-bi-filter-year-to"),
@@ -1830,6 +1844,15 @@ const els = {
   financialBiItemsRevenueCarrisTourRows: document.getElementById("financial-bi-items-revenue-carris-tour-rows"),
   financialBiItemsRevenueCarrisTourTotals: document.getElementById("financial-bi-items-revenue-carris-tour-totals"),
   financialBiItemsRevenueStatus: document.getElementById("financial-bi-items-revenue-status"),
+  salesBiSalesPanel: document.getElementById("sales-bi-panel-sales"),
+  salesBiSalesYearFrom: document.getElementById("sales-bi-sales-year-from"),
+  salesBiSalesYearTo: document.getElementById("sales-bi-sales-year-to"),
+  salesBiSalesCount: document.getElementById("sales-bi-sales-count"),
+  salesBiSalesTable: document.getElementById("sales-bi-sales-table"),
+  salesBiSalesHead: document.getElementById("sales-bi-sales-head"),
+  salesBiSalesRows: document.getElementById("sales-bi-sales-rows"),
+  salesBiSalesTotals: document.getElementById("sales-bi-sales-totals"),
+  salesBiSalesStatus: document.getElementById("sales-bi-sales-status"),
   financialDocsEntitiesModal: document.getElementById("financial-docs-entities-modal"),
   financialDocsEntitiesClose: document.getElementById("financial-docs-entities-close"),
   financialDocsEntitiesFilterSearch: document.getElementById("financial-docs-entities-filter-search"),
@@ -2640,6 +2663,11 @@ function bindEvents() {
   els.financialBiItemsRevenueGotaDAguaRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
   els.financialBiItemsRevenueKeepItLocalRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
   els.financialBiItemsRevenueCarrisTourRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
+  els.salesBiTabSales?.addEventListener("click", () => setSalesBiTab("sales"));
+  els.salesBiTabItemsRevenue?.addEventListener("click", () => setSalesBiTab("items-revenue"));
+  els.salesBiSalesYearFrom?.addEventListener("change", onSalesBiSalesFilterChange);
+  els.salesBiSalesYearTo?.addEventListener("change", onSalesBiSalesFilterChange);
+  els.salesBiSalesTable?.addEventListener("click", onSalesBiSalesTableClick);
   els.shoppingTabCurrent.addEventListener("click", () => setShoppingTab("current"));
   els.shoppingTabHistory.addEventListener("click", () => setShoppingTab("history"));
   els.shoppingNewOrder.addEventListener("click", createShoppingOrder);
@@ -4179,7 +4207,8 @@ function renderLayout() {
   if (els.viewGuestsBi) els.viewGuestsBi.hidden = !guestsBi;
   if (els.viewBookingsBi) els.viewBookingsBi.hidden = !bookingsBi;
   if (els.viewFinancialBi) els.viewFinancialBi.hidden = !(financialBi || salesBi);
-  if (els.financialBiPageTitle) els.financialBiPageTitle.textContent = salesBi ? "Sales" : "Financial BI";
+  if (els.financialBiPageTitle) els.financialBiPageTitle.textContent = salesBi ? "Sales BI" : "Financial BI";
+  if (els.salesBiTabsCard) els.salesBiTabsCard.hidden = !salesBi;
   if (els.financialBiTabsCard) els.financialBiTabsCard.hidden = salesBi;
   if (els.viewGuests) els.viewGuests.hidden = !guests;
   if (els.viewCash) els.viewCash.hidden = !cash;
@@ -22422,6 +22451,13 @@ async function ensureFinancialBiData() {
 }
 
 async function ensureSalesBiData() {
+  if (currentSalesBiTab() === "sales") {
+    const requestUrl = buildSalesBiSalesUrl();
+    if (!state.salesBiSalesLoaded || state.salesBiSalesRequestKey !== requestUrl) {
+      await loadSalesBiSalesData({ silent: true });
+    }
+    return;
+  }
   const requestUrl = buildFinancialBiItemsRevenueUrl();
   if (!state.financialBiItemsRevenueLoaded || state.financialBiItemsRevenueRequestKey !== requestUrl) {
     await loadFinancialBiItemsRevenueData({ silent: true });
@@ -23221,6 +23257,202 @@ function renderFinancialBiUtilities() {
   if (els.financialBiUtilitiesAverageTotals) els.financialBiUtilitiesAverageTotals.innerHTML = `<tr><td>Total</td>${financialBiUtilitiesCells(pivot.totals, "average")}</tr>`;
 }
 
+function currentSalesBiTab() {
+  return state.salesBiTab === "items-revenue" ? "items-revenue" : "sales";
+}
+
+function setSalesBiTab(tab) {
+  const nextTab = tab === "items-revenue" ? "items-revenue" : "sales";
+  if (currentSalesBiTab() === nextTab) return;
+  state.salesBiTab = nextTab;
+  renderSalesBi();
+  if (nextTab === "sales") loadSalesBiSalesData({ silent: true });
+  else loadFinancialBiItemsRevenueData({ silent: true });
+}
+
+function salesBiSalesAvailableYears() {
+  const currentYear = new Date().getFullYear();
+  return [...new Set([
+    ...Array.from({ length: currentYear - 1999 }, (_, index) => 2000 + index),
+    ...(state.salesBiSalesRows || []).map((row) => Number(row?.year || 0)).filter((year) => year > 0),
+  ])].sort((left, right) => left - right);
+}
+
+function initializeSalesBiSalesFilters() {
+  const currentYear = new Date().getFullYear();
+  if (!clean(state.salesBiSalesYearFrom)) state.salesBiSalesYearFrom = String(currentYear - 4);
+  if (!clean(state.salesBiSalesYearTo)) state.salesBiSalesYearTo = String(currentYear);
+  if (!Object.prototype.hasOwnProperty.call(state.salesBiSalesExpandedYears || {}, String(currentYear))) {
+    state.salesBiSalesExpandedYears = { ...(state.salesBiSalesExpandedYears || {}), [String(currentYear)]: true };
+  }
+}
+
+function currentSalesBiSalesYearRange() {
+  initializeSalesBiSalesFilters();
+  const years = salesBiSalesAvailableYears();
+  const rawFrom = Number.parseInt(state.salesBiSalesYearFrom, 10);
+  const rawTo = Number.parseInt(state.salesBiSalesYearTo, 10);
+  const from = Number.isFinite(rawFrom) ? rawFrom : years[0];
+  const to = Number.isFinite(rawTo) ? rawTo : years[years.length - 1];
+  return from <= to ? { from, to } : { from: to, to: from };
+}
+
+function buildSalesBiSalesUrl() {
+  const { from, to } = currentSalesBiSalesYearRange();
+  return `/api/sales-bi-sales?yearFrom=${encodeURIComponent(from)}&yearTo=${encodeURIComponent(to)}`;
+}
+
+function setSalesBiSalesStatus(message, type = "") {
+  if (!els.salesBiSalesStatus) return;
+  els.salesBiSalesStatus.textContent = message || "";
+  els.salesBiSalesStatus.classList.toggle("error", type === "error");
+}
+
+async function loadSalesBiSalesData({ silent = false } = {}) {
+  const requestUrl = buildSalesBiSalesUrl();
+  if (state.salesBiSalesLoadPromise && state.salesBiSalesRequestKey === requestUrl) return state.salesBiSalesLoadPromise;
+  state.salesBiSalesRequestKey = requestUrl;
+  const requestToken = Number(state.salesBiSalesRequestToken || 0) + 1;
+  state.salesBiSalesRequestToken = requestToken;
+  state.salesBiSalesLoading = true;
+  const loadPromise = api(requestUrl)
+    .then((result) => {
+      if (requestToken !== state.salesBiSalesRequestToken) return;
+      state.salesBiSalesRows = Array.isArray(result?.rows) ? result.rows : [];
+      state.salesBiSalesLoaded = true;
+      if (state.currentView === "sales-bi") renderSalesBi();
+      if (!silent) setSalesBiSalesStatus("Sales loaded.");
+    })
+    .catch((error) => {
+      if (requestToken !== state.salesBiSalesRequestToken) return;
+      if (!state.salesBiSalesLoaded) state.salesBiSalesRows = [];
+      if (state.currentView === "sales-bi") renderSalesBi();
+      setSalesBiSalesStatus(`Failed to load Sales: ${error.message}`, "error");
+    })
+    .finally(() => {
+      if (requestToken !== state.salesBiSalesRequestToken) return;
+      state.salesBiSalesLoading = false;
+      state.salesBiSalesLoadPromise = null;
+    });
+  state.salesBiSalesLoadPromise = loadPromise;
+  return loadPromise;
+}
+
+function onSalesBiSalesFilterChange() {
+  state.salesBiSalesYearFrom = clean(els.salesBiSalesYearFrom?.value);
+  state.salesBiSalesYearTo = clean(els.salesBiSalesYearTo?.value);
+  loadSalesBiSalesData({ silent: true });
+}
+
+function salesBiSalesNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function salesBiSalesCategoryKey(category) {
+  return clean(category) || "__unconfigured__";
+}
+
+function salesBiSalesPeriodTotal(rows, period) {
+  return (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
+    if (Number(row?.year || 0) !== period.year) return sum;
+    if (period.month && Number(row?.month || 0) !== period.month) return sum;
+    return sum + salesBiSalesNumber(row?.total);
+  }, 0);
+}
+
+function salesBiSalesCells(rows, periods) {
+  return periods.map((period) => `<td>${escape(formatMoney(salesBiSalesPeriodTotal(rows, period)))}</td>`).join("");
+}
+
+function onSalesBiSalesTableClick(event) {
+  const yearButton = event.target.closest("[data-sales-bi-sales-toggle-year]");
+  if (yearButton) {
+    const year = clean(yearButton.dataset.salesBiSalesToggleYear);
+    if (!year) return;
+    state.salesBiSalesExpandedYears = {
+      ...(state.salesBiSalesExpandedYears || {}),
+      [year]: !state.salesBiSalesExpandedYears?.[year],
+    };
+    renderSalesBiSales();
+    return;
+  }
+  const categoryButton = event.target.closest("[data-sales-bi-sales-toggle-category]");
+  if (!categoryButton) return;
+  const category = clean(categoryButton.dataset.salesBiSalesToggleCategory);
+  if (!category) return;
+  state.salesBiSalesExpandedCategories = {
+    ...(state.salesBiSalesExpandedCategories || {}),
+    [category]: !state.salesBiSalesExpandedCategories?.[category],
+  };
+  renderSalesBiSales();
+}
+
+function renderSalesBiSales() {
+  initializeSalesBiSalesFilters();
+  const years = salesBiSalesAvailableYears();
+  const options = years.map((year) => `<option value="${escape(String(year))}">${escape(String(year))}</option>`).join("");
+  if (els.salesBiSalesYearFrom) {
+    els.salesBiSalesYearFrom.innerHTML = options;
+    els.salesBiSalesYearFrom.value = state.salesBiSalesYearFrom;
+  }
+  if (els.salesBiSalesYearTo) {
+    els.salesBiSalesYearTo.innerHTML = options;
+    els.salesBiSalesYearTo.value = state.salesBiSalesYearTo;
+  }
+  const { from, to } = currentSalesBiSalesYearRange();
+  const rows = (state.salesBiSalesRows || []).filter((row) => Number(row?.year || 0) >= from && Number(row?.year || 0) <= to);
+  const visibleYears = Array.from({ length: to - from + 1 }, (_, index) => from + index);
+  const periods = visibleYears.flatMap((year) => {
+    const expanded = !!state.salesBiSalesExpandedYears?.[String(year)];
+    return expanded
+      ? Array.from({ length: 12 }, (_, index) => ({ year, month: index + 1, label: String(index + 1) }))
+      : [{ year, month: 0, label: "Total" }];
+  });
+  const categories = new Map();
+  rows.forEach((row) => {
+    const category = clean(row?.category);
+    const key = salesBiSalesCategoryKey(category);
+    if (!categories.has(key)) categories.set(key, { category, rows: [], items: new Map() });
+    const bucket = categories.get(key);
+    bucket.rows.push(row);
+    const item = clean(row?.saleItem) || "-";
+    if (!bucket.items.has(item)) bucket.items.set(item, []);
+    bucket.items.get(item).push(row);
+  });
+  const orderedCategories = Array.from(categories.entries()).sort((left, right) => left[1].category.localeCompare(right[1].category));
+  const itemCount = new Set(rows.map((row) => clean(row?.saleItem)).filter(Boolean)).size;
+  if (els.salesBiSalesCount) els.salesBiSalesCount.textContent = `${itemCount} item${itemCount === 1 ? "" : "s"}`;
+  if (els.salesBiSalesHead) {
+    const yearHeaders = visibleYears.map((year) => {
+      const expanded = !!state.salesBiSalesExpandedYears?.[String(year)];
+      return `<th colspan="${expanded ? 12 : 1}"><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-year="${escape(String(year))}">${expanded ? "-" : "+"}</button> ${escape(String(year))}</th>`;
+    }).join("");
+    const periodHeaders = periods.map((period) => `<th>${escape(period.label)}</th>`).join("");
+    els.salesBiSalesHead.innerHTML = `<tr><th rowspan="2">Category / Sale Item</th>${yearHeaders}<th rowspan="2">Total</th></tr><tr>${periodHeaders}</tr>`;
+  }
+  if (els.salesBiSalesRows) {
+    els.salesBiSalesRows.innerHTML = orderedCategories.length
+      ? orderedCategories.map(([key, group]) => {
+        const expanded = !!state.salesBiSalesExpandedCategories?.[key];
+        const itemRows = expanded
+          ? Array.from(group.items.entries()).sort((left, right) => left[0].localeCompare(right[0])).map(([item, itemRows]) => {
+            const itemTotal = itemRows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
+            return `<tr class="sales-bi-sales-item-row"><td>${escape(item)}</td>${salesBiSalesCells(itemRows, periods)}<td>${escape(formatMoney(itemTotal))}</td></tr>`;
+          }).join("")
+          : "";
+        const total = group.rows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
+        const label = group.category || "-";
+        return `<tr class="financial-bi-year-row sales-bi-sales-category-row"><td><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-category="${escape(key)}">${expanded ? "-" : "+"}</button> ${escape(label)}</td>${salesBiSalesCells(group.rows, periods)}<td>${escape(formatMoney(total))}</td></tr>${itemRows}`;
+      }).join("")
+      : `<tr><td colspan="${periods.length + 2}" class="empty">No Sales rows found.</td></tr>`;
+  }
+  if (els.salesBiSalesTotals) {
+    const grandTotal = rows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
+    els.salesBiSalesTotals.innerHTML = `<tr><td>Total</td>${salesBiSalesCells(rows, periods)}<td>${escape(formatMoney(grandTotal))}</td></tr>`;
+  }
+}
+
 function financialBiItemsRevenueAvailableYears() {
   const currentYear = new Date().getFullYear();
   const defaults = Array.from({ length: currentYear - 1999 }, (_, index) => 2000 + index);
@@ -23388,8 +23620,19 @@ function renderSalesBi() {
   if (els.financialBiBankStatementPanel) els.financialBiBankStatementPanel.hidden = true;
   if (els.financialBiCashAnalysisPanel) els.financialBiCashAnalysisPanel.hidden = true;
   if (els.financialBiUtilitiesPanel) els.financialBiUtilitiesPanel.hidden = true;
-  if (els.financialBiItemsRevenuePanel) els.financialBiItemsRevenuePanel.hidden = false;
-  renderFinancialBiItemsRevenue();
+  const isSales = currentSalesBiTab() === "sales";
+  if (els.salesBiTabSales) {
+    els.salesBiTabSales.classList.toggle("active-tab", isSales);
+    els.salesBiTabSales.classList.toggle("ghost", !isSales);
+  }
+  if (els.salesBiTabItemsRevenue) {
+    els.salesBiTabItemsRevenue.classList.toggle("active-tab", !isSales);
+    els.salesBiTabItemsRevenue.classList.toggle("ghost", isSales);
+  }
+  if (els.salesBiSalesPanel) els.salesBiSalesPanel.hidden = !isSales;
+  if (els.financialBiItemsRevenuePanel) els.financialBiItemsRevenuePanel.hidden = isSales;
+  if (isSales) renderSalesBiSales();
+  else renderFinancialBiItemsRevenue();
 }
 
 function renderFinancialBi() {

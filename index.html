@@ -4235,6 +4235,16 @@
             <h2 id="financial-bi-page-title">Financial BI</h2>
           </section>
 
+          <section id="sales-bi-tabs-card" class="card" hidden>
+            <div class="bar">
+              <h2>Sales BI</h2>
+              <div class="actions">
+                <button id="sales-bi-tab-sales" type="button" class="active-tab">Sales</button>
+                <button id="sales-bi-tab-items-revenue" type="button" class="ghost">Items Revenue</button>
+              </div>
+            </div>
+          </section>
+
           <section id="financial-bi-tabs-card" class="card">
             <div class="bar">
               <h2>Financial BI</h2>
@@ -4406,6 +4416,31 @@
               </section>
             </div>
             <p id="financial-bi-utilities-status" class="auth-status"></p>
+          </section>
+
+          <section id="sales-bi-panel-sales" class="card" hidden>
+            <div class="bar">
+              <h2>Sales</h2>
+              <div class="actions"><p id="sales-bi-sales-count">0 rows</p></div>
+            </div>
+            <div class="grid filters guests-bi-filters financial-bi-items-revenue-filters">
+              <label>
+                Year From
+                <select id="sales-bi-sales-year-from"></select>
+              </label>
+              <label>
+                Year To
+                <select id="sales-bi-sales-year-to"></select>
+              </label>
+            </div>
+            <div class="table-wrap compact-table-wrap sales-bi-sales-wrap">
+              <table id="sales-bi-sales-table" class="compact-table guests-bi-table sales-bi-sales-table">
+                <thead id="sales-bi-sales-head"></thead>
+                <tbody id="sales-bi-sales-rows"></tbody>
+                <tfoot id="sales-bi-sales-totals"></tfoot>
+              </table>
+            </div>
+            <p id="sales-bi-sales-status" class="auth-status"></p>
           </section>
 
           <section id="financial-bi-panel-items-revenue" class="card" hidden>
