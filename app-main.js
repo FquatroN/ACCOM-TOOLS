@@ -21231,6 +21231,8 @@ async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
   if (!canAppFinancialReconciliation()) return;
   const current = financialReconciliationState();
   if (current.loading) return;
+  const previousWorkspace = current.workspace;
+  const previousCandidateSourceType = current.candidateSourceType;
   current.loading = true;
   try {
     const result = await api(buildFinancialReconciliationWorkspaceUrl());
@@ -21247,10 +21249,11 @@ async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
     renderFinancialReconciliation();
     if (!silent) setFinancialReconciliationStatus("Reconciliation data loaded.");
   } catch (error) {
-    current.workspace = normalizeFinancialReconciliationWorkspace({});
-    current.loaded = false;
+    current.workspace = previousWorkspace || normalizeFinancialReconciliationWorkspace({});
+    current.candidateSourceType = previousCandidateSourceType;
+    current.loaded = Boolean(previousWorkspace);
     renderFinancialReconciliation();
-    if (!silent) setFinancialReconciliationStatus(`Failed to load reconciliation data: ${error.message}`, "error");
+    setFinancialReconciliationStatus(`Failed to load reconciliation data: ${error.message}. Your current reconciliation is still open.`, "error");
   } finally {
     current.loading = false;
   }

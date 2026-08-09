@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   MIN_RECONCILIATION_DATE,
   calculateDifference,
@@ -149,4 +151,16 @@ test("RPC error mapping makes source locks conflicts and validation errors clien
 
 test("minimum reconciliation date is the documented 2026 eligibility floor", () => {
   assert.equal(MIN_RECONCILIATION_DATE, "2026-01-01");
+});
+
+test("failed browse-source reload preserves the active reconciliation workspace", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "app-main.js"), "utf8");
+  assert.match(
+    source,
+    /const previousWorkspace = current\.workspace;\s*const previousCandidateSourceType = current\.candidateSourceType;/,
+  );
+  assert.match(
+    source,
+    /catch \(error\) \{\s*current\.workspace = previousWorkspace \|\| normalizeFinancialReconciliationWorkspace\(\{\}\);\s*current\.candidateSourceType = previousCandidateSourceType;/,
+  );
 });
