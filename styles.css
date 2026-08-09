@@ -5374,7 +5374,7 @@ button[id^="close-settings"] {
 .sales-bi-sales-table {
   width: max-content;
   min-width: 56rem;
-  font-size: 0.38rem;
+  font-size: 0.34rem;
   table-layout: fixed;
 }
 

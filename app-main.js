@@ -23424,7 +23424,10 @@ function renderSalesBiSales() {
   const periods = visibleYears.flatMap((year) => {
     const expanded = salesBiSalesYearExpanded(year);
     return expanded
-      ? Array.from({ length: salesBiSalesCompletedMonthCount(year) }, (_, index) => ({ year, month: index + 1, label: String(index + 1) }))
+      ? [
+        ...Array.from({ length: salesBiSalesCompletedMonthCount(year) }, (_, index) => ({ year, month: index + 1, label: String(index + 1) })),
+        { year, month: 0, label: "Total" },
+      ]
       : [{ year, month: 0, label: "Total" }];
   });
   const categories = new Map();
@@ -23444,7 +23447,7 @@ function renderSalesBiSales() {
   if (els.salesBiSalesHead) {
     const yearHeaders = visibleYears.map((year) => {
       const expanded = salesBiSalesYearExpanded(year);
-      return `<th colspan="${expanded ? salesBiSalesCompletedMonthCount(year) : 1}"><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-year="${escape(String(year))}">${expanded ? "-" : "+"}</button> ${escape(String(year))}</th>`;
+      return `<th colspan="${expanded ? salesBiSalesCompletedMonthCount(year) + 1 : 1}"><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-year="${escape(String(year))}">${expanded ? "-" : "+"}</button> ${escape(String(year))}</th>`;
     }).join("");
     const periodHeaders = periods.map((period) => `<th>${escape(period.label)}</th>`).join("");
     els.salesBiSalesHead.innerHTML = `<tr><th rowspan="2">Category / Sale Item</th>${yearHeaders}<th rowspan="2">Total</th></tr><tr>${periodHeaders}</tr>`;
