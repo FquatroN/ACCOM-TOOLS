@@ -17,7 +17,7 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "financial-reconciliation", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
 const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
@@ -1285,6 +1285,18 @@ const state = {
   importDataSourceMode: "",
   importDataEditingId: "",
   importDataEditDraft: null,
+  financialReconciliation: {
+    loaded: false,
+    loading: false,
+    baseSourceType: "financial_documents",
+    matchingSourceTypes: ["import_fdm_accounts"],
+    candidateSourceType: "financial_documents",
+    filters: { dateFrom: "2026-01-01", dateTo: "", amountMin: "", amountMax: "", description: "", supplier: "", payment: "", account: "", category: "" },
+    page: 1,
+    workspace: null,
+    selectedReconciliationId: "",
+    pendingAction: "",
+  },
   guestsBiRows: [],
   guestsBiYears: [],
   guestsBiTotals: { totalNights: 0, exempt7Days: 0, exempt13Year: 0 },
@@ -1458,6 +1470,7 @@ const els = {
   navCommunications: document.getElementById("nav-communications"),
   navFinancialDocs: document.getElementById("nav-financial-docs"),
   navImportData: document.getElementById("nav-import-data"),
+  navFinancialReconciliation: document.getElementById("nav-financial-reconciliation"),
   navGuestsBi: document.getElementById("nav-guests-bi"),
   navBookingsBi: document.getElementById("nav-bookings-bi"),
   navFinancialBi: document.getElementById("nav-financial-bi"),
@@ -1480,6 +1493,7 @@ const els = {
   viewCommunications: document.getElementById("view-communications"),
   viewFinancialDocs: document.getElementById("view-financial-docs"),
   viewImportData: document.getElementById("view-import-data"),
+  viewFinancialReconciliation: document.getElementById("view-financial-reconciliation"),
   viewGuestsBi: document.getElementById("view-guests-bi"),
   viewBookingsBi: document.getElementById("view-bookings-bi"),
   viewFinancialBi: document.getElementById("view-financial-bi"),
@@ -1903,6 +1917,32 @@ const els = {
   importDataViewPanel: document.getElementById("import-data-view-panel"),
   importDataDescription: document.getElementById("import-data-description"),
   importDataStatus: document.getElementById("import-data-status"),
+  financialReconciliationBaseSource: document.getElementById("financial-reconciliation-base-source"),
+  financialReconciliationMatchingSources: document.getElementById("financial-reconciliation-matching-sources"),
+  financialReconciliationCandidateSource: document.getElementById("financial-reconciliation-candidate-source"),
+  financialReconciliationStart: document.getElementById("financial-reconciliation-start"),
+  financialReconciliationFilters: document.getElementById("financial-reconciliation-filters"),
+  financialReconciliationDynamicFilters: document.getElementById("financial-reconciliation-dynamic-filters"),
+  financialReconciliationDateFrom: document.getElementById("financial-reconciliation-date-from"),
+  financialReconciliationDateTo: document.getElementById("financial-reconciliation-date-to"),
+  financialReconciliationAmountMin: document.getElementById("financial-reconciliation-amount-min"),
+  financialReconciliationAmountMax: document.getElementById("financial-reconciliation-amount-max"),
+  financialReconciliationDescription: document.getElementById("financial-reconciliation-description"),
+  financialReconciliationTableHead: document.getElementById("financial-reconciliation-table-head"),
+  financialReconciliationRows: document.getElementById("financial-reconciliation-rows"),
+  financialReconciliationCount: document.getElementById("financial-reconciliation-count"),
+  financialReconciliationStatus: document.getElementById("financial-reconciliation-status"),
+  financialReconciliationCurrent: document.getElementById("financial-reconciliation-current"),
+  financialReconciliationHistoryRows: document.getElementById("financial-reconciliation-history-rows"),
+  financialReconciliationCompleteModal: document.getElementById("financial-reconciliation-complete-modal"),
+  financialReconciliationCompleteMessage: document.getElementById("financial-reconciliation-complete-message"),
+  financialReconciliationForceCommentWrap: document.getElementById("financial-reconciliation-force-comment-wrap"),
+  financialReconciliationForceComment: document.getElementById("financial-reconciliation-force-comment"),
+  financialReconciliationConfirmComplete: document.getElementById("financial-reconciliation-confirm-complete"),
+  financialReconciliationConfirmForce: document.getElementById("financial-reconciliation-confirm-force"),
+  financialReconciliationNew: document.getElementById("financial-reconciliation-new"),
+  financialReconciliationReopen: document.getElementById("financial-reconciliation-reopen"),
+  financialReconciliationDelete: document.getElementById("financial-reconciliation-delete"),
   importDataConfirm: document.getElementById("import-data-confirm"),
   importDataType: document.getElementById("import-data-type"),
   importDataMeta: document.getElementById("import-data-meta"),
@@ -2499,7 +2539,7 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
-  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : "import-data";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : "financial-reconciliation";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : "sales-bi";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
@@ -2542,6 +2582,25 @@ function bindEvents() {
   els.navCommunications.addEventListener("click", () => setView("communications"));
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.navImportData?.addEventListener("click", () => setView("import-data"));
+  els.navFinancialReconciliation?.addEventListener("click", () => setView("financial-reconciliation"));
+  els.financialReconciliationBaseSource?.addEventListener("change", onFinancialReconciliationModeChange);
+  els.financialReconciliationMatchingSources?.addEventListener("change", onFinancialReconciliationModeChange);
+  els.financialReconciliationCandidateSource?.addEventListener("change", onFinancialReconciliationCandidateSourceChange);
+  els.financialReconciliationFilters?.addEventListener("change", onFinancialReconciliationFilterChange);
+  els.financialReconciliationFilters?.addEventListener("input", onFinancialReconciliationFilterInput);
+  els.financialReconciliationStart?.addEventListener("click", onFinancialReconciliationStartClick);
+  els.financialReconciliationRows?.addEventListener("click", onFinancialReconciliationRowsClick);
+  els.financialReconciliationCurrent?.addEventListener("click", onFinancialReconciliationCurrentClick);
+  els.financialReconciliationHistoryRows?.addEventListener("click", onFinancialReconciliationHistoryClick);
+  els.financialReconciliationConfirmComplete?.addEventListener("click", () => confirmFinancialReconciliationCompletion("complete"));
+  els.financialReconciliationConfirmForce?.addEventListener("click", () => confirmFinancialReconciliationCompletion("force_complete"));
+  els.financialReconciliationForceComment?.addEventListener("input", renderFinancialReconciliationCompletionModal);
+  els.financialReconciliationNew?.addEventListener("click", startNewFinancialReconciliation);
+  els.financialReconciliationReopen?.addEventListener("click", reopenFinancialReconciliation);
+  els.financialReconciliationDelete?.addEventListener("click", deleteFinancialReconciliation);
+  els.financialReconciliationCompleteModal?.addEventListener("click", (event) => {
+    if (event.target === els.financialReconciliationCompleteModal || event.target.closest("[data-financial-reconciliation-close]")) closeFinancialReconciliationCompletionModal();
+  });
   els.navGuestsBi?.addEventListener("click", () => setView("guests-bi"));
   els.navBookingsBi?.addEventListener("click", () => setView("bookings-bi"));
   els.navFinancialBi?.addEventListener("click", () => setView("financial-bi"));
@@ -3298,7 +3357,7 @@ function canSettings(feature) {
 }
 
 function canUseBackoffice() {
-  return canApp("backoffice") && (canApp("financial-docs") || canApp("import-data"));
+  return canApp("backoffice") && (canApp("financial-docs") || canApp("import-data") || canApp("financial-reconciliation"));
 }
 
 function canAppFinancialDocs() {
@@ -3307,6 +3366,10 @@ function canAppFinancialDocs() {
 
 function canAppImportData() {
   return canApp("backoffice") && canApp("import-data");
+}
+
+function canAppFinancialReconciliation() {
+  return canApp("backoffice") && canApp("financial-reconciliation");
 }
 
 function canUseBusinessIntelligence() {
@@ -3400,6 +3463,9 @@ function applyInitialRouteFromUrl() {
     if (view === "import-data" && canAppImportData()) {
       state.currentView = "import-data";
     }
+    if (view === "financial-reconciliation" && canAppFinancialReconciliation()) {
+      state.currentView = "financial-reconciliation";
+    }
     if (view === "guests-bi" && canUseGuestsBi()) {
       state.currentView = "guests-bi";
     }
@@ -3447,6 +3513,9 @@ function syncAppRoute() {
     } else if (state.currentView === "import-data") {
       url.searchParams.set("view", "import-data");
       url.searchParams.delete("service");
+    } else if (state.currentView === "financial-reconciliation") {
+      url.searchParams.set("view", "financial-reconciliation");
+      url.searchParams.delete("service");
     } else if (state.currentView === "guests-bi") {
       url.searchParams.set("view", "guests-bi");
       url.searchParams.delete("service");
@@ -3475,6 +3544,7 @@ async function setView(view) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
   if (view === "financial-docs" && !canAppFinancialDocs()) return showToast("No financial documents access.", "error");
   if (view === "import-data" && !canAppImportData()) return showToast("No import data access.", "error");
+  if (view === "financial-reconciliation" && !canAppFinancialReconciliation()) return showToast("No reconciliation access.", "error");
   if (view === "guests-bi" && !canUseGuestsBi()) return showToast("No Guests BI access.", "error");
   if (view === "bookings-bi" && !canUseBookingsBi()) return showToast("No Bookings BI access.", "error");
   if (view === "financial-bi" && !canUseFinancialBi()) return showToast("No Financial BI access.", "error");
@@ -3491,7 +3561,7 @@ async function setView(view) {
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
-  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi" && state.currentView !== "financial-bi" && state.currentView !== "sales-bi") {
+  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "financial-reconciliation" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi" && state.currentView !== "financial-bi" && state.currentView !== "sales-bi") {
     state.lastMainView = state.currentView;
   }
   const previousView = state.currentView;
@@ -3591,6 +3661,10 @@ async function ensureCurrentViewData() {
     await ensureImportDataData();
     renderSettingsSection();
     render();
+    return;
+  }
+  if (state.currentView === "financial-reconciliation") {
+    await ensureFinancialReconciliationData();
     return;
   }
   if (state.currentView === "reviews") {
@@ -3752,6 +3826,11 @@ async function refreshCurrentViewData(reason = "timer") {
       state.importDataLoaded = true;
       renderImportData();
       renderLayout();
+      state.lastAutoRefreshAt = now;
+      return;
+    }
+    if (state.currentView === "financial-reconciliation" && canAppFinancialReconciliation()) {
+      await loadFinancialReconciliationWorkspace({ silent: true });
       state.lastAutoRefreshAt = now;
       return;
     }
@@ -4099,6 +4178,7 @@ function renderLayout() {
   const comm = state.currentView === "communications";
   const financialDocs = state.currentView === "financial-docs";
   const importData = state.currentView === "import-data";
+  const financialReconciliation = state.currentView === "financial-reconciliation";
   const guestsBi = state.currentView === "guests-bi";
   const bookingsBi = state.currentView === "bookings-bi";
   const financialBi = state.currentView === "financial-bi";
@@ -4117,12 +4197,13 @@ function renderLayout() {
   const bakery = state.currentView === "bakery";
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
-  const backofficeMode = financialDocs || importData || backofficeSettings || importDataSettings;
+  const backofficeMode = financialDocs || importData || financialReconciliation || backofficeSettings || importDataSettings;
   const businessIntelligenceMode = guestsBi || bookingsBi || financialBi || salesBi;
   const workspaceMode = backofficeMode || businessIntelligenceMode;
   const canComm = canApp("communications");
   const canFinancialDocs = canAppFinancialDocs();
   const canImportData = canAppImportData();
+  const canFinancialReconciliation = canAppFinancialReconciliation();
   const canGuestsBi = canUseGuestsBi();
   const canBookingsBi = canUseBookingsBi();
   const canFinancialBi = canUseFinancialBi();
@@ -4146,6 +4227,7 @@ function renderLayout() {
   els.navCommunications.classList.toggle("active", comm);
   els.navFinancialDocs?.classList.toggle("active", financialDocs);
   els.navImportData?.classList.toggle("active", importData);
+  els.navFinancialReconciliation?.classList.toggle("active", financialReconciliation);
   els.navGuestsBi?.classList.toggle("active", guestsBi);
   els.navBookingsBi?.classList.toggle("active", bookingsBi);
   els.navFinancialBi?.classList.toggle("active", financialBi);
@@ -4164,6 +4246,7 @@ function renderLayout() {
   els.navCommunications.hidden = !canComm;
   if (els.navFinancialDocs) els.navFinancialDocs.hidden = !canFinancialDocs;
   if (els.navImportData) els.navImportData.hidden = !canImportData;
+  if (els.navFinancialReconciliation) els.navFinancialReconciliation.hidden = !canFinancialReconciliation;
   if (els.navGuestsBi) els.navGuestsBi.hidden = !canGuestsBi;
   if (els.navBookingsBi) els.navBookingsBi.hidden = !canBookingsBi;
   if (els.navFinancialBi) els.navFinancialBi.hidden = !canFinancialBi;
@@ -4204,6 +4287,7 @@ function renderLayout() {
   els.viewCommunications.hidden = !comm;
   if (els.viewFinancialDocs) els.viewFinancialDocs.hidden = !financialDocs;
   if (els.viewImportData) els.viewImportData.hidden = !importData;
+  if (els.viewFinancialReconciliation) els.viewFinancialReconciliation.hidden = !financialReconciliation;
   if (els.viewGuestsBi) els.viewGuestsBi.hidden = !guestsBi;
   if (els.viewBookingsBi) els.viewBookingsBi.hidden = !bookingsBi;
   if (els.viewFinancialBi) els.viewFinancialBi.hidden = !(financialBi || salesBi);
@@ -19382,7 +19466,7 @@ function isBackofficeSettingsContext() {
 }
 
 function onLogoHomeClick() {
-  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi" || state.currentView === "sales-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
+  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "financial-reconciliation" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi" || state.currentView === "sales-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
   }
@@ -19417,7 +19501,7 @@ function openBackofficeHome() {
     showToast("No backoffice access.", "error");
     return;
   }
-  setView(canAppFinancialDocs() ? "financial-docs" : "import-data");
+  setView(canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : "financial-reconciliation");
 }
 
 function openBusinessIntelligenceHome() {
@@ -21042,6 +21126,429 @@ function renderImportData() {
   updateImportDataSourceSummary();
   renderImportDataPreviewRows();
   renderImportDataRows();
+}
+
+const FINANCIAL_RECONCILIATION_SOURCES = Object.freeze({
+  financial_documents: "Financial Documents",
+  import_fdm_accounts: "FDM Accounts",
+  import_cgd_cartao_credito: "CGD Credit Card",
+  import_cgd_extrato_ordem: "CGD Bank Statement",
+});
+
+const FINANCIAL_RECONCILIATION_MATCHES = Object.freeze({
+  financial_documents: ["import_fdm_accounts", "import_cgd_cartao_credito", "import_cgd_extrato_ordem"],
+  import_fdm_accounts: ["import_cgd_extrato_ordem"],
+  import_cgd_cartao_credito: ["financial_documents", "import_cgd_extrato_ordem"],
+  import_cgd_extrato_ordem: ["financial_documents", "import_fdm_accounts", "import_cgd_cartao_credito"],
+});
+
+const FINANCIAL_RECONCILIATION_FILTER_FIELDS = Object.freeze({
+  financial_documents: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "supplier", "payment", "account", "category"],
+  import_fdm_accounts: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "account", "category"],
+  import_cgd_cartao_credito: ["dateFrom", "dateTo", "amountMin", "amountMax", "description"],
+  import_cgd_extrato_ordem: ["dateFrom", "dateTo", "amountMin", "amountMax", "description"],
+});
+
+function financialReconciliationSourceLabel(sourceType) {
+  return FINANCIAL_RECONCILIATION_SOURCES[clean(sourceType)] || clean(sourceType) || "Unknown source";
+}
+
+function financialReconciliationState() {
+  return state.financialReconciliation;
+}
+
+function financialReconciliationActiveRecord() {
+  const workspace = financialReconciliationState().workspace;
+  return workspace?.reconciliation && typeof workspace.reconciliation === "object" ? workspace.reconciliation : null;
+}
+
+function normalizeFinancialReconciliationWorkspace(result) {
+  const workspace = result && typeof result === "object" ? result : {};
+  return {
+    candidates: Array.isArray(workspace.candidates) ? workspace.candidates : [],
+    totalCount: Number(workspace.totalCount || 0),
+    counts: workspace.counts && typeof workspace.counts === "object" ? workspace.counts : {},
+    page: Math.max(1, Number(workspace.page || 1)),
+    pageSize: Math.max(1, Number(workspace.pageSize || 50)),
+    sourceConfig: workspace.sourceConfig && typeof workspace.sourceConfig === "object" ? workspace.sourceConfig : {},
+    filterFields: Array.isArray(workspace.filterFields) ? workspace.filterFields : [],
+    reconciliation: workspace.reconciliation && typeof workspace.reconciliation === "object" ? workspace.reconciliation : null,
+    items: Array.isArray(workspace.items) ? workspace.items : [],
+    audit: Array.isArray(workspace.audit) ? workspace.audit : [],
+    history: Array.isArray(workspace.history) ? workspace.history : [],
+  };
+}
+
+function setFinancialReconciliationStatus(message = "", tone = "") {
+  if (!els.financialReconciliationStatus) return;
+  els.financialReconciliationStatus.textContent = message;
+  els.financialReconciliationStatus.classList.toggle("status-error", tone === "error");
+}
+
+function selectedFinancialReconciliationMatchingSources() {
+  const field = els.financialReconciliationMatchingSources;
+  const selected = field ? [...field.selectedOptions].map((option) => clean(option.value)).filter(Boolean) : [];
+  return selected.length ? selected : [...financialReconciliationState().matchingSourceTypes];
+}
+
+function currentFinancialReconciliationFilters() {
+  const current = financialReconciliationState().filters || {};
+  const values = { ...current };
+  document.querySelectorAll("[data-financial-reconciliation-filter]").forEach((field) => {
+    values[field.dataset.financialReconciliationFilter] = clean(field.value);
+  });
+  const dateFrom = clean(values.dateFrom || "2026-01-01");
+  values.dateFrom = dateFrom < "2026-01-01" ? "2026-01-01" : dateFrom;
+  return values;
+}
+
+function financialReconciliationRequestFilters(sourceType) {
+  const current = financialReconciliationState();
+  const workspaceConfig = current.workspace?.sourceConfig || {};
+  const fields = clean(workspaceConfig.sourceType) === sourceType && Array.isArray(workspaceConfig.filterFields)
+    ? workspaceConfig.filterFields
+    : (FINANCIAL_RECONCILIATION_FILTER_FIELDS[sourceType] || FINANCIAL_RECONCILIATION_FILTER_FIELDS.financial_documents);
+  const values = currentFinancialReconciliationFilters();
+  return Object.fromEntries(fields.map((field) => [field, values[field] || ""]));
+}
+
+function buildFinancialReconciliationWorkspaceUrl() {
+  const reconciliation = financialReconciliationActiveRecord();
+  const current = financialReconciliationState();
+  const sourceType = reconciliation ? current.candidateSourceType : current.baseSourceType;
+  const params = new URLSearchParams({
+    source_type: sourceType,
+    matching_source_types: JSON.stringify(reconciliation?.matching_source_types || current.matchingSourceTypes),
+    filters: JSON.stringify(financialReconciliationRequestFilters(sourceType)),
+    page: String(current.page),
+    page_size: "50",
+  });
+  if (reconciliation?.id) params.set("reconciliation_id", reconciliation.id);
+  return `/api/reconciliation?${params.toString()}`;
+}
+
+async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
+  if (!canAppFinancialReconciliation()) return;
+  const current = financialReconciliationState();
+  if (current.loading) return;
+  current.loading = true;
+  try {
+    const result = await api(buildFinancialReconciliationWorkspaceUrl());
+    current.workspace = normalizeFinancialReconciliationWorkspace(result);
+    current.loaded = true;
+    const reconciliation = financialReconciliationActiveRecord();
+    current.selectedReconciliationId = clean(reconciliation?.id);
+    if (reconciliation) {
+      current.baseSourceType = clean(reconciliation.base_source_type) || current.baseSourceType;
+      current.matchingSourceTypes = Array.isArray(reconciliation.matching_source_types) ? reconciliation.matching_source_types : current.matchingSourceTypes;
+      const allowed = [current.baseSourceType, ...current.matchingSourceTypes];
+      if (!allowed.includes(current.candidateSourceType)) current.candidateSourceType = current.baseSourceType;
+    }
+    renderFinancialReconciliation();
+    if (!silent) setFinancialReconciliationStatus("Reconciliation data loaded.");
+  } catch (error) {
+    current.workspace = normalizeFinancialReconciliationWorkspace({});
+    current.loaded = false;
+    renderFinancialReconciliation();
+    if (!silent) setFinancialReconciliationStatus(`Failed to load reconciliation data: ${error.message}`, "error");
+  } finally {
+    current.loading = false;
+  }
+}
+
+async function ensureFinancialReconciliationData() {
+  if (!financialReconciliationState().loaded) await loadFinancialReconciliationWorkspace({ silent: true });
+  renderFinancialReconciliation();
+}
+
+function renderFinancialReconciliationModeControls() {
+  const current = financialReconciliationState();
+  const reconciliation = financialReconciliationActiveRecord();
+  const base = reconciliation ? clean(reconciliation.base_source_type) : current.baseSourceType;
+  const matching = reconciliation?.matching_source_types || current.matchingSourceTypes;
+  const allowedMatches = FINANCIAL_RECONCILIATION_MATCHES[base] || [];
+  if (els.financialReconciliationBaseSource) {
+    els.financialReconciliationBaseSource.innerHTML = Object.entries(FINANCIAL_RECONCILIATION_SOURCES)
+      .map(([value, label]) => `<option value="${escape(value)}">${escape(label)}</option>`).join("");
+    els.financialReconciliationBaseSource.value = base;
+    els.financialReconciliationBaseSource.disabled = !!reconciliation;
+  }
+  if (els.financialReconciliationMatchingSources) {
+    els.financialReconciliationMatchingSources.innerHTML = allowedMatches.map((sourceType) => `<option value="${escape(sourceType)}" ${matching.includes(sourceType) ? "selected" : ""}>${escape(financialReconciliationSourceLabel(sourceType))}</option>`).join("");
+    els.financialReconciliationMatchingSources.multiple = base === "financial_documents";
+    els.financialReconciliationMatchingSources.size = Math.max(1, Math.min(3, allowedMatches.length));
+    els.financialReconciliationMatchingSources.disabled = !!reconciliation;
+  }
+  const browseSources = reconciliation ? [base, ...matching] : [base];
+  if (!browseSources.includes(current.candidateSourceType)) current.candidateSourceType = browseSources[0] || base;
+  if (els.financialReconciliationCandidateSource) {
+    els.financialReconciliationCandidateSource.innerHTML = browseSources.map((sourceType) => `<option value="${escape(sourceType)}">${escape(financialReconciliationSourceLabel(sourceType))}</option>`).join("");
+    els.financialReconciliationCandidateSource.value = current.candidateSourceType;
+  }
+}
+
+function renderFinancialReconciliationFilters() {
+  const current = financialReconciliationState();
+  const workspace = current.workspace || normalizeFinancialReconciliationWorkspace({});
+  const filters = current.filters = currentFinancialReconciliationFilters();
+  const filterFields = Array.isArray(workspace.sourceConfig?.filterFields)
+    ? workspace.sourceConfig.filterFields
+    : (Array.isArray(workspace.filterFields) ? workspace.filterFields : ["dateFrom", "dateTo", "amountMin", "amountMax", "description"]);
+  const labels = { dateFrom: "Date from", dateTo: "Date to", amountMin: "Amount from", amountMax: "Amount to", description: "Description", supplier: "Supplier", payment: "Payment", account: "Account", category: "Category" };
+  const fieldMarkup = filterFields.map((field) => {
+    const value = clean(filters[field]);
+    const isDate = field === "dateFrom" || field === "dateTo";
+    const isAmount = field === "amountMin" || field === "amountMax";
+    const type = isDate ? "date" : isAmount ? "number" : (field === "description" ? "search" : "search");
+    const min = isDate ? ' min="2026-01-01"' : "";
+    const step = isAmount ? ' step="0.01"' : "";
+    const placeholder = field === "description" ? ' placeholder="Search description"' : "";
+    return `<label class="financial-reconciliation-filter-${escape(field)}">${escape(labels[field] || field)}<input type="${type}" data-financial-reconciliation-filter="${escape(field)}" value="${escape(field === "dateFrom" ? (value || "2026-01-01") : value)}"${min}${step}${placeholder} /></label>`;
+  }).join("");
+  if (els.financialReconciliationDynamicFilters) els.financialReconciliationDynamicFilters.innerHTML = fieldMarkup;
+}
+
+function financialReconciliationStatusMarkup(status) {
+  const normalized = clean(status).toLowerCase() || "not-started";
+  const label = normalized === "complete" ? "Complete" : normalized === "started" ? "Started" : "Not started";
+  return `<span class="financial-reconciliation-status financial-reconciliation-status--${escape(normalized)}">${escape(label)}</span>`;
+}
+
+function renderFinancialReconciliationCandidates() {
+  const workspace = financialReconciliationState().workspace || normalizeFinancialReconciliationWorkspace({});
+  const reconciliation = financialReconciliationActiveRecord();
+  const sourceType = financialReconciliationState().candidateSourceType;
+  const columns = ["Date", "Description", "Amount"];
+  const configColumns = Array.isArray(workspace.sourceConfig?.columns) ? workspace.sourceConfig.columns : [];
+  const columnLabels = { document_fat: "FAT", supplier_nif: "Supplier NIF", supplier: "Supplier", payment: "Payment", reservation_id: "Reservation", account: "Account", category: "Category" };
+  const extraColumns = configColumns.filter((key) => key !== "description").map((key) => ({ key, label: columnLabels[key] || key }));
+  columns.splice(2, 0, ...extraColumns.map((column) => column.label));
+  if (els.financialReconciliationTableHead) els.financialReconciliationTableHead.innerHTML = `<tr><th></th>${columns.map((column) => `<th>${escape(column)}</th>`).join("")}<th>Status</th></tr>`;
+  const started = clean(reconciliation?.status) === "started";
+  const actionLabel = reconciliation ? "Add" : "Start";
+  if (els.financialReconciliationRows) els.financialReconciliationRows.innerHTML = workspace.candidates.length
+    ? workspace.candidates.map((row) => {
+      const optional = extraColumns.map(({ key }) => `<td>${escape(clean(row[key]) || "-")}</td>`);
+      const disabled = reconciliation && !started ? "disabled" : "";
+      return `<tr><td><button type="button" class="ghost" data-financial-reconciliation-row-action="${reconciliation ? "add" : "start"}" data-source-id="${escape(row.id)}" ${disabled}>${actionLabel}</button></td><td>${escape(formatDateOnly(row.source_date) || "-")}</td><td class="financial-reconciliation-description">${escape(clean(row.description) || "-")}</td>${optional.join("")}<td>${escape(formatMoney(Number(row.amount || 0)))}</td><td>${financialReconciliationStatusMarkup("not-started")}</td></tr>`;
+    }).join("")
+    : `<tr><td colspan="${columns.length + 2}" class="empty">No eligible unlocked ${escape(financialReconciliationSourceLabel(sourceType).toLowerCase())} records match these filters.</td></tr>`;
+  if (els.financialReconciliationCount) {
+    const counts = workspace.counts || {};
+    const notStarted = Number(counts.notStarted ?? workspace.totalCount ?? 0);
+    const startedCount = Number(counts.started || 0);
+    const completeCount = Number(counts.complete || 0);
+    els.financialReconciliationCount.innerHTML = `${financialReconciliationStatusMarkup("not-started")} ${escape(String(notStarted))} &middot; ${financialReconciliationStatusMarkup("started")} ${escape(String(startedCount))} &middot; ${financialReconciliationStatusMarkup("complete")} ${escape(String(completeCount))}`;
+  }
+  if (els.financialReconciliationStart) {
+    els.financialReconciliationStart.hidden = !!reconciliation;
+    els.financialReconciliationStart.disabled = true;
+    els.financialReconciliationStart.textContent = `Choose Start on a ${financialReconciliationSourceLabel(sourceType)} record`;
+  }
+}
+
+function financialReconciliationDifference(reconciliation) {
+  return Number(reconciliation?.difference_amount ?? reconciliation?.differenceAmount ?? 0);
+}
+
+function renderFinancialReconciliationCurrent() {
+  const workspace = financialReconciliationState().workspace || normalizeFinancialReconciliationWorkspace({});
+  const reconciliation = financialReconciliationActiveRecord();
+  if (!els.financialReconciliationCurrent) return;
+  if (!reconciliation) {
+    els.financialReconciliationCurrent.innerHTML = "<p>Select an eligible record and click Start. Only Financial Documents can combine more than one matching source type.</p>";
+    if (els.financialReconciliationNew) els.financialReconciliationNew.hidden = true;
+    if (els.financialReconciliationReopen) els.financialReconciliationReopen.hidden = true;
+    if (els.financialReconciliationDelete) els.financialReconciliationDelete.hidden = true;
+    return;
+  }
+  const difference = financialReconciliationDifference(reconciliation);
+  const complete = clean(reconciliation.status) === "complete";
+  const items = workspace.items.map((item) => `<li><span>${escape(financialReconciliationSourceLabel(item.source_type))}</span><strong>${escape(formatMoney(Number(item.amount_snapshot || 0)))}</strong>${complete ? "" : `<button type="button" class="ghost" data-financial-reconciliation-remove data-source-type="${escape(item.source_type)}" data-source-id="${escape(item.source_id)}">Remove</button>`}</li>`).join("") || "<li>No locked records.</li>";
+  const audit = workspace.audit.slice(-6).map((entry) => {
+    const comment = clean(entry.comment);
+    return `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}${comment ? ` · ${escape(comment)}` : ""}</span></li>`;
+  }).join("") || "<li>No audit entries yet.</li>";
+  els.financialReconciliationCurrent.innerHTML = `<div class="financial-reconciliation-summary"><div>${financialReconciliationStatusMarkup(reconciliation.status)}<p>${escape(financialReconciliationSourceLabel(reconciliation.base_source_type))} with ${escape((reconciliation.matching_source_types || []).map(financialReconciliationSourceLabel).join(", "))}</p></div><strong class="financial-reconciliation-difference${difference === 0 ? "" : " financial-reconciliation-forced-difference"}">Difference: ${escape(formatMoney(difference))}</strong></div><h3>Locked records</h3><ul class="financial-reconciliation-items">${items}</ul>${!complete ? `<button type="button" data-financial-reconciliation-complete ${workspace.items.length ? "" : "disabled"}>${difference === 0 ? "Complete reconciliation" : "Force complete"}</button>` : `<p class="field-hint">Completed ${escape(reconciliation.completion_type || "normally")}${reconciliation.forced_completion_comment ? ` · ${escape(reconciliation.forced_completion_comment)}` : ""}</p>`}<h3>Audit trail</h3><ul class="financial-reconciliation-audit">${audit}</ul>`;
+  if (els.financialReconciliationReopen) els.financialReconciliationReopen.hidden = !complete;
+  if (els.financialReconciliationNew) els.financialReconciliationNew.hidden = !complete;
+  if (els.financialReconciliationDelete) els.financialReconciliationDelete.hidden = false;
+}
+
+function renderFinancialReconciliationHistory() {
+  const history = financialReconciliationState().workspace?.history || [];
+  if (!els.financialReconciliationHistoryRows) return;
+  els.financialReconciliationHistoryRows.innerHTML = history.length ? history.map((record) => `<tr class="${clean(record.id) === financialReconciliationState().selectedReconciliationId ? "selected" : ""}"><td>${escape(formatDateTimeShort(record.created_at) || "-")}</td><td>${escape(financialReconciliationSourceLabel(record.base_source_type))}</td><td>${escape((record.matching_source_types || []).map(financialReconciliationSourceLabel).join(", "))}</td><td>${financialReconciliationStatusMarkup(record.status)}</td><td>${escape(formatMoney(financialReconciliationDifference(record)))}</td><td><button type="button" class="ghost" data-financial-reconciliation-select="${escape(record.id)}">Open</button></td></tr>`).join("") : '<tr><td colspan="6" class="empty">No reconciliations yet.</td></tr>';
+}
+
+function renderFinancialReconciliationCompletionModal() {
+  const reconciliation = financialReconciliationActiveRecord();
+  if (!els.financialReconciliationCompleteModal || els.financialReconciliationCompleteModal.hidden || !reconciliation) return;
+  const difference = financialReconciliationDifference(reconciliation);
+  const force = difference !== 0;
+  if (els.financialReconciliationCompleteMessage) els.financialReconciliationCompleteMessage.textContent = force ? `The current difference is ${formatMoney(difference)}. A mandatory comment is required to force completion.` : "The current difference is zero. Confirm to complete this reconciliation.";
+  if (els.financialReconciliationForceCommentWrap) els.financialReconciliationForceCommentWrap.hidden = !force;
+  if (els.financialReconciliationConfirmComplete) els.financialReconciliationConfirmComplete.hidden = force;
+  if (els.financialReconciliationConfirmForce) {
+    els.financialReconciliationConfirmForce.hidden = !force;
+    els.financialReconciliationConfirmForce.disabled = force && !clean(els.financialReconciliationForceComment?.value);
+  }
+}
+
+function renderFinancialReconciliation() {
+  if (!canAppFinancialReconciliation()) return;
+  renderFinancialReconciliationModeControls();
+  renderFinancialReconciliationFilters();
+  renderFinancialReconciliationCandidates();
+  renderFinancialReconciliationCurrent();
+  renderFinancialReconciliationHistory();
+  renderFinancialReconciliationCompletionModal();
+}
+
+function onFinancialReconciliationModeChange() {
+  const current = financialReconciliationState();
+  current.baseSourceType = clean(els.financialReconciliationBaseSource?.value) || "financial_documents";
+  const allowed = FINANCIAL_RECONCILIATION_MATCHES[current.baseSourceType] || [];
+  const selected = selectedFinancialReconciliationMatchingSources().filter((sourceType) => allowed.includes(sourceType));
+  current.matchingSourceTypes = current.baseSourceType === "financial_documents" ? (selected.length ? selected : [allowed[0]]) : [selected[0] || allowed[0]];
+  current.candidateSourceType = current.baseSourceType;
+  current.page = 1;
+  current.loaded = false;
+  loadFinancialReconciliationWorkspace({ silent: true });
+}
+
+function onFinancialReconciliationCandidateSourceChange() {
+  financialReconciliationState().candidateSourceType = clean(els.financialReconciliationCandidateSource?.value) || financialReconciliationState().baseSourceType;
+  financialReconciliationState().page = 1;
+  loadFinancialReconciliationWorkspace({ silent: true });
+}
+
+let financialReconciliationFilterTimer = 0;
+function onFinancialReconciliationFilterChange() {
+  const current = financialReconciliationState();
+  current.filters = currentFinancialReconciliationFilters();
+  current.page = 1;
+  loadFinancialReconciliationWorkspace({ silent: true });
+}
+
+function onFinancialReconciliationFilterInput() {
+  window.clearTimeout(financialReconciliationFilterTimer);
+  financialReconciliationFilterTimer = window.setTimeout(onFinancialReconciliationFilterChange, 250);
+}
+
+async function runFinancialReconciliationAction(payload) {
+  const current = financialReconciliationState();
+  current.pendingAction = payload.action;
+  try {
+    const result = await api("/api/reconciliation", { method: "POST", body: payload });
+    if (result?.deleted) {
+      current.selectedReconciliationId = "";
+      current.workspace = null;
+      current.loaded = false;
+      await loadFinancialReconciliationWorkspace({ silent: true });
+    } else {
+      current.workspace = normalizeFinancialReconciliationWorkspace(result);
+      current.loaded = true;
+      current.selectedReconciliationId = clean(current.workspace.reconciliation?.id);
+      await loadFinancialReconciliationWorkspace({ silent: true });
+    }
+    showToast("Reconciliation updated.", "success");
+  } catch (error) {
+    setFinancialReconciliationStatus(error.message, "error");
+    showToast(error.message, "error");
+    await loadFinancialReconciliationWorkspace({ silent: true });
+  } finally {
+    current.pendingAction = "";
+    renderFinancialReconciliation();
+  }
+}
+
+function onFinancialReconciliationRowsClick(event) {
+  const button = event.target instanceof HTMLElement ? event.target.closest("button[data-financial-reconciliation-row-action]") : null;
+  if (!button || button.disabled) return;
+  const action = clean(button.dataset.financialReconciliationRowAction);
+  const sourceId = clean(button.dataset.sourceId);
+  const current = financialReconciliationState();
+  if (action === "start") {
+    runFinancialReconciliationAction({ action: "start", baseSourceType: current.baseSourceType, matchingSourceTypes: current.matchingSourceTypes, sourceType: current.baseSourceType, sourceId });
+  } else if (action === "add") {
+    const reconciliation = financialReconciliationActiveRecord();
+    if (reconciliation) runFinancialReconciliationAction({ action: "add_item", reconciliationId: reconciliation.id, sourceType: current.candidateSourceType, sourceId });
+  }
+}
+
+function onFinancialReconciliationStartClick() {
+  setFinancialReconciliationStatus("Choose Start beside the eligible record to lock it into a new reconciliation.");
+}
+
+function onFinancialReconciliationCurrentClick(event) {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  const remove = target?.closest("[data-financial-reconciliation-remove]");
+  if (remove) {
+    const reconciliation = financialReconciliationActiveRecord();
+    if (reconciliation) runFinancialReconciliationAction({ action: "remove_item", reconciliationId: reconciliation.id, sourceType: clean(remove.dataset.sourceType), sourceId: clean(remove.dataset.sourceId) });
+    return;
+  }
+  if (target?.closest("[data-financial-reconciliation-complete]")) openFinancialReconciliationCompletionModal();
+}
+
+async function onFinancialReconciliationHistoryClick(event) {
+  const button = event.target instanceof HTMLElement ? event.target.closest("[data-financial-reconciliation-select]") : null;
+  if (!button) return;
+  const record = (financialReconciliationState().workspace?.history || []).find((item) => clean(item.id) === clean(button.dataset.financialReconciliationSelect));
+  if (!record) return;
+  const current = financialReconciliationState();
+  current.selectedReconciliationId = clean(record.id);
+  current.baseSourceType = clean(record.base_source_type);
+  current.matchingSourceTypes = Array.isArray(record.matching_source_types) ? record.matching_source_types : [];
+  current.candidateSourceType = current.baseSourceType;
+  current.workspace = { ...current.workspace, reconciliation: record };
+  current.loaded = false;
+  await loadFinancialReconciliationWorkspace({ silent: true });
+}
+
+function openFinancialReconciliationCompletionModal() {
+  if (!financialReconciliationActiveRecord() || !els.financialReconciliationCompleteModal) return;
+  if (els.financialReconciliationForceComment) els.financialReconciliationForceComment.value = "";
+  els.financialReconciliationCompleteModal.hidden = false;
+  renderFinancialReconciliationCompletionModal();
+}
+
+function closeFinancialReconciliationCompletionModal() {
+  if (els.financialReconciliationCompleteModal) els.financialReconciliationCompleteModal.hidden = true;
+}
+
+function confirmFinancialReconciliationCompletion(action) {
+  const reconciliation = financialReconciliationActiveRecord();
+  if (!reconciliation) return;
+  const comment = clean(els.financialReconciliationForceComment?.value);
+  if (action === "force_complete" && !comment) return;
+  closeFinancialReconciliationCompletionModal();
+  runFinancialReconciliationAction({ action, reconciliationId: reconciliation.id, comment });
+}
+
+function reopenFinancialReconciliation() {
+  const reconciliation = financialReconciliationActiveRecord();
+  if (!reconciliation || !window.confirm("Reopen this reconciliation? Its locked records will remain linked and editable.")) return;
+  runFinancialReconciliationAction({ action: "reopen", reconciliationId: reconciliation.id });
+}
+
+function deleteFinancialReconciliation() {
+  const reconciliation = financialReconciliationActiveRecord();
+  if (!reconciliation || !window.confirm("Delete this reconciliation? Its source-record locks will be released, while its audit trail remains retained.")) return;
+  runFinancialReconciliationAction({ action: "delete", reconciliationId: reconciliation.id });
+}
+
+async function startNewFinancialReconciliation() {
+  const current = financialReconciliationState();
+  const reconciliation = financialReconciliationActiveRecord();
+  if (!reconciliation || clean(reconciliation.status) !== "complete") return;
+  current.selectedReconciliationId = "";
+  current.workspace = { ...(current.workspace || {}), reconciliation: null, items: [], audit: [] };
+  current.candidateSourceType = current.baseSourceType;
+  current.loaded = false;
+  await loadFinancialReconciliationWorkspace({ silent: true });
+  setFinancialReconciliationStatus("Ready to start a new reconciliation.");
 }
 
 function setGuestsBiStatus(message = "", tone = "") {
@@ -25578,6 +26085,10 @@ function render() {
     renderImportData();
     return;
   }
+  if (state.currentView === "financial-reconciliation") {
+    renderFinancialReconciliation();
+    return;
+  }
   if (state.currentView === "guests-bi") {
     renderGuestsBi();
     return;
@@ -28932,4 +29443,3 @@ function escape(value) {
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
-
