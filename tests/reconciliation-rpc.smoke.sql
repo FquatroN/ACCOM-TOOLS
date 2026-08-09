@@ -15,6 +15,8 @@ begin
   perform financial_reconciliation_action('reopen','smoke',rid,null,null,null,null,null);
   perform financial_reconciliation_action('remove_item','smoke',rid,null,null,'import_cgd_cartao_credito',card_id,null);
   if exists(select 1 from financial_reconciliation_items where source_type='import_cgd_cartao_credito' and source_id=card_id) then raise exception 'Removed record is still locked'; end if;
+  r:=get_financial_reconciliation_workspace(rid,'import_cgd_cartao_credito',array['import_cgd_extrato_ordem','import_cgd_cartao_credito','import_fdm_accounts']);
+  if not exists (select 1 from jsonb_array_elements(r->'candidates') candidate where (candidate->>'id')::uuid=card_id) then raise exception 'Removed record did not reappear as a candidate'; end if;
   begin
     perform financial_reconciliation_action('add_item','smoke',rid,null,null,'financial_documents',doc_id,null);
     raise exception 'Expected duplicate membership failure';
