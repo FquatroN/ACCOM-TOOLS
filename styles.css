@@ -6238,6 +6238,30 @@ button[id^="close-settings"] {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
 }
 
+.financial-reconciliation-workbench-card h2,
+.financial-reconciliation-eligible-card h2 {
+  font-size: .94rem;
+}
+
+.financial-reconciliation-filters label {
+  font-size: .72rem;
+}
+
+.financial-reconciliation-filters input,
+.financial-reconciliation-filters select {
+  font-size: .70rem;
+}
+
+.financial-reconciliation-table th,
+.financial-reconciliation-table td {
+  font-size: .88rem;
+  padding: .54rem;
+}
+
+.financial-reconciliation-table button {
+  font-size: 1rem;
+}
+
 .financial-reconciliation-dynamic-filters {
   display: contents;
 }
