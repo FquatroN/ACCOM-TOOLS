@@ -17,6 +17,8 @@ The module supports an explicit reconciliation workflow. Users may complete a ba
 - `financial_documents` are eligible only when `fat = 'S'`.
 - `import_fdm_accounts` are eligible when `invoice_flag = true` or `category = 'Compras'`.
 - Reconciliation uses the existing `import_cgd_extrato_ordem.montante` field as the bank-statement amount. The business shorthand `amount` refers to this field.
+- Only Financial Documents-led reconciliations may combine more than two source types. Their group difference is `Σ financial_documents.amount + Σ import_cgd_extrato_ordem.montante + Σ import_cgd_cartao_credito.valor + Σ import_fdm_accounts.amount`.
+- FDM Account-, Credit Card-, and Bank Statement-led reconciliations select one matching source type only and use that pair's approved formula.
 
 ## Data model
 
@@ -28,6 +30,8 @@ One row per reconciliation group.
 | --- | --- |
 | `id` | UUID primary key. |
 | `status` | `started` or `complete`. Source-row Not started status is derived, not stored here. |
+| `base_source_type` | Source type selected when the reconciliation started. It controls the allowed matching modes. |
+| `matching_source_types` | JSON array of matching source types. It may contain all three non-document sources only for a Financial Documents-led group; otherwise it contains exactly one type. |
 | `completion_type` | `normal` or `forced` after completion; `null` while Started. |
 | `difference_amount` | Persisted calculated difference at the latest state-changing action. |
 | `forced_completion_comment` | Required for forced completion and otherwise `null`. |
@@ -60,15 +64,13 @@ The source adapter controls which tables can be selected and which rows appear i
 
 | Base source | Allowed matching source | Additional eligibility | Calculation that must equal zero |
 | --- | --- | --- | --- |
-| Financial document | Bank statement | `financial_documents.fat = 'S'` | `financial_documents.amount + import_cgd_extrato_ordem.montante` |
-| Financial document | Credit card | `financial_documents.fat = 'S'` | `financial_documents.amount + import_cgd_cartao_credito.valor` |
-| Financial document | FDM Account | Financial document `fat = 'S'`; FDM `category = 'Compras'` | `financial_documents.amount + import_fdm_accounts.amount` |
+| Financial document | Bank statement, credit card, and/or FDM Account | Financial document `fat = 'S'`; FDM `category = 'Compras'` | `Σ financial_documents.amount + Σ import_cgd_extrato_ordem.montante + Σ import_cgd_cartao_credito.valor + Σ import_fdm_accounts.amount` |
 | FDM Account | Bank statement | FDM `invoice_flag = true` or `category = 'Compras'` | `import_fdm_accounts.amount - import_cgd_extrato_ordem.montante` |
 | Credit card | Financial document | Financial document `fat = 'S'` | `financial_documents.amount + import_cgd_cartao_credito.valor` |
 | Credit card | Bank statement | None beyond the common date and lock rules | `import_cgd_cartao_credito.valor + import_cgd_extrato_ordem.montante` |
-| Bank statement | Financial document, credit card, or FDM Account | The matching source's eligibility rule applies | Use the corresponding row above. |
+| Bank statement | Financial document, credit card, or FDM Account | Select exactly one matching source type; the matching source's eligibility rule applies | `financial_documents.amount + import_cgd_extrato_ordem.montante`, `import_cgd_cartao_credito.valor + import_cgd_extrato_ordem.montante`, or `import_fdm_accounts.amount - import_cgd_extrato_ordem.montante`, respectively. |
 
-The calculation service applies the approved formula for the selected source combination, supports multiple selected items, and displays the running difference. It stores each source amount in `amount_snapshot` so the confirmed reconciliation remains reproducible if later import data changes.
+The calculation service applies the approved formula for the selected source combination and displays the running difference. A Financial Documents-led group may hold multiple eligible records from every listed source; every other group may hold multiple records but from only its base source and one selected matching source. It stores each source amount in `amount_snapshot` so the confirmed reconciliation remains reproducible if later import data changes.
 
 ## User experience
 
@@ -102,7 +104,7 @@ The left table changes fields and filters per source:
 All mutation endpoints execute in a database transaction and validate server-side. The UI may hide invalid choices but cannot bypass these checks.
 
 1. Start creates a Started reconciliation and adds the chosen base record atomically.
-2. Add item validates date, lock, compatibility, and source-specific eligibility before creating a membership item and audit event.
+2. Add item validates date, lock, compatibility, source-specific eligibility, and the base-source matching-mode limit before creating a membership item and audit event.
 3. Remove item deletes the membership row and writes an audit event. The source record becomes available immediately.
 4. Complete validates a zero difference and changes the group to Complete with `completion_type = normal`.
 5. Force complete validates a non-zero difference and a non-blank comment, then sets `completion_type = forced`.
@@ -113,7 +115,7 @@ If a concurrent request has already linked an item, the transaction fails withou
 
 ## Verification
 
-Database and API tests cover the eligibility date, `fat = 'S'`, `invoice_flag = true`, `category = 'Compras'`, all approved pair calculations, membership uniqueness, forced-comment validation, normal completion, reopening, removal, deletion, and concurrent attempts to link the same source record.
+Database and API tests cover the eligibility date, `fat = 'S'`, `invoice_flag = true`, `category = 'Compras'`, the Financial Documents-led four-source sum, each approved two-source calculation, the non-document matching-mode limit, membership uniqueness, forced-comment validation, normal completion, reopening, removal, deletion, and concurrent attempts to link the same source record.
 
 UI tests cover table-specific fields and filters, locked-record exclusion, status counts, running difference, completion dialogs, audit display, and the responsive ACCOMTOOLS workbench layout.
 
