@@ -73,7 +73,7 @@ module.exports = async function handler(req, res) {
       error.statusCode = 405;
       throw error;
     }
-    await requireFeature(req, "app", "financial-bi");
+    await requireFeature(req, "app", "sales-bi");
     const filters = filtersFor(req);
     const rows = await loadRows(filters);
     res.status(200).json({ filters, rows, rowCount: rows.length });

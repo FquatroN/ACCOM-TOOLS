@@ -17,7 +17,7 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
 const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
@@ -849,6 +849,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Guests BI", kind: "app", key: "guests-bi" },
   { label: "App: Bookings BI", kind: "app", key: "bookings-bi" },
   { label: "App: Financial BI", kind: "app", key: "financial-bi" },
+  { label: "App: Sales BI", kind: "app", key: "sales-bi" },
   { label: "App: Communications", kind: "app", key: "communications" },
   { label: "App: Guests", kind: "app", key: "guests" },
   { label: "App: Cash Control", kind: "app", key: "cash" },
@@ -1449,6 +1450,7 @@ const els = {
   navGuestsBi: document.getElementById("nav-guests-bi"),
   navBookingsBi: document.getElementById("nav-bookings-bi"),
   navFinancialBi: document.getElementById("nav-financial-bi"),
+  navSalesBi: document.getElementById("nav-sales-bi"),
   navGuests: document.getElementById("nav-guests"),
   navCash: document.getElementById("nav-cash"),
   navLostFound: document.getElementById("nav-lost-found"),
@@ -1470,6 +1472,8 @@ const els = {
   viewGuestsBi: document.getElementById("view-guests-bi"),
   viewBookingsBi: document.getElementById("view-bookings-bi"),
   viewFinancialBi: document.getElementById("view-financial-bi"),
+  financialBiPageTitle: document.getElementById("financial-bi-page-title"),
+  financialBiTabsCard: document.getElementById("financial-bi-tabs-card"),
   viewGuests: document.getElementById("view-guests"),
   viewCash: document.getElementById("view-cash"),
   viewLostFound: document.getElementById("view-lost-found"),
@@ -1757,7 +1761,6 @@ const els = {
   financialBiTabBankStatement: document.getElementById("financial-bi-tab-bank-statement"),
   financialBiTabCashAnalysis: document.getElementById("financial-bi-tab-cash-analysis"),
   financialBiTabUtilities: document.getElementById("financial-bi-tab-utilities"),
-  financialBiTabItemsRevenue: document.getElementById("financial-bi-tab-items-revenue"),
   financialBiResultsTitle: document.getElementById("financial-bi-results-title"),
   financialBiFilterYearFrom: document.getElementById("financial-bi-filter-year-from"),
   financialBiFilterYearTo: document.getElementById("financial-bi-filter-year-to"),
@@ -2468,7 +2471,7 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : "import-data";
-  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : "financial-bi";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : "sales-bi";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
   handleFinancialDocsDriveCallbackQuery();
@@ -2513,6 +2516,7 @@ function bindEvents() {
   els.navGuestsBi?.addEventListener("click", () => setView("guests-bi"));
   els.navBookingsBi?.addEventListener("click", () => setView("bookings-bi"));
   els.navFinancialBi?.addEventListener("click", () => setView("financial-bi"));
+  els.navSalesBi?.addEventListener("click", () => setView("sales-bi"));
   els.backofficeBackToApp?.addEventListener("click", onLogoHomeClick);
   els.navGuests?.addEventListener("click", () => setView("guests"));
   els.navCash?.addEventListener("click", () => setView("cash"));
@@ -2538,7 +2542,7 @@ function bindEvents() {
   els.closeSettings.addEventListener("click", () => setView("communications"));
   els.closeSettingsFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.closeSettingsImportData?.addEventListener("click", () => setView("import-data"));
-  els.closeSettingsBiSettings?.addEventListener("click", () => setView(canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : "communications"));
+  els.closeSettingsBiSettings?.addEventListener("click", () => setView(canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : canUseSalesBi() ? "sales-bi" : "communications"));
   els.closeSettingsCash?.addEventListener("click", () => setView("cash"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
   els.closeSettingsReviews.addEventListener("click", () => setView("reviews"));
@@ -2600,7 +2604,6 @@ function bindEvents() {
   els.financialBiTabBankStatement?.addEventListener("click", () => setFinancialBiTab("bank-statement"));
   els.financialBiTabCashAnalysis?.addEventListener("click", () => setFinancialBiTab("cash-analysis"));
   els.financialBiTabUtilities?.addEventListener("click", () => setFinancialBiTab("utilities"));
-  els.financialBiTabItemsRevenue?.addEventListener("click", () => setFinancialBiTab("items-revenue"));
   els.financialBiFilterYearFrom?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterYearTo?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCc?.addEventListener("change", onFinancialBiFilterChange);
@@ -3270,7 +3273,7 @@ function canAppImportData() {
 }
 
 function canUseBusinessIntelligence() {
-  return canApp("business-intelligence") && (canApp("guests-bi") || canApp("bookings-bi") || canApp("financial-bi"));
+  return canApp("business-intelligence") && (canApp("guests-bi") || canApp("bookings-bi") || canApp("financial-bi") || canApp("sales-bi"));
 }
 
 function canUseGuestsBi() {
@@ -3283,6 +3286,10 @@ function canUseBookingsBi() {
 
 function canUseFinancialBi() {
   return canApp("business-intelligence") && canApp("financial-bi");
+}
+
+function canUseSalesBi() {
+  return canApp("business-intelligence") && canApp("sales-bi");
 }
 
 function canAccessGeneralSettings() {
@@ -3365,6 +3372,9 @@ function applyInitialRouteFromUrl() {
     if (view === "financial-bi" && canUseFinancialBi()) {
       state.currentView = "financial-bi";
     }
+    if (view === "sales-bi" && canUseSalesBi()) {
+      state.currentView = "sales-bi";
+    }
     if (view === "hours" && canApp("hours")) {
       state.currentView = "hours";
     }
@@ -3409,6 +3419,9 @@ function syncAppRoute() {
     } else if (state.currentView === "financial-bi") {
       url.searchParams.set("view", "financial-bi");
       url.searchParams.delete("service");
+    } else if (state.currentView === "sales-bi") {
+      url.searchParams.set("view", "sales-bi");
+      url.searchParams.delete("service");
     } else if (state.currentView === "hours") {
       url.searchParams.set("view", "hours");
       url.searchParams.delete("service");
@@ -3428,6 +3441,7 @@ async function setView(view) {
   if (view === "guests-bi" && !canUseGuestsBi()) return showToast("No Guests BI access.", "error");
   if (view === "bookings-bi" && !canUseBookingsBi()) return showToast("No Bookings BI access.", "error");
   if (view === "financial-bi" && !canUseFinancialBi()) return showToast("No Financial BI access.", "error");
+  if (view === "sales-bi" && !canUseSalesBi()) return showToast("No Sales BI access.", "error");
   if (view === "guests" && !canApp("guests")) return showToast("No guests access.", "error");
   if (view === "lost-found" && !canApp("lost-found")) return showToast("No Lost&Found access.", "error");
   if (view === "reviews" && !canApp("reviews")) return showToast("No reviews access.", "error");
@@ -3440,7 +3454,7 @@ async function setView(view) {
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
-  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi" && state.currentView !== "financial-bi") {
+  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi" && state.currentView !== "financial-bi" && state.currentView !== "sales-bi") {
     state.lastMainView = state.currentView;
   }
   const previousView = state.currentView;
@@ -3448,7 +3462,7 @@ async function setView(view) {
   if (view === "settings") {
     if (previousView === "financial-docs" && canSettings("financial-docs")) state.settingsSection = "financial-docs";
     else if (previousView === "import-data" && canSettings("import-data")) state.settingsSection = "import-data";
-    else if ((previousView === "guests-bi" || previousView === "bookings-bi" || previousView === "financial-bi") && canSettings("bi-settings")) state.settingsSection = "bi-settings";
+    else if ((previousView === "guests-bi" || previousView === "bookings-bi" || previousView === "financial-bi" || previousView === "sales-bi") && canSettings("bi-settings")) state.settingsSection = "bi-settings";
     else if (canAccessGeneralSettings()) state.settingsSection = "general";
     else if (canSettings("guests")) state.settingsSection = "guests";
     else if (canSettings("financial-docs")) state.settingsSection = "financial-docs";
@@ -3506,6 +3520,9 @@ async function setView(view) {
   }
   if (view !== "financial-bi") {
     state.financialBiLoading = false;
+  }
+  if (view !== "sales-bi") {
+    state.financialBiItemsRevenueLoading = false;
   }
   syncAppRoute();
   renderLayout();
@@ -3571,6 +3588,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "financial-bi") {
     await ensureFinancialBiData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "sales-bi") {
+    await ensureSalesBiData();
     renderSettingsSection();
     render();
     return;
@@ -4042,6 +4065,7 @@ function renderLayout() {
   const guestsBi = state.currentView === "guests-bi";
   const bookingsBi = state.currentView === "bookings-bi";
   const financialBi = state.currentView === "financial-bi";
+  const salesBi = state.currentView === "sales-bi";
   const backofficeSettings = state.currentView === "settings" && state.settingsSection === "financial-docs";
   const importDataSettings = state.currentView === "settings" && state.settingsSection === "import-data";
   const guests = state.currentView === "guests";
@@ -4057,7 +4081,7 @@ function renderLayout() {
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
   const backofficeMode = financialDocs || importData || backofficeSettings || importDataSettings;
-  const businessIntelligenceMode = guestsBi || bookingsBi || financialBi;
+  const businessIntelligenceMode = guestsBi || bookingsBi || financialBi || salesBi;
   const workspaceMode = backofficeMode || businessIntelligenceMode;
   const canComm = canApp("communications");
   const canFinancialDocs = canAppFinancialDocs();
@@ -4088,6 +4112,7 @@ function renderLayout() {
   els.navGuestsBi?.classList.toggle("active", guestsBi);
   els.navBookingsBi?.classList.toggle("active", bookingsBi);
   els.navFinancialBi?.classList.toggle("active", financialBi);
+  els.navSalesBi?.classList.toggle("active", salesBi);
   els.navGuests?.classList.toggle("active", guests);
   els.navCash?.classList.toggle("active", cash);
   els.navLostFound.classList.toggle("active", lostFound);
@@ -4105,6 +4130,7 @@ function renderLayout() {
   if (els.navGuestsBi) els.navGuestsBi.hidden = !canGuestsBi;
   if (els.navBookingsBi) els.navBookingsBi.hidden = !canBookingsBi;
   if (els.navFinancialBi) els.navFinancialBi.hidden = !canFinancialBi;
+  if (els.navSalesBi) els.navSalesBi.hidden = !canUseSalesBi();
   if (els.navGuests) els.navGuests.hidden = !canGuests;
   if (els.navCash) els.navCash.hidden = !canCash;
   els.navLostFound.hidden = !canLostFound;
@@ -4143,7 +4169,9 @@ function renderLayout() {
   if (els.viewImportData) els.viewImportData.hidden = !importData;
   if (els.viewGuestsBi) els.viewGuestsBi.hidden = !guestsBi;
   if (els.viewBookingsBi) els.viewBookingsBi.hidden = !bookingsBi;
-  if (els.viewFinancialBi) els.viewFinancialBi.hidden = !financialBi;
+  if (els.viewFinancialBi) els.viewFinancialBi.hidden = !(financialBi || salesBi);
+  if (els.financialBiPageTitle) els.financialBiPageTitle.textContent = salesBi ? "Sales" : "Financial BI";
+  if (els.financialBiTabsCard) els.financialBiTabsCard.hidden = salesBi;
   if (els.viewGuests) els.viewGuests.hidden = !guests;
   if (els.viewCash) els.viewCash.hidden = !cash;
   els.viewLostFound.hidden = !lostFound;
@@ -4584,6 +4612,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-guests-bi="${id}"]`)?.checked) appFeatures.push("guests-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-bookings-bi="${id}"]`)?.checked) appFeatures.push("bookings-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-financial-bi="${id}"]`)?.checked) appFeatures.push("financial-bi");
+  if (els.profilesBody.querySelector(`[data-profile-app-sales-bi="${id}"]`)?.checked) appFeatures.push("sales-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-communications="${id}"]`)?.checked) appFeatures.push("communications");
   if (els.profilesBody.querySelector(`[data-profile-app-guests="${id}"]`)?.checked) appFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-app-cash="${id}"]`)?.checked) appFeatures.push("cash");
@@ -19315,7 +19344,7 @@ function isBackofficeSettingsContext() {
 }
 
 function onLogoHomeClick() {
-  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
+  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi" || state.currentView === "sales-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
   }
@@ -19358,7 +19387,7 @@ function openBusinessIntelligenceHome() {
     showToast("No Business Intelligence access.", "error");
     return;
   }
-  setView(canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : "financial-bi");
+  setView(canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : "sales-bi");
 }
 
 function preferredMainAppView() {
@@ -21909,7 +21938,6 @@ function currentFinancialBiTab() {
   if (state.financialBiTab === "bank-statement") return "bank-statement";
   if (state.financialBiTab === "cash-analysis") return "cash-analysis";
   if (state.financialBiTab === "utilities") return "utilities";
-  if (state.financialBiTab === "items-revenue") return "items-revenue";
   return "book-sales";
 }
 
@@ -21919,12 +21947,11 @@ function financialBiTabLabel() {
   if (currentFinancialBiTab() === "bank-statement") return "Bank Statement";
   if (currentFinancialBiTab() === "cash-analysis") return "Cash Analysis";
   if (currentFinancialBiTab() === "utilities") return "Utilities";
-  if (currentFinancialBiTab() === "items-revenue") return "Items Revenue";
   return "Results (Book&Sales)";
 }
 
 function setFinancialBiTab(tab) {
-  const nextTab = tab === "fdm-accounts" || tab === "income-book-vs-accounts" || tab === "bank-statement" || tab === "cash-analysis" || tab === "utilities" || tab === "items-revenue" ? tab : "book-sales";
+  const nextTab = tab === "fdm-accounts" || tab === "income-book-vs-accounts" || tab === "bank-statement" || tab === "cash-analysis" || tab === "utilities" ? tab : "book-sales";
   if (currentFinancialBiTab() === nextTab) {
     renderFinancialBi();
     return;
@@ -21943,7 +21970,6 @@ function setFinancialBiTab(tab) {
   else if (nextTab === "bank-statement") loadFinancialBiBankStatementData({ silent: true });
   else if (nextTab === "cash-analysis") loadFinancialBiCashAnalysisData({ silent: true });
   else if (nextTab === "utilities") loadFinancialBiUtilitiesData({ silent: true });
-  else if (nextTab === "items-revenue") loadFinancialBiItemsRevenueData({ silent: true });
   else loadFinancialBiData({ silent: true });
 }
 
@@ -22380,16 +22406,16 @@ async function ensureFinancialBiData() {
     }
     return;
   }
-  if (currentFinancialBiTab() === "items-revenue") {
-    const requestUrl = buildFinancialBiItemsRevenueUrl();
-    if (!state.financialBiItemsRevenueLoaded || state.financialBiItemsRevenueRequestKey !== requestUrl) {
-      await loadFinancialBiItemsRevenueData({ silent: true });
-    }
-    return;
-  }
   const requestUrl = buildFinancialBiUrlClient();
   if (!state.financialBiLoaded || state.financialBiLoadedKey !== requestUrl) {
     await loadFinancialBiData({ silent: true });
+  }
+}
+
+async function ensureSalesBiData() {
+  const requestUrl = buildFinancialBiItemsRevenueUrl();
+  if (!state.financialBiItemsRevenueLoaded || state.financialBiItemsRevenueRequestKey !== requestUrl) {
+    await loadFinancialBiItemsRevenueData({ silent: true });
   }
 }
 
@@ -23234,13 +23260,15 @@ async function loadFinancialBiItemsRevenueData({ silent = false } = {}) {
       if (requestToken !== state.financialBiItemsRevenueRequestToken) return;
       state.financialBiItemsRevenueRows = Array.isArray(result?.rows) ? result.rows : [];
       state.financialBiItemsRevenueLoaded = true;
-      renderFinancialBi();
+      if (state.currentView === "sales-bi") renderSalesBi();
+      else renderFinancialBi();
       if (!silent) setFinancialBiItemsRevenueStatus("Items Revenue loaded.");
     })
     .catch((error) => {
       if (requestToken !== state.financialBiItemsRevenueRequestToken) return;
       if (!state.financialBiItemsRevenueLoaded) state.financialBiItemsRevenueRows = [];
-      renderFinancialBi();
+      if (state.currentView === "sales-bi") renderSalesBi();
+      else renderFinancialBi();
       setFinancialBiItemsRevenueStatus(`Failed to load Items Revenue: ${error.message}`, "error");
     })
     .finally(() => {
@@ -23341,16 +23369,26 @@ function renderFinancialBiItemsRevenue() {
   });
 }
 
+function renderSalesBi() {
+  const resultsPanel = document.getElementById("financial-bi-panel-results");
+  if (resultsPanel) resultsPanel.hidden = true;
+  if (els.financialBiIncomeBookVsAccountsPanel) els.financialBiIncomeBookVsAccountsPanel.hidden = true;
+  if (els.financialBiBankStatementPanel) els.financialBiBankStatementPanel.hidden = true;
+  if (els.financialBiCashAnalysisPanel) els.financialBiCashAnalysisPanel.hidden = true;
+  if (els.financialBiUtilitiesPanel) els.financialBiUtilitiesPanel.hidden = true;
+  if (els.financialBiItemsRevenuePanel) els.financialBiItemsRevenuePanel.hidden = false;
+  renderFinancialBiItemsRevenue();
+}
+
 function renderFinancialBi() {
   const isIncomeBookVsAccounts = currentFinancialBiTab() === "income-book-vs-accounts";
   const isBankStatement = currentFinancialBiTab() === "bank-statement";
   const isCashAnalysis = currentFinancialBiTab() === "cash-analysis";
   const isUtilities = currentFinancialBiTab() === "utilities";
-  const isItemsRevenue = currentFinancialBiTab() === "items-revenue";
   if (els.financialBiBankStatementPanel) els.financialBiBankStatementPanel.hidden = !isBankStatement;
   if (els.financialBiCashAnalysisPanel) els.financialBiCashAnalysisPanel.hidden = !isCashAnalysis;
   if (els.financialBiUtilitiesPanel) els.financialBiUtilitiesPanel.hidden = !isUtilities;
-  if (els.financialBiItemsRevenuePanel) els.financialBiItemsRevenuePanel.hidden = !isItemsRevenue;
+  if (els.financialBiItemsRevenuePanel) els.financialBiItemsRevenuePanel.hidden = true;
   if (els.financialBiIncomeBookVsAccountsPanel) els.financialBiIncomeBookVsAccountsPanel.hidden = !isIncomeBookVsAccounts;
   if (els.financialBiTabIncomeBookVsAccounts) {
     els.financialBiTabIncomeBookVsAccounts.classList.toggle("active-tab", isIncomeBookVsAccounts);
@@ -23368,11 +23406,7 @@ function renderFinancialBi() {
     els.financialBiTabUtilities.classList.toggle("active-tab", isUtilities);
     els.financialBiTabUtilities.classList.toggle("ghost", !isUtilities);
   }
-  if (els.financialBiTabItemsRevenue) {
-    els.financialBiTabItemsRevenue.classList.toggle("active-tab", isItemsRevenue);
-    els.financialBiTabItemsRevenue.classList.toggle("ghost", !isItemsRevenue);
-  }
-  if (isIncomeBookVsAccounts || isBankStatement || isCashAnalysis || isUtilities || isItemsRevenue) {
+  if (isIncomeBookVsAccounts || isBankStatement || isCashAnalysis || isUtilities) {
     if (els.financialBiTabResults) {
       els.financialBiTabResults.classList.remove("active-tab");
       els.financialBiTabResults.classList.add("ghost");
@@ -23405,17 +23439,12 @@ function renderFinancialBi() {
       els.financialBiTabUtilities.classList.remove("active-tab");
       els.financialBiTabUtilities.classList.add("ghost");
     }
-    if (!isItemsRevenue && els.financialBiTabItemsRevenue) {
-      els.financialBiTabItemsRevenue.classList.remove("active-tab");
-      els.financialBiTabItemsRevenue.classList.add("ghost");
-    }
     const resultsPanel = document.getElementById("financial-bi-panel-results");
     if (resultsPanel) resultsPanel.hidden = true;
     if (isIncomeBookVsAccounts) renderFinancialBiIncomeBookVsAccounts();
     else if (isBankStatement) renderFinancialBiBankStatement();
     else if (isCashAnalysis) renderFinancialBiCashAnalysis();
-    else if (isUtilities) renderFinancialBiUtilities();
-    else renderFinancialBiItemsRevenue();
+    else renderFinancialBiUtilities();
     return;
   }
   const resultsPanel = document.getElementById("financial-bi-panel-results");
@@ -25279,6 +25308,10 @@ function render() {
   }
   if (state.currentView === "financial-bi") {
     renderFinancialBi();
+    return;
+  }
+  if (state.currentView === "sales-bi") {
+    renderSalesBi();
     return;
   }
   if (state.currentView === "guests") {
