@@ -21325,7 +21325,10 @@ function renderFinancialReconciliationCurrent() {
   const difference = financialReconciliationDifference(reconciliation);
   const complete = clean(reconciliation.status) === "complete";
   const items = workspace.items.map((item) => `<li><span>${escape(financialReconciliationSourceLabel(item.source_type))}</span><strong>${escape(formatMoney(Number(item.amount_snapshot || 0)))}</strong>${complete ? "" : `<button type="button" class="ghost" data-financial-reconciliation-remove data-source-type="${escape(item.source_type)}" data-source-id="${escape(item.source_id)}">Remove</button>`}</li>`).join("") || "<li>No locked records.</li>";
-  const audit = workspace.audit.slice(-6).map((entry) => `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}</span></li>`).join("") || "<li>No audit entries yet.</li>";
+  const audit = workspace.audit.slice(-6).map((entry) => {
+    const comment = clean(entry.comment);
+    return `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}${comment ? ` · ${escape(comment)}` : ""}</span></li>`;
+  }).join("") || "<li>No audit entries yet.</li>";
   els.financialReconciliationCurrent.innerHTML = `<div class="financial-reconciliation-summary"><div>${financialReconciliationStatusMarkup(reconciliation.status)}<p>${escape(financialReconciliationSourceLabel(reconciliation.base_source_type))} with ${escape((reconciliation.matching_source_types || []).map(financialReconciliationSourceLabel).join(", "))}</p></div><strong class="financial-reconciliation-difference${difference === 0 ? "" : " financial-reconciliation-forced-difference"}">Difference: ${escape(formatMoney(difference))}</strong></div><h3>Locked records</h3><ul class="financial-reconciliation-items">${items}</ul>${!complete ? `<button type="button" data-financial-reconciliation-complete ${workspace.items.length ? "" : "disabled"}>${difference === 0 ? "Complete reconciliation" : "Force complete"}</button>` : `<p class="field-hint">Completed ${escape(reconciliation.completion_type || "normally")}${reconciliation.forced_completion_comment ? ` · ${escape(reconciliation.forced_completion_comment)}` : ""}</p>`}<h3>Audit trail</h3><ul class="financial-reconciliation-audit">${audit}</ul>`;
   if (els.financialReconciliationReopen) els.financialReconciliationReopen.hidden = !complete;
   if (els.financialReconciliationDelete) els.financialReconciliationDelete.hidden = false;
@@ -21406,7 +21409,7 @@ async function runFinancialReconciliationAction(payload) {
       current.workspace = normalizeFinancialReconciliationWorkspace(result);
       current.loaded = true;
       current.selectedReconciliationId = clean(current.workspace.reconciliation?.id);
-      renderFinancialReconciliation();
+      await loadFinancialReconciliationWorkspace({ silent: true });
     }
     showToast("Reconciliation updated.", "success");
   } catch (error) {
