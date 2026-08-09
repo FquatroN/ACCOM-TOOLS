@@ -93,6 +93,9 @@ function calculateDifference(baseSourceType, matchingSourceTypes, items) {
   const totals = Object.fromEntries(SOURCE_TYPES.map((sourceType) => [sourceType, 0]));
   for (const item of items) {
     const sourceType = normalizeSourceType(item && item.sourceType);
+    if (sourceType !== base && !matching.includes(sourceType)) {
+      throw inputError("Item source type is not allowed for the selected reconciliation mode.");
+    }
     totals[sourceType] += amountFor(item);
   }
 
@@ -169,7 +172,7 @@ function validateWorkspaceQuery(query) {
     reconciliationId: identifier(input.reconciliation_id || input.reconciliationId, "Reconciliation ID", false),
     sourceType,
     matchingSourceTypes,
-    page: input.page === undefined || input.page === "" ? 1 : positiveInteger(input.page, "Page", 1000000),
+    page: input.page === undefined || input.page === "" ? 1 : positiveInteger(input.page, "Page", 100),
     pageSize: input.page_size === undefined || input.page_size === "" ? 50 : positiveInteger(input.page_size, "Page size", 100),
     filters: parseFilters(input.filters),
   };

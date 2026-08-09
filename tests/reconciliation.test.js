@@ -27,6 +27,14 @@ test("FDM-led groups subtract bank values", () => {
   ]), 0);
 });
 
+test("calculations reject items outside the selected reconciliation mode", () => {
+  assert.throws(() => calculateDifference("import_fdm_accounts", ["import_cgd_extrato_ordem"], [
+    { sourceType: "import_fdm_accounts", amountSnapshot: 42 },
+    { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 42 },
+    { sourceType: "financial_documents", amountSnapshot: 10 },
+  ]), /not allowed/i);
+});
+
 test("card-led groups use the selected approved pairing", () => {
   assert.equal(calculateDifference("import_cgd_cartao_credito", ["financial_documents"], [
     { sourceType: "import_cgd_cartao_credito", amountSnapshot: -30.115 },
@@ -107,6 +115,10 @@ test("workspace validation enforces source names and page bounds", () => {
   );
   assert.throws(
     () => validateWorkspaceQuery({ source_type: "financial_documents", page: "0" }),
+    /page/i,
+  );
+  assert.throws(
+    () => validateWorkspaceQuery({ source_type: "financial_documents", page: "101" }),
     /page/i,
   );
 });
