@@ -63,6 +63,17 @@ function normalizeMatchingSourceTypes(baseSourceType, matchingSourceTypes) {
   return normalized;
 }
 
+function normalizeActiveReconciliationMatchingSourceTypes(matchingSourceTypes) {
+  if (!Array.isArray(matchingSourceTypes) || matchingSourceTypes.length === 0 || matchingSourceTypes.length > 3) {
+    throw inputError("Matching source types are invalid.");
+  }
+  const normalized = matchingSourceTypes.map(normalizeSourceType);
+  if (new Set(normalized).size !== normalized.length) {
+    throw inputError("Matching source types must not contain duplicates.");
+  }
+  return normalized;
+}
+
 function validateReconciliationMode(baseSourceType, matchingSourceTypes) {
   return {
     baseSourceType: normalizeSourceType(baseSourceType),
@@ -178,14 +189,17 @@ function parseFilters(value) {
 
 function validateWorkspaceQuery(query) {
   const input = query && typeof query === "object" ? query : {};
+  const reconciliationId = identifier(input.reconciliation_id || input.reconciliationId, "Reconciliation ID", false);
   const sourceType = normalizeSourceType(input.source_type || input.sourceType || "financial_documents");
   const matching = parseMatchingSourceTypes(input.matching_source_types || input.matchingSourceTypes);
-  const matchingSourceTypes = normalizeMatchingSourceTypes(
-    sourceType,
-    matching.length ? matching : MATCHING_SOURCE_TYPES[sourceType].slice(0, 1),
-  );
+  const matchingSourceTypes = reconciliationId
+    ? normalizeActiveReconciliationMatchingSourceTypes(matching)
+    : normalizeMatchingSourceTypes(
+      sourceType,
+      matching.length ? matching : MATCHING_SOURCE_TYPES[sourceType].slice(0, 1),
+    );
   return {
-    reconciliationId: identifier(input.reconciliation_id || input.reconciliationId, "Reconciliation ID", false),
+    reconciliationId,
     sourceType,
     matchingSourceTypes,
     page: input.page === undefined || input.page === "" ? 1 : positiveInteger(input.page, "Page", 100),
