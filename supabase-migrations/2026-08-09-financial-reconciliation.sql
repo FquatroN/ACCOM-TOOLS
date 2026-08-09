@@ -90,7 +90,7 @@ create or replace function public.get_financial_reconciliation_workspace(
   p_reconciliation_id uuid, p_source_type text, p_matching_source_types text[], p_filters jsonb default '{}'::jsonb,
   p_page integer default 1, p_page_size integer default 50
 ) returns jsonb language plpgsql security definer set search_path = public as $$
-declare v_rec public.financial_reconciliations%rowtype; v_offset int; v_candidates jsonb; v_count int;
+declare v_rec public.financial_reconciliations%rowtype; v_offset int; v_candidates jsonb; v_count int; v_started_count int; v_complete_count int;
 begin
   if p_source_type not in ('financial_documents','import_fdm_accounts','import_cgd_cartao_credito','import_cgd_extrato_ordem') then raise exception 'Source type is invalid.'; end if;
   if p_page < 1 or p_page_size not between 1 and 100 then raise exception 'Page and page size are invalid.'; end if;
@@ -115,7 +115,7 @@ begin
   with candidate_rows as (
     select s.* from (
       select d.id, d.amount, d.document_date as source_date, d.description, d.supplier_name as supplier, d.cc as account, d.category, d.payment, d.fat as document_fat, d.supplier_nif, ''::text as reservation_id from financial_documents d where p_source_type='financial_documents' and d.document_date >= date '2026-01-01' and d.fat='S'
-      union all select f.id,f.amount,f.event_date,f.description,f.guest,f.account,f.category,f.invoice,'','',f.reservation_id from import_fdm_accounts f where p_source_type='import_fdm_accounts' and f.event_date >= date '2026-01-01' and (coalesce(f.invoice_flag,false) or f.category='Compras')
+      union all select f.id,f.amount,f.event_date,f.description,f.guest,f.account,f.category,f.invoice,'','',f.reservation_id from import_fdm_accounts f where p_source_type='import_fdm_accounts' and f.event_date >= date '2026-01-01' and (coalesce(f.invoice_flag,false) or f.category='Compras') and (coalesce(v_rec.base_source_type,'') <> 'financial_documents' or f.category='Compras')
       union all select c.id,c.valor,c.data,c.descricao,'','','','','','','' from import_cgd_cartao_credito c where p_source_type='import_cgd_cartao_credito' and c.data >= date '2026-01-01'
       union all select b.id,b.montante,b.data,b.descritivo,'','','','','','','' from import_cgd_extrato_ordem b where p_source_type='import_cgd_extrato_ordem' and b.data >= date '2026-01-01'
     ) s where not exists (select 1 from financial_reconciliation_items i join financial_reconciliations r on r.id=i.reconciliation_id where i.source_type=p_source_type and i.source_id=s.id and r.deleted_at is null)
@@ -129,10 +129,12 @@ begin
       and (nullif(p_filters->>'account','') is null or s.account = p_filters->>'account')
       and (nullif(p_filters->>'category','') is null or s.category = p_filters->>'category')
   ) select count(*) into v_count from candidate_rows;
+  select count(*) into v_started_count from financial_reconciliation_items i join financial_reconciliations r on r.id=i.reconciliation_id where i.source_type=p_source_type and r.deleted_at is null and r.status='started';
+  select count(*) into v_complete_count from financial_reconciliation_items i join financial_reconciliations r on r.id=i.reconciliation_id where i.source_type=p_source_type and r.deleted_at is null and r.status='complete';
   with candidate_rows as (
     select s.* from (
       select d.id, d.amount, d.document_date as source_date, d.description, d.supplier_name as supplier, d.cc as account, d.category, d.payment, d.fat as document_fat, d.supplier_nif, ''::text as reservation_id from financial_documents d where p_source_type='financial_documents' and d.document_date >= date '2026-01-01' and d.fat='S'
-      union all select f.id,f.amount,f.event_date,f.description,f.guest,f.account,f.category,f.invoice,'','',f.reservation_id from import_fdm_accounts f where p_source_type='import_fdm_accounts' and f.event_date >= date '2026-01-01' and (coalesce(f.invoice_flag,false) or f.category='Compras')
+      union all select f.id,f.amount,f.event_date,f.description,f.guest,f.account,f.category,f.invoice,'','',f.reservation_id from import_fdm_accounts f where p_source_type='import_fdm_accounts' and f.event_date >= date '2026-01-01' and (coalesce(f.invoice_flag,false) or f.category='Compras') and (coalesce(v_rec.base_source_type,'') <> 'financial_documents' or f.category='Compras')
       union all select c.id,c.valor,c.data,c.descricao,'','','','','','','' from import_cgd_cartao_credito c where p_source_type='import_cgd_cartao_credito' and c.data >= date '2026-01-01'
       union all select b.id,b.montante,b.data,b.descritivo,'','','','','','','' from import_cgd_extrato_ordem b where p_source_type='import_cgd_extrato_ordem' and b.data >= date '2026-01-01'
     ) s where not exists (select 1 from financial_reconciliation_items i join financial_reconciliations r on r.id=i.reconciliation_id where i.source_type=p_source_type and i.source_id=s.id and r.deleted_at is null)
@@ -146,7 +148,7 @@ begin
       and (nullif(p_filters->>'account','') is null or s.account = p_filters->>'account')
       and (nullif(p_filters->>'category','') is null or s.category = p_filters->>'category')
   ) select coalesce(jsonb_agg(to_jsonb(x) order by x.source_date desc), '[]'::jsonb) into v_candidates from (select * from candidate_rows order by source_date desc offset v_offset limit p_page_size) x;
-  return jsonb_build_object('candidates',v_candidates,'totalCount',v_count,'page',p_page,'pageSize',p_page_size,'sourceConfig',jsonb_build_object('sourceType',p_source_type,'dateColumn','source_date','amountColumn','amount','columns',case p_source_type when 'financial_documents' then jsonb_build_array('document_fat','supplier_nif','supplier','payment') when 'import_fdm_accounts' then jsonb_build_array('reservation_id','account','category') else jsonb_build_array('description') end),'filterFields',case p_source_type when 'financial_documents' then jsonb_build_array('dateFrom','dateTo','amountMin','amountMax','description','supplier','payment','account','category') when 'import_fdm_accounts' then jsonb_build_array('dateFrom','dateTo','amountMin','amountMax','description','account','category') when 'import_cgd_cartao_credito' then jsonb_build_array('dateFrom','dateTo','amountMin','amountMax','description') else jsonb_build_array('dateFrom','dateTo','amountMin','amountMax','description') end,'reconciliation',case when p_reconciliation_id is null then null else to_jsonb(v_rec) end,'items',coalesce((select jsonb_agg(to_jsonb(i) order by i.created_at) from financial_reconciliation_items i where i.reconciliation_id=p_reconciliation_id),'[]'::jsonb),'audit',coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at,a.id) from financial_reconciliation_audit a where a.reconciliation_id=p_reconciliation_id),'[]'::jsonb),'history',coalesce((select jsonb_agg(to_jsonb(h) order by h.created_at desc) from (select * from financial_reconciliations where deleted_at is null order by created_at desc limit 100) h),'[]'::jsonb));
+  return jsonb_build_object('candidates',v_candidates,'totalCount',v_count,'counts',jsonb_build_object('notStarted',v_count,'started',v_started_count,'complete',v_complete_count),'page',p_page,'pageSize',p_page_size,'sourceConfig',jsonb_build_object('sourceType',p_source_type,'dateColumn','source_date','amountColumn','amount','columns',case p_source_type when 'financial_documents' then jsonb_build_array('document_fat','supplier_nif','supplier','payment') when 'import_fdm_accounts' then jsonb_build_array('reservation_id','account','category') else jsonb_build_array('description') end,'filterFields',case p_source_type when 'financial_documents' then jsonb_build_array('dateFrom','dateTo','amountMin','amountMax','description','supplier','payment','account','category') when 'import_fdm_accounts' then jsonb_build_array('dateFrom','dateTo','amountMin','amountMax','description','account','category') when 'import_cgd_cartao_credito' then jsonb_build_array('dateFrom','dateTo','amountMin','amountMax','description') else jsonb_build_array('dateFrom','dateTo','amountMin','amountMax','description') end),'reconciliation',case when p_reconciliation_id is null then null else to_jsonb(v_rec) end,'items',coalesce((select jsonb_agg(to_jsonb(i) order by i.created_at) from financial_reconciliation_items i where i.reconciliation_id=p_reconciliation_id),'[]'::jsonb),'audit',coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at,a.id) from financial_reconciliation_audit a where a.reconciliation_id=p_reconciliation_id),'[]'::jsonb),'history',coalesce((select jsonb_agg(to_jsonb(h) order by h.created_at desc) from (select * from financial_reconciliations where deleted_at is null order by created_at desc limit 100) h),'[]'::jsonb));
 end $$;
 
 create or replace function public.financial_reconciliation_action(
@@ -175,6 +177,7 @@ begin
     if p_action='add_item' then
       if p_source_type <> r.base_source_type and not (r.matching_source_types ? p_source_type) then raise exception 'Item source type is not allowed for the selected reconciliation mode.'; end if;
       select * into s from financial_reconciliation_source(p_source_type,p_source_id); if not found or not s.eligible then raise exception 'Source record is not eligible for reconciliation.'; end if;
+      if r.base_source_type='financial_documents' and p_source_type='import_fdm_accounts' and s.category <> 'Compras' then raise exception 'Financial Documents-led reconciliations require FDM category Compras.'; end if;
       begin insert into financial_reconciliation_items(reconciliation_id,source_type,source_id,amount_snapshot,created_by) values(v_id,p_source_type,p_source_id,s.amount,p_actor); exception when unique_violation then raise exception 'This record is already reconciled.'; end;
     elsif p_action='remove_item' then delete from financial_reconciliation_items where reconciliation_id=v_id and source_type=p_source_type and source_id=p_source_id; if not found then raise exception 'Reconciliation item not found.'; end if;
     elsif p_action in ('complete','force_complete') then
@@ -199,6 +202,11 @@ begin
   return get_financial_reconciliation_workspace(v_id, coalesce(p_source_type,r.base_source_type), array(select jsonb_array_elements_text(r.matching_source_types)));
 end $$;
 
-grant execute on function public.get_financial_reconciliation_workspace(uuid,text,text[],jsonb,integer,integer) to authenticated, service_role;
+revoke all on function public.financial_reconciliation_source(text,uuid) from public, anon, authenticated;
+revoke all on function public.financial_reconciliation_difference(text,jsonb,uuid) from public, anon, authenticated;
+revoke all on function public.get_financial_reconciliation_workspace(uuid,text,text[],jsonb,integer,integer) from public, anon, authenticated;
 revoke all on function public.financial_reconciliation_action(text,text,uuid,text,text[],text,uuid,text) from public, anon, authenticated;
+grant execute on function public.financial_reconciliation_source(text,uuid) to service_role;
+grant execute on function public.financial_reconciliation_difference(text,jsonb,uuid) to service_role;
+grant execute on function public.get_financial_reconciliation_workspace(uuid,text,text[],jsonb,integer,integer) to service_role;
 grant execute on function public.financial_reconciliation_action(text,text,uuid,text,text[],text,uuid,text) to service_role;

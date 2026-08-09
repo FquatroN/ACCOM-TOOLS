@@ -3827,11 +3827,7 @@
               <label>Base source<select id="financial-reconciliation-base-source"></select></label>
               <label>Match with<select id="financial-reconciliation-matching-sources" multiple size="3"></select></label>
               <label>Browse source<select id="financial-reconciliation-candidate-source"></select></label>
-              <label>Date from<input id="financial-reconciliation-date-from" type="date" min="2026-01-01" value="2026-01-01" /></label>
-              <label>Date to<input id="financial-reconciliation-date-to" type="date" min="2026-01-01" /></label>
-              <label>Amount from<input id="financial-reconciliation-amount-min" type="number" step="0.01" /></label>
-              <label>Amount to<input id="financial-reconciliation-amount-max" type="number" step="0.01" /></label>
-              <label class="financial-reconciliation-filter-wide">Description<input id="financial-reconciliation-description" type="search" placeholder="Search description" /></label>
+              <div id="financial-reconciliation-dynamic-filters" class="financial-reconciliation-dynamic-filters"></div>
             </div>
           </section>
 
@@ -3853,6 +3849,7 @@
               <div class="bar"><h2>Current reconciliation</h2></div>
               <div id="financial-reconciliation-current" class="financial-reconciliation-current">Select an eligible record to start a reconciliation.</div>
               <div class="actions financial-reconciliation-actions">
+                <button id="financial-reconciliation-new" type="button" class="ghost" hidden>New reconciliation</button>
                 <button id="financial-reconciliation-reopen" type="button" class="ghost" hidden>Reopen</button>
                 <button id="financial-reconciliation-delete" type="button" class="danger" hidden>Delete</button>
               </div>

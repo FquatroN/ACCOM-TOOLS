@@ -131,6 +131,17 @@ test("workspace rejects invalid source and oversized page", () => {
   );
 });
 
+test("workspace rejects malformed date and amount filters before SQL casts", () => {
+  assert.throws(
+    () => validateWorkspaceQuery({ source_type: "financial_documents", filters: '{"dateFrom":"2026-99-99"}' }),
+    /valid iso date/i,
+  );
+  assert.throws(
+    () => validateWorkspaceQuery({ source_type: "financial_documents", filters: '{"amountMin":"not-a-number"}' }),
+    /valid number/i,
+  );
+});
+
 test("RPC error mapping makes source locks conflicts and validation errors client-safe", () => {
   assert.equal(mapRpcError(new Error("This record is already reconciled.")).statusCode, 409);
   assert.equal(mapRpcError(new Error("Only started reconciliations can be edited or completed.")).statusCode, 400);

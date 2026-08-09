@@ -157,6 +157,22 @@ function parseFilters(value) {
   if (!filters || Array.isArray(filters) || typeof filters !== "object") {
     throw inputError("Filters must be an object.");
   }
+  for (const key of ["dateFrom", "dateTo"]) {
+    const date = filters[key];
+    if (date === undefined || date === null || String(date).trim() === "") continue;
+    const text = String(date).trim();
+    const parsed = new Date(`${text}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) {
+      throw inputError(`${key === "dateFrom" ? "Date from" : "Date to"} must be a valid ISO date.`);
+    }
+  }
+  for (const key of ["amountMin", "amountMax"]) {
+    const amount = filters[key];
+    if (amount === undefined || amount === null || String(amount).trim() === "") continue;
+    if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(String(amount).trim())) {
+      throw inputError(`${key === "amountMin" ? "Amount from" : "Amount to"} must be a valid number.`);
+    }
+  }
   return filters;
 }
 

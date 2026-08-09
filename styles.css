@@ -6238,6 +6238,10 @@ button[id^="close-settings"] {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
 }
 
+.financial-reconciliation-dynamic-filters {
+  display: contents;
+}
+
 .financial-reconciliation-filter-wide {
   grid-column: span 2;
 }
