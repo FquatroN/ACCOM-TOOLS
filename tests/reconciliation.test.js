@@ -126,6 +126,21 @@ test("workspace validation enforces source names and page bounds", () => {
   );
 });
 
+test("workspace accepts a matching browse source for an existing reconciliation", () => {
+  assert.deepEqual(validateWorkspaceQuery({
+    reconciliation_id: "started-reconciliation",
+    source_type: "import_cgd_extrato_ordem",
+    matching_source_types: '["import_cgd_extrato_ordem"]',
+  }), {
+    reconciliationId: "started-reconciliation",
+    sourceType: "import_cgd_extrato_ordem",
+    matchingSourceTypes: ["import_cgd_extrato_ordem"],
+    page: 1,
+    pageSize: 50,
+    filters: {},
+  });
+});
+
 test("workspace rejects invalid source and oversized page", () => {
   assert.throws(
     () => validateWorkspaceQuery({ source_type: "wrong", page_size: "101" }),
