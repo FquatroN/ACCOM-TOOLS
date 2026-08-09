@@ -93,6 +93,7 @@
           <div class="backoffice-top-links">
             <button id="nav-financial-docs" type="button" class="nav-link">Financial Documents</button>
             <button id="nav-import-data" type="button" class="nav-link">Import Data</button>
+            <button id="nav-financial-reconciliation" type="button" class="nav-link">Reconciliation</button>
           </div>
         </section>
 
@@ -3806,6 +3807,71 @@
           </div>
 
           <input id="import-data-input" class="sr-only-file" type="file" accept=".txt,.tsv,.csv,.xlsx,.xls,.pdf,text/plain,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        </section>
+
+        <section id="view-financial-reconciliation" class="view" hidden>
+          <section class="feature-title import-data-title-row">
+            <div>
+              <h2>Reconciliation</h2>
+              <p class="field-hint">Match eligible records dated 2026-01-01 or later. Added records stay locked until removed or the reconciliation is deleted.</p>
+            </div>
+            <p id="financial-reconciliation-status" class="auth-status"></p>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Reconciliation workbench</h2>
+              <p id="financial-reconciliation-count">0 eligible records</p>
+            </div>
+            <div id="financial-reconciliation-filters" class="grid filters financial-reconciliation-filters">
+              <label>Base source<select id="financial-reconciliation-base-source"></select></label>
+              <label>Match with<select id="financial-reconciliation-matching-sources" multiple size="3"></select></label>
+              <label>Browse source<select id="financial-reconciliation-candidate-source"></select></label>
+              <label>Date from<input id="financial-reconciliation-date-from" type="date" min="2026-01-01" value="2026-01-01" /></label>
+              <label>Date to<input id="financial-reconciliation-date-to" type="date" min="2026-01-01" /></label>
+              <label>Amount from<input id="financial-reconciliation-amount-min" type="number" step="0.01" /></label>
+              <label>Amount to<input id="financial-reconciliation-amount-max" type="number" step="0.01" /></label>
+              <label class="financial-reconciliation-filter-wide">Description<input id="financial-reconciliation-description" type="search" placeholder="Search description" /></label>
+            </div>
+          </section>
+
+          <div class="financial-reconciliation-workbench">
+            <section class="card">
+              <div class="bar">
+                <h2>Eligible records</h2>
+                <div class="actions"><button id="financial-reconciliation-start" type="button">Start from selected record</button></div>
+              </div>
+              <div class="table-wrap compact-table-wrap financial-reconciliation-table-wrap">
+                <table class="compact-table financial-reconciliation-table">
+                  <thead id="financial-reconciliation-table-head"></thead>
+                  <tbody id="financial-reconciliation-rows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <aside class="card financial-reconciliation-basket">
+              <div class="bar"><h2>Current reconciliation</h2></div>
+              <div id="financial-reconciliation-current" class="financial-reconciliation-current">Select an eligible record to start a reconciliation.</div>
+              <div class="actions financial-reconciliation-actions">
+                <button id="financial-reconciliation-reopen" type="button" class="ghost" hidden>Reopen</button>
+                <button id="financial-reconciliation-delete" type="button" class="danger" hidden>Delete</button>
+              </div>
+            </aside>
+          </div>
+
+          <section class="card financial-reconciliation-history-card">
+            <div class="bar"><h2>Reconciliation history</h2></div>
+            <div class="table-wrap compact-table-wrap"><table class="compact-table"><thead><tr><th>Created</th><th>Base source</th><th>Matching sources</th><th>Status</th><th>Difference</th><th></th></tr></thead><tbody id="financial-reconciliation-history-rows"></tbody></table></div>
+          </section>
+
+          <section id="financial-reconciliation-complete-modal" class="modal-backdrop" hidden>
+            <section class="card modal-card review-modal-card" role="dialog" aria-modal="true" aria-labelledby="financial-reconciliation-complete-title">
+              <div class="bar"><h2 id="financial-reconciliation-complete-title">Complete reconciliation</h2><button type="button" class="ghost" data-financial-reconciliation-close>Close</button></div>
+              <p id="financial-reconciliation-complete-message"></p>
+              <label id="financial-reconciliation-force-comment-wrap" hidden>Mandatory completion comment<textarea id="financial-reconciliation-force-comment" rows="4" placeholder="Explain why this reconciliation is being force-completed."></textarea></label>
+              <div class="actions"><button id="financial-reconciliation-confirm-complete" type="button">Complete</button><button id="financial-reconciliation-confirm-force" type="button" class="danger" hidden>Force complete</button></div>
+            </section>
+          </section>
         </section>
 
         <section id="view-guests-bi" class="view" hidden>
