@@ -23362,7 +23362,7 @@ function salesBiSalesPeriodTotal(rows, period) {
 }
 
 function salesBiSalesCells(rows, periods) {
-  return periods.map((period) => `<td>${escape(formatMoney(salesBiSalesPeriodTotal(rows, period)))}</td>`).join("");
+  return periods.map((period) => `<td class="${period.month ? "" : "sales-bi-sales-year-total"}">${escape(formatMoney(salesBiSalesPeriodTotal(rows, period)))}</td>`).join("");
 }
 
 function onSalesBiSalesTableClick(event) {
@@ -23438,12 +23438,12 @@ function renderSalesBiSales() {
         const itemRows = expanded
           ? Array.from(group.items.entries()).sort((left, right) => left[0].localeCompare(right[0])).map(([item, itemRows]) => {
             const itemTotal = itemRows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
-            return `<tr class="sales-bi-sales-item-row"><td>${escape(item)}</td>${salesBiSalesCells(itemRows, periods)}<td>${escape(formatMoney(itemTotal))}</td></tr>`;
+            return `<tr class="sales-bi-sales-item-row"><td>${escape(item)}</td>${salesBiSalesCells(itemRows, periods)}<td class="sales-bi-sales-global-total">${escape(formatMoney(itemTotal))}</td></tr>`;
           }).join("")
           : "";
         const total = group.rows.reduce((sum, row) => sum + salesBiSalesNumber(row?.total), 0);
         const label = group.category || "-";
-        return `<tr class="financial-bi-year-row sales-bi-sales-category-row"><td><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-category="${escape(key)}">${expanded ? "-" : "+"}</button> ${escape(label)}</td>${salesBiSalesCells(group.rows, periods)}<td>${escape(formatMoney(total))}</td></tr>${itemRows}`;
+        return `<tr class="financial-bi-year-row sales-bi-sales-category-row"><td><button type="button" class="financial-bi-year-toggle" data-sales-bi-sales-toggle-category="${escape(key)}">${expanded ? "-" : "+"}</button> ${escape(label)}</td>${salesBiSalesCells(group.rows, periods)}<td class="sales-bi-sales-global-total">${escape(formatMoney(total))}</td></tr>${itemRows}`;
       }).join("")
       : `<tr><td colspan="${periods.length + 2}" class="empty">No Sales rows found.</td></tr>`;
   }

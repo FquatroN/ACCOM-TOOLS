@@ -5374,14 +5374,14 @@ button[id^="close-settings"] {
 .sales-bi-sales-table {
   width: max-content;
   min-width: 56rem;
-  font-size: 0.52rem;
+  font-size: 0.42rem;
   table-layout: fixed;
 }
 
 .sales-bi-sales-table th,
 .sales-bi-sales-table td {
   min-width: 2.8rem;
-  padding: 0.12rem 0.16rem;
+  padding: 0.08rem 0.12rem;
   white-space: nowrap;
   text-align: right;
 }
@@ -5421,12 +5421,18 @@ button[id^="close-settings"] {
 }
 
 .sales-bi-sales-category-row td {
-  font-weight: 700;
+  font-weight: 400;
   background: rgba(22, 119, 113, 0.05);
 }
 
 .sales-bi-sales-category-row td:first-child {
+  font-weight: 700;
   background: #f3faf7;
+}
+
+.sales-bi-sales-year-total,
+.sales-bi-sales-global-total {
+  font-weight: 700;
 }
 
 .sales-bi-sales-item-row td:first-child {
