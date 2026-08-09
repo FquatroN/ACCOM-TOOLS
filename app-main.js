@@ -21142,6 +21142,13 @@ const FINANCIAL_RECONCILIATION_MATCHES = Object.freeze({
   import_cgd_extrato_ordem: ["financial_documents", "import_fdm_accounts", "import_cgd_cartao_credito"],
 });
 
+const FINANCIAL_RECONCILIATION_FILTER_FIELDS = Object.freeze({
+  financial_documents: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "supplier", "payment", "account", "category"],
+  import_fdm_accounts: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "account", "category"],
+  import_cgd_cartao_credito: ["dateFrom", "dateTo", "amountMin", "amountMax", "description"],
+  import_cgd_extrato_ordem: ["dateFrom", "dateTo", "amountMin", "amountMax", "description"],
+});
+
 function financialReconciliationSourceLabel(sourceType) {
   return FINANCIAL_RECONCILIATION_SOURCES[clean(sourceType)] || clean(sourceType) || "Unknown source";
 }
@@ -21195,13 +21202,24 @@ function currentFinancialReconciliationFilters() {
   return values;
 }
 
+function financialReconciliationRequestFilters(sourceType) {
+  const current = financialReconciliationState();
+  const workspaceConfig = current.workspace?.sourceConfig || {};
+  const fields = clean(workspaceConfig.sourceType) === sourceType && Array.isArray(workspaceConfig.filterFields)
+    ? workspaceConfig.filterFields
+    : (FINANCIAL_RECONCILIATION_FILTER_FIELDS[sourceType] || FINANCIAL_RECONCILIATION_FILTER_FIELDS.financial_documents);
+  const values = currentFinancialReconciliationFilters();
+  return Object.fromEntries(fields.map((field) => [field, values[field] || ""]));
+}
+
 function buildFinancialReconciliationWorkspaceUrl() {
   const reconciliation = financialReconciliationActiveRecord();
   const current = financialReconciliationState();
+  const sourceType = reconciliation ? current.candidateSourceType : current.baseSourceType;
   const params = new URLSearchParams({
-    source_type: reconciliation ? current.candidateSourceType : current.baseSourceType,
+    source_type: sourceType,
     matching_source_types: JSON.stringify(reconciliation?.matching_source_types || current.matchingSourceTypes),
-    filters: JSON.stringify(currentFinancialReconciliationFilters()),
+    filters: JSON.stringify(financialReconciliationRequestFilters(sourceType)),
     page: String(current.page),
     page_size: "50",
   });
