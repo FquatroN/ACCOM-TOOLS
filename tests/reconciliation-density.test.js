@@ -6,6 +6,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+const appMain = fs.readFileSync(path.join(root, "app-main.js"), "utf8");
 
 test("reconciliation density rules are scoped to workbench and eligible records", () => {
   assert.match(html, /class="card financial-reconciliation-workbench-card"/);
@@ -15,9 +16,23 @@ test("reconciliation density rules are scoped to workbench and eligible records"
   assert.match(css, /\.financial-reconciliation-filters input,\s*\.financial-reconciliation-filters select\s*\{\s*font-size:\s*\.70rem;/);
   assert.match(css, /\.financial-reconciliation-table th\s*\{\s*font-size:\s*\.70rem;\s*padding:\s*\.54rem;/);
   assert.match(css, /\.financial-reconciliation-table td\s*\{\s*font-size:\s*\.74rem;\s*padding:\s*\.54rem;/);
-  assert.match(css, /\.financial-reconciliation-table button\s*\{\s*font-size:\s*\.84rem;/);
+  assert.match(css, /\.financial-reconciliation-table button\s*\{\s*font-size:\s*\.72rem;/);
   assert.match(css, /@media \(max-width:\s*768px\)\s*\{\s*\.financial-reconciliation-filters input,\s*\.financial-reconciliation-filters select\s*\{\s*font-size:\s*16px;/);
   assert.match(css, /\.financial-reconciliation-table th\s*\{\s*font-size:\s*\.70rem;\s*padding:\s*\.46rem;/);
   assert.match(css, /\.financial-reconciliation-table td\s*\{\s*font-size:\s*\.70rem;\s*padding:\s*\.46rem;/);
-  assert.match(css, /\.financial-reconciliation-table button\s*\{\s*font-size:\s*\.8rem;/);
+  assert.match(css, /\.financial-reconciliation-table button\s*\{\s*font-size:\s*\.70rem;/);
+  assert.match(appMain, /<th class="financial-reconciliation-action"><\/th><th class="financial-reconciliation-date">Date<\/th>/);
+  assert.match(appMain, /<td class="financial-reconciliation-action"><button/);
+  assert.match(appMain, /<td class="financial-reconciliation-date">\$\{escape\(formatDateOnly\(row\.source_date\) \|\| "-"\)\}<\/td>/);
+  assert.match(appMain, /<td class="financial-reconciliation-detail">/);
+  assert.match(appMain, /<td class="financial-reconciliation-amount">/);
+  assert.match(appMain, /<td class="financial-reconciliation-status-cell">/);
+  assert.match(css, /\.financial-reconciliation-action\s*\{\s*width:\s*4\.5rem;/);
+  assert.match(css, /\.financial-reconciliation-date\s*\{\s*width:\s*6rem;/);
+  assert.match(css, /\.financial-reconciliation-amount\s*\{\s*width:\s*5\.8rem;/);
+  assert.match(css, /\.financial-reconciliation-status-cell\s*\{\s*width:\s*6\.8rem;/);
+  assert.match(css, /overflow-wrap:\s*anywhere;/);
+  assert.match(css, /#financial-reconciliation-start\s*\{\s*font-size:\s*\.84rem;/);
+  assert.match(css, /\.financial-reconciliation-table button\s*\{\s*font-size:\s*\.72rem;/);
+  assert.match(css, /\.financial-reconciliation-table \.financial-reconciliation-status\s*\{\s*font-size:\s*\.70rem;/);
 });
