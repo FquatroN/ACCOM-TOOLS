@@ -14,8 +14,8 @@ Show concise source details beneath every locked record in the Current reconcili
 ## Panel layout
 
 - Keep each primary locked-record row as source label, amount, and Remove action.
-- Add a smaller, full-width line beneath it in the order `date · description · supplier`.
-- Omit the supplier segment if it is empty. Omit any other unavailable detail rather than displaying placeholder text.
+- Add a smaller, full-width line beneath it in the order `date · supplier · description` when a supplier exists; otherwise use `date · description`.
+- Omit any unavailable detail rather than displaying placeholder text.
 - Allow the details line to wrap cleanly.
 - Reduce typography only for Current reconciliation body content: summary copy, locked-record rows/details, section headings, and audit entries. Keep the card title and action buttons at their current readable size.
 
