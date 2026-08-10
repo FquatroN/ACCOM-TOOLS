@@ -6252,14 +6252,39 @@ button[id^="close-settings"] {
   font-size: .70rem;
 }
 
-.financial-reconciliation-table th,
+.financial-reconciliation-table th {
+  font-size: .70rem;
+  padding: .54rem;
+}
+
 .financial-reconciliation-table td {
-  font-size: .88rem;
+  font-size: .74rem;
   padding: .54rem;
 }
 
 .financial-reconciliation-table button {
-  font-size: 1rem;
+  font-size: .84rem;
+}
+
+@media (max-width: 768px) {
+  .financial-reconciliation-filters input,
+  .financial-reconciliation-filters select {
+    font-size: 16px;
+  }
+
+  .financial-reconciliation-table th {
+    font-size: .70rem;
+    padding: .46rem;
+  }
+
+  .financial-reconciliation-table td {
+    font-size: .70rem;
+    padding: .46rem;
+  }
+
+  .financial-reconciliation-table button {
+    font-size: .8rem;
+  }
 }
 
 .financial-reconciliation-dynamic-filters {
