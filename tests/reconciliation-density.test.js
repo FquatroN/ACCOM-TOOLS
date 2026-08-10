@@ -35,4 +35,10 @@ test("reconciliation density rules are scoped to workbench and eligible records"
   assert.match(css, /#financial-reconciliation-start\s*\{\s*font-size:\s*\.84rem;/);
   assert.match(css, /\.financial-reconciliation-table button\s*\{\s*font-size:\s*\.72rem;/);
   assert.match(css, /\.financial-reconciliation-table \.financial-reconciliation-status\s*\{\s*font-size:\s*\.70rem;/);
+  assert.match(appMain, /function financialReconciliationItemDetails\(item\)/);
+  assert.match(appMain, /\[formatDateOnly\(item\.source_date\), clean\(item\.supplier\), clean\(item\.description\)\]\.filter\(Boolean\)\.join\(" Â· "\)/);
+  assert.match(appMain, /class="financial-reconciliation-item-details"/);
+  assert.match(css, /\.financial-reconciliation-item-details\s*\{\s*font-size:\s*\.68rem;/);
+  assert.match(css, /\.financial-reconciliation-current\s*\{\s*font-size:\s*\.86rem;/);
+  assert.match(css, /\.financial-reconciliation-current h3\s*\{[\s\S]*font-size:\s*\.82rem;/);
 });
