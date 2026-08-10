@@ -6263,7 +6263,18 @@ button[id^="close-settings"] {
 }
 
 .financial-reconciliation-table button {
+  font-size: .72rem;
+}
+
+.financial-reconciliation-eligible-card #financial-reconciliation-start {
   font-size: .84rem;
+  padding: .42rem .58rem;
+}
+
+.financial-reconciliation-table .financial-reconciliation-status {
+  font-size: .70rem;
+  padding: .32rem .48rem;
+  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
@@ -6283,7 +6294,7 @@ button[id^="close-settings"] {
   }
 
   .financial-reconciliation-table button {
-    font-size: .8rem;
+    font-size: .70rem;
   }
 }
 
@@ -6299,10 +6310,16 @@ button[id^="close-settings"] {
   max-height: min(62vh, 48rem);
 }
 
-.financial-reconciliation-table th:first-child,
-.financial-reconciliation-table td:first-child {
-  width: 1%;
-  white-space: nowrap;
+.financial-reconciliation-action { width: 4.5rem; white-space: nowrap; }
+.financial-reconciliation-date { width: 6rem; white-space: nowrap; }
+.financial-reconciliation-amount { width: 5.8rem; white-space: nowrap; }
+.financial-reconciliation-status-cell { width: 6.8rem; white-space: nowrap; }
+
+.financial-reconciliation-table td.financial-reconciliation-description,
+.financial-reconciliation-table td.financial-reconciliation-detail {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .financial-reconciliation-description {

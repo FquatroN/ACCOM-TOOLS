@@ -21321,21 +21321,20 @@ function renderFinancialReconciliationCandidates() {
   const workspace = financialReconciliationState().workspace || normalizeFinancialReconciliationWorkspace({});
   const reconciliation = financialReconciliationActiveRecord();
   const sourceType = financialReconciliationState().candidateSourceType;
-  const columns = ["Date", "Description", "Amount"];
   const configColumns = Array.isArray(workspace.sourceConfig?.columns) ? workspace.sourceConfig.columns : [];
   const columnLabels = { document_fat: "FAT", supplier_nif: "Supplier NIF", supplier: "Supplier", payment: "Payment", reservation_id: "Reservation", account: "Account", category: "Category" };
   const extraColumns = configColumns.filter((key) => key !== "description").map((key) => ({ key, label: columnLabels[key] || key }));
-  columns.splice(2, 0, ...extraColumns.map((column) => column.label));
-  if (els.financialReconciliationTableHead) els.financialReconciliationTableHead.innerHTML = `<tr><th></th>${columns.map((column) => `<th>${escape(column)}</th>`).join("")}<th>Status</th></tr>`;
+  const optionalHeaders = extraColumns.map((column) => `<th class="financial-reconciliation-detail">${escape(column.label)}</th>`).join("");
+  if (els.financialReconciliationTableHead) els.financialReconciliationTableHead.innerHTML = `<tr><th class="financial-reconciliation-action"></th><th class="financial-reconciliation-date">Date</th><th class="financial-reconciliation-description">Description</th>${optionalHeaders}<th class="financial-reconciliation-amount">Amount</th><th class="financial-reconciliation-status-cell">Status</th></tr>`;
   const started = clean(reconciliation?.status) === "started";
   const actionLabel = reconciliation ? "Add" : "Start";
   if (els.financialReconciliationRows) els.financialReconciliationRows.innerHTML = workspace.candidates.length
     ? workspace.candidates.map((row) => {
-      const optional = extraColumns.map(({ key }) => `<td>${escape(clean(row[key]) || "-")}</td>`);
+      const optional = extraColumns.map(({ key }) => `<td class="financial-reconciliation-detail">${escape(clean(row[key]) || "-")}</td>`);
       const disabled = reconciliation && !started ? "disabled" : "";
-      return `<tr><td><button type="button" class="ghost" data-financial-reconciliation-row-action="${reconciliation ? "add" : "start"}" data-source-id="${escape(row.id)}" ${disabled}>${actionLabel}</button></td><td>${escape(formatDateOnly(row.source_date) || "-")}</td><td class="financial-reconciliation-description">${escape(clean(row.description) || "-")}</td>${optional.join("")}<td>${escape(formatMoney(Number(row.amount || 0)))}</td><td>${financialReconciliationStatusMarkup("not-started")}</td></tr>`;
+      return `<tr><td class="financial-reconciliation-action"><button type="button" class="ghost" data-financial-reconciliation-row-action="${reconciliation ? "add" : "start"}" data-source-id="${escape(row.id)}" ${disabled}>${actionLabel}</button></td><td class="financial-reconciliation-date">${escape(formatDateOnly(row.source_date) || "-")}</td><td class="financial-reconciliation-description">${escape(clean(row.description) || "-")}</td>${optional.join("")}<td class="financial-reconciliation-amount">${escape(formatMoney(Number(row.amount || 0)))}</td><td class="financial-reconciliation-status-cell">${financialReconciliationStatusMarkup("not-started")}</td></tr>`;
     }).join("")
-    : `<tr><td colspan="${columns.length + 2}" class="empty">No eligible unlocked ${escape(financialReconciliationSourceLabel(sourceType).toLowerCase())} records match these filters.</td></tr>`;
+    : `<tr><td colspan="${extraColumns.length + 5}" class="empty">No eligible unlocked ${escape(financialReconciliationSourceLabel(sourceType).toLowerCase())} records match these filters.</td></tr>`;
   if (els.financialReconciliationCount) {
     const counts = workspace.counts || {};
     const notStarted = Number(counts.notStarted ?? workspace.totalCount ?? 0);
