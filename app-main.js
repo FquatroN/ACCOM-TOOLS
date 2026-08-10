@@ -21353,6 +21353,10 @@ function financialReconciliationDifference(reconciliation) {
   return Number(reconciliation?.difference_amount ?? reconciliation?.differenceAmount ?? 0);
 }
 
+function financialReconciliationItemDetails(item) {
+  return [clean(item.source_date) ? formatDateOnly(item.source_date) : "", clean(item.supplier), clean(item.description)].filter(Boolean).join(" · ");
+}
+
 function renderFinancialReconciliationCurrent() {
   const workspace = financialReconciliationState().workspace || normalizeFinancialReconciliationWorkspace({});
   const reconciliation = financialReconciliationActiveRecord();
@@ -21366,7 +21370,10 @@ function renderFinancialReconciliationCurrent() {
   }
   const difference = financialReconciliationDifference(reconciliation);
   const complete = clean(reconciliation.status) === "complete";
-  const items = workspace.items.map((item) => `<li><span>${escape(financialReconciliationSourceLabel(item.source_type))}</span><strong>${escape(formatMoney(Number(item.amount_snapshot || 0)))}</strong>${complete ? "" : `<button type="button" class="ghost" data-financial-reconciliation-remove data-source-type="${escape(item.source_type)}" data-source-id="${escape(item.source_id)}">Remove</button>`}</li>`).join("") || "<li>No locked records.</li>";
+  const items = workspace.items.map((item) => {
+    const details = financialReconciliationItemDetails(item);
+    return `<li><span>${escape(financialReconciliationSourceLabel(item.source_type))}</span><strong>${escape(formatMoney(Number(item.amount_snapshot || 0)))}</strong>${complete ? "" : `<button type="button" class="ghost" data-financial-reconciliation-remove data-source-type="${escape(item.source_type)}" data-source-id="${escape(item.source_id)}">Remove</button>`}${details ? `<small class="financial-reconciliation-item-details">${escape(details)}</small>` : ""}</li>`;
+  }).join("") || "<li>No locked records.</li>";
   const audit = workspace.audit.slice(-6).map((entry) => {
     const comment = clean(entry.comment);
     return `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}${comment ? ` · ${escape(comment)}` : ""}</span></li>`;

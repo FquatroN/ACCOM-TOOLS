@@ -6341,9 +6341,11 @@ button[id^="close-settings"] {
 .financial-reconciliation-status--complete { color: var(--brand); }
 .financial-reconciliation-status--not-started { color: var(--danger); }
 
+.financial-reconciliation-current { font-size: .86rem; }
+
 .financial-reconciliation-current h3 {
-  margin: 1rem 0 .45rem;
-  font-size: .9rem;
+  margin: .8rem 0 .35rem;
+  font-size: .82rem;
 }
 
 .financial-reconciliation-summary {
@@ -6388,7 +6390,15 @@ button[id^="close-settings"] {
   padding: .55rem .65rem;
   border: 1px solid var(--border);
   border-radius: 10px;
-  font-size: .84rem;
+  font-size: .78rem;
+}
+
+.financial-reconciliation-item-details {
+  font-size: .68rem;
+  grid-column: 1 / -1;
+  color: var(--muted);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .financial-reconciliation-audit li {
@@ -6396,7 +6406,7 @@ button[id^="close-settings"] {
   gap: .14rem;
   border-left: 2px solid var(--brand);
   padding: .15rem 0 .15rem .6rem;
-  font-size: .8rem;
+  font-size: .74rem;
 }
 
 .financial-reconciliation-audit span { color: var(--muted); }
