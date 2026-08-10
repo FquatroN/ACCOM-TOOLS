@@ -21354,7 +21354,7 @@ function financialReconciliationDifference(reconciliation) {
 }
 
 function financialReconciliationItemDetails(item) {
-  return [formatDateOnly(item.source_date), clean(item.supplier), clean(item.description)].filter(Boolean).join(" · ");
+  return [clean(item.source_date) ? formatDateOnly(item.source_date) : "", clean(item.supplier), clean(item.description)].filter(Boolean).join(" · ");
 }
 
 function renderFinancialReconciliationCurrent() {
