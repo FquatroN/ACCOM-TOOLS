@@ -24,17 +24,20 @@ function appFunctionSource(name) {
 }
 
 const financialReconciliationItemDetails = new Function(`${appFunctionSource("clean")}\n${appFunctionSource("formatDateOnly")}\n${appFunctionSource("financialReconciliationItemDetails")}\nreturn financialReconciliationItemDetails;`)();
-const reconciliationSettingsAppDestinationFor = new Function("capabilities", `
-function canAppFinancialReconciliation() { return Boolean(capabilities.financialReconciliation); }
-function canAppFinancialDocs() { return Boolean(capabilities.financialDocs); }
-function canAppImportData() { return Boolean(capabilities.importData); }
-function preferredMainAppView() { return capabilities.permittedMainView || ""; }
-function canUseGuestsBi() { return Boolean(capabilities.guestsBi); }
-function canUseBookingsBi() { return Boolean(capabilities.bookingsBi); }
-function canUseFinancialBi() { return Boolean(capabilities.financialBi); }
-function canUseSalesBi() { return Boolean(capabilities.salesBi); }
+const reconciliationSettingsDestinationHelpers = new Function("appFeatures", "lastMainView", `
+const state = { lastMainView, access: { appFeatures } };
+${appFunctionSource("clean")}
+${appFunctionSource("canApp")}
+${appFunctionSource("canAppFinancialDocs")}
+${appFunctionSource("canAppImportData")}
+${appFunctionSource("canAppFinancialReconciliation")}
+${appFunctionSource("canUseGuestsBi")}
+${appFunctionSource("canUseBookingsBi")}
+${appFunctionSource("canUseFinancialBi")}
+${appFunctionSource("canUseSalesBi")}
+${appFunctionSource("preferredMainAppView")}
 ${appFunctionSource("reconciliationSettingsAppDestination")}
-return reconciliationSettingsAppDestination();
+return { preferredMainAppView, reconciliationSettingsAppDestination };
 `);
 
 test("settings exposes a reconciliation rule editor", () => {
@@ -61,12 +64,21 @@ test("reconciliation settings keeps its contextual tab and backs out only to aut
   assert.doesNotMatch(appMain, /closeSettingsFinancialReconciliation\?\.addEventListener\([^\n]*"communications"/);
 });
 
-test("reconciliation settings destination gives a settings-only administrator no app route", () => {
-  assert.equal(reconciliationSettingsAppDestinationFor({}), "");
-  assert.equal(reconciliationSettingsAppDestinationFor({ financialReconciliation: true }), "financial-reconciliation");
-  assert.equal(reconciliationSettingsAppDestinationFor({ financialDocs: true }), "financial-docs");
-  assert.equal(reconciliationSettingsAppDestinationFor({ importData: true }), "import-data");
-  assert.equal(reconciliationSettingsAppDestinationFor({ guestsBi: true }), "guests-bi");
+test("reconciliation settings destination uses actual app feature guards", () => {
+  const settingsOnly = reconciliationSettingsDestinationHelpers([], "communications");
+  assert.equal(settingsOnly.preferredMainAppView(), "");
+  assert.equal(settingsOnly.reconciliationSettingsAppDestination(), "");
+
+  const noCommunications = reconciliationSettingsDestinationHelpers(["guests"], "communications");
+  assert.equal(noCommunications.preferredMainAppView(), "guests");
+  assert.equal(noCommunications.reconciliationSettingsAppDestination(), "guests");
+  assert.notEqual(noCommunications.reconciliationSettingsAppDestination(), "communications");
+
+  const reconciliationWithoutBackoffice = reconciliationSettingsDestinationHelpers(["financial-reconciliation"], "");
+  assert.equal(reconciliationWithoutBackoffice.reconciliationSettingsAppDestination(), "");
+
+  const reconciliationApp = reconciliationSettingsDestinationHelpers(["backoffice", "financial-reconciliation"], "");
+  assert.equal(reconciliationApp.reconciliationSettingsAppDestination(), "financial-reconciliation");
 });
 
 test("reconciliation density rules are scoped to workbench and eligible records", () => {
