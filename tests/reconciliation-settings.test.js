@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, "..");
 const settingsPath = require.resolve("../api/reconciliation-settings");
 const supabasePath = require.resolve("../api/_supabase");
 const migration = fs.readFileSync(path.join(root, "supabase-migrations", "2026-08-11-financial-reconciliation-source-rules.sql"), "utf8");
+const workspaceFilterFixPath = path.join(root, "supabase-migrations", "2026-08-11-financial-reconciliation-source-rules-workspace-filter-fix.sql");
 
 function responseRecorder() {
   return {
@@ -116,4 +117,14 @@ test("migration preserves the legacy difference-function parameter name when rep
     migration,
     /create or replace function public\.financial_reconciliation_difference\(p_base text, p_rules jsonb, p_reconciliation_id uuid\)/,
   );
+});
+
+test("source-rules workspace filters extract text before building ilike patterns", () => {
+  assert.match(migration, /s\.description ilike '%' \|\| \(p_filters->>'description'\) \|\| '%'/);
+  assert.match(migration, /s\.supplier ilike '%' \|\| \(p_filters->>'supplier'\) \|\| '%'/);
+  assert.ok(fs.existsSync(workspaceFilterFixPath), "a post-deployment workspace filter fix migration should exist");
+  const workspaceFilterFix = fs.readFileSync(workspaceFilterFixPath, "utf8");
+  assert.match(workspaceFilterFix, /get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)/);
+  assert.match(workspaceFilterFix, /s\.description ilike '%' \|\| \(p_filters->>'description'\) \|\| '%'/);
+  assert.match(workspaceFilterFix, /s\.supplier ilike '%' \|\| \(p_filters->>'supplier'\) \|\| '%'/);
 });
