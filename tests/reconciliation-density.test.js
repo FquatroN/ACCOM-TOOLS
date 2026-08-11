@@ -24,6 +24,18 @@ function appFunctionSource(name) {
 }
 
 const financialReconciliationItemDetails = new Function(`${appFunctionSource("clean")}\n${appFunctionSource("formatDateOnly")}\n${appFunctionSource("financialReconciliationItemDetails")}\nreturn financialReconciliationItemDetails;`)();
+const reconciliationSettingsAppDestinationFor = new Function("capabilities", `
+function canAppFinancialReconciliation() { return Boolean(capabilities.financialReconciliation); }
+function canAppFinancialDocs() { return Boolean(capabilities.financialDocs); }
+function canAppImportData() { return Boolean(capabilities.importData); }
+function preferredMainAppView() { return capabilities.permittedMainView || ""; }
+function canUseGuestsBi() { return Boolean(capabilities.guestsBi); }
+function canUseBookingsBi() { return Boolean(capabilities.bookingsBi); }
+function canUseFinancialBi() { return Boolean(capabilities.financialBi); }
+function canUseSalesBi() { return Boolean(capabilities.salesBi); }
+${appFunctionSource("reconciliationSettingsAppDestination")}
+return reconciliationSettingsAppDestination();
+`);
 
 test("settings exposes a reconciliation rule editor", () => {
   assert.match(html, /id="settings-menu-financial-reconciliation"/);
@@ -47,6 +59,14 @@ test("reconciliation settings keeps its contextual tab and backs out only to aut
   assert.match(appMain, /function reconciliationSettingsAppDestination\(\)/);
   assert.match(appMain, /els\.closeSettingsFinancialReconciliation\?\.addEventListener\("click", closeReconciliationSettings\)/);
   assert.doesNotMatch(appMain, /closeSettingsFinancialReconciliation\?\.addEventListener\([^\n]*"communications"/);
+});
+
+test("reconciliation settings destination gives a settings-only administrator no app route", () => {
+  assert.equal(reconciliationSettingsAppDestinationFor({}), "");
+  assert.equal(reconciliationSettingsAppDestinationFor({ financialReconciliation: true }), "financial-reconciliation");
+  assert.equal(reconciliationSettingsAppDestinationFor({ financialDocs: true }), "financial-docs");
+  assert.equal(reconciliationSettingsAppDestinationFor({ importData: true }), "import-data");
+  assert.equal(reconciliationSettingsAppDestinationFor({ guestsBi: true }), "guests-bi");
 });
 
 test("reconciliation density rules are scoped to workbench and eligible records", () => {
