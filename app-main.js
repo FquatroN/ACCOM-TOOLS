@@ -18,7 +18,7 @@ const DEFAULT_REVIEW_SOURCES = [
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
 const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "financial-reconciliation", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
-const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "financial-reconciliation", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
   "20 (10) -Frigorificos",
@@ -867,6 +867,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "Settings: Guests", kind: "settings", key: "guests" },
   { label: "Settings: Financial Documents", kind: "settings", key: "financial-docs" },
   { label: "Settings: Import Data", kind: "settings", key: "import-data" },
+  { label: "Settings: Reconciliation", kind: "settings", key: "financial-reconciliation" },
   { label: "Settings: BI-Settings", kind: "settings", key: "bi-settings" },
   { label: "Settings: Cash Control", kind: "settings", key: "cash" },
   { label: "Settings: Reviews", kind: "settings", key: "reviews" },
@@ -1269,6 +1270,9 @@ const state = {
   financialDocsImportSourceMode: "",
   importDataSettings: clone(DEFAULT_IMPORT_DATA_SETTINGS),
   importDataSettingsLoaded: false,
+  reconciliationRules: [],
+  reconciliationRulesLoaded: false,
+  reconciliationRuleBaseSource: "financial_documents",
   biSettings: clone(DEFAULT_BI_SETTINGS),
   biSettingsLoaded: false,
   biSettingsTab: "sale-categories",
@@ -1516,6 +1520,7 @@ const els = {
   settingsMenuGuests: document.getElementById("settings-menu-guests"),
   settingsMenuFinancialDocs: document.getElementById("settings-menu-financial-docs"),
   settingsMenuImportData: document.getElementById("settings-menu-import-data"),
+  settingsMenuFinancialReconciliation: document.getElementById("settings-menu-financial-reconciliation"),
   settingsMenuBiSettings: document.getElementById("settings-menu-bi-settings"),
   settingsMenuCash: document.getElementById("settings-menu-cash"),
   settingsMenuReviews: document.getElementById("settings-menu-reviews"),
@@ -1610,6 +1615,7 @@ const els = {
   settingsViewGuests: document.getElementById("settings-view-guests"),
   settingsViewFinancialDocs: document.getElementById("settings-view-financial-docs"),
   settingsViewImportData: document.getElementById("settings-view-import-data"),
+  settingsViewFinancialReconciliation: document.getElementById("settings-view-financial-reconciliation"),
   settingsViewBiSettings: document.getElementById("settings-view-bi-settings"),
   settingsViewCash: document.getElementById("settings-view-cash"),
   settingsViewReviews: document.getElementById("settings-view-reviews"),
@@ -1629,6 +1635,7 @@ const els = {
   closeSettingsGuests: document.getElementById("close-settings-guests"),
   closeSettingsFinancialDocs: document.getElementById("close-settings-financial-docs"),
   closeSettingsImportData: document.getElementById("close-settings-import-data"),
+  closeSettingsFinancialReconciliation: document.getElementById("close-settings-financial-reconciliation"),
   closeSettingsBiSettings: document.getElementById("close-settings-bi-settings"),
   closeSettingsAdmin: document.getElementById("close-settings-admin"),
   closeSettingsReviews: document.getElementById("close-settings-reviews"),
@@ -1966,6 +1973,10 @@ const els = {
   importDataSaveSettings: document.getElementById("import-data-save-settings"),
   importDataSettingsBody: document.getElementById("import-data-settings-body"),
   importDataSettingsStatus: document.getElementById("import-data-settings-status"),
+  financialReconciliationSettingsSave: document.getElementById("financial-reconciliation-settings-save"),
+  financialReconciliationSettingsBaseSource: document.getElementById("financial-reconciliation-settings-base-source"),
+  financialReconciliationSettingsRulesBody: document.getElementById("financial-reconciliation-settings-rules-body"),
+  financialReconciliationSettingsStatus: document.getElementById("financial-reconciliation-settings-status"),
   biSettingsSave: document.getElementById("bi-settings-save"),
   biSettingsSaleCategoriesTab: document.getElementById("bi-settings-sale-categories-tab"),
   biSettingsFdmAccountCategoriesTab: document.getElementById("bi-settings-fdm-account-categories-tab"),
@@ -2547,7 +2558,8 @@ async function init() {
   if (!canAccessGeneralSettings() && canSettings("guests")) state.settingsSection = "guests";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && canSettings("financial-docs")) state.settingsSection = "financial-docs";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && canSettings("import-data")) state.settingsSection = "import-data";
-  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("import-data") && canSettings("bi-settings")) state.settingsSection = "bi-settings";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("import-data") && canSettings("financial-reconciliation")) state.settingsSection = "financial-reconciliation";
+  else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("import-data") && !canSettings("financial-reconciliation") && canSettings("bi-settings")) state.settingsSection = "bi-settings";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("import-data") && !canSettings("bi-settings") && canSettings("cash")) state.settingsSection = "cash";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && canSettings("reviews")) state.settingsSection = "reviews";
   else if (!canAccessGeneralSettings() && !canSettings("guests") && !canSettings("financial-docs") && !canSettings("cash") && !canSettings("reviews") && canSettings("groups")) state.settingsSection = "groups";
@@ -2630,6 +2642,7 @@ function bindEvents() {
   els.closeSettings.addEventListener("click", () => setView("communications"));
   els.closeSettingsFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.closeSettingsImportData?.addEventListener("click", () => setView("import-data"));
+  els.closeSettingsFinancialReconciliation?.addEventListener("click", () => setView(canAppFinancialReconciliation() ? "financial-reconciliation" : "communications"));
   els.closeSettingsBiSettings?.addEventListener("click", () => setView(canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : canUseSalesBi() ? "sales-bi" : "communications"));
   els.closeSettingsCash?.addEventListener("click", () => setView("cash"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
@@ -2647,6 +2660,7 @@ function bindEvents() {
   els.settingsMenuGuests?.addEventListener("click", () => setSettingsSection("guests"));
   els.settingsMenuFinancialDocs?.addEventListener("click", () => setSettingsSection("financial-docs"));
   els.settingsMenuImportData?.addEventListener("click", () => setSettingsSection("import-data"));
+  els.settingsMenuFinancialReconciliation?.addEventListener("click", () => setSettingsSection("financial-reconciliation"));
   els.settingsMenuBiSettings?.addEventListener("click", () => setSettingsSection("bi-settings"));
   els.settingsMenuCash?.addEventListener("click", () => setSettingsSection("cash"));
   els.settingsMenuReviews.addEventListener("click", () => setSettingsSection("reviews"));
@@ -2846,6 +2860,9 @@ function bindEvents() {
   els.importDataDropzone?.addEventListener("drop", onImportDataDrop);
   els.importDataSaveSettings?.addEventListener("click", saveImportDataSettings);
   els.importDataSettingsBody?.addEventListener("input", onImportDataSettingsInput);
+  els.financialReconciliationSettingsSave?.addEventListener("click", saveReconciliationSettings);
+  els.financialReconciliationSettingsBaseSource?.addEventListener("change", onReconciliationSettingsBaseSourceChange);
+  els.financialReconciliationSettingsRulesBody?.addEventListener("change", onReconciliationSettingsRuleChange);
   els.biSettingsSave?.addEventListener("click", saveBiSettings);
   els.biSettingsSaleCategoriesTab?.addEventListener("click", () => setBiSettingsTab("sale-categories"));
   els.biSettingsFdmAccountCategoriesTab?.addEventListener("click", () => setBiSettingsTab("fdm-account-categories"));
@@ -4127,6 +4144,10 @@ async function ensureSettingsSectionData() {
     await ensureImportDataData();
     return;
   }
+  if (state.settingsSection === "financial-reconciliation") {
+    await loadReconciliationSettings();
+    return;
+  }
   if (state.settingsSection === "bi-settings") {
     await ensureBiSettingsData();
     return;
@@ -4311,6 +4332,7 @@ function renderLayout() {
   if (els.settingsMenuGuests) els.settingsMenuGuests.hidden = !canSettings("guests");
   if (els.settingsMenuFinancialDocs) els.settingsMenuFinancialDocs.hidden = !canSettings("financial-docs");
   if (els.settingsMenuImportData) els.settingsMenuImportData.hidden = !canSettings("import-data");
+  if (els.settingsMenuFinancialReconciliation) els.settingsMenuFinancialReconciliation.hidden = !canSettings("financial-reconciliation");
   if (els.settingsMenuBiSettings) els.settingsMenuBiSettings.hidden = !canSettings("bi-settings");
   if (els.settingsMenuCash) els.settingsMenuCash.hidden = !canSettings("cash");
   els.settingsMenuReviews.hidden = !canSettings("reviews");
@@ -4327,6 +4349,7 @@ function renderLayout() {
   els.settingsMenuGuests?.classList.toggle("active", state.settingsSection === "guests");
   els.settingsMenuFinancialDocs?.classList.toggle("active", state.settingsSection === "financial-docs");
   els.settingsMenuImportData?.classList.toggle("active", state.settingsSection === "import-data");
+  els.settingsMenuFinancialReconciliation?.classList.toggle("active", state.settingsSection === "financial-reconciliation");
   els.settingsMenuBiSettings?.classList.toggle("active", state.settingsSection === "bi-settings");
   els.settingsMenuCash?.classList.toggle("active", state.settingsSection === "cash");
   els.settingsMenuReviews.classList.toggle("active", state.settingsSection === "reviews");
@@ -4347,6 +4370,7 @@ async function setSettingsSection(section) {
   if (section === "guests" && !canSettings("guests")) return;
   if (section === "financial-docs" && !canSettings("financial-docs")) return;
   if (section === "import-data" && !canSettings("import-data")) return;
+  if (section === "financial-reconciliation" && !canSettings("financial-reconciliation")) return;
   if (section === "bi-settings" && !canSettings("bi-settings")) return;
   if (section === "communications" && !canSettings("communications")) return;
   if (section === "cash" && !canSettings("cash")) return;
@@ -4363,6 +4387,7 @@ async function setSettingsSection(section) {
   if (section === "guests") state.guestsSettingsLoaded = false;
   if (section === "financial-docs") state.financialDocsSettingsLoaded = false;
   if (section === "import-data") state.importDataSettingsLoaded = false;
+  if (section === "financial-reconciliation") state.reconciliationRulesLoaded = false;
   if (section === "bi-settings") state.biSettingsLoaded = false;
   if (section === "maintenance") state.maintenanceSettingsLoaded = false;
   state.settingsSection = section === "admin-users"
@@ -4373,6 +4398,8 @@ async function setSettingsSection(section) {
       ? "financial-docs"
     : section === "import-data"
       ? "import-data"
+    : section === "financial-reconciliation"
+      ? "financial-reconciliation"
     : section === "bi-settings"
       ? "bi-settings"
     : section === "cash"
@@ -4424,6 +4451,7 @@ function renderSettingsSection() {
   const isGuests = state.settingsSection === "guests" && canSettings("guests");
   const isFinancialDocs = state.settingsSection === "financial-docs" && canSettings("financial-docs");
   const isImportData = state.settingsSection === "import-data" && canSettings("import-data");
+  const isFinancialReconciliation = state.settingsSection === "financial-reconciliation" && canSettings("financial-reconciliation");
   const isBiSettings = state.settingsSection === "bi-settings" && canSettings("bi-settings");
   const isComm = state.settingsSection === "communications" && canSettings("communications");
   const isCash = state.settingsSection === "cash" && canSettings("cash");
@@ -4440,6 +4468,7 @@ function renderSettingsSection() {
   if (els.settingsViewGuests) els.settingsViewGuests.hidden = !isGuests;
   if (els.settingsViewFinancialDocs) els.settingsViewFinancialDocs.hidden = !isFinancialDocs;
   if (els.settingsViewImportData) els.settingsViewImportData.hidden = !isImportData;
+  if (els.settingsViewFinancialReconciliation) els.settingsViewFinancialReconciliation.hidden = !isFinancialReconciliation;
   if (els.settingsViewBiSettings) els.settingsViewBiSettings.hidden = !isBiSettings;
   els.settingsViewCommunications.hidden = !isComm;
   if (els.settingsViewCash) els.settingsViewCash.hidden = !isCash;
@@ -4453,6 +4482,7 @@ function renderSettingsSection() {
   els.settingsViewLaundry.hidden = !isLaundry;
   els.settingsViewAdminUsers.hidden = !isAdmin;
   if (isBiSettings) renderBiSettings();
+  if (isFinancialReconciliation) renderReconciliationSettings();
   if (isReviews) setReviewSettingsScreen(state.reviewSettingsScreen, false);
 }
 
@@ -4753,6 +4783,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-settings-guests="${id}"]`)?.checked) settingsFeatures.push("guests");
   if (els.profilesBody.querySelector(`[data-profile-settings-financial-docs="${id}"]`)?.checked) settingsFeatures.push("financial-docs");
   if (els.profilesBody.querySelector(`[data-profile-settings-import-data="${id}"]`)?.checked) settingsFeatures.push("import-data");
+  if (els.profilesBody.querySelector(`[data-profile-settings-financial-reconciliation="${id}"]`)?.checked) settingsFeatures.push("financial-reconciliation");
   if (els.profilesBody.querySelector(`[data-profile-settings-cash="${id}"]`)?.checked) settingsFeatures.push("cash");
   if (els.profilesBody.querySelector(`[data-profile-settings-reviews="${id}"]`)?.checked) settingsFeatures.push("reviews");
   if (els.profilesBody.querySelector(`[data-profile-settings-maintenance="${id}"]`)?.checked) settingsFeatures.push("maintenance");
@@ -19540,6 +19571,8 @@ function openSettingsFromCurrentContext() {
     state.settingsSection = "financial-docs";
   } else if (state.currentView === "import-data" && canSettings("import-data")) {
     state.settingsSection = "import-data";
+  } else if (state.currentView === "financial-reconciliation" && canSettings("financial-reconciliation")) {
+    state.settingsSection = "financial-reconciliation";
   } else if ((state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi") && canSettings("bi-settings")) {
     state.settingsSection = "bi-settings";
   }
@@ -21151,6 +21184,96 @@ const FINANCIAL_RECONCILIATION_FILTER_FIELDS = Object.freeze({
 
 function financialReconciliationSourceLabel(sourceType) {
   return FINANCIAL_RECONCILIATION_SOURCES[clean(sourceType)] || clean(sourceType) || "Unknown source";
+}
+
+function reconciliationRulesFor(baseSourceType) {
+  const base = clean(baseSourceType);
+  return state.reconciliationRules.filter((rule) => clean(rule?.baseSourceType) === base);
+}
+
+function collectReconciliationSettingsRules() {
+  return state.reconciliationRules.map((rule) => ({
+    baseSourceType: clean(rule?.baseSourceType),
+    matchingSourceType: clean(rule?.matchingSourceType),
+    operator: rule?.operator === "-" ? "-" : "+",
+  }));
+}
+
+function renderReconciliationSettings() {
+  if (!els.financialReconciliationSettingsBaseSource || !els.financialReconciliationSettingsRulesBody) return;
+  const base = clean(state.reconciliationRuleBaseSource) || "financial_documents";
+  const sources = Object.entries(FINANCIAL_RECONCILIATION_SOURCES);
+  els.financialReconciliationSettingsBaseSource.innerHTML = sources
+    .map(([value, label]) => `<option value="${escape(value)}">${escape(label)}</option>`)
+    .join("");
+  els.financialReconciliationSettingsBaseSource.value = base;
+  const rules = new Map(reconciliationRulesFor(base).map((rule) => [clean(rule.matchingSourceType), rule]));
+  els.financialReconciliationSettingsRulesBody.innerHTML = sources
+    .filter(([sourceType]) => sourceType !== base)
+    .map(([sourceType, label]) => {
+      const rule = rules.get(sourceType);
+      const enabled = Boolean(rule);
+      const operator = rule?.operator === "-" ? "-" : "+";
+      return `<tr><td><label><input type="checkbox" data-reconciliation-rule-source="${escape(sourceType)}" ${enabled ? "checked" : ""} />${escape(label)}</label></td><td><select data-reconciliation-rule-operator="${escape(sourceType)}" ${enabled ? "" : "disabled"}><option value="+" ${operator === "+" ? "selected" : ""}>+</option><option value="-" ${operator === "-" ? "selected" : ""}>-</option></select></td></tr>`;
+    })
+    .join("");
+}
+
+async function loadReconciliationSettings() {
+  if (!canSettings("financial-reconciliation") || state.reconciliationRulesLoaded) return;
+  try {
+    const result = await api("/api/reconciliation-settings");
+    state.reconciliationRules = Array.isArray(result?.rules) ? result.rules.map((rule) => ({
+      baseSourceType: clean(rule?.baseSourceType),
+      matchingSourceType: clean(rule?.matchingSourceType),
+      operator: rule?.operator === "-" ? "-" : "+",
+    })) : [];
+    state.reconciliationRulesLoaded = true;
+    if (els.financialReconciliationSettingsStatus) els.financialReconciliationSettingsStatus.textContent = "Configuration loaded.";
+  } catch (error) {
+    state.reconciliationRulesLoaded = false;
+    if (els.financialReconciliationSettingsStatus) els.financialReconciliationSettingsStatus.textContent = `Failed to load configuration: ${error.message}`;
+  }
+  renderReconciliationSettings();
+}
+
+function onReconciliationSettingsBaseSourceChange() {
+  state.reconciliationRuleBaseSource = clean(els.financialReconciliationSettingsBaseSource?.value) || "financial_documents";
+  renderReconciliationSettings();
+}
+
+function onReconciliationSettingsRuleChange(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const matchingSourceType = clean(target.dataset.reconciliationRuleSource || target.dataset.reconciliationRuleOperator);
+  if (!matchingSourceType) return;
+  const baseSourceType = clean(state.reconciliationRuleBaseSource) || "financial_documents";
+  const existing = reconciliationRulesFor(baseSourceType).find((rule) => clean(rule.matchingSourceType) === matchingSourceType);
+  const checkbox = els.financialReconciliationSettingsRulesBody?.querySelector(`[data-reconciliation-rule-source="${matchingSourceType}"]`);
+  const operatorField = els.financialReconciliationSettingsRulesBody?.querySelector(`[data-reconciliation-rule-operator="${matchingSourceType}"]`);
+  const enabled = Boolean(checkbox?.checked);
+  state.reconciliationRules = state.reconciliationRules.filter((rule) => !(clean(rule.baseSourceType) === baseSourceType && clean(rule.matchingSourceType) === matchingSourceType));
+  if (enabled) {
+    state.reconciliationRules.push({
+      baseSourceType,
+      matchingSourceType,
+      operator: clean(operatorField?.value) === "-" ? "-" : existing?.operator === "-" ? "-" : "+",
+    });
+  }
+  renderReconciliationSettings();
+}
+
+async function saveReconciliationSettings() {
+  try {
+    const rules = collectReconciliationSettingsRules();
+    const result = await api("/api/reconciliation-settings", { method: "PUT", body: { rules } });
+    state.reconciliationRules = result.rules;
+    state.reconciliationRulesLoaded = true;
+    els.financialReconciliationSettingsStatus.textContent = "Configuration saved.";
+    financialReconciliationState().loaded = false;
+  } catch (error) {
+    if (els.financialReconciliationSettingsStatus) els.financialReconciliationSettingsStatus.textContent = `Save failed: ${error.message}`;
+  }
 }
 
 function financialReconciliationState() {

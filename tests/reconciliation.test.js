@@ -67,13 +67,13 @@ test("bank-led groups use the matching source formula", () => {
   ]), 0);
 });
 
-test("rules preserve independent directions and operators", () => {
+test("rules preserve independent directions with different reverse operators", () => {
   assert.deepEqual(normalizeReconciliationRules([
     { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
-    { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "financial_documents", operator: "+" },
+    { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "financial_documents", operator: "-" },
   ]), [
     { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
-    { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "financial_documents", operator: "+" },
+    { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "financial_documents", operator: "-" },
   ]);
 });
 

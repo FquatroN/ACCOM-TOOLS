@@ -1,6 +1,6 @@
 const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const APP_FEATURES = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "financial-reconciliation", "import-data", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
-const SETTINGS_FEATURES = ["general", "communications", "guests", "financial-docs", "import-data", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
+const SETTINGS_FEATURES = ["general", "communications", "guests", "financial-docs", "import-data", "financial-reconciliation", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const FALLBACK_PROFILE = {
   id: "",
   name: "Full access (fallback)",

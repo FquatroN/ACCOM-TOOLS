@@ -23,6 +23,14 @@ function appFunctionSource(name) {
 
 const financialReconciliationItemDetails = new Function(`${appFunctionSource("clean")}\n${appFunctionSource("formatDateOnly")}\n${appFunctionSource("financialReconciliationItemDetails")}\nreturn financialReconciliationItemDetails;`)();
 
+test("settings exposes a reconciliation rule editor", () => {
+  assert.match(html, /id="settings-menu-financial-reconciliation"/);
+  assert.match(html, /id="settings-view-financial-reconciliation"/);
+  assert.match(html, /id="financial-reconciliation-settings-base-source"/);
+  assert.match(html, /id="financial-reconciliation-settings-rules-body"/);
+  assert.match(html, /id="financial-reconciliation-settings-save"/);
+});
+
 test("reconciliation density rules are scoped to workbench and eligible records", () => {
   assert.match(html, /class="card financial-reconciliation-workbench-card"/);
   assert.match(html, /class="card financial-reconciliation-eligible-card"/);

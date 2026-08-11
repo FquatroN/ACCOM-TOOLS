@@ -2122,6 +2122,9 @@
               <button id="settings-menu-import-data" type="button" class="nav-link">
                 Import Data
               </button>
+              <button id="settings-menu-financial-reconciliation" type="button" class="nav-link">
+                Reconciliation
+              </button>
               <button id="settings-menu-bi-settings" type="button" class="nav-link">
                 BI-Settings
               </button>
@@ -2508,6 +2511,20 @@
                     <tbody id="import-data-settings-body"></tbody>
                   </table>
                   <p id="import-data-settings-status" class="auth-status"></p>
+                </section>
+              </div>
+
+              <div id="settings-view-financial-reconciliation" hidden>
+                <div class="actions">
+                  <button id="close-settings-financial-reconciliation" type="button" class="ghost">Back To App</button>
+                  <button id="financial-reconciliation-settings-save" type="button" class="ghost">Save Configuration</button>
+                </div>
+                <section class="settings-block">
+                  <div class="bar"><h3>Reconciliation rules</h3></div>
+                  <label>Source<select id="financial-reconciliation-settings-base-source"></select></label>
+                  <p class="field-hint">Each row is one direction. Configure the reverse direction separately.</p>
+                  <table class="settings-table financial-reconciliation-settings-table"><thead><tr><th>Compatible source</th><th>Operator</th></tr></thead><tbody id="financial-reconciliation-settings-rules-body"></tbody></table>
+                  <p id="financial-reconciliation-settings-status" class="auth-status"></p>
                 </section>
               </div>
 

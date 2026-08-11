@@ -1147,6 +1147,18 @@ td {
   max-width: 76px;
 }
 
+.financial-reconciliation-settings-table {
+  min-width: 0;
+}
+
+.financial-reconciliation-settings-table select {
+  width: 4.5rem;
+}
+
+.financial-reconciliation-settings-table input[type="checkbox"] {
+  margin-right: .45rem;
+}
+
 .compact-table {
   min-width: 0;
 }
