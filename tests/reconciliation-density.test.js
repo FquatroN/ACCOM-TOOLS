@@ -13,7 +13,7 @@ const supabaseApi = fs.readFileSync(path.join(root, "api", "_supabase.js"), "utf
 function appFunctionSource(name) {
   const start = appMain.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `${name} should be defined in app-main.js`);
-  const bodyStart = appMain.indexOf("{", start);
+  const bodyStart = appMain.indexOf("{", appMain.indexOf(")", start));
   let depth = 0;
   for (let index = bodyStart; index < appMain.length; index += 1) {
     if (appMain[index] === "{") depth += 1;
@@ -79,6 +79,126 @@ test("reconciliation settings destination uses actual app feature guards", () =>
 
   const reconciliationApp = reconciliationSettingsDestinationHelpers(["backoffice", "financial-reconciliation"], "");
   assert.equal(reconciliationApp.reconciliationSettingsAppDestination(), "financial-reconciliation");
+});
+
+test("workbench uses one source selector and displays saved rule hints", () => {
+  assert.match(html, /<label>Source<select id="financial-reconciliation-source"><\/select><\/label>/);
+  assert.match(html, /id="financial-reconciliation-rule-hint"/);
+  assert.doesNotMatch(html, /id="financial-reconciliation-base-source"/);
+  assert.doesNotMatch(html, /id="financial-reconciliation-matching-sources"/);
+  assert.doesNotMatch(html, /id="financial-reconciliation-candidate-source"/);
+  assert.match(appMain, /function onFinancialReconciliationSourceChange\(\)/);
+  assert.match(appMain, /action: "start", sourceType, sourceId/);
+});
+
+test("workbench rule snapshots keep only valid unique signed sources", () => {
+  const normalizeRuleSnapshot = new Function("FINANCIAL_RECONCILIATION_SOURCES", `
+${appFunctionSource("clean")}
+${appFunctionSource("normalizeFinancialReconciliationRuleSnapshot")}
+return normalizeFinancialReconciliationRuleSnapshot;
+`)({ financial_documents: "Financial Documents", import_cgd_extrato_ordem: "CGD Bank Statement" });
+
+  assert.deepEqual(normalizeRuleSnapshot([
+    { sourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { sourceType: "import_cgd_extrato_ordem", operator: "+" },
+    { sourceType: "financial_documents", operator: "?" },
+    { sourceType: "unknown", operator: "+" },
+    null,
+  ]), [{ sourceType: "import_cgd_extrato_ordem", operator: "-" }]);
+});
+
+test("source changes reset pagination and trigger a silent workspace refresh", () => {
+  const current = { candidateSourceType: "financial_documents", page: 4, loaded: true };
+  const els = { financialReconciliationSource: { value: "import_cgd_extrato_ordem" } };
+  const calls = [];
+  const onSourceChange = new Function("clean", "els", "financialReconciliationState", "loadFinancialReconciliationWorkspace", `
+${appFunctionSource("onFinancialReconciliationSourceChange")}
+return onFinancialReconciliationSourceChange;
+`)((value) => String(value || "").trim(), els, () => current, (options) => calls.push(options));
+
+  onSourceChange();
+
+  assert.deepEqual(current, { candidateSourceType: "import_cgd_extrato_ordem", page: 1, loaded: false });
+  assert.deepEqual(calls, [{ silent: true }]);
+});
+
+test("workspace loading replays a source refresh requested while a prior load is in flight", async () => {
+  const current = {
+    candidateSourceType: "financial_documents",
+    loaded: true,
+    loading: false,
+    reloadRequested: false,
+    workspace: { sourceConfig: { sourceType: "financial_documents" } },
+  };
+  let resolveFirst;
+  const requests = [];
+  const api = (url) => {
+    requests.push(url);
+    if (requests.length === 1) return new Promise((resolve) => { resolveFirst = resolve; });
+    return Promise.resolve({ sourceConfig: { sourceType: "import_cgd_extrato_ordem" }, reconciliation: { id: "reconciliation-1" } });
+  };
+  const loadSource = appFunctionSource("loadFinancialReconciliationWorkspace").replace(/^function /, "async function ");
+  const loadWorkspace = new Function(
+    "canAppFinancialReconciliation", "financialReconciliationState", "clean", "api",
+    "buildFinancialReconciliationWorkspaceUrl", "normalizeFinancialReconciliationWorkspace",
+    "financialReconciliationActiveRecord", "reconciliationRulesFor", "renderFinancialReconciliation",
+    "setFinancialReconciliationStatus",
+    `${loadSource}\nreturn loadFinancialReconciliationWorkspace;`,
+  )(
+    () => true,
+    () => current,
+    (value) => String(value || "").trim(),
+    api,
+    () => `${current.candidateSourceType}:${current.workspace?.reconciliation?.id || ""}`,
+    (value) => ({ candidates: [], sourceConfig: {}, ...value }),
+    () => null,
+    () => [],
+    () => {},
+    () => {},
+  );
+
+  const firstLoad = loadWorkspace({ silent: true });
+  current.candidateSourceType = "import_cgd_extrato_ordem";
+  current.workspace = { ...current.workspace, reconciliation: { id: "reconciliation-1" } };
+  await loadWorkspace({ silent: true });
+  resolveFirst({ sourceConfig: { sourceType: "financial_documents" } });
+  await firstLoad;
+
+  assert.deepEqual(requests, ["financial_documents:", "import_cgd_extrato_ordem:reconciliation-1"]);
+  assert.equal(current.workspace.sourceConfig.sourceType, "import_cgd_extrato_ordem");
+  assert.equal(current.workspace.reconciliation.id, "reconciliation-1");
+});
+
+test("successful actions refresh the selected source after preserving the returned reconciliation", async () => {
+  const current = {
+    candidateSourceType: "import_cgd_extrato_ordem",
+    pendingAction: "",
+    workspace: { sourceConfig: { sourceType: "import_cgd_extrato_ordem" }, candidates: [{ id: "bank-1" }] },
+  };
+  const returnedReconciliation = { id: "reconciliation-1", matching_source_rules: [{ sourceType: "import_cgd_extrato_ordem", operator: "-" }] };
+  let refresh;
+  const actionSource = appFunctionSource("runFinancialReconciliationAction").replace(/^function /, "async function ");
+  const runAction = new Function(
+    "financialReconciliationState", "api", "normalizeFinancialReconciliationWorkspace", "clean",
+    "loadFinancialReconciliationWorkspace", "showToast", "setFinancialReconciliationStatus",
+    "renderFinancialReconciliation",
+    `${actionSource}\nreturn runFinancialReconciliationAction;`,
+  )(
+    () => current,
+    async () => ({ sourceConfig: { sourceType: "financial_documents" }, reconciliation: returnedReconciliation, items: [], audit: [], history: [] }),
+    (value) => ({ candidates: [], items: [], audit: [], history: [], ...value }),
+    (value) => String(value || "").trim(),
+    async (options) => { refresh = { options, workspace: current.workspace }; },
+    () => {},
+    () => {},
+    () => {},
+  );
+
+  await runAction({ action: "complete", reconciliationId: "reconciliation-1" });
+
+  assert.deepEqual(refresh.options, { silent: true });
+  assert.equal(refresh.workspace.sourceConfig.sourceType, "import_cgd_extrato_ordem");
+  assert.equal(refresh.workspace.reconciliation, returnedReconciliation);
 });
 
 test("reconciliation density rules are scoped to workbench and eligible records", () => {

@@ -1292,8 +1292,7 @@ const state = {
   financialReconciliation: {
     loaded: false,
     loading: false,
-    baseSourceType: "financial_documents",
-    matchingSourceTypes: ["import_fdm_accounts"],
+    reloadRequested: false,
     candidateSourceType: "financial_documents",
     filters: { dateFrom: "2026-01-01", dateTo: "", amountMin: "", amountMax: "", description: "", supplier: "", payment: "", account: "", category: "" },
     page: 1,
@@ -1924,9 +1923,8 @@ const els = {
   importDataViewPanel: document.getElementById("import-data-view-panel"),
   importDataDescription: document.getElementById("import-data-description"),
   importDataStatus: document.getElementById("import-data-status"),
-  financialReconciliationBaseSource: document.getElementById("financial-reconciliation-base-source"),
-  financialReconciliationMatchingSources: document.getElementById("financial-reconciliation-matching-sources"),
-  financialReconciliationCandidateSource: document.getElementById("financial-reconciliation-candidate-source"),
+  financialReconciliationSource: document.getElementById("financial-reconciliation-source"),
+  financialReconciliationRuleHint: document.getElementById("financial-reconciliation-rule-hint"),
   financialReconciliationStart: document.getElementById("financial-reconciliation-start"),
   financialReconciliationFilters: document.getElementById("financial-reconciliation-filters"),
   financialReconciliationDynamicFilters: document.getElementById("financial-reconciliation-dynamic-filters"),
@@ -2595,9 +2593,7 @@ function bindEvents() {
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.navImportData?.addEventListener("click", () => setView("import-data"));
   els.navFinancialReconciliation?.addEventListener("click", () => setView("financial-reconciliation"));
-  els.financialReconciliationBaseSource?.addEventListener("change", onFinancialReconciliationModeChange);
-  els.financialReconciliationMatchingSources?.addEventListener("change", onFinancialReconciliationModeChange);
-  els.financialReconciliationCandidateSource?.addEventListener("change", onFinancialReconciliationCandidateSourceChange);
+  els.financialReconciliationSource?.addEventListener("change", onFinancialReconciliationSourceChange);
   els.financialReconciliationFilters?.addEventListener("change", onFinancialReconciliationFilterChange);
   els.financialReconciliationFilters?.addEventListener("input", onFinancialReconciliationFilterInput);
   els.financialReconciliationStart?.addEventListener("click", onFinancialReconciliationStartClick);
@@ -21192,13 +21188,6 @@ const FINANCIAL_RECONCILIATION_SOURCES = Object.freeze({
   import_cgd_extrato_ordem: "CGD Bank Statement",
 });
 
-const FINANCIAL_RECONCILIATION_MATCHES = Object.freeze({
-  financial_documents: ["import_fdm_accounts", "import_cgd_cartao_credito", "import_cgd_extrato_ordem"],
-  import_fdm_accounts: ["import_cgd_extrato_ordem"],
-  import_cgd_cartao_credito: ["financial_documents", "import_cgd_extrato_ordem"],
-  import_cgd_extrato_ordem: ["financial_documents", "import_fdm_accounts", "import_cgd_cartao_credito"],
-});
-
 const FINANCIAL_RECONCILIATION_FILTER_FIELDS = Object.freeze({
   financial_documents: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "supplier", "payment", "account", "category"],
   import_fdm_accounts: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "account", "category"],
@@ -21210,9 +21199,32 @@ function financialReconciliationSourceLabel(sourceType) {
   return FINANCIAL_RECONCILIATION_SOURCES[clean(sourceType)] || clean(sourceType) || "Unknown source";
 }
 
-function reconciliationRulesFor(baseSourceType) {
+function reconciliationSettingsRulesFor(baseSourceType) {
   const base = clean(baseSourceType);
   return state.reconciliationRules.filter((rule) => clean(rule?.baseSourceType) === base);
+}
+
+function normalizeFinancialReconciliationRuleSnapshot(value) {
+  const seen = new Set();
+  return (Array.isArray(value) ? value : []).reduce((rules, rule) => {
+    const sourceType = clean(rule?.sourceType);
+    if (!FINANCIAL_RECONCILIATION_SOURCES[sourceType] || (rule?.operator !== "+" && rule?.operator !== "-") || seen.has(sourceType)) return rules;
+    seen.add(sourceType);
+    rules.push({ sourceType, operator: rule.operator });
+    return rules;
+  }, []);
+}
+
+function reconciliationRulesFor(baseSourceType) {
+  const base = clean(baseSourceType);
+  const current = financialReconciliationState();
+  const reconciliation = financialReconciliationActiveRecord();
+  if (reconciliation) {
+    if (clean(reconciliation.base_source_type) !== base) return [];
+    return normalizeFinancialReconciliationRuleSnapshot(reconciliation.matching_source_rules);
+  }
+  if (clean(current.workspace?.sourceConfig?.sourceType) !== base) return [];
+  return normalizeFinancialReconciliationRuleSnapshot(current.workspace?.rules);
 }
 
 function collectReconciliationSettingsRules() {
@@ -21231,7 +21243,7 @@ function renderReconciliationSettings() {
     .map(([value, label]) => `<option value="${escape(value)}">${escape(label)}</option>`)
     .join("");
   els.financialReconciliationSettingsBaseSource.value = base;
-  const rules = new Map(reconciliationRulesFor(base).map((rule) => [clean(rule.matchingSourceType), rule]));
+  const rules = new Map(reconciliationSettingsRulesFor(base).map((rule) => [clean(rule.matchingSourceType), rule]));
   els.financialReconciliationSettingsRulesBody.innerHTML = sources
     .filter(([sourceType]) => sourceType !== base)
     .map(([sourceType, label]) => {
@@ -21272,7 +21284,7 @@ function onReconciliationSettingsRuleChange(event) {
   const matchingSourceType = clean(target.dataset.reconciliationRuleSource || target.dataset.reconciliationRuleOperator);
   if (!matchingSourceType) return;
   const baseSourceType = clean(state.reconciliationRuleBaseSource) || "financial_documents";
-  const existing = reconciliationRulesFor(baseSourceType).find((rule) => clean(rule.matchingSourceType) === matchingSourceType);
+  const existing = reconciliationSettingsRulesFor(baseSourceType).find((rule) => clean(rule.matchingSourceType) === matchingSourceType);
   const checkbox = els.financialReconciliationSettingsRulesBody?.querySelector(`[data-reconciliation-rule-source="${matchingSourceType}"]`);
   const operatorField = els.financialReconciliationSettingsRulesBody?.querySelector(`[data-reconciliation-rule-operator="${matchingSourceType}"]`);
   const enabled = Boolean(checkbox?.checked);
@@ -21319,6 +21331,7 @@ function normalizeFinancialReconciliationWorkspace(result) {
     pageSize: Math.max(1, Number(workspace.pageSize || 50)),
     sourceConfig: workspace.sourceConfig && typeof workspace.sourceConfig === "object" ? workspace.sourceConfig : {},
     filterFields: Array.isArray(workspace.filterFields) ? workspace.filterFields : [],
+    rules: normalizeFinancialReconciliationRuleSnapshot(workspace.rules),
     reconciliation: workspace.reconciliation && typeof workspace.reconciliation === "object" ? workspace.reconciliation : null,
     items: Array.isArray(workspace.items) ? workspace.items : [],
     audit: Array.isArray(workspace.audit) ? workspace.audit : [],
@@ -21330,12 +21343,6 @@ function setFinancialReconciliationStatus(message = "", tone = "") {
   if (!els.financialReconciliationStatus) return;
   els.financialReconciliationStatus.textContent = message;
   els.financialReconciliationStatus.classList.toggle("status-error", tone === "error");
-}
-
-function selectedFinancialReconciliationMatchingSources() {
-  const field = els.financialReconciliationMatchingSources;
-  const selected = field ? [...field.selectedOptions].map((option) => clean(option.value)).filter(Boolean) : [];
-  return selected.length ? selected : [...financialReconciliationState().matchingSourceTypes];
 }
 
 function currentFinancialReconciliationFilters() {
@@ -21362,10 +21369,9 @@ function financialReconciliationRequestFilters(sourceType) {
 function buildFinancialReconciliationWorkspaceUrl() {
   const reconciliation = financialReconciliationActiveRecord();
   const current = financialReconciliationState();
-  const sourceType = reconciliation ? current.candidateSourceType : current.baseSourceType;
+  const sourceType = current.candidateSourceType;
   const params = new URLSearchParams({
     source_type: sourceType,
-    matching_source_types: JSON.stringify(reconciliation?.matching_source_types || current.matchingSourceTypes),
     filters: JSON.stringify(financialReconciliationRequestFilters(sourceType)),
     page: String(current.page),
     page_size: "50",
@@ -21377,32 +21383,44 @@ function buildFinancialReconciliationWorkspaceUrl() {
 async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
   if (!canAppFinancialReconciliation()) return;
   const current = financialReconciliationState();
-  if (current.loading) return;
+  if (current.loading) {
+    current.reloadRequested = true;
+    return;
+  }
+  current.reloadRequested = false;
   const previousWorkspace = current.workspace;
-  const previousCandidateSourceType = current.candidateSourceType;
+  const previousCandidateSourceType = clean(previousWorkspace?.sourceConfig?.sourceType) || current.candidateSourceType;
   current.loading = true;
   try {
     const result = await api(buildFinancialReconciliationWorkspaceUrl());
+    if (current.reloadRequested) return;
     current.workspace = normalizeFinancialReconciliationWorkspace(result);
     current.loaded = true;
     const reconciliation = financialReconciliationActiveRecord();
     current.selectedReconciliationId = clean(reconciliation?.id);
     if (reconciliation) {
-      current.baseSourceType = clean(reconciliation.base_source_type) || current.baseSourceType;
-      current.matchingSourceTypes = Array.isArray(reconciliation.matching_source_types) ? reconciliation.matching_source_types : current.matchingSourceTypes;
-      const allowed = [current.baseSourceType, ...current.matchingSourceTypes];
-      if (!allowed.includes(current.candidateSourceType)) current.candidateSourceType = current.baseSourceType;
+      const base = clean(reconciliation.base_source_type);
+      const allowed = [base, ...reconciliationRulesFor(base).map((rule) => rule.sourceType)];
+      if (!allowed.includes(current.candidateSourceType)) current.candidateSourceType = base;
     }
-    renderFinancialReconciliation();
-    if (!silent) setFinancialReconciliationStatus("Reconciliation data loaded.");
+    if (!current.reloadRequested) {
+      renderFinancialReconciliation();
+      if (!silent) setFinancialReconciliationStatus("Reconciliation data loaded.");
+    }
   } catch (error) {
-    current.workspace = previousWorkspace || normalizeFinancialReconciliationWorkspace({});
-    current.candidateSourceType = previousCandidateSourceType;
-    current.loaded = Boolean(previousWorkspace);
-    renderFinancialReconciliation();
-    setFinancialReconciliationStatus(`Failed to load reconciliation data: ${error.message}. Your current reconciliation is still open.`, "error");
+    if (!current.reloadRequested) {
+      current.workspace = previousWorkspace || normalizeFinancialReconciliationWorkspace({});
+      current.candidateSourceType = previousCandidateSourceType;
+      current.loaded = Boolean(previousWorkspace);
+      renderFinancialReconciliation();
+      setFinancialReconciliationStatus(`Failed to load reconciliation data: ${error.message}. Your current reconciliation is still open.`, "error");
+    }
   } finally {
     current.loading = false;
+    if (current.reloadRequested) {
+      current.reloadRequested = false;
+      await loadFinancialReconciliationWorkspace({ silent: true });
+    }
   }
 }
 
@@ -21411,29 +21429,29 @@ async function ensureFinancialReconciliationData() {
   renderFinancialReconciliation();
 }
 
-function renderFinancialReconciliationModeControls() {
+function renderFinancialReconciliationSourceControls() {
   const current = financialReconciliationState();
   const reconciliation = financialReconciliationActiveRecord();
-  const base = reconciliation ? clean(reconciliation.base_source_type) : current.baseSourceType;
-  const matching = reconciliation?.matching_source_types || current.matchingSourceTypes;
-  const allowedMatches = FINANCIAL_RECONCILIATION_MATCHES[base] || [];
-  if (els.financialReconciliationBaseSource) {
-    els.financialReconciliationBaseSource.innerHTML = Object.entries(FINANCIAL_RECONCILIATION_SOURCES)
-      .map(([value, label]) => `<option value="${escape(value)}">${escape(label)}</option>`).join("");
-    els.financialReconciliationBaseSource.value = base;
-    els.financialReconciliationBaseSource.disabled = !!reconciliation;
+  const base = clean(reconciliation?.base_source_type);
+  const rules = reconciliation
+    ? normalizeFinancialReconciliationRuleSnapshot(reconciliation.matching_source_rules)
+    : normalizeFinancialReconciliationRuleSnapshot(current.workspace?.rules);
+  const allowedSources = reconciliation
+    ? [base, ...rules.map((rule) => rule.sourceType)]
+    : Object.keys(FINANCIAL_RECONCILIATION_SOURCES);
+  if (!allowedSources.includes(current.candidateSourceType)) {
+    current.candidateSourceType = reconciliation ? base : allowedSources[0];
   }
-  if (els.financialReconciliationMatchingSources) {
-    els.financialReconciliationMatchingSources.innerHTML = allowedMatches.map((sourceType) => `<option value="${escape(sourceType)}" ${matching.includes(sourceType) ? "selected" : ""}>${escape(financialReconciliationSourceLabel(sourceType))}</option>`).join("");
-    els.financialReconciliationMatchingSources.multiple = base === "financial_documents";
-    els.financialReconciliationMatchingSources.size = Math.max(1, Math.min(3, allowedMatches.length));
-    els.financialReconciliationMatchingSources.disabled = !!reconciliation;
+  if (els.financialReconciliationSource) {
+    els.financialReconciliationSource.innerHTML = allowedSources
+      .map((sourceType) => `<option value="${escape(sourceType)}">${escape(financialReconciliationSourceLabel(sourceType))}</option>`)
+      .join("");
+    els.financialReconciliationSource.value = current.candidateSourceType;
   }
-  const browseSources = reconciliation ? [base, ...matching] : [base];
-  if (!browseSources.includes(current.candidateSourceType)) current.candidateSourceType = browseSources[0] || base;
-  if (els.financialReconciliationCandidateSource) {
-    els.financialReconciliationCandidateSource.innerHTML = browseSources.map((sourceType) => `<option value="${escape(sourceType)}">${escape(financialReconciliationSourceLabel(sourceType))}</option>`).join("");
-    els.financialReconciliationCandidateSource.value = current.candidateSourceType;
+  if (els.financialReconciliationRuleHint) {
+    els.financialReconciliationRuleHint.textContent = rules.length
+      ? `Matches: ${rules.map((rule) => `${financialReconciliationSourceLabel(rule.sourceType)} (${rule.operator})`).join(", ")}`
+      : "No reconciliation rules are configured for this source.";
   }
 }
 
@@ -21474,11 +21492,12 @@ function renderFinancialReconciliationCandidates() {
   const optionalHeaders = extraColumns.map((column) => `<th class="financial-reconciliation-detail">${escape(column.label)}</th>`).join("");
   if (els.financialReconciliationTableHead) els.financialReconciliationTableHead.innerHTML = `<tr><th class="financial-reconciliation-action"></th><th class="financial-reconciliation-date">Date</th><th class="financial-reconciliation-description">Description</th>${optionalHeaders}<th class="financial-reconciliation-amount">Amount</th><th class="financial-reconciliation-status-cell">Status</th></tr>`;
   const started = clean(reconciliation?.status) === "started";
+  const canStart = reconciliationRulesFor(sourceType).length > 0;
   const actionLabel = reconciliation ? "Add" : "Start";
   if (els.financialReconciliationRows) els.financialReconciliationRows.innerHTML = workspace.candidates.length
     ? workspace.candidates.map((row) => {
       const optional = extraColumns.map(({ key }) => `<td class="financial-reconciliation-detail">${escape(clean(row[key]) || "-")}</td>`);
-      const disabled = reconciliation && !started ? "disabled" : "";
+      const disabled = reconciliation ? (!started ? "disabled" : "") : (!canStart ? "disabled" : "");
       return `<tr><td class="financial-reconciliation-action"><button type="button" class="ghost" data-financial-reconciliation-row-action="${reconciliation ? "add" : "start"}" data-source-id="${escape(row.id)}" ${disabled}>${actionLabel}</button></td><td class="financial-reconciliation-date">${escape(formatDateOnly(row.source_date) || "-")}</td><td class="financial-reconciliation-description">${escape(clean(row.description) || "-")}</td>${optional.join("")}<td class="financial-reconciliation-amount">${escape(formatMoney(Number(row.amount || 0)))}</td><td class="financial-reconciliation-status-cell">${financialReconciliationStatusMarkup("not-started")}</td></tr>`;
     }).join("")
     : `<tr><td colspan="${extraColumns.length + 5}" class="empty">No eligible unlocked ${escape(financialReconciliationSourceLabel(sourceType).toLowerCase())} records match these filters.</td></tr>`;
@@ -21492,7 +21511,9 @@ function renderFinancialReconciliationCandidates() {
   if (els.financialReconciliationStart) {
     els.financialReconciliationStart.hidden = !!reconciliation;
     els.financialReconciliationStart.disabled = true;
-    els.financialReconciliationStart.textContent = `Choose Start on a ${financialReconciliationSourceLabel(sourceType)} record`;
+    els.financialReconciliationStart.textContent = canStart
+      ? `Choose Start on a ${financialReconciliationSourceLabel(sourceType)} record`
+      : "Start unavailable until reconciliation rules are configured";
   }
 }
 
@@ -21509,7 +21530,7 @@ function renderFinancialReconciliationCurrent() {
   const reconciliation = financialReconciliationActiveRecord();
   if (!els.financialReconciliationCurrent) return;
   if (!reconciliation) {
-    els.financialReconciliationCurrent.innerHTML = "<p>Select an eligible record and click Start. Only Financial Documents can combine more than one matching source type.</p>";
+    els.financialReconciliationCurrent.innerHTML = "<p>Select an eligible record and click Start.</p>";
     if (els.financialReconciliationNew) els.financialReconciliationNew.hidden = true;
     if (els.financialReconciliationReopen) els.financialReconciliationReopen.hidden = true;
     if (els.financialReconciliationDelete) els.financialReconciliationDelete.hidden = true;
@@ -21525,7 +21546,8 @@ function renderFinancialReconciliationCurrent() {
     const comment = clean(entry.comment);
     return `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}${comment ? ` · ${escape(comment)}` : ""}</span></li>`;
   }).join("") || "<li>No audit entries yet.</li>";
-  els.financialReconciliationCurrent.innerHTML = `<div class="financial-reconciliation-summary"><div>${financialReconciliationStatusMarkup(reconciliation.status)}<p>${escape(financialReconciliationSourceLabel(reconciliation.base_source_type))} with ${escape((reconciliation.matching_source_types || []).map(financialReconciliationSourceLabel).join(", "))}</p></div><strong class="financial-reconciliation-difference${difference === 0 ? "" : " financial-reconciliation-forced-difference"}">Difference: ${escape(formatMoney(difference))}</strong></div><h3>Locked records</h3><ul class="financial-reconciliation-items">${items}</ul>${!complete ? `<button type="button" data-financial-reconciliation-complete ${workspace.items.length ? "" : "disabled"}>${difference === 0 ? "Complete reconciliation" : "Force complete"}</button>` : `<p class="field-hint">Completed ${escape(reconciliation.completion_type || "normally")}${reconciliation.forced_completion_comment ? ` · ${escape(reconciliation.forced_completion_comment)}` : ""}</p>`}<h3>Audit trail</h3><ul class="financial-reconciliation-audit">${audit}</ul>`;
+  const matchingSources = reconciliationRulesFor(reconciliation.base_source_type).map((rule) => financialReconciliationSourceLabel(rule.sourceType));
+  els.financialReconciliationCurrent.innerHTML = `<div class="financial-reconciliation-summary"><div>${financialReconciliationStatusMarkup(reconciliation.status)}<p>${escape(financialReconciliationSourceLabel(reconciliation.base_source_type))} with ${escape(matchingSources.join(", "))}</p></div><strong class="financial-reconciliation-difference${difference === 0 ? "" : " financial-reconciliation-forced-difference"}">Difference: ${escape(formatMoney(difference))}</strong></div><h3>Locked records</h3><ul class="financial-reconciliation-items">${items}</ul>${!complete ? `<button type="button" data-financial-reconciliation-complete ${workspace.items.length ? "" : "disabled"}>${difference === 0 ? "Complete reconciliation" : "Force complete"}</button>` : `<p class="field-hint">Completed ${escape(reconciliation.completion_type || "normally")}${reconciliation.forced_completion_comment ? ` · ${escape(reconciliation.forced_completion_comment)}` : ""}</p>`}<h3>Audit trail</h3><ul class="financial-reconciliation-audit">${audit}</ul>`;
   if (els.financialReconciliationReopen) els.financialReconciliationReopen.hidden = !complete;
   if (els.financialReconciliationNew) els.financialReconciliationNew.hidden = !complete;
   if (els.financialReconciliationDelete) els.financialReconciliationDelete.hidden = false;
@@ -21553,7 +21575,7 @@ function renderFinancialReconciliationCompletionModal() {
 
 function renderFinancialReconciliation() {
   if (!canAppFinancialReconciliation()) return;
-  renderFinancialReconciliationModeControls();
+  renderFinancialReconciliationSourceControls();
   renderFinancialReconciliationFilters();
   renderFinancialReconciliationCandidates();
   renderFinancialReconciliationCurrent();
@@ -21561,21 +21583,11 @@ function renderFinancialReconciliation() {
   renderFinancialReconciliationCompletionModal();
 }
 
-function onFinancialReconciliationModeChange() {
+function onFinancialReconciliationSourceChange() {
   const current = financialReconciliationState();
-  current.baseSourceType = clean(els.financialReconciliationBaseSource?.value) || "financial_documents";
-  const allowed = FINANCIAL_RECONCILIATION_MATCHES[current.baseSourceType] || [];
-  const selected = selectedFinancialReconciliationMatchingSources().filter((sourceType) => allowed.includes(sourceType));
-  current.matchingSourceTypes = current.baseSourceType === "financial_documents" ? (selected.length ? selected : [allowed[0]]) : [selected[0] || allowed[0]];
-  current.candidateSourceType = current.baseSourceType;
+  current.candidateSourceType = clean(els.financialReconciliationSource?.value) || "financial_documents";
   current.page = 1;
   current.loaded = false;
-  loadFinancialReconciliationWorkspace({ silent: true });
-}
-
-function onFinancialReconciliationCandidateSourceChange() {
-  financialReconciliationState().candidateSourceType = clean(els.financialReconciliationCandidateSource?.value) || financialReconciliationState().baseSourceType;
-  financialReconciliationState().page = 1;
   loadFinancialReconciliationWorkspace({ silent: true });
 }
 
@@ -21603,7 +21615,14 @@ async function runFinancialReconciliationAction(payload) {
       current.loaded = false;
       await loadFinancialReconciliationWorkspace({ silent: true });
     } else {
-      current.workspace = normalizeFinancialReconciliationWorkspace(result);
+      const actionWorkspace = normalizeFinancialReconciliationWorkspace(result);
+      current.workspace = {
+        ...(current.workspace || normalizeFinancialReconciliationWorkspace({})),
+        reconciliation: actionWorkspace.reconciliation,
+        items: actionWorkspace.items,
+        audit: actionWorkspace.audit,
+        history: actionWorkspace.history,
+      };
       current.loaded = true;
       current.selectedReconciliationId = clean(current.workspace.reconciliation?.id);
       await loadFinancialReconciliationWorkspace({ silent: true });
@@ -21625,11 +21644,12 @@ function onFinancialReconciliationRowsClick(event) {
   const action = clean(button.dataset.financialReconciliationRowAction);
   const sourceId = clean(button.dataset.sourceId);
   const current = financialReconciliationState();
+  const sourceType = current.candidateSourceType;
   if (action === "start") {
-    runFinancialReconciliationAction({ action: "start", baseSourceType: current.baseSourceType, matchingSourceTypes: current.matchingSourceTypes, sourceType: current.baseSourceType, sourceId });
+    runFinancialReconciliationAction({ action: "start", sourceType, sourceId });
   } else if (action === "add") {
     const reconciliation = financialReconciliationActiveRecord();
-    if (reconciliation) runFinancialReconciliationAction({ action: "add_item", reconciliationId: reconciliation.id, sourceType: current.candidateSourceType, sourceId });
+    if (reconciliation) runFinancialReconciliationAction({ action: "add_item", reconciliationId: reconciliation.id, sourceType, sourceId });
   }
 }
 
@@ -21655,9 +21675,7 @@ async function onFinancialReconciliationHistoryClick(event) {
   if (!record) return;
   const current = financialReconciliationState();
   current.selectedReconciliationId = clean(record.id);
-  current.baseSourceType = clean(record.base_source_type);
-  current.matchingSourceTypes = Array.isArray(record.matching_source_types) ? record.matching_source_types : [];
-  current.candidateSourceType = current.baseSourceType;
+  current.candidateSourceType = clean(record.base_source_type);
   current.workspace = { ...current.workspace, reconciliation: record };
   current.loaded = false;
   await loadFinancialReconciliationWorkspace({ silent: true });
@@ -21701,7 +21719,6 @@ async function startNewFinancialReconciliation() {
   if (!reconciliation || clean(reconciliation.status) !== "complete") return;
   current.selectedReconciliationId = "";
   current.workspace = { ...(current.workspace || {}), reconciliation: null, items: [], audit: [] };
-  current.candidateSourceType = current.baseSourceType;
   current.loaded = false;
   await loadFinancialReconciliationWorkspace({ silent: true });
   setFinancialReconciliationStatus("Ready to start a new reconciliation.");

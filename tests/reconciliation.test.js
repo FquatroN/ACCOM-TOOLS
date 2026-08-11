@@ -150,17 +150,9 @@ test("workspace validation enforces source names and page bounds", () => {
   );
 });
 
-test("workspace ignores client-selected matching source input", () => {
-  assert.deepEqual(validateWorkspaceQuery({
-    reconciliation_id: "started-reconciliation",
-    source_type: "import_cgd_extrato_ordem",
-    matching_source_types: '["import_cgd_extrato_ordem"]',
-  }), {
-    reconciliationId: "started-reconciliation",
-    sourceType: "import_cgd_extrato_ordem",
-    page: 1,
-    pageSize: 50,
-    filters: {},
+test("workspace query no longer accepts a matching-source mode", () => {
+  assert.deepEqual(validateWorkspaceQuery({ source_type: "import_cgd_extrato_ordem", page: "1" }), {
+    reconciliationId: "", sourceType: "import_cgd_extrato_ordem", page: 1, pageSize: 50, filters: {},
   });
 });
 
@@ -195,10 +187,10 @@ test("failed browse-source reload preserves the active reconciliation workspace"
   const source = fs.readFileSync(path.join(__dirname, "..", "app-main.js"), "utf8");
   assert.match(
     source,
-    /const previousWorkspace = current\.workspace;\s*const previousCandidateSourceType = current\.candidateSourceType;/,
+    /const previousWorkspace = current\.workspace;\s*const previousCandidateSourceType = clean\(previousWorkspace\?\.sourceConfig\?\.sourceType\) \|\| current\.candidateSourceType;/,
   );
   assert.match(
     source,
-    /catch \(error\) \{\s*current\.workspace = previousWorkspace \|\| normalizeFinancialReconciliationWorkspace\(\{\}\);\s*current\.candidateSourceType = previousCandidateSourceType;/,
+    /catch \(error\) \{\s*if \(!current\.reloadRequested\) \{\s*current\.workspace = previousWorkspace \|\| normalizeFinancialReconciliationWorkspace\(\{\}\);\s*current\.candidateSourceType = previousCandidateSourceType;/,
   );
 });

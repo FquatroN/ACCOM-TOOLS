@@ -6250,6 +6250,9 @@ button[id^="close-settings"] {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
 }
 
+.financial-reconciliation-rule-hint { align-self: end; margin: 0; font-size: .68rem; }
+.financial-reconciliation-workbench-card .financial-reconciliation-rule-hint { grid-column: span 2; }
+
 .financial-reconciliation-workbench-card h2,
 .financial-reconciliation-eligible-card h2 {
   font-size: .94rem;
@@ -6307,6 +6310,10 @@ button[id^="close-settings"] {
 
   .financial-reconciliation-table button {
     font-size: .70rem;
+  }
+
+  .financial-reconciliation-workbench-card .financial-reconciliation-rule-hint {
+    grid-column: 1 / -1;
   }
 }
 
