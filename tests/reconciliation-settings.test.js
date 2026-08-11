@@ -101,7 +101,7 @@ test("migration restricts source rules to the service role and defines an atomic
   assert.match(migration, /if jsonb_typeof\(p_rules\) <> 'array' then/);
   assert.match(migration, /Rule source type is invalid\./);
   assert.match(migration, /Rule sources must be different\./);
-  assert.match(migration, /Rule operator must be '\+' or '-'\./);
+  assert.match(migration, /raise exception 'Rule operator must be ''\+'' or ''-''\.';/);
   assert.match(migration, /Duplicate reconciliation rule\./);
   assert.match(migration, /revoke all on function public\.replace_financial_reconciliation_source_rules\(jsonb\) from public, anon, authenticated;/);
   assert.match(migration, /grant execute on function public\.replace_financial_reconciliation_source_rules\(jsonb\) to service_role;/);

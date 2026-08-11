@@ -79,7 +79,7 @@ begin
     select 1 from jsonb_array_elements(p_rules) rule
     where coalesce(rule->>'operator', '') not in ('+', '-')
   ) then
-    raise exception 'Rule operator must be '+' or '-'.';
+    raise exception 'Rule operator must be ''+'' or ''-''.';
   end if;
   if exists (
     select 1
