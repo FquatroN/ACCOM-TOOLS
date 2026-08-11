@@ -48,13 +48,15 @@ test("settings exposes a reconciliation rule editor", () => {
   assert.match(html, /id="financial-reconciliation-settings-save"/);
 });
 
-test("reconciliation settings authorizes and validates a complete replacement before deleting rules", () => {
+test("reconciliation settings validates and sends one atomic replacement RPC", () => {
   assert.match(reconciliationSettingsApi, /requireFeature\(req, "settings", "financial-reconciliation"\)/);
   assert.match(supabaseApi, /SETTINGS_FEATURES = \[[^\]]*"financial-reconciliation"/);
   assert.match(appMain, /SETTINGS_FEATURE_OPTIONS = \[[^\]]*"financial-reconciliation"/);
   const validation = reconciliationSettingsApi.indexOf("const input = normalizeReconciliationRules");
-  const replacement = reconciliationSettingsApi.indexOf('restQuery("financial_reconciliation_source_rules", { method: "DELETE" })');
+  const replacement = reconciliationSettingsApi.indexOf('restQuery("rpc/replace_financial_reconciliation_source_rules"');
   assert.ok(validation >= 0 && validation < replacement, "validation must complete before replacement begins");
+  assert.doesNotMatch(reconciliationSettingsApi, /restQuery\("financial_reconciliation_source_rules", \{ method: "DELETE" \}\)/);
+  assert.doesNotMatch(reconciliationSettingsApi, /restQuery\("financial_reconciliation_source_rules", \{ method: "POST"/);
 });
 
 test("reconciliation settings keeps its contextual tab and backs out only to authorized app views", () => {
@@ -199,6 +201,36 @@ test("successful actions refresh the selected source after preserving the return
   assert.deepEqual(refresh.options, { silent: true });
   assert.equal(refresh.workspace.sourceConfig.sourceType, "import_cgd_extrato_ordem");
   assert.equal(refresh.workspace.reconciliation, returnedReconciliation);
+});
+
+test("row actions use the source rendered with that row while a source reload is pending", () => {
+  class FakeHTMLElement {
+    constructor(dataset) {
+      this.dataset = dataset;
+      this.disabled = false;
+    }
+
+    closest(selector) {
+      return selector === "button[data-financial-reconciliation-row-action]" ? this : null;
+    }
+  }
+
+  const actions = [];
+  const current = { candidateSourceType: "import_cgd_cartao_credito" };
+  const onRowsClick = new Function(
+    "HTMLElement", "clean", "financialReconciliationState", "runFinancialReconciliationAction", "financialReconciliationActiveRecord",
+    `${appFunctionSource("onFinancialReconciliationRowsClick")}\nreturn onFinancialReconciliationRowsClick;`,
+  )(
+    FakeHTMLElement,
+    (value) => String(value || "").trim(),
+    () => current,
+    (payload) => actions.push(payload),
+    () => null,
+  );
+
+  onRowsClick({ target: new FakeHTMLElement({ financialReconciliationRowAction: "start", sourceId: "document-1", sourceType: "financial_documents" }) });
+
+  assert.deepEqual(actions, [{ action: "start", sourceType: "financial_documents", sourceId: "document-1" }]);
 });
 
 test("reconciliation density rules are scoped to workbench and eligible records", () => {

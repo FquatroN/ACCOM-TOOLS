@@ -21498,7 +21498,7 @@ function renderFinancialReconciliationCandidates() {
     ? workspace.candidates.map((row) => {
       const optional = extraColumns.map(({ key }) => `<td class="financial-reconciliation-detail">${escape(clean(row[key]) || "-")}</td>`);
       const disabled = reconciliation ? (!started ? "disabled" : "") : (!canStart ? "disabled" : "");
-      return `<tr><td class="financial-reconciliation-action"><button type="button" class="ghost" data-financial-reconciliation-row-action="${reconciliation ? "add" : "start"}" data-source-id="${escape(row.id)}" ${disabled}>${actionLabel}</button></td><td class="financial-reconciliation-date">${escape(formatDateOnly(row.source_date) || "-")}</td><td class="financial-reconciliation-description">${escape(clean(row.description) || "-")}</td>${optional.join("")}<td class="financial-reconciliation-amount">${escape(formatMoney(Number(row.amount || 0)))}</td><td class="financial-reconciliation-status-cell">${financialReconciliationStatusMarkup("not-started")}</td></tr>`;
+      return `<tr><td class="financial-reconciliation-action"><button type="button" class="ghost" data-financial-reconciliation-row-action="${reconciliation ? "add" : "start"}" data-source-id="${escape(row.id)}" data-source-type="${escape(sourceType)}" ${disabled}>${actionLabel}</button></td><td class="financial-reconciliation-date">${escape(formatDateOnly(row.source_date) || "-")}</td><td class="financial-reconciliation-description">${escape(clean(row.description) || "-")}</td>${optional.join("")}<td class="financial-reconciliation-amount">${escape(formatMoney(Number(row.amount || 0)))}</td><td class="financial-reconciliation-status-cell">${financialReconciliationStatusMarkup("not-started")}</td></tr>`;
     }).join("")
     : `<tr><td colspan="${extraColumns.length + 5}" class="empty">No eligible unlocked ${escape(financialReconciliationSourceLabel(sourceType).toLowerCase())} records match these filters.</td></tr>`;
   if (els.financialReconciliationCount) {
@@ -21643,8 +21643,8 @@ function onFinancialReconciliationRowsClick(event) {
   if (!button || button.disabled) return;
   const action = clean(button.dataset.financialReconciliationRowAction);
   const sourceId = clean(button.dataset.sourceId);
-  const current = financialReconciliationState();
-  const sourceType = current.candidateSourceType;
+  const sourceType = clean(button.dataset.sourceType);
+  if (!sourceType) return;
   if (action === "start") {
     runFinancialReconciliationAction({ action: "start", sourceType, sourceId });
   } else if (action === "add") {

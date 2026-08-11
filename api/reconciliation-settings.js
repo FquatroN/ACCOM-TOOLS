@@ -25,8 +25,10 @@ module.exports = async function handler(req, res) {
 
     if (req.method === "PUT") {
       const input = normalizeReconciliationRules((await parseBody(req))?.rules);
-      await restQuery("financial_reconciliation_source_rules", { method: "DELETE" });
-      if (input.length) await restQuery("financial_reconciliation_source_rules", { method: "POST", body: input.map(toRow) });
+      await restQuery("rpc/replace_financial_reconciliation_source_rules", {
+        method: "POST",
+        body: { p_rules: input.map(toRow) },
+      });
       res.status(200).json({ rules: input });
       return;
     }

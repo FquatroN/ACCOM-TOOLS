@@ -9,8 +9,29 @@ insert into financial_reconciliations (
   'smoke-legacy-backfill-' || txid_current()
 );
 \ir ../supabase-migrations/2026-08-11-financial-reconciliation-source-rules.sql
-do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); r jsonb; rid uuid; fdm_rid uuid;
+do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean;
 begin
+  if not coalesce((
+    select c.relrowsecurity
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'financial_reconciliation_source_rules'
+  ), false) then
+    raise exception 'Financial reconciliation source rules must have RLS enabled';
+  end if;
+  if exists (
+    select 1
+    from (values ('anon'), ('authenticated')) roles(role_name)
+    cross join (values ('select'), ('insert'), ('update'), ('delete'), ('truncate'), ('references'), ('trigger')) privileges(privilege_name)
+    where has_table_privilege(roles.role_name::name, 'public.financial_reconciliation_source_rules'::text, privileges.privilege_name)
+  ) then
+    raise exception 'Anon and authenticated roles must not have source-rule table privileges';
+  end if;
+  if has_function_privilege('anon'::name, 'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure, 'execute')
+     or has_function_privilege('authenticated'::name, 'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure, 'execute')
+     or not has_function_privilege('service_role'::name, 'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure, 'execute') then
+    raise exception 'Source-rule replacement RPC permissions are incorrect';
+  end if;
   if not exists (
     select 1
     from financial_reconciliations historical
@@ -40,13 +61,49 @@ begin
      or not exists (select 1 from financial_reconciliation_source_rules where base_source_type='import_cgd_extrato_ordem' and matching_source_type='financial_documents' and operator='+') then
     raise exception 'Independent reverse-direction rules were not seeded';
   end if;
+  select coalesce(jsonb_agg(jsonb_build_object('base_source_type', base_source_type, 'matching_source_type', matching_source_type, 'operator', operator) order by base_source_type, matching_source_type), '[]'::jsonb)
+    into v_before
+    from financial_reconciliation_source_rules;
+  for v_invalid in
+    select rules
+    from (values
+      ('[{"base_source_type":"unknown","matching_source_type":"financial_documents","operator":"+"}]'::jsonb),
+      ('[{"base_source_type":"financial_documents","matching_source_type":"financial_documents","operator":"+"}]'::jsonb),
+      ('[{"base_source_type":"financial_documents","matching_source_type":"import_cgd_extrato_ordem","operator":"*"}]'::jsonb),
+      ('[{"base_source_type":"financial_documents","matching_source_type":"import_cgd_extrato_ordem","operator":"+"},{"base_source_type":"financial_documents","matching_source_type":"import_cgd_extrato_ordem","operator":"-"}]'::jsonb)
+    ) invalid_rules(rules)
+  loop
+    v_rejected := false;
+    begin
+      perform public.replace_financial_reconciliation_source_rules(v_invalid);
+    exception when others then
+      v_rejected := true;
+    end;
+    if not v_rejected then
+      raise exception 'Invalid source-rule replacement payload was accepted';
+    end if;
+  end loop;
+  if (select coalesce(jsonb_agg(jsonb_build_object('base_source_type', base_source_type, 'matching_source_type', matching_source_type, 'operator', operator) order by base_source_type, matching_source_type), '[]'::jsonb) from financial_reconciliation_source_rules) is distinct from v_before then
+    raise exception 'Invalid source-rule replacement mutated persisted rules';
+  end if;
   insert into financial_documents(id,document_date,amount,fat,created_by,description,supplier_name) values(doc_id,'2026-01-02',100,'S','smoke','smoke document','Smoke Supplier');
   insert into import_cgd_extrato_ordem(id,import_batch,row_key,data,montante) values(bank_id,'smoke','recon-smoke-bank-'||bank_id,'2026-01-02',-100);
+  insert into import_cgd_extrato_ordem(id,import_batch,row_key,data,montante) values(fdm_bank_id,'smoke','recon-smoke-fdm-bank-'||fdm_bank_id,'2026-01-02',-30);
   insert into import_cgd_cartao_credito(id,import_batch,row_key,data,debito) values(card_id,'smoke','recon-smoke-card-'||card_id,'2026-01-02',30);
   insert into import_fdm_accounts(id,import_batch,account,date_time_raw,event_date,category,amount,invoice_flag) values(fdm_id,'smoke','smoke','2026-01-02','2026-01-02','Compras',-30,true);
   r:=financial_reconciliation_action('start','smoke',null,'financial_documents',doc_id,null); rid:=(r->'reconciliation'->>'id')::uuid;
   if r->'reconciliation'->'matching_source_rules' @> '[{"sourceType":"import_cgd_extrato_ordem","operator":"+"}]'::jsonb is not true then raise exception 'Start did not snapshot directional rules'; end if;
-  update financial_reconciliation_source_rules set operator='-' where base_source_type='financial_documents' and matching_source_type='import_cgd_extrato_ordem';
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'base_source_type', base_source_type,
+    'matching_source_type', matching_source_type,
+    'operator', case when base_source_type='financial_documents' and matching_source_type='import_cgd_extrato_ordem' then '-' else operator end
+  ) order by base_source_type, matching_source_type), '[]'::jsonb)
+    into v_rules
+    from financial_reconciliation_source_rules;
+  perform public.replace_financial_reconciliation_source_rules(v_rules);
+  if not exists (select 1 from financial_reconciliation_source_rules where base_source_type='import_cgd_extrato_ordem' and matching_source_type='financial_documents' and operator='+') then
+    raise exception 'Changing one direction changed the independently configured reverse rule';
+  end if;
   perform financial_reconciliation_action('add_item','smoke',rid,'import_cgd_extrato_ordem',bank_id,null);
   if (select difference_amount from financial_reconciliations where id=rid) <> 0 then raise exception 'Expected zero difference'; end if;
   perform financial_reconciliation_action('complete','smoke',rid,null,null,null);
@@ -70,6 +127,10 @@ begin
     raise exception 'Expected duplicate membership failure';
   exception when others then if sqlerrm <> 'This record is already reconciled.' then raise; end if; end;
   r:=financial_reconciliation_action('start','smoke',null,'import_fdm_accounts',fdm_id,null); fdm_rid:=(r->'reconciliation'->>'id')::uuid;
+  if r->'reconciliation'->'matching_source_rules' @> '[{"sourceType":"import_cgd_extrato_ordem","operator":"-"}]'::jsonb is not true then raise exception 'FDM start did not snapshot its minus operator'; end if;
+  update financial_reconciliation_source_rules set operator='+' where base_source_type='import_fdm_accounts' and matching_source_type='import_cgd_extrato_ordem';
+  perform financial_reconciliation_action('add_item','smoke',fdm_rid,'import_cgd_extrato_ordem',fdm_bank_id,null);
+  if (select difference_amount from financial_reconciliations where id=fdm_rid) <> 0 then raise exception 'Captured minus snapshot did not calculate through SQL'; end if;
   begin
     perform financial_reconciliation_action('add_item','smoke',fdm_rid,'import_cgd_cartao_credito',card_id,null);
     raise exception 'Expected source absent from snapshot failure';
