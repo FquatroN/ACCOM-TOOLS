@@ -1,21 +1,25 @@
 -- Run against a disposable Supabase project after applying the migration.
 begin;
-do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); r jsonb; rid uuid;
+do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); r jsonb; rid uuid; fdm_rid uuid;
 begin
+  if not exists (select 1 from financial_reconciliation_source_rules where base_source_type='financial_documents' and matching_source_type='import_cgd_extrato_ordem' and operator='-')
+     or not exists (select 1 from financial_reconciliation_source_rules where base_source_type='import_cgd_extrato_ordem' and matching_source_type='financial_documents' and operator='+') then
+    raise exception 'Independent reverse-direction rules were not seeded';
+  end if;
   insert into financial_documents(id,document_date,amount,fat,created_by,description,supplier_name) values(doc_id,'2026-01-02',100,'S','smoke','smoke document','Smoke Supplier');
-  insert into import_cgd_extrato_ordem(id,import_batch,row_key,data,montante) values(bank_id,'smoke','recon-smoke-bank-'||bank_id,'2026-01-02',-40);
+  insert into import_cgd_extrato_ordem(id,import_batch,row_key,data,montante) values(bank_id,'smoke','recon-smoke-bank-'||bank_id,'2026-01-02',100);
   insert into import_cgd_cartao_credito(id,import_batch,row_key,data,debito) values(card_id,'smoke','recon-smoke-card-'||card_id,'2026-01-02',30);
   insert into import_fdm_accounts(id,import_batch,account,date_time_raw,event_date,category,amount,invoice_flag) values(fdm_id,'smoke','smoke','2026-01-02','2026-01-02','Compras',-30,true);
-  r:=financial_reconciliation_action('start','smoke',null,'financial_documents',array['import_cgd_extrato_ordem','import_cgd_cartao_credito','import_fdm_accounts'],'financial_documents',doc_id,null); rid:=(r->'reconciliation'->>'id')::uuid;
-  perform financial_reconciliation_action('add_item','smoke',rid,null,null,'import_cgd_extrato_ordem',bank_id,null);
-  perform financial_reconciliation_action('add_item','smoke',rid,null,null,'import_cgd_cartao_credito',card_id,null);
-  perform financial_reconciliation_action('add_item','smoke',rid,null,null,'import_fdm_accounts',fdm_id,null);
+  r:=financial_reconciliation_action('start','smoke',null,'financial_documents',doc_id,null); rid:=(r->'reconciliation'->>'id')::uuid;
+  if r->'reconciliation'->'matching_source_rules' @> '[{"sourceType":"import_cgd_extrato_ordem","operator":"-"}]'::jsonb is not true then raise exception 'Start did not snapshot directional rules'; end if;
+  update financial_reconciliation_source_rules set operator='+' where base_source_type='financial_documents' and matching_source_type='import_cgd_extrato_ordem';
+  perform financial_reconciliation_action('add_item','smoke',rid,'import_cgd_extrato_ordem',bank_id,null);
   if (select difference_amount from financial_reconciliations where id=rid) <> 0 then raise exception 'Expected zero difference'; end if;
-  perform financial_reconciliation_action('complete','smoke',rid,null,null,null,null,null);
-  perform financial_reconciliation_action('reopen','smoke',rid,null,null,null,null,null);
-  perform financial_reconciliation_action('remove_item','smoke',rid,null,null,'import_cgd_cartao_credito',card_id,null);
-  if exists(select 1 from financial_reconciliation_items where source_type='import_cgd_cartao_credito' and source_id=card_id) then raise exception 'Removed record is still locked'; end if;
-  r:=get_financial_reconciliation_workspace(rid,'import_cgd_cartao_credito',array['import_cgd_extrato_ordem','import_cgd_cartao_credito','import_fdm_accounts']);
+  perform financial_reconciliation_action('complete','smoke',rid,null,null,null);
+  perform financial_reconciliation_action('reopen','smoke',rid,null,null,null);
+  perform financial_reconciliation_action('remove_item','smoke',rid,'import_cgd_extrato_ordem',bank_id,null);
+  if exists(select 1 from financial_reconciliation_items where source_type='import_cgd_extrato_ordem' and source_id=bank_id) then raise exception 'Removed record is still locked'; end if;
+  r:=get_financial_reconciliation_workspace(rid,'import_cgd_extrato_ordem','{}'::jsonb,1,50);
   if not exists (
     select 1
     from jsonb_array_elements(r->'items') item
@@ -26,10 +30,15 @@ begin
   ) then
     raise exception 'Workspace item details were not returned';
   end if;
-  if not exists (select 1 from jsonb_array_elements(r->'candidates') candidate where (candidate->>'id')::uuid=card_id) then raise exception 'Removed record did not reappear as a candidate'; end if;
+  if not exists (select 1 from jsonb_array_elements(r->'candidates') candidate where (candidate->>'id')::uuid=bank_id) then raise exception 'Removed record did not reappear as a candidate'; end if;
   begin
-    perform financial_reconciliation_action('add_item','smoke',rid,null,null,'financial_documents',doc_id,null);
+    perform financial_reconciliation_action('add_item','smoke',rid,'financial_documents',doc_id,null);
     raise exception 'Expected duplicate membership failure';
   exception when others then if sqlerrm <> 'This record is already reconciled.' then raise; end if; end;
+  r:=financial_reconciliation_action('start','smoke',null,'import_fdm_accounts',fdm_id,null); fdm_rid:=(r->'reconciliation'->>'id')::uuid;
+  begin
+    perform financial_reconciliation_action('add_item','smoke',fdm_rid,'import_cgd_cartao_credito',card_id,null);
+    raise exception 'Expected source absent from snapshot failure';
+  exception when others then if sqlerrm <> 'Item source type is not allowed for this reconciliation.' then raise; end if; end;
 end $$;
 rollback;

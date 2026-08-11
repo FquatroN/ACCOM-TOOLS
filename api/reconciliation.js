@@ -12,7 +12,6 @@ module.exports = async function handler(req, res) {
         body: {
           p_reconciliation_id: query.reconciliationId || null,
           p_source_type: query.sourceType,
-          p_matching_source_types: query.matchingSourceTypes,
           p_filters: query.filters,
           p_page: query.page,
           p_page_size: query.pageSize,
@@ -30,8 +29,6 @@ module.exports = async function handler(req, res) {
           p_action: input.action,
           p_actor: cleanText(auth.user?.email) || cleanText(auth.user?.id),
           p_reconciliation_id: input.reconciliationId || null,
-          p_base_source_type: input.baseSourceType || null,
-          p_matching_source_types: input.matchingSourceTypes || null,
           p_source_type: input.sourceType || null,
           p_source_id: input.sourceId || null,
           p_comment: input.comment || null,

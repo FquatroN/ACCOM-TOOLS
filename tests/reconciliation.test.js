@@ -6,7 +6,8 @@ const {
   MIN_RECONCILIATION_DATE,
   calculateDifference,
   mapRpcError,
-  normalizeMatchingSourceTypes,
+  normalizeReconciliationRules,
+  normalizeRuleSnapshot,
   normalizeSourceType,
   validateMutation,
   validateWorkspaceQuery,
@@ -14,24 +15,26 @@ const {
 
 test("Financial Documents-led groups sum all sources", () => {
   assert.equal(calculateDifference("financial_documents", [
-    "import_cgd_extrato_ordem", "import_cgd_cartao_credito", "import_fdm_accounts",
+    { sourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { sourceType: "import_cgd_cartao_credito", operator: "+" },
+    { sourceType: "import_fdm_accounts", operator: "+" },
   ], [
     { sourceType: "financial_documents", amountSnapshot: 100 },
-    { sourceType: "import_cgd_extrato_ordem", amountSnapshot: -40 },
+    { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 40 },
     { sourceType: "import_cgd_cartao_credito", amountSnapshot: -30 },
     { sourceType: "import_fdm_accounts", amountSnapshot: -30 },
   ]), 0);
 });
 
 test("FDM-led groups subtract bank values", () => {
-  assert.equal(calculateDifference("import_fdm_accounts", ["import_cgd_extrato_ordem"], [
+  assert.equal(calculateDifference("import_fdm_accounts", [{ sourceType: "import_cgd_extrato_ordem", operator: "-" }], [
     { sourceType: "import_fdm_accounts", amountSnapshot: 42 },
     { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 42 },
   ]), 0);
 });
 
 test("calculations reject items outside the selected reconciliation mode", () => {
-  assert.throws(() => calculateDifference("import_fdm_accounts", ["import_cgd_extrato_ordem"], [
+  assert.throws(() => calculateDifference("import_fdm_accounts", [{ sourceType: "import_cgd_extrato_ordem", operator: "-" }], [
     { sourceType: "import_fdm_accounts", amountSnapshot: 42 },
     { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 42 },
     { sourceType: "financial_documents", amountSnapshot: 10 },
@@ -39,42 +42,60 @@ test("calculations reject items outside the selected reconciliation mode", () =>
 });
 
 test("card-led groups use the selected approved pairing", () => {
-  assert.equal(calculateDifference("import_cgd_cartao_credito", ["financial_documents"], [
+  assert.equal(calculateDifference("import_cgd_cartao_credito", [{ sourceType: "financial_documents", operator: "+" }], [
     { sourceType: "import_cgd_cartao_credito", amountSnapshot: -30.115 },
     { sourceType: "financial_documents", amountSnapshot: 30.11 },
   ]), 0);
-  assert.equal(calculateDifference("import_cgd_cartao_credito", ["import_cgd_extrato_ordem"], [
+  assert.equal(calculateDifference("import_cgd_cartao_credito", [{ sourceType: "import_cgd_extrato_ordem", operator: "+" }], [
     { sourceType: "import_cgd_cartao_credito", amountSnapshot: -30 },
     { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 30 },
   ]), 0);
 });
 
 test("bank-led groups use the matching source formula", () => {
-  assert.equal(calculateDifference("import_cgd_extrato_ordem", ["financial_documents"], [
+  assert.equal(calculateDifference("import_cgd_extrato_ordem", [{ sourceType: "financial_documents", operator: "+" }], [
     { sourceType: "import_cgd_extrato_ordem", amountSnapshot: -20 },
     { sourceType: "financial_documents", amountSnapshot: 20 },
   ]), 0);
-  assert.equal(calculateDifference("import_cgd_extrato_ordem", ["import_cgd_cartao_credito"], [
+  assert.equal(calculateDifference("import_cgd_extrato_ordem", [{ sourceType: "import_cgd_cartao_credito", operator: "+" }], [
     { sourceType: "import_cgd_extrato_ordem", amountSnapshot: -20 },
     { sourceType: "import_cgd_cartao_credito", amountSnapshot: 20 },
   ]), 0);
-  assert.equal(calculateDifference("import_cgd_extrato_ordem", ["import_fdm_accounts"], [
+  assert.equal(calculateDifference("import_cgd_extrato_ordem", [{ sourceType: "import_fdm_accounts", operator: "-" }], [
     { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 20 },
     { sourceType: "import_fdm_accounts", amountSnapshot: 20 },
   ]), 0);
 });
 
-test("non-document bases permit one matching source", () => {
-  assert.throws(() => normalizeMatchingSourceTypes("import_cgd_extrato_ordem", [
-    "financial_documents", "import_cgd_cartao_credito",
-  ]), /exactly one/i);
+test("rules preserve independent directions and operators", () => {
+  assert.deepEqual(normalizeReconciliationRules([
+    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "financial_documents", operator: "+" },
+  ]), [
+    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "financial_documents", operator: "+" },
+  ]);
 });
 
-test("matching source types reject unsupported pairings", () => {
-  assert.throws(
-    () => normalizeMatchingSourceTypes("import_fdm_accounts", ["financial_documents"]),
-    /not allowed/i,
-  );
+test("rules reject self-pairs, duplicates, and unknown operators", () => {
+  assert.throws(() => normalizeReconciliationRules([{ baseSourceType: "financial_documents", matchingSourceType: "financial_documents", operator: "+" }]), /different/i);
+  assert.throws(() => normalizeReconciliationRules([
+    { baseSourceType: "financial_documents", matchingSourceType: "import_fdm_accounts", operator: "+" },
+    { baseSourceType: "financial_documents", matchingSourceType: "import_fdm_accounts", operator: "-" },
+  ]), /duplicate/i);
+  assert.throws(() => normalizeReconciliationRules([{ baseSourceType: "financial_documents", matchingSourceType: "import_fdm_accounts", operator: "*" }]), /operator/i);
+});
+
+test("difference uses the base amount and each directional snapshot operator", () => {
+  const rules = normalizeRuleSnapshot("financial_documents", [
+    { sourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { sourceType: "import_cgd_cartao_credito", operator: "+" },
+  ]);
+  assert.equal(calculateDifference("financial_documents", rules, [
+    { sourceType: "financial_documents", amountSnapshot: 100 },
+    { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 60 },
+    { sourceType: "import_cgd_cartao_credito", amountSnapshot: 40 },
+  ]), 80);
 });
 
 test("source names are restricted to the four configured sources", () => {
@@ -92,22 +113,25 @@ test("mutations require their reconciliation and source identifiers", () => {
     sourceType: "financial_documents", sourceId: "source-1",
   }), /reconciliation id is required/i);
   assert.throws(() => validateMutation("start", {
-    baseSourceType: "financial_documents", matchingSourceTypes: ["import_fdm_accounts"],
     sourceType: "financial_documents",
   }), /source id is required/i);
+});
+
+test("a Start action contains no client-selected matching sources", () => {
+  assert.deepEqual(validateMutation("start", {
+    sourceType: "financial_documents", sourceId: "record-1",
+  }), { action: "start", reconciliationId: "", sourceType: "financial_documents", sourceId: "record-1", comment: "" });
 });
 
 test("workspace validation enforces source names and page bounds", () => {
   assert.deepEqual(validateWorkspaceQuery({
     source_type: "financial_documents",
-    matching_source_types: "import_fdm_accounts,import_cgd_cartao_credito",
     page: "2",
     page_size: "100",
     filters: '{"dateFrom":"2026-01-01"}',
   }), {
     reconciliationId: "",
     sourceType: "financial_documents",
-    matchingSourceTypes: ["import_fdm_accounts", "import_cgd_cartao_credito"],
     page: 2,
     pageSize: 100,
     filters: { dateFrom: "2026-01-01" },
@@ -126,7 +150,7 @@ test("workspace validation enforces source names and page bounds", () => {
   );
 });
 
-test("workspace accepts a matching browse source for an existing reconciliation", () => {
+test("workspace ignores client-selected matching source input", () => {
   assert.deepEqual(validateWorkspaceQuery({
     reconciliation_id: "started-reconciliation",
     source_type: "import_cgd_extrato_ordem",
@@ -134,7 +158,6 @@ test("workspace accepts a matching browse source for an existing reconciliation"
   }), {
     reconciliationId: "started-reconciliation",
     sourceType: "import_cgd_extrato_ordem",
-    matchingSourceTypes: ["import_cgd_extrato_ordem"],
     page: 1,
     pageSize: 50,
     filters: {},

@@ -7,21 +7,6 @@ const SOURCE_TYPES = Object.freeze([
   "import_cgd_extrato_ordem",
 ]);
 
-const MATCHING_SOURCE_TYPES = Object.freeze({
-  financial_documents: [
-    "import_fdm_accounts",
-    "import_cgd_cartao_credito",
-    "import_cgd_extrato_ordem",
-  ],
-  import_fdm_accounts: ["import_cgd_extrato_ordem"],
-  import_cgd_cartao_credito: ["financial_documents", "import_cgd_extrato_ordem"],
-  import_cgd_extrato_ordem: [
-    "financial_documents",
-    "import_fdm_accounts",
-    "import_cgd_cartao_credito",
-  ],
-});
-
 const MUTATION_ACTIONS = new Set([
   "start", "add_item", "remove_item", "complete", "force_complete", "reopen", "delete",
 ]);
@@ -39,46 +24,36 @@ function normalizeSourceType(value) {
   return value;
 }
 
-function normalizeMatchingSourceTypes(baseSourceType, matchingSourceTypes) {
+function normalizeOperator(value) {
+  if (value !== "+" && value !== "-") throw inputError("Rule operator must be '+' or '-'.");
+  return value;
+}
+
+function normalizeReconciliationRules(value) {
+  if (!Array.isArray(value)) throw inputError("Reconciliation rules must be an array.");
+  const seen = new Set();
+  return value.map((rule) => {
+    const baseSourceType = normalizeSourceType(rule?.baseSourceType || rule?.base_source_type);
+    const matchingSourceType = normalizeSourceType(rule?.matchingSourceType || rule?.matching_source_type);
+    if (baseSourceType === matchingSourceType) throw inputError("Rule sources must be different.");
+    const key = `${baseSourceType}:${matchingSourceType}`;
+    if (seen.has(key)) throw inputError("Duplicate reconciliation rule.");
+    seen.add(key);
+    return { baseSourceType, matchingSourceType, operator: normalizeOperator(rule?.operator) };
+  });
+}
+
+function normalizeRuleSnapshot(baseSourceType, value) {
   const base = normalizeSourceType(baseSourceType);
-  if (!Array.isArray(matchingSourceTypes) || matchingSourceTypes.length === 0) {
-    throw inputError("At least one matching source type is required.");
-  }
-  if (matchingSourceTypes.length > 3) {
-    throw inputError("Matching source types are invalid.");
-  }
-
-  const normalized = matchingSourceTypes.map(normalizeSourceType);
-  if (new Set(normalized).size !== normalized.length) {
-    throw inputError("Matching source types must not contain duplicates.");
-  }
-  if (base !== "financial_documents" && normalized.length !== 1) {
-    throw inputError("Non-document bases require exactly one matching source type.");
-  }
-  for (const sourceType of normalized) {
-    if (!MATCHING_SOURCE_TYPES[base].includes(sourceType)) {
-      throw inputError(`Matching source type '${sourceType}' is not allowed for '${base}'.`);
-    }
-  }
-  return normalized;
-}
-
-function normalizeActiveReconciliationMatchingSourceTypes(matchingSourceTypes) {
-  if (!Array.isArray(matchingSourceTypes) || matchingSourceTypes.length === 0 || matchingSourceTypes.length > 3) {
-    throw inputError("Matching source types are invalid.");
-  }
-  const normalized = matchingSourceTypes.map(normalizeSourceType);
-  if (new Set(normalized).size !== normalized.length) {
-    throw inputError("Matching source types must not contain duplicates.");
-  }
-  return normalized;
-}
-
-function validateReconciliationMode(baseSourceType, matchingSourceTypes) {
-  return {
-    baseSourceType: normalizeSourceType(baseSourceType),
-    matchingSourceTypes: normalizeMatchingSourceTypes(baseSourceType, matchingSourceTypes),
-  };
+  const rows = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return rows.map((rule) => {
+    const sourceType = normalizeSourceType(rule?.sourceType || rule?.source_type);
+    if (sourceType === base) throw inputError("Snapshot source must differ from the base source.");
+    if (seen.has(sourceType)) throw inputError("Duplicate reconciliation rule snapshot.");
+    seen.add(sourceType);
+    return { sourceType, operator: normalizeOperator(rule?.operator) };
+  });
 }
 
 function roundMoney(value) {
@@ -94,34 +69,16 @@ function amountFor(item) {
   return amount;
 }
 
-function calculateDifference(baseSourceType, matchingSourceTypes, items) {
-  const { baseSourceType: base, matchingSourceTypes: matching } = validateReconciliationMode(
-    baseSourceType,
-    matchingSourceTypes,
-  );
-  if (!Array.isArray(items)) throw inputError("Reconciliation items must be an array.");
-
-  const totals = Object.fromEntries(SOURCE_TYPES.map((sourceType) => [sourceType, 0]));
-  for (const item of items) {
-    const sourceType = normalizeSourceType(item && item.sourceType);
-    if (sourceType !== base && !matching.includes(sourceType)) {
-      throw inputError("Item source type is not allowed for the selected reconciliation mode.");
-    }
-    totals[sourceType] += amountFor(item);
-  }
-
-  const document = totals.financial_documents;
-  const fdm = totals.import_fdm_accounts;
-  const card = totals.import_cgd_cartao_credito;
-  const bank = totals.import_cgd_extrato_ordem;
-
-  if (base === "financial_documents") return roundMoney(document + fdm + card + bank);
-  if (base === "import_fdm_accounts") return roundMoney(fdm - bank);
-  if (base === "import_cgd_cartao_credito") {
-    return roundMoney(card + (matching[0] === "financial_documents" ? document : bank));
-  }
-  if (matching[0] === "import_fdm_accounts") return roundMoney(fdm - bank);
-  return roundMoney(bank + (matching[0] === "financial_documents" ? document : card));
+function calculateDifference(baseSourceType, matchingSourceRules, items) {
+  const base = normalizeSourceType(baseSourceType);
+  const rules = normalizeRuleSnapshot(base, matchingSourceRules);
+  const operators = new Map(rules.map((rule) => [rule.sourceType, rule.operator]));
+  return roundMoney((Array.isArray(items) ? items : []).reduce((total, item) => {
+    const sourceType = normalizeSourceType(item?.sourceType);
+    const sign = sourceType === base ? 1 : operators.get(sourceType) === "-" ? -1 : operators.get(sourceType) === "+" ? 1 : null;
+    if (sign === null) throw inputError("Item source type is not allowed for this reconciliation.");
+    return total + (sign * amountFor(item));
+  }, 0));
 }
 
 function identifier(value, label, required) {
@@ -130,21 +87,6 @@ function identifier(value, label, required) {
     return "";
   }
   return String(value).trim();
-}
-
-function parseMatchingSourceTypes(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value !== "string") return [];
-  const text = value.trim();
-  if (!text) return [];
-  if (text.startsWith("[")) {
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw inputError("Matching source types must be a valid array.");
-    }
-  }
-  return text.split(",").map((sourceType) => sourceType.trim());
 }
 
 function positiveInteger(value, label, maximum) {
@@ -191,17 +133,9 @@ function validateWorkspaceQuery(query) {
   const input = query && typeof query === "object" ? query : {};
   const reconciliationId = identifier(input.reconciliation_id || input.reconciliationId, "Reconciliation ID", false);
   const sourceType = normalizeSourceType(input.source_type || input.sourceType || "financial_documents");
-  const matching = parseMatchingSourceTypes(input.matching_source_types || input.matchingSourceTypes);
-  const matchingSourceTypes = reconciliationId
-    ? normalizeActiveReconciliationMatchingSourceTypes(matching)
-    : normalizeMatchingSourceTypes(
-      sourceType,
-      matching.length ? matching : MATCHING_SOURCE_TYPES[sourceType].slice(0, 1),
-    );
   return {
     reconciliationId,
     sourceType,
-    matchingSourceTypes,
     page: input.page === undefined || input.page === "" ? 1 : positiveInteger(input.page, "Page", 100),
     pageSize: input.page_size === undefined || input.page_size === "" ? 50 : positiveInteger(input.page_size, "Page size", 100),
     filters: parseFilters(input.filters),
@@ -220,17 +154,6 @@ function validateMutation(action, payload) {
   const comment = identifier(input.comment, "Comment", action === "force_complete");
 
   const result = { action, reconciliationId, sourceType, sourceId, comment };
-  if (action === "start") {
-    const mode = validateReconciliationMode(
-      input.baseSourceType || input.base_source_type,
-      parseMatchingSourceTypes(input.matchingSourceTypes || input.matching_source_types),
-    );
-    if (mode.baseSourceType !== sourceType) {
-      throw inputError("Start source type must match the base source type.");
-    }
-    result.baseSourceType = mode.baseSourceType;
-    result.matchingSourceTypes = mode.matchingSourceTypes;
-  }
   return result;
 }
 
@@ -254,9 +177,10 @@ module.exports = {
   SOURCE_TYPES,
   calculateDifference,
   mapRpcError,
-  normalizeMatchingSourceTypes,
+  normalizeOperator,
+  normalizeReconciliationRules,
+  normalizeRuleSnapshot,
   normalizeSourceType,
   validateMutation,
-  validateReconciliationMode,
   validateWorkspaceQuery,
 };
