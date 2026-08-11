@@ -106,3 +106,14 @@ test("migration restricts source rules to the service role and defines an atomic
   assert.match(migration, /revoke all on function public\.replace_financial_reconciliation_source_rules\(jsonb\) from public, anon, authenticated;/);
   assert.match(migration, /grant execute on function public\.replace_financial_reconciliation_source_rules\(jsonb\) to service_role;/);
 });
+
+test("migration preserves the legacy difference-function parameter name when replacing it", () => {
+  assert.match(
+    migration,
+    /create or replace function public\.financial_reconciliation_difference\(p_base text, p_matching jsonb, p_reconciliation_id uuid\)/,
+  );
+  assert.doesNotMatch(
+    migration,
+    /create or replace function public\.financial_reconciliation_difference\(p_base text, p_rules jsonb, p_reconciliation_id uuid\)/,
+  );
+});

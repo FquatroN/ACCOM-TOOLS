@@ -106,7 +106,7 @@ begin
   ), '[]'::jsonb);
 end $$;
 
-create or replace function public.financial_reconciliation_difference(p_base text, p_rules jsonb, p_reconciliation_id uuid)
+create or replace function public.financial_reconciliation_difference(p_base text, p_matching jsonb, p_reconciliation_id uuid)
 returns numeric language plpgsql stable security definer set search_path = public as $$
 begin
   if p_base not in ('financial_documents','import_fdm_accounts','import_cgd_cartao_credito','import_cgd_extrato_ordem') then
@@ -118,7 +118,7 @@ begin
     where i.reconciliation_id = p_reconciliation_id
       and i.source_type <> p_base
       and not exists (
-        select 1 from jsonb_array_elements(coalesce(p_rules, '[]'::jsonb)) rule
+        select 1 from jsonb_array_elements(coalesce(p_matching, '[]'::jsonb)) rule
         where rule->>'sourceType' = i.source_type and rule->>'operator' in ('+', '-')
       )
   ) then
@@ -132,7 +132,7 @@ begin
     end)
     from public.financial_reconciliation_items i
     left join lateral (
-      select value from jsonb_array_elements(coalesce(p_rules, '[]'::jsonb)) value
+      select value from jsonb_array_elements(coalesce(p_matching, '[]'::jsonb)) value
       where value->>'sourceType' = i.source_type
       limit 1
     ) rule on true
