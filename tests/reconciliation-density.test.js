@@ -7,6 +7,8 @@ const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const appMain = fs.readFileSync(path.join(root, "app-main.js"), "utf8");
+const reconciliationSettingsApi = fs.readFileSync(path.join(root, "api", "reconciliation-settings.js"), "utf8");
+const supabaseApi = fs.readFileSync(path.join(root, "api", "_supabase.js"), "utf8");
 
 function appFunctionSource(name) {
   const start = appMain.indexOf(`function ${name}(`);
@@ -29,6 +31,22 @@ test("settings exposes a reconciliation rule editor", () => {
   assert.match(html, /id="financial-reconciliation-settings-base-source"/);
   assert.match(html, /id="financial-reconciliation-settings-rules-body"/);
   assert.match(html, /id="financial-reconciliation-settings-save"/);
+});
+
+test("reconciliation settings authorizes and validates a complete replacement before deleting rules", () => {
+  assert.match(reconciliationSettingsApi, /requireFeature\(req, "settings", "financial-reconciliation"\)/);
+  assert.match(supabaseApi, /SETTINGS_FEATURES = \[[^\]]*"financial-reconciliation"/);
+  assert.match(appMain, /SETTINGS_FEATURE_OPTIONS = \[[^\]]*"financial-reconciliation"/);
+  const validation = reconciliationSettingsApi.indexOf("const input = normalizeReconciliationRules");
+  const replacement = reconciliationSettingsApi.indexOf('restQuery("financial_reconciliation_source_rules", { method: "DELETE" })');
+  assert.ok(validation >= 0 && validation < replacement, "validation must complete before replacement begins");
+});
+
+test("reconciliation settings keeps its contextual tab and backs out only to authorized app views", () => {
+  assert.match(appMain, /previousView === "financial-reconciliation" && canSettings\("financial-reconciliation"\)/);
+  assert.match(appMain, /function reconciliationSettingsAppDestination\(\)/);
+  assert.match(appMain, /els\.closeSettingsFinancialReconciliation\?\.addEventListener\("click", closeReconciliationSettings\)/);
+  assert.doesNotMatch(appMain, /closeSettingsFinancialReconciliation\?\.addEventListener\([^\n]*"communications"/);
 });
 
 test("reconciliation density rules are scoped to workbench and eligible records", () => {

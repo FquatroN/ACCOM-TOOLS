@@ -2642,7 +2642,7 @@ function bindEvents() {
   els.closeSettings.addEventListener("click", () => setView("communications"));
   els.closeSettingsFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.closeSettingsImportData?.addEventListener("click", () => setView("import-data"));
-  els.closeSettingsFinancialReconciliation?.addEventListener("click", () => setView(canAppFinancialReconciliation() ? "financial-reconciliation" : "communications"));
+  els.closeSettingsFinancialReconciliation?.addEventListener("click", closeReconciliationSettings);
   els.closeSettingsBiSettings?.addEventListener("click", () => setView(canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : canUseSalesBi() ? "sales-bi" : "communications"));
   els.closeSettingsCash?.addEventListener("click", () => setView("cash"));
   els.closeSettingsAdmin.addEventListener("click", () => setView("communications"));
@@ -3586,11 +3586,13 @@ async function setView(view) {
   if (view === "settings") {
     if (previousView === "financial-docs" && canSettings("financial-docs")) state.settingsSection = "financial-docs";
     else if (previousView === "import-data" && canSettings("import-data")) state.settingsSection = "import-data";
+    else if (previousView === "financial-reconciliation" && canSettings("financial-reconciliation")) state.settingsSection = "financial-reconciliation";
     else if ((previousView === "guests-bi" || previousView === "bookings-bi" || previousView === "financial-bi" || previousView === "sales-bi") && canSettings("bi-settings")) state.settingsSection = "bi-settings";
     else if (canAccessGeneralSettings()) state.settingsSection = "general";
     else if (canSettings("guests")) state.settingsSection = "guests";
     else if (canSettings("financial-docs")) state.settingsSection = "financial-docs";
     else if (canSettings("import-data")) state.settingsSection = "import-data";
+    else if (canSettings("financial-reconciliation")) state.settingsSection = "financial-reconciliation";
     else if (canSettings("bi-settings")) state.settingsSection = "bi-settings";
     else if (canSettings("cash")) state.settingsSection = "cash";
     else if (canSettings("reviews")) state.settingsSection = "reviews";
@@ -19560,6 +19562,28 @@ function preferredMainAppView() {
     "maintenance",
   ];
   return candidates.find((view) => clean(view) && canApp(view)) || "";
+}
+
+function reconciliationSettingsAppDestination() {
+  if (canAppFinancialReconciliation()) return "financial-reconciliation";
+  if (canAppFinancialDocs()) return "financial-docs";
+  if (canAppImportData()) return "import-data";
+  const mainView = preferredMainAppView();
+  if (mainView) return mainView;
+  if (canUseGuestsBi()) return "guests-bi";
+  if (canUseBookingsBi()) return "bookings-bi";
+  if (canUseFinancialBi()) return "financial-bi";
+  if (canUseSalesBi()) return "sales-bi";
+  return "";
+}
+
+function closeReconciliationSettings() {
+  const destination = reconciliationSettingsAppDestination();
+  if (!destination) {
+    showToast("No application view is available.", "error");
+    return;
+  }
+  setView(destination);
 }
 
 function openSettingsFromCurrentContext() {
