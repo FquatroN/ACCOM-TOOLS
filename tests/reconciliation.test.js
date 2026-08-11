@@ -15,12 +15,12 @@ const {
 
 test("Financial Documents-led groups sum all sources", () => {
   assert.equal(calculateDifference("financial_documents", [
-    { sourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { sourceType: "import_cgd_extrato_ordem", operator: "+" },
     { sourceType: "import_cgd_cartao_credito", operator: "+" },
     { sourceType: "import_fdm_accounts", operator: "+" },
   ], [
     { sourceType: "financial_documents", amountSnapshot: 100 },
-    { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 40 },
+    { sourceType: "import_cgd_extrato_ordem", amountSnapshot: -40 },
     { sourceType: "import_cgd_cartao_credito", amountSnapshot: -30 },
     { sourceType: "import_fdm_accounts", amountSnapshot: -30 },
   ]), 0);
@@ -69,10 +69,10 @@ test("bank-led groups use the matching source formula", () => {
 
 test("rules preserve independent directions and operators", () => {
   assert.deepEqual(normalizeReconciliationRules([
-    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
     { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "financial_documents", operator: "+" },
   ]), [
-    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
     { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "financial_documents", operator: "+" },
   ]);
 });
@@ -88,12 +88,12 @@ test("rules reject self-pairs, duplicates, and unknown operators", () => {
 
 test("difference uses the base amount and each directional snapshot operator", () => {
   const rules = normalizeRuleSnapshot("financial_documents", [
-    { sourceType: "import_cgd_extrato_ordem", operator: "-" },
+    { sourceType: "import_cgd_extrato_ordem", operator: "+" },
     { sourceType: "import_cgd_cartao_credito", operator: "+" },
   ]);
   assert.equal(calculateDifference("financial_documents", rules, [
     { sourceType: "financial_documents", amountSnapshot: 100 },
-    { sourceType: "import_cgd_extrato_ordem", amountSnapshot: 60 },
+    { sourceType: "import_cgd_extrato_ordem", amountSnapshot: -60 },
     { sourceType: "import_cgd_cartao_credito", amountSnapshot: 40 },
   ]), 80);
 });

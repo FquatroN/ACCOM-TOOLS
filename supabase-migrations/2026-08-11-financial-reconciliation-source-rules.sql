@@ -16,7 +16,7 @@ alter table public.financial_reconciliations
 insert into public.financial_reconciliation_source_rules (base_source_type, matching_source_type, operator) values
   ('financial_documents', 'import_fdm_accounts', '+'),
   ('financial_documents', 'import_cgd_cartao_credito', '+'),
-  ('financial_documents', 'import_cgd_extrato_ordem', '-'),
+  ('financial_documents', 'import_cgd_extrato_ordem', '+'),
   ('import_fdm_accounts', 'import_cgd_extrato_ordem', '-'),
   ('import_cgd_cartao_credito', 'financial_documents', '+'),
   ('import_cgd_cartao_credito', 'import_cgd_extrato_ordem', '+'),
@@ -27,10 +27,18 @@ on conflict (base_source_type, matching_source_type) do nothing;
 
 update public.financial_reconciliations r
 set matching_source_rules = coalesce((
-  select jsonb_agg(jsonb_build_object('sourceType', sr.matching_source_type, 'operator', sr.operator) order by old_rule.ordinality)
+  select jsonb_agg(jsonb_build_object('sourceType', old_rule.source_type, 'operator', legacy_rule.operator) order by old_rule.ordinality)
   from jsonb_array_elements_text(r.matching_source_types) with ordinality old_rule(source_type, ordinality)
-  join public.financial_reconciliation_source_rules sr
-    on sr.base_source_type = r.base_source_type and sr.matching_source_type = old_rule.source_type
+  cross join lateral (
+    select case
+      when r.base_source_type = 'financial_documents' and old_rule.source_type in ('import_fdm_accounts','import_cgd_cartao_credito','import_cgd_extrato_ordem') then '+'
+      when r.base_source_type = 'import_fdm_accounts' and old_rule.source_type = 'import_cgd_extrato_ordem' then '-'
+      when r.base_source_type = 'import_cgd_cartao_credito' and old_rule.source_type in ('financial_documents','import_cgd_extrato_ordem') then '+'
+      when r.base_source_type = 'import_cgd_extrato_ordem' and old_rule.source_type = 'import_fdm_accounts' then '-'
+      when r.base_source_type = 'import_cgd_extrato_ordem' and old_rule.source_type in ('financial_documents','import_cgd_cartao_credito') then '+'
+    end as operator
+  ) legacy_rule
+  where legacy_rule.operator is not null
 ), '[]'::jsonb)
 where r.matching_source_rules = '[]'::jsonb
   and jsonb_array_length(r.matching_source_types) > 0;
