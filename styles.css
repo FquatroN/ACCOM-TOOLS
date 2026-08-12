@@ -6487,6 +6487,12 @@ button[id^="close-settings"] {
   background: color-mix(in srgb, var(--brand) 10%, white);
 }
 
+.financial-reconciliation-history-source {
+  min-width: 18rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 #financial-reconciliation-force-comment-wrap {
   display: grid;
   gap: .45rem;

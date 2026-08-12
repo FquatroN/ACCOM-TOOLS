@@ -35,6 +35,27 @@ const financialReconciliationSummaryMarkup = new Function(
   (value) => String(value),
 );
 
+const historySourceHelpers = new Function(
+  "FINANCIAL_RECONCILIATION_SOURCES",
+  "financialReconciliationSourceLabel",
+  "formatMoney",
+  "clean",
+  `${appFunctionSource("financialReconciliationHistorySourceSummary")}
+   ${appFunctionSource("financialReconciliationHistorySourceText")}
+   return { financialReconciliationHistorySourceSummary, financialReconciliationHistorySourceText };`,
+)(
+  {
+    financial_documents: "Financial Documents",
+    import_cgd_extrato_ordem: "CGD Bank Statement",
+  },
+  (value) => ({
+    financial_documents: "Financial Documents",
+    import_cgd_extrato_ordem: "CGD Bank Statement",
+  })[value] || value,
+  (value) => `${Number(value).toFixed(2)} €`,
+  (value) => String(value || "").trim(),
+);
+
 function renderCurrentSummary({ status, difference, items }) {
   const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"] }, items, audit: [] } };
   const els = {
@@ -355,31 +376,86 @@ test("Started and Complete Current summaries omit source prose and count every l
   }
 });
 
-test("Reconciliation history still renders base and matching source labels", () => {
-  const els = { financialReconciliationHistoryRows: { innerHTML: "" } };
-  const current = {
-    selectedReconciliationId: "",
-    workspace: { history: [{ id: "rec-1", created_at: "2026-08-12T10:00:00Z", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"], status: "complete", difference_amount: 0 }] },
+test("history source text uses raw ordered source aggregates", () => {
+  const record = {
+    sourceSummary: [
+      { sourceType: "financial_documents", recordCount: 4, amountTotal: 450 },
+      { sourceType: "import_cgd_extrato_ordem", recordCount: 4, amountTotal: -450 },
+    ],
   };
+  assert.equal(
+    historySourceHelpers.financialReconciliationHistorySourceText(record),
+    "Financial Documents (#4; 450.00 €), CGD Bank Statement (#4; -450.00 €)",
+  );
+});
+
+test("history source text distinguishes missing malformed and empty summaries", () => {
+  assert.equal(historySourceHelpers.financialReconciliationHistorySourceText({}), "Source details unavailable");
+  assert.equal(historySourceHelpers.financialReconciliationHistorySourceText({ sourceSummary: "invalid" }), "Source details unavailable");
+  assert.equal(historySourceHelpers.financialReconciliationHistorySourceText({ sourceSummary: [] }), "No records");
+  assert.deepEqual(
+    historySourceHelpers.financialReconciliationHistorySourceSummary({
+      sourceSummary: [
+        { sourceType: "financial_documents", recordCount: 2, amountTotal: 20 },
+        { sourceType: "unknown", recordCount: 1, amountTotal: 10 },
+        { sourceType: "financial_documents", recordCount: 2, amountTotal: 20 },
+        { sourceType: "import_cgd_extrato_ordem", recordCount: 0, amountTotal: -20 },
+      ],
+    }),
+    [{ sourceType: "financial_documents", recordCount: 2, amountTotal: 20 }],
+  );
+});
+
+function renderHistory(record, selectedReconciliationId = "") {
+  const els = { financialReconciliationHistoryRows: { innerHTML: "" } };
+  const current = { selectedReconciliationId, workspace: { history: [record] } };
   const render = new Function(
-    "financialReconciliationState", "clean", "escape", "formatDateTimeShort",
-    "financialReconciliationSourceLabel", "financialReconciliationStatusMarkup",
-    "financialReconciliationDifference", "formatMoney", "els",
-    `${appFunctionSource("renderFinancialReconciliationHistory")}\nreturn renderFinancialReconciliationHistory;`,
+    "financialReconciliationState",
+    "clean",
+    "escape",
+    "formatDateTimeShort",
+    "financialReconciliationHistorySourceText",
+    "financialReconciliationStatusMarkup",
+    "financialReconciliationDifference",
+    "formatMoney",
+    "els",
+    `${appFunctionSource("renderFinancialReconciliationHistory")}
+     return renderFinancialReconciliationHistory;`,
   )(
     () => current,
     (value) => String(value || "").trim(),
     (value) => String(value),
     () => "2026-08-12 10:00",
-    (value) => ({ financial_documents: "Financial Documents", import_cgd_extrato_ordem: "CGD Bank Statement" })[value] || value,
-    (value) => value,
+    historySourceHelpers.financialReconciliationHistorySourceText,
+    (status) => status === "complete" ? "Complete" : "Started",
     (value) => Number(value.difference_amount),
     (value) => `${Number(value).toFixed(2)} €`,
     els,
   );
   render();
-  assert.match(els.financialReconciliationHistoryRows.innerHTML, /Financial Documents/);
-  assert.match(els.financialReconciliationHistoryRows.innerHTML, /CGD Bank Statement/);
+  return els.financialReconciliationHistoryRows.innerHTML;
+}
+
+test("history renders one wrapping source summary and preserves row behavior", () => {
+  const markup = renderHistory({
+    id: "rec-1",
+    created_at: "2026-08-12T10:00:00Z",
+    status: "complete",
+    difference_amount: 0,
+    sourceSummary: [
+      { sourceType: "financial_documents", recordCount: 4, amountTotal: 450 },
+      { sourceType: "import_cgd_extrato_ordem", recordCount: 4, amountTotal: -450 },
+    ],
+  }, "rec-1");
+
+  assert.match(html, /<th>Created<\/th><th>Source<\/th><th>Status<\/th><th>Difference<\/th><th><\/th>/);
+  assert.doesNotMatch(html, /<th>Base source<\/th>|<th>Matching sources<\/th>/);
+  assert.match(markup, /class="selected"/);
+  assert.match(markup, /class="financial-reconciliation-history-source"/);
+  assert.match(markup, /Financial Documents \(#4; 450\.00 €\), CGD Bank Statement \(#4; -450\.00 €\)/);
+  assert.match(markup, /Complete/);
+  assert.match(markup, /0\.00 €/);
+  assert.match(markup, /data-financial-reconciliation-select="rec-1">Open<\/button>/);
 });
 
 test("reconciliation item details omit empty fields", () => {

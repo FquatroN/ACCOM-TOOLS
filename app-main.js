@@ -21586,10 +21586,43 @@ function renderFinancialReconciliationCurrent() {
   if (els.financialReconciliationDelete) els.financialReconciliationDelete.hidden = false;
 }
 
+function financialReconciliationHistorySourceSummary(record) {
+  if (!record || !Object.prototype.hasOwnProperty.call(record, "sourceSummary")) return null;
+  if (!Array.isArray(record.sourceSummary)) return null;
+  const seen = new Set();
+  return record.sourceSummary.flatMap((entry) => {
+    const sourceType = clean(entry?.sourceType);
+    const recordCount = Number(entry?.recordCount);
+    const amountTotal = Number(entry?.amountTotal);
+    if (!Object.prototype.hasOwnProperty.call(FINANCIAL_RECONCILIATION_SOURCES, sourceType)
+      || seen.has(sourceType)
+      || !Number.isInteger(recordCount)
+      || recordCount <= 0
+      || !Number.isFinite(amountTotal)) return [];
+    seen.add(sourceType);
+    return [{ sourceType, recordCount, amountTotal }];
+  });
+}
+
+function financialReconciliationHistorySourceText(record) {
+  const summary = financialReconciliationHistorySourceSummary(record);
+  if (summary === null) return "Source details unavailable";
+  if (!summary.length) return "No records";
+  return summary.map((entry) => (
+    `${financialReconciliationSourceLabel(entry.sourceType)} (#${entry.recordCount}; ${formatMoney(entry.amountTotal)})`
+  )).join(", ");
+}
+
 function renderFinancialReconciliationHistory() {
   const history = financialReconciliationState().workspace?.history || [];
   if (!els.financialReconciliationHistoryRows) return;
-  els.financialReconciliationHistoryRows.innerHTML = history.length ? history.map((record) => `<tr class="${clean(record.id) === financialReconciliationState().selectedReconciliationId ? "selected" : ""}"><td>${escape(formatDateTimeShort(record.created_at) || "-")}</td><td>${escape(financialReconciliationSourceLabel(record.base_source_type))}</td><td>${escape((record.matching_source_types || []).map(financialReconciliationSourceLabel).join(", "))}</td><td>${financialReconciliationStatusMarkup(record.status)}</td><td>${escape(formatMoney(financialReconciliationDifference(record)))}</td><td><button type="button" class="ghost" data-financial-reconciliation-select="${escape(record.id)}">Open</button></td></tr>`).join("") : '<tr><td colspan="6" class="empty">No reconciliations yet.</td></tr>';
+  els.financialReconciliationHistoryRows.innerHTML = history.length ? history.map((record) => `<tr class="${clean(record.id) === financialReconciliationState().selectedReconciliationId ? "selected" : ""}">
+  <td>${escape(formatDateTimeShort(record.created_at) || "-")}</td>
+  <td class="financial-reconciliation-history-source">${escape(financialReconciliationHistorySourceText(record))}</td>
+  <td>${financialReconciliationStatusMarkup(record.status)}</td>
+  <td>${escape(formatMoney(financialReconciliationDifference(record)))}</td>
+  <td><button type="button" class="ghost" data-financial-reconciliation-select="${escape(record.id)}">Open</button></td>
+</tr>`).join("") : '<tr><td colspan="5" class="empty">No reconciliations yet.</td></tr>';
 }
 
 function renderFinancialReconciliation() {
