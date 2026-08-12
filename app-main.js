@@ -1940,12 +1940,6 @@ const els = {
   financialReconciliationStatus: document.getElementById("financial-reconciliation-status"),
   financialReconciliationCurrent: document.getElementById("financial-reconciliation-current"),
   financialReconciliationHistoryRows: document.getElementById("financial-reconciliation-history-rows"),
-  financialReconciliationCompleteModal: document.getElementById("financial-reconciliation-complete-modal"),
-  financialReconciliationCompleteMessage: document.getElementById("financial-reconciliation-complete-message"),
-  financialReconciliationForceCommentWrap: document.getElementById("financial-reconciliation-force-comment-wrap"),
-  financialReconciliationForceComment: document.getElementById("financial-reconciliation-force-comment"),
-  financialReconciliationConfirmComplete: document.getElementById("financial-reconciliation-confirm-complete"),
-  financialReconciliationConfirmForce: document.getElementById("financial-reconciliation-confirm-force"),
   financialReconciliationNew: document.getElementById("financial-reconciliation-new"),
   financialReconciliationReopen: document.getElementById("financial-reconciliation-reopen"),
   financialReconciliationDelete: document.getElementById("financial-reconciliation-delete"),
@@ -2600,16 +2594,11 @@ function bindEvents() {
   els.financialReconciliationStart?.addEventListener("click", onFinancialReconciliationStartClick);
   els.financialReconciliationRows?.addEventListener("click", onFinancialReconciliationRowsClick);
   els.financialReconciliationCurrent?.addEventListener("click", onFinancialReconciliationCurrentClick);
+  els.financialReconciliationCurrent?.addEventListener("input", onFinancialReconciliationCurrentInput);
   els.financialReconciliationHistoryRows?.addEventListener("click", onFinancialReconciliationHistoryClick);
-  els.financialReconciliationConfirmComplete?.addEventListener("click", () => confirmFinancialReconciliationCompletion("complete"));
-  els.financialReconciliationConfirmForce?.addEventListener("click", () => confirmFinancialReconciliationCompletion("force_complete"));
-  els.financialReconciliationForceComment?.addEventListener("input", renderFinancialReconciliationCompletionModal);
   els.financialReconciliationNew?.addEventListener("click", startNewFinancialReconciliation);
   els.financialReconciliationReopen?.addEventListener("click", reopenFinancialReconciliation);
   els.financialReconciliationDelete?.addEventListener("click", deleteFinancialReconciliation);
-  els.financialReconciliationCompleteModal?.addEventListener("click", (event) => {
-    if (event.target === els.financialReconciliationCompleteModal || event.target.closest("[data-financial-reconciliation-close]")) closeFinancialReconciliationCompletionModal();
-  });
   els.navGuestsBi?.addEventListener("click", () => setView("guests-bi"));
   els.navBookingsBi?.addEventListener("click", () => setView("bookings-bi"));
   els.navFinancialBi?.addEventListener("click", () => setView("financial-bi"));
@@ -21569,6 +21558,8 @@ function renderFinancialReconciliationCurrent() {
   }
   const difference = financialReconciliationDifference(reconciliation);
   const complete = clean(reconciliation.status) === "complete";
+  const completionDraft = financialReconciliationCompletionDraft(reconciliation.id);
+  const completion = financialReconciliationCompletionPresentation(difference, workspace.items.length, completionDraft);
   const items = workspace.items.map((item) => {
     const details = financialReconciliationItemDetails(item);
     return `<li><span>${escape(financialReconciliationSourceLabel(item.source_type))}</span><strong>${escape(formatMoney(Number(item.amount_snapshot || 0)))}</strong>${complete ? "" : `<button type="button" class="ghost" data-financial-reconciliation-remove data-source-type="${escape(item.source_type)}" data-source-id="${escape(item.source_id)}">Remove</button>`}${details ? `<small class="financial-reconciliation-item-details">${escape(details)}</small>` : ""}</li>`;
@@ -21578,7 +21569,13 @@ function renderFinancialReconciliationCurrent() {
     return `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}${comment ? ` · ${escape(comment)}` : ""}</span></li>`;
   }).join("") || "<li>No audit entries yet.</li>";
   const matchingSources = reconciliationRulesFor(reconciliation.base_source_type).map((rule) => financialReconciliationSourceLabel(rule.sourceType));
-  els.financialReconciliationCurrent.innerHTML = `<div class="financial-reconciliation-summary"><div>${financialReconciliationStatusMarkup(reconciliation.status)}<p>${escape(financialReconciliationSourceLabel(reconciliation.base_source_type))} with ${escape(matchingSources.join(", "))}</p></div><strong class="financial-reconciliation-difference${difference === 0 ? "" : " financial-reconciliation-forced-difference"}">Difference: ${escape(formatMoney(difference))}</strong></div><h3>Locked records</h3><ul class="financial-reconciliation-items">${items}</ul>${!complete ? `<button type="button" data-financial-reconciliation-complete ${workspace.items.length ? "" : "disabled"}>${difference === 0 ? "Complete reconciliation" : "Force complete"}</button>` : `<p class="field-hint">Completed ${escape(reconciliation.completion_type || "normally")}${reconciliation.forced_completion_comment ? ` · ${escape(reconciliation.forced_completion_comment)}` : ""}</p>`}<h3>Audit trail</h3><ul class="financial-reconciliation-audit">${audit}</ul>`;
+  const completionControls = complete ? `<p class="field-hint">Completed ${escape(reconciliation.completion_type || "normally")}${reconciliation.forced_completion_comment ? ` · ${escape(reconciliation.forced_completion_comment)}` : ""}</p>` : `<div class="financial-reconciliation-completion">
+    <label>Completion comment <span class="field-hint">${completion.required ? "Comment is required because the difference is not zero" : "Comment is optional because the difference is zero"}</span>
+      <textarea data-financial-reconciliation-completion-comment rows="3" ${completion.required ? 'required aria-required="true"' : ""} placeholder="Add a completion comment.">${escape(completionDraft)}</textarea>
+    </label>
+    <button type="button" ${completion.required ? 'class="danger"' : ""} data-financial-reconciliation-complete ${completion.disabled ? "disabled" : ""}>${completion.label}</button>
+  </div>`;
+  els.financialReconciliationCurrent.innerHTML = `<div class="financial-reconciliation-summary"><div>${financialReconciliationStatusMarkup(reconciliation.status)}<p>${escape(financialReconciliationSourceLabel(reconciliation.base_source_type))} with ${escape(matchingSources.join(", "))}</p></div><strong class="financial-reconciliation-difference${difference === 0 ? "" : " financial-reconciliation-forced-difference"}">Difference: ${escape(formatMoney(difference))}</strong></div><h3>Locked records</h3><ul class="financial-reconciliation-items">${items}</ul>${completionControls}<h3>Audit trail</h3><ul class="financial-reconciliation-audit">${audit}</ul>`;
   if (els.financialReconciliationReopen) els.financialReconciliationReopen.hidden = !complete;
   if (els.financialReconciliationNew) els.financialReconciliationNew.hidden = !complete;
   if (els.financialReconciliationDelete) els.financialReconciliationDelete.hidden = false;
@@ -21590,20 +21587,6 @@ function renderFinancialReconciliationHistory() {
   els.financialReconciliationHistoryRows.innerHTML = history.length ? history.map((record) => `<tr class="${clean(record.id) === financialReconciliationState().selectedReconciliationId ? "selected" : ""}"><td>${escape(formatDateTimeShort(record.created_at) || "-")}</td><td>${escape(financialReconciliationSourceLabel(record.base_source_type))}</td><td>${escape((record.matching_source_types || []).map(financialReconciliationSourceLabel).join(", "))}</td><td>${financialReconciliationStatusMarkup(record.status)}</td><td>${escape(formatMoney(financialReconciliationDifference(record)))}</td><td><button type="button" class="ghost" data-financial-reconciliation-select="${escape(record.id)}">Open</button></td></tr>`).join("") : '<tr><td colspan="6" class="empty">No reconciliations yet.</td></tr>';
 }
 
-function renderFinancialReconciliationCompletionModal() {
-  const reconciliation = financialReconciliationActiveRecord();
-  if (!els.financialReconciliationCompleteModal || els.financialReconciliationCompleteModal.hidden || !reconciliation) return;
-  const difference = financialReconciliationDifference(reconciliation);
-  const force = difference !== 0;
-  if (els.financialReconciliationCompleteMessage) els.financialReconciliationCompleteMessage.textContent = force ? `The current difference is ${formatMoney(difference)}. A mandatory comment is required to force completion.` : "The current difference is zero. Confirm to complete this reconciliation.";
-  if (els.financialReconciliationForceCommentWrap) els.financialReconciliationForceCommentWrap.hidden = !force;
-  if (els.financialReconciliationConfirmComplete) els.financialReconciliationConfirmComplete.hidden = force;
-  if (els.financialReconciliationConfirmForce) {
-    els.financialReconciliationConfirmForce.hidden = !force;
-    els.financialReconciliationConfirmForce.disabled = force && !clean(els.financialReconciliationForceComment?.value);
-  }
-}
-
 function renderFinancialReconciliation() {
   if (!canAppFinancialReconciliation()) return;
   renderFinancialReconciliationSourceControls();
@@ -21611,7 +21594,6 @@ function renderFinancialReconciliation() {
   renderFinancialReconciliationCandidates();
   renderFinancialReconciliationCurrent();
   renderFinancialReconciliationHistory();
-  renderFinancialReconciliationCompletionModal();
 }
 
 function onFinancialReconciliationSourceChange() {
@@ -21640,6 +21622,7 @@ async function runFinancialReconciliationAction(payload) {
   current.pendingAction = payload.action;
   try {
     const result = await api("/api/reconciliation", { method: "POST", body: payload });
+    if (["complete", "force_complete", "delete"].includes(payload.action) && typeof clearFinancialReconciliationCompletionDraft === "function") clearFinancialReconciliationCompletionDraft();
     if (result?.deleted) {
       current.selectedReconciliationId = "";
       current.workspace = null;
@@ -21696,7 +21679,41 @@ function onFinancialReconciliationCurrentClick(event) {
     if (reconciliation) runFinancialReconciliationAction({ action: "remove_item", reconciliationId: reconciliation.id, sourceType: clean(remove.dataset.sourceType), sourceId: clean(remove.dataset.sourceId) });
     return;
   }
-  if (target?.closest("[data-financial-reconciliation-complete]")) openFinancialReconciliationCompletionModal();
+  if (target?.closest("[data-financial-reconciliation-complete]")) completeFinancialReconciliation();
+}
+
+function onFinancialReconciliationCurrentInput(event) {
+  const textarea = event.target instanceof HTMLElement ? event.target.closest("[data-financial-reconciliation-completion-comment]") : null;
+  if (!textarea) return;
+  const reconciliation = financialReconciliationActiveRecord();
+  if (!reconciliation) return;
+  const current = financialReconciliationState();
+  updateFinancialReconciliationCompletionDraft(reconciliation.id, textarea.value);
+  const presentation = financialReconciliationCompletionPresentation(
+    financialReconciliationDifference(reconciliation),
+    current.workspace?.items?.length || 0,
+    textarea.value,
+  );
+  const button = els.financialReconciliationCurrent?.querySelector("[data-financial-reconciliation-complete]");
+  if (button) button.disabled = presentation.disabled;
+}
+
+function completeFinancialReconciliation() {
+  const reconciliation = financialReconciliationActiveRecord();
+  if (!reconciliation) return;
+  const current = financialReconciliationState();
+  const comment = financialReconciliationCompletionDraft(reconciliation.id);
+  const presentation = financialReconciliationCompletionPresentation(
+    financialReconciliationDifference(reconciliation),
+    current.workspace?.items?.length || 0,
+    comment,
+  );
+  if (presentation.disabled) return;
+  runFinancialReconciliationAction({
+    action: presentation.action,
+    reconciliationId: reconciliation.id,
+    comment: clean(comment),
+  });
 }
 
 async function onFinancialReconciliationHistoryClick(event) {
@@ -21710,26 +21727,6 @@ async function onFinancialReconciliationHistoryClick(event) {
   current.workspace = { ...current.workspace, reconciliation: record };
   current.loaded = false;
   await loadFinancialReconciliationWorkspace({ silent: true });
-}
-
-function openFinancialReconciliationCompletionModal() {
-  if (!financialReconciliationActiveRecord() || !els.financialReconciliationCompleteModal) return;
-  if (els.financialReconciliationForceComment) els.financialReconciliationForceComment.value = "";
-  els.financialReconciliationCompleteModal.hidden = false;
-  renderFinancialReconciliationCompletionModal();
-}
-
-function closeFinancialReconciliationCompletionModal() {
-  if (els.financialReconciliationCompleteModal) els.financialReconciliationCompleteModal.hidden = true;
-}
-
-function confirmFinancialReconciliationCompletion(action) {
-  const reconciliation = financialReconciliationActiveRecord();
-  if (!reconciliation) return;
-  const comment = clean(els.financialReconciliationForceComment?.value);
-  if (action === "force_complete" && !comment) return;
-  closeFinancialReconciliationCompletionModal();
-  runFinancialReconciliationAction({ action, reconciliationId: reconciliation.id, comment });
 }
 
 function reopenFinancialReconciliation() {
@@ -21748,6 +21745,7 @@ async function startNewFinancialReconciliation() {
   const current = financialReconciliationState();
   const reconciliation = financialReconciliationActiveRecord();
   if (!reconciliation || clean(reconciliation.status) !== "complete") return;
+  clearFinancialReconciliationCompletionDraft();
   current.selectedReconciliationId = "";
   current.workspace = { ...(current.workspace || {}), reconciliation: null, items: [], audit: [] };
   current.loaded = false;

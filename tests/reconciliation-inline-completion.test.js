@@ -79,3 +79,115 @@ test("completion draft can be cleared after a successful lifecycle action", () =
   draft.clearFinancialReconciliationCompletionDraft();
   assert.deepEqual(draft.current.completionCommentDraft, { reconciliationId: "", value: "" });
 });
+
+test("completion uses inline controls and removes the modal contract", () => {
+  assert.doesNotMatch(html, /financial-reconciliation-complete-modal/);
+  assert.doesNotMatch(appMain, /renderFinancialReconciliationCompletionModal|openFinancialReconciliationCompletionModal|closeFinancialReconciliationCompletionModal|confirmFinancialReconciliationCompletion/);
+  assert.doesNotMatch(appMain, /financialReconciliationCompleteModal|financialReconciliationForceComment|financialReconciliationConfirmComplete|financialReconciliationConfirmForce/);
+  assert.match(appMain, /data-financial-reconciliation-completion-comment/);
+  assert.match(appMain, /Completion comment/);
+  assert.match(appMain, /Comment is required because the difference is not zero/);
+  assert.match(appMain, /data-financial-reconciliation-complete/);
+  assert.match(appMain, /const completionControls = complete \?/);
+});
+
+function completionActionHarness({ difference, items, comment }) {
+  const calls = [];
+  const reconciliation = { id: "rec-1", difference_amount: difference };
+  const complete = new Function(
+    "financialReconciliationActiveRecord",
+    "financialReconciliationState",
+    "financialReconciliationDifference",
+    "financialReconciliationCompletionDraft",
+    "financialReconciliationCompletionPresentation",
+    "clean",
+    "runFinancialReconciliationAction",
+    `${appFunctionSource("completeFinancialReconciliation")}\nreturn completeFinancialReconciliation;`,
+  )(
+    () => reconciliation,
+    () => ({ workspace: { items } }),
+    (value) => Number(value.difference_amount),
+    () => comment,
+    presentation,
+    (value) => String(value || "").trim(),
+    (payload) => calls.push(payload),
+  );
+  complete();
+  return calls;
+}
+
+test("zero difference completes immediately with an optional comment", () => {
+  assert.deepEqual(completionActionHarness({ difference: 0, items: [{}], comment: "optional note" }), [
+    { action: "complete", reconciliationId: "rec-1", comment: "optional note" },
+  ]);
+});
+
+test("non-zero difference submits only a valid mandatory comment", () => {
+  assert.deepEqual(completionActionHarness({ difference: 8, items: [{}], comment: "   " }), []);
+  assert.deepEqual(completionActionHarness({ difference: 8, items: [{}], comment: "variance approved" }), [
+    { action: "force_complete", reconciliationId: "rec-1", comment: "variance approved" },
+  ]);
+});
+
+async function completionCleanupCount(api, action = "force_complete") {
+  const current = {
+    pendingAction: "",
+    workspace: { sourceConfig: {}, items: [{}] },
+    selectedReconciliationId: "rec-1",
+  };
+  let clears = 0;
+  const source = appFunctionSource("runFinancialReconciliationAction").replace(/^function /, "async function ");
+  const runAction = new Function(
+    "financialReconciliationState", "api", "normalizeFinancialReconciliationWorkspace", "clean",
+    "loadFinancialReconciliationWorkspace", "showToast", "setFinancialReconciliationStatus",
+    "renderFinancialReconciliation", "clearFinancialReconciliationCompletionDraft",
+    `${source}\nreturn runFinancialReconciliationAction;`,
+  )(
+    () => current,
+    api,
+    (value) => ({ items: [], audit: [], history: [], ...value }),
+    (value) => String(value || "").trim(),
+    async () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => { clears += 1; },
+  );
+  await runAction({ action, reconciliationId: "rec-1", comment: "approved" });
+  return clears;
+}
+
+test("successful completion clears its draft but a failed completion keeps it", async () => {
+  assert.equal(await completionCleanupCount(async () => ({ reconciliation: { id: "rec-1", status: "complete" } })), 1);
+  assert.equal(await completionCleanupCount(async () => { throw new Error("offline"); }), 0);
+});
+
+test("successful deletion clears its draft", async () => {
+  assert.equal(await completionCleanupCount(async () => ({ deleted: true }), "delete"), 1);
+});
+
+test("starting a new reconciliation clears its draft", async () => {
+  const current = {
+    selectedReconciliationId: "rec-1",
+    workspace: { reconciliation: { id: "rec-1", status: "complete" }, items: [{}], audit: [{}] },
+    loaded: true,
+  };
+  let clears = 0;
+  const source = appFunctionSource("startNewFinancialReconciliation").replace(/^function /, "async function ");
+  const startNew = new Function(
+    "financialReconciliationState", "financialReconciliationActiveRecord", "clean",
+    "clearFinancialReconciliationCompletionDraft", "loadFinancialReconciliationWorkspace",
+    "setFinancialReconciliationStatus",
+    `${source}\nreturn startNewFinancialReconciliation;`,
+  )(
+    () => current,
+    () => current.workspace.reconciliation,
+    (value) => String(value || "").trim(),
+    () => { clears += 1; },
+    async () => {},
+    () => {},
+  );
+  await startNew();
+  assert.equal(clears, 1);
+  assert.equal(current.selectedReconciliationId, "");
+});
