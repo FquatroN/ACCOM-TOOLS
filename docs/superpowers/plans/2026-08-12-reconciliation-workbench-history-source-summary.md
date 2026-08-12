@@ -274,9 +274,7 @@ declare
   old_history_count integer;
   new_history_count integer;
 begin
-  select pg_get_functiondef(
-    'public.get_financial_reconciliation_workspace(uuid,text,jsonb,integer,integer)'::regprocedure
-  ) into definition;
+  select pg_get_functiondef('public.get_financial_reconciliation_workspace(uuid,text,jsonb,integer,integer)'::regprocedure) into definition;
   original_definition := definition;
 
   old_history_count := (length(definition)-length(replace(definition,old_history,''))) / length(old_history);

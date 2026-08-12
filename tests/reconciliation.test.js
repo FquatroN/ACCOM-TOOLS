@@ -23,6 +23,27 @@ const oldestFirstMigration = fs.existsSync(oldestFirstMigrationPath)
   ? fs.readFileSync(oldestFirstMigrationPath, "utf8")
   : "";
 
+const historySourceSummaryMigrationPath = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-12-financial-reconciliation-history-source-summary.sql",
+);
+const historySourceSummaryMigration = fs.existsSync(historySourceSummaryMigrationPath)
+  ? fs.readFileSync(historySourceSummaryMigrationPath, "utf8")
+  : "";
+
+test("history source-summary migration safely enriches the workspace function", () => {
+  assert.match(historySourceSummaryMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
+  assert.match(historySourceSummaryMigration, /'sourceSummary'/);
+  assert.match(historySourceSummaryMigration, /count\(\*\)/i);
+  assert.match(historySourceSummaryMigration, /sum\(i\.amount_snapshot\)/i);
+  assert.match(historySourceSummaryMigration, /jsonb_array_elements_text\(h\.matching_source_types\)\s+with ordinality/i);
+  assert.match(historySourceSummaryMigration, /old_history_count = 1\s+and new_history_count = 0/is);
+  assert.match(historySourceSummaryMigration, /old_history_count = 0\s+and new_history_count = 1/is);
+  assert.match(historySourceSummaryMigration, /unexpected reconciliation workspace function definition/i);
+});
+
 test("oldest-first migration targets the workspace function and declares deterministic clauses", () => {
   assert.match(oldestFirstMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
   assert.match(oldestFirstMigration, /new_page_order constant text := \$\$order by source_date asc, id asc offset v_offset limit p_page_size\$\$/i);

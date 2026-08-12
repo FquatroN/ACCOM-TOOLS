@@ -11,7 +11,9 @@ insert into financial_reconciliations (
 \ir ../supabase-migrations/2026-08-11-financial-reconciliation-source-rules.sql
 \ir ../supabase-migrations/2026-08-12-financial-reconciliation-oldest-first-candidates.sql
 \ir ../supabase-migrations/2026-08-12-financial-reconciliation-oldest-first-candidates.sql
-do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); old_doc_id uuid := '00000000-0000-0000-0000-000000000101'; same_date_low_id uuid := '00000000-0000-0000-0000-000000000102'; same_date_high_id uuid := '00000000-0000-0000-0000-000000000103'; new_doc_id uuid := '00000000-0000-0000-0000-000000000104'; candidate_ids uuid[]; r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean;
+\ir ../supabase-migrations/2026-08-12-financial-reconciliation-history-source-summary.sql
+\ir ../supabase-migrations/2026-08-12-financial-reconciliation-history-source-summary.sql
+do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); old_doc_id uuid := '00000000-0000-0000-0000-000000000101'; same_date_low_id uuid := '00000000-0000-0000-0000-000000000102'; same_date_high_id uuid := '00000000-0000-0000-0000-000000000103'; new_doc_id uuid := '00000000-0000-0000-0000-000000000104'; candidate_ids uuid[]; r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean; history_rid uuid := gen_random_uuid(); history_row jsonb; history_source_ids text[]; history_card_item_id uuid := gen_random_uuid();
 begin
   if not coalesce((
     select c.relrowsecurity
@@ -62,6 +64,73 @@ begin
   if not exists (select 1 from financial_reconciliation_source_rules where base_source_type='financial_documents' and matching_source_type='import_cgd_extrato_ordem' and operator='+')
      or not exists (select 1 from financial_reconciliation_source_rules where base_source_type='import_cgd_extrato_ordem' and matching_source_type='financial_documents' and operator='+') then
     raise exception 'Independent reverse-direction rules were not seeded';
+  end if;
+  insert into financial_reconciliations(
+    id,status,base_source_type,matching_source_types,matching_source_rules,created_by
+  ) values (
+    history_rid,'started','financial_documents',
+    '["import_cgd_extrato_ordem","import_cgd_cartao_credito"]'::jsonb,
+    '[{"sourceType":"import_cgd_extrato_ordem","operator":"+"},{"sourceType":"import_cgd_cartao_credito","operator":"-"}]'::jsonb,
+    'smoke-history-summary'
+  );
+
+  insert into financial_reconciliation_items(
+    reconciliation_id,source_type,source_id,amount_snapshot,created_by
+  ) values
+    (history_rid,'financial_documents',gen_random_uuid(),200,'smoke-history-summary'),
+    (history_rid,'financial_documents',gen_random_uuid(),250,'smoke-history-summary'),
+    (history_rid,'import_cgd_extrato_ordem',gen_random_uuid(),-200,'smoke-history-summary'),
+    (history_rid,'import_cgd_extrato_ordem',gen_random_uuid(),-250,'smoke-history-summary'),
+    (history_rid,'import_cgd_cartao_credito',history_card_item_id,25,'smoke-history-summary');
+
+  r := get_financial_reconciliation_workspace(
+    history_rid,'financial_documents','{}'::jsonb,1,50
+  );
+  select history_record
+  into history_row
+  from jsonb_array_elements(r->'history') history_records(history_record)
+  where history_record->>'id'=history_rid::text;
+
+  select array_agg(source_entry->>'sourceType' order by position)
+  into history_source_ids
+  from jsonb_array_elements(history_row->'sourceSummary')
+    with ordinality source_entries(source_entry,position);
+
+  if history_source_ids is distinct from array[
+    'financial_documents','import_cgd_extrato_ordem','import_cgd_cartao_credito'
+  ] then
+    raise exception 'History sources were not ordered base-first then by saved matching source order: %', history_source_ids;
+  end if;
+
+  if history_row->'sourceSummary'->0 is distinct from
+     '{"sourceType":"financial_documents","recordCount":2,"amountTotal":450}'::jsonb
+     or history_row->'sourceSummary'->1 is distinct from
+     '{"sourceType":"import_cgd_extrato_ordem","recordCount":2,"amountTotal":-450}'::jsonb
+     or history_row->'sourceSummary'->2 is distinct from
+     '{"sourceType":"import_cgd_cartao_credito","recordCount":1,"amountTotal":25}'::jsonb then
+    raise exception 'History source summary did not preserve raw counts and amount snapshots: %', history_row->'sourceSummary';
+  end if;
+
+  delete from financial_reconciliation_items
+  where reconciliation_id=history_rid
+    and source_type='import_cgd_cartao_credito'
+    and source_id=history_card_item_id;
+
+  r := get_financial_reconciliation_workspace(
+    history_rid,'financial_documents','{}'::jsonb,1,50
+  );
+  select history_record
+  into history_row
+  from jsonb_array_elements(r->'history') history_records(history_record)
+  where history_record->>'id'=history_rid::text;
+
+  if jsonb_array_length(history_row->'sourceSummary') <> 2
+     or exists (
+       select 1
+       from jsonb_array_elements(history_row->'sourceSummary') entry
+       where entry->>'sourceType'='import_cgd_cartao_credito'
+     ) then
+    raise exception 'Removed or unused history source was not omitted: %', history_row->'sourceSummary';
   end if;
   select coalesce(jsonb_agg(jsonb_build_object('base_source_type', base_source_type, 'matching_source_type', matching_source_type, 'operator', operator) order by base_source_type, matching_source_type), '[]'::jsonb)
     into v_before
