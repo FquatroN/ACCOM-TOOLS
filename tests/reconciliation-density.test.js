@@ -139,6 +139,14 @@ test("workbench uses one source selector and displays saved rule hints", () => {
   assert.match(appMain, /action: "start", sourceType, sourceId/);
 });
 
+test("workbench exposes source controls before the dynamic filter row", () => {
+  assert.match(
+    html,
+    /class="financial-reconciliation-source-row"[\s\S]*id="financial-reconciliation-source"[\s\S]*id="financial-reconciliation-rule-hint"[\s\S]*<\/div>\s*<div id="financial-reconciliation-dynamic-filters"/,
+  );
+  assert.match(appMain, /class="financial-reconciliation-filter-\$\{escape\(field\)\}"/);
+});
+
 test("workbench rule snapshots keep only valid unique signed sources", () => {
   const normalizeRuleSnapshot = new Function("FINANCIAL_RECONCILIATION_SOURCES", `
 ${appFunctionSource("clean")}

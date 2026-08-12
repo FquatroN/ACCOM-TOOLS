@@ -6247,11 +6247,42 @@ button[id^="close-settings"] {
 }
 
 .financial-reconciliation-filters {
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .65rem;
 }
 
-.financial-reconciliation-rule-hint { align-self: end; margin: 0; font-size: .68rem; }
-.financial-reconciliation-workbench-card .financial-reconciliation-rule-hint { grid-column: span 2; }
+.financial-reconciliation-source-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
+  gap: .75rem;
+  align-items: end;
+}
+
+.financial-reconciliation-rule-hint {
+  align-self: end;
+  margin: 0 0 .6rem;
+  font-size: .68rem;
+}
+
+.financial-reconciliation-dynamic-filters {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: .6rem;
+  align-items: end;
+  min-width: 0;
+}
+
+.financial-reconciliation-dynamic-filters > label { min-width: 0; }
+.financial-reconciliation-filter-description { flex: 1 1 10rem; }
+.financial-reconciliation-filter-dateFrom,
+.financial-reconciliation-filter-dateTo { flex: 0 1 8.75rem; }
+.financial-reconciliation-filter-amountMin,
+.financial-reconciliation-filter-amountMax { flex: 0 1 7.5rem; }
+.financial-reconciliation-filter-supplier,
+.financial-reconciliation-filter-payment,
+.financial-reconciliation-filter-account,
+.financial-reconciliation-filter-category { flex: 0 1 8rem; }
 
 .financial-reconciliation-workbench-card h2,
 .financial-reconciliation-eligible-card h2 {
@@ -6292,6 +6323,11 @@ button[id^="close-settings"] {
   white-space: nowrap;
 }
 
+@media (max-width: 1200px) {
+  .financial-reconciliation-dynamic-filters { flex-wrap: wrap; }
+  .financial-reconciliation-dynamic-filters > label { flex-grow: 1; }
+}
+
 @media (max-width: 768px) {
   .financial-reconciliation-filters input,
   .financial-reconciliation-filters select {
@@ -6312,13 +6348,8 @@ button[id^="close-settings"] {
     font-size: .70rem;
   }
 
-  .financial-reconciliation-workbench-card .financial-reconciliation-rule-hint {
-    grid-column: 1 / -1;
-  }
-}
-
-.financial-reconciliation-dynamic-filters {
-  display: contents;
+  .financial-reconciliation-source-row { grid-template-columns: 1fr; }
+  .financial-reconciliation-rule-hint { margin: 0; }
 }
 
 .financial-reconciliation-filter-wide {
