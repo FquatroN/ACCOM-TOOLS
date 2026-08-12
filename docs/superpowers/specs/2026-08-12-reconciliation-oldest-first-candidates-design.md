@@ -2,7 +2,7 @@
 
 ## Goal
 
-Always show eligible reconciliation records from the oldest date to the newest date, and remove the source-summary sentence displayed beneath the status in Current reconciliation.
+Always show eligible reconciliation records from the oldest date to the newest date, and simplify the Current reconciliation summary by removing its source sentence and adding a locked-record count.
 
 ## Eligible-record ordering
 
@@ -29,10 +29,16 @@ The migration must preserve every other part of the installed workspace function
 
 Remove the sentence that lists the base source and matching sources beneath the status. The sentence is omitted for both Started and Complete reconciliations.
 
+Display one compact summary row in this order:
+
+1. status badge;
+2. `#records: N`, where `N` is the total number of currently locked records across every source in the reconciliation;
+3. `Dif: AMOUNT`, using the existing formatted difference amount.
+
+The locked-record count comes from the loaded Current reconciliation items and requires no new API or database field. It is displayed for both Started and Complete reconciliations. Replace the existing `Difference:` label with `Dif:`.
+
 Keep all other Current reconciliation content unchanged:
 
-- status badge;
-- difference amount;
 - locked records and their details;
 - inline completion controls or completed summary;
 - audit trail;
@@ -57,10 +63,12 @@ Automated tests will verify:
 - the candidate-specific descending order is removed;
 - the migration verifies its result and is idempotent for an already-ascending function;
 - Current reconciliation no longer renders the base/matching-source summary;
+- Current reconciliation renders status, `#records: N`, and `Dif: AMOUNT` in that order for both Started and Complete states;
+- the count matches the complete locked-item list, including records from every source;
 - the history table still renders Base source and Matching sources;
 - existing reconciliation behavior tests continue to pass.
 
-Manual verification will confirm that eligible records display oldest-to-newest for at least two source selections after the SQL migration is applied, and that neither Started nor Complete Current reconciliation panels show the removed source summary.
+Manual verification will confirm that eligible records display oldest-to-newest for at least two source selections after the SQL migration is applied, that neither Started nor Complete Current reconciliation panels show the removed source summary, and that their compact summary rows show the correct locked-record counts.
 
 ## Out of scope
 
