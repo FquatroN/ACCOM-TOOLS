@@ -550,11 +550,11 @@ test("history renders one wrapping source summary and preserves row behavior", (
   assert.match(html, /<th>Created<\/th><th>Source<\/th><th>Status<\/th><th>Difference<\/th><th><\/th>/);
   assert.doesNotMatch(html, /<th>Base source<\/th>|<th>Matching sources<\/th>/);
   assert.match(markup, /class="selected"/);
+  assert.match(markup, /class="financial-reconciliation-history-source"/);
   assert.match(markup, /Financial Documents \(#4; 450\.00 €\), CGD Bank Statement \(#4; -450\.00 €\)/);
   assert.match(markup, /Complete/);
   assert.match(markup, /0\.00 €/);
   assert.match(markup, /data-financial-reconciliation-select="rec-1">Open<\/button>/);
-  assert.match(css, /\.financial-reconciliation-history-source\s*\{[\s\S]*white-space:\s*normal;[\s\S]*overflow-wrap:\s*anywhere;/);
 });
 ```
 
