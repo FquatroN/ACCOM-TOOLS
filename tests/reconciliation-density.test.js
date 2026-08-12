@@ -406,6 +406,28 @@ test("history source text distinguishes missing malformed and empty summaries", 
   );
 });
 
+test("history source summary rejects coercible non-numbers and preserves numeric zero totals", () => {
+  const malformedEntries = [
+    { sourceType: "financial_documents", recordCount: "2", amountTotal: 20 },
+    { sourceType: "financial_documents", recordCount: true, amountTotal: 20 },
+    { sourceType: "financial_documents", recordCount: 2, amountTotal: null },
+    { sourceType: "financial_documents", recordCount: 2, amountTotal: "" },
+    { sourceType: "financial_documents", recordCount: 2, amountTotal: false },
+  ];
+  for (const entry of malformedEntries) {
+    assert.deepEqual(
+      historySourceHelpers.financialReconciliationHistorySourceSummary({ sourceSummary: [entry] }),
+      [],
+    );
+  }
+  assert.deepEqual(
+    historySourceHelpers.financialReconciliationHistorySourceSummary({
+      sourceSummary: [{ sourceType: "financial_documents", recordCount: 2, amountTotal: 0 }],
+    }),
+    [{ sourceType: "financial_documents", recordCount: 2, amountTotal: 0 }],
+  );
+});
+
 function renderHistory(record, selectedReconciliationId = "") {
   const els = { financialReconciliationHistoryRows: { innerHTML: "" } };
   const current = { selectedReconciliationId, workspace: { history: [record] } };

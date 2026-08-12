@@ -21592,10 +21592,12 @@ function financialReconciliationHistorySourceSummary(record) {
   const seen = new Set();
   return record.sourceSummary.flatMap((entry) => {
     const sourceType = clean(entry?.sourceType);
-    const recordCount = Number(entry?.recordCount);
-    const amountTotal = Number(entry?.amountTotal);
+    const recordCount = entry?.recordCount;
+    const amountTotal = entry?.amountTotal;
     if (!Object.prototype.hasOwnProperty.call(FINANCIAL_RECONCILIATION_SOURCES, sourceType)
       || seen.has(sourceType)
+      || typeof recordCount !== "number"
+      || typeof amountTotal !== "number"
       || !Number.isInteger(recordCount)
       || recordCount <= 0
       || !Number.isFinite(amountTotal)) return [];
