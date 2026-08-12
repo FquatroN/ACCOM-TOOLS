@@ -155,7 +155,7 @@ insert into financial_documents(id,document_date,amount,fat,created_by,descripti
   (new_doc_id,'2026-02-03',1,'S','smoke','newest ordering fixture');
 ```
 
-Request a four-record page filtered to those dates and assert the literal order:
+Request a three-record page filtered to those dates and assert the literal order:
 
 ```sql
 r := get_financial_reconciliation_workspace(
