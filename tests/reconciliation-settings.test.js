@@ -8,6 +8,7 @@ const settingsPath = require.resolve("../api/reconciliation-settings");
 const supabasePath = require.resolve("../api/_supabase");
 const migration = fs.readFileSync(path.join(root, "supabase-migrations", "2026-08-11-financial-reconciliation-source-rules.sql"), "utf8");
 const workspaceFilterFixPath = path.join(root, "supabase-migrations", "2026-08-11-financial-reconciliation-source-rules-workspace-filter-fix.sql");
+const actionOverloadFixPath = path.join(root, "supabase-migrations", "2026-08-12-financial-reconciliation-action-overload-fix.sql");
 
 function responseRecorder() {
   return {
@@ -127,4 +128,13 @@ test("source-rules workspace filters extract text before building ilike patterns
   assert.match(workspaceFilterFix, /get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)/);
   assert.match(workspaceFilterFix, /s\.description ilike '%' \|\| \(p_filters->>'description'\) \|\| '%'/);
   assert.match(workspaceFilterFix, /s\.supplier ilike '%' \|\| \(p_filters->>'supplier'\) \|\| '%'/);
+});
+
+test("source-rules migration removes the obsolete action overload", () => {
+  const oldSignature = "financial_reconciliation_action(text,text,uuid,text,text[],text,uuid,text)";
+  assert.match(migration, new RegExp(`drop function if exists public\\.${oldSignature.replace(/[()[\].+*?^$\\|]/g, "\\$&")};`));
+  assert.ok(fs.existsSync(actionOverloadFixPath), "a post-deployment action-overload fix migration should exist");
+  const actionOverloadFix = fs.readFileSync(actionOverloadFixPath, "utf8");
+  assert.match(actionOverloadFix, new RegExp(`drop function if exists public\\.${oldSignature.replace(/[()[\].+*?^$\\|]/g, "\\$&")};`));
+  assert.match(actionOverloadFix, /notify pgrst, 'reload schema';/);
 });
