@@ -27,6 +27,9 @@ test("oldest-first migration targets the workspace function and declares determi
   assert.match(oldestFirstMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
   assert.match(oldestFirstMigration, /new_page_order constant text := \$\$order by source_date asc, id asc offset v_offset limit p_page_size\$\$/i);
   assert.match(oldestFirstMigration, /new_json_order constant text := \$\$order by x\.source_date asc, x\.id asc\$\$/i);
+  assert.match(oldestFirstMigration, /old_page_count = 1\s+and new_page_count = 0\s+and old_json_count = 1\s+and new_json_count = 0/is);
+  assert.match(oldestFirstMigration, /old_page_count = 0\s+and new_page_count = 1\s+and old_json_count = 0\s+and new_json_count = 1/is);
+  assert.match(oldestFirstMigration, /unexpected reconciliation workspace function definition/i);
   assert.match(oldestFirstMigration, /could not verify deterministic oldest-first candidate ordering/i);
 });
 

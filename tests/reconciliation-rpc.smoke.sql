@@ -103,13 +103,13 @@ begin
     'financial_documents',
     '{"dateFrom":"2026-02-01","dateTo":"2026-02-03","amountMin":"1","amountMax":"1","description":"ordering fixture"}'::jsonb,
     1,
-    4
+    3
   );
   select array_agg((candidate->>'id')::uuid order by ordinal)
     into candidate_ids
     from jsonb_array_elements(r->'candidates') with ordinality candidates(candidate, ordinal);
-  if candidate_ids is distinct from array[old_doc_id, same_date_low_id, same_date_high_id, new_doc_id] then
-    raise exception 'Candidates were not returned oldest-first with deterministic same-date ordering: %', candidate_ids;
+  if candidate_ids is distinct from array[old_doc_id, same_date_low_id, same_date_high_id] then
+    raise exception 'Candidates were not paginated after oldest-first deterministic ordering: %', candidate_ids;
   end if;
   r:=financial_reconciliation_action('start','smoke',null,'financial_documents',doc_id,null); rid:=(r->'reconciliation'->>'id')::uuid;
   if r->'reconciliation'->'matching_source_rules' @> '[{"sourceType":"import_cgd_extrato_ordem","operator":"+"}]'::jsonb is not true then raise exception 'Start did not snapshot directional rules'; end if;
