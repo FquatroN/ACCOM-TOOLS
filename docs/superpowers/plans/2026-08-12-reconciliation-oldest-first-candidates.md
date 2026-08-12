@@ -26,11 +26,11 @@
 ## File structure
 
 - Create `supabase-migrations/2026-08-12-financial-reconciliation-oldest-first-candidates.sql` — idempotently transform and verify only the installed workspace function's candidate ordering.
-- Modify `tests/reconciliation.test.js` — statically verify the forward migration's exact signature, deterministic ordering, verification guard, and idempotent branch.
+- Modify `tests/reconciliation.test.js` — keep one narrow migration-installation safeguard for environments without PostgreSQL; the SQL smoke test remains authoritative for ordering behavior and idempotency.
 - Modify `tests/reconciliation-rpc.smoke.sql` — apply the new migration inside the disposable transaction and prove oldest-first, same-date ID ordering from the real workspace RPC.
 - Modify `app-main.js` — add the compact summary helper, use the full locked-item count, remove the source-summary rendering and its now-unused rule-label lookup.
 - Modify `styles.css` — align the three compact summary values on one row and remove the obsolete summary-paragraph rule.
-- Modify `tests/reconciliation-density.test.js` — execute the summary helper for Started and Complete fixtures and preserve the history source-column contract.
+- Modify `tests/reconciliation-density.test.js` — execute the actual Current reconciliation and history render functions for Started and Complete fixtures.
 
 ### Task 1: Deterministic oldest-first workspace migration
 
@@ -44,7 +44,7 @@
 - Produces: the same function signature and JSON contract, with candidate selection and aggregation ordered by `source_date ASC, id ASC`.
 - Produces migration constants for the exact old and new candidate-order fragments; no new RPC or table interface.
 
-- [ ] **Step 1: Write the failing migration-contract test**
+- [ ] **Step 1: Write the failing minimal migration-installation safeguard**
 
 At the top of `tests/reconciliation.test.js`, after the existing imports, read the planned migration without turning the initial RED run into a file-loading error:
 
@@ -60,25 +60,18 @@ const oldestFirstMigration = fs.existsSync(oldestFirstMigrationPath)
   : "";
 ```
 
-Add this test with literal expectations:
+Add one narrow safeguard. It does not claim to prove SQL behavior; it catches publishing a migration that targets the wrong function or omits either deterministic clause when a local PostgreSQL connection is unavailable:
 
 ```js
-test("oldest-first migration deterministically orders candidates before and after pagination", () => {
+test("oldest-first migration targets the workspace function and declares deterministic clauses", () => {
   assert.match(oldestFirstMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
-  assert.match(oldestFirstMigration, /old_page_order constant text := \$\$order by source_date desc offset v_offset limit p_page_size\$\$/i);
   assert.match(oldestFirstMigration, /new_page_order constant text := \$\$order by source_date asc, id asc offset v_offset limit p_page_size\$\$/i);
-  assert.match(oldestFirstMigration, /old_json_order constant text := \$\$order by x\.source_date desc\$\$/i);
   assert.match(oldestFirstMigration, /new_json_order constant text := \$\$order by x\.source_date asc, x\.id asc\$\$/i);
-  assert.match(oldestFirstMigration, /if position\(new_page_order in definition\) = 0 or position\(new_json_order in definition\) = 0/i);
-  assert.match(oldestFirstMigration, /if position\(old_page_order in definition\) > 0 then[\s\S]*replace\(definition, old_page_order, new_page_order\)/i);
-  assert.match(oldestFirstMigration, /if position\(old_json_order in definition\) > 0 then[\s\S]*replace\(definition, old_json_order, new_json_order\)/i);
-  assert.match(oldestFirstMigration, /if definition <> original_definition then\s*execute definition;/i);
   assert.match(oldestFirstMigration, /could not verify deterministic oldest-first candidate ordering/i);
-  assert.doesNotMatch(oldestFirstMigration, /create table|alter table|drop table/i);
 });
 ```
 
-This catches reintroducing descending page order, omitting the deterministic ID tie-breaker, executing unnecessarily on a second run, or targeting the wrong overload.
+The real PostgreSQL smoke test in Step 5 catches incorrect ordering, missing tie-breakers, and broken idempotency.
 
 - [ ] **Step 2: Run the focused test and verify the red state**
 
@@ -265,19 +258,90 @@ test("Current reconciliation summary shows status record count and short differe
 
 The count fixtures intentionally represent records from different sources; the helper accepts only the already-combined total and therefore cannot count a single source subset.
 
-- [ ] **Step 2: Write the failing integration/source-removal contract test**
+- [ ] **Step 2: Write failing executable Current and history renderer tests**
 
-Add:
+Build a harness that executes the actual `renderFinancialReconciliationCurrent` function. Stub only external formatting/state dependencies and return the rendered `innerHTML`:
 
 ```js
-test("Current summary omits source prose while history keeps source columns", () => {
-  const currentSource = appFunctionSource("renderFinancialReconciliationCurrent");
-  const historySource = appFunctionSource("renderFinancialReconciliationHistory");
-  assert.match(currentSource, /financialReconciliationSummaryMarkup\(reconciliation\.status, workspace\.items\.length, difference\)/);
-  assert.doesNotMatch(currentSource, /matchingSources|base_source_type\)\)\} with/);
-  assert.doesNotMatch(currentSource, />Difference:/);
-  assert.match(historySource, /financialReconciliationSourceLabel\(record\.base_source_type\)/);
-  assert.match(historySource, /record\.matching_source_types/);
+function renderCurrentSummary({ status, difference, items }) {
+  const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal" }, items, audit: [] } };
+  const els = {
+    financialReconciliationCurrent: { innerHTML: "" },
+    financialReconciliationNew: { hidden: true },
+    financialReconciliationReopen: { hidden: true },
+    financialReconciliationDelete: { hidden: true },
+  };
+  const render = new Function(
+    "financialReconciliationState", "normalizeFinancialReconciliationWorkspace", "financialReconciliationActiveRecord",
+    "financialReconciliationDifference", "clean", "financialReconciliationCompletionDraft",
+    "financialReconciliationCompletionPresentation", "financialReconciliationItemDetails", "escape",
+    "financialReconciliationSourceLabel", "formatMoney", "formatDateTimeShort",
+    "financialReconciliationStatusMarkup", "financialReconciliationSummaryMarkup", "els",
+    `${appFunctionSource("renderFinancialReconciliationCurrent")}\nreturn renderFinancialReconciliationCurrent;`,
+  )(
+    () => current,
+    (value) => value,
+    () => current.workspace.reconciliation,
+    (value) => Number(value.difference_amount),
+    (value) => String(value || "").trim(),
+    () => "",
+    () => ({ required: false, disabled: false, label: "Complete reconciliation" }),
+    () => "",
+    (value) => String(value),
+    (value) => value,
+    (value) => `${Number(value).toFixed(2)} €`,
+    () => "",
+    (value) => `<span class="financial-reconciliation-status">${value}</span>`,
+    financialReconciliationSummaryMarkup,
+    els,
+  );
+  render();
+  return els.financialReconciliationCurrent.innerHTML;
+}
+
+test("Started and Complete Current summaries omit source prose and count every locked source", () => {
+  const items = [
+    { source_type: "financial_documents", source_id: "doc-1", amount_snapshot: 10 },
+    { source_type: "import_cgd_extrato_ordem", source_id: "bank-1", amount_snapshot: -10 },
+  ];
+  const started = renderCurrentSummary({ status: "started", difference: 0, items });
+  const complete = renderCurrentSummary({ status: "complete", difference: 0, items });
+  for (const markup of [started, complete]) {
+    assert.match(markup, /#records: 2/);
+    assert.match(markup, /Dif: 0\.00 €/);
+    assert.doesNotMatch(markup, /Financial Documents with|CGD Bank Statement|Difference:/);
+  }
+});
+```
+
+Build a second harness that executes `renderFinancialReconciliationHistory` with one fixture and assert its observable row markup still contains the base and matching source labels:
+
+```js
+test("Reconciliation history still renders base and matching source labels", () => {
+  const els = { financialReconciliationHistoryRows: { innerHTML: "" } };
+  const current = {
+    selectedReconciliationId: "",
+    workspace: { history: [{ id: "rec-1", created_at: "2026-08-12T10:00:00Z", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"], status: "complete", difference_amount: 0 }] },
+  };
+  const render = new Function(
+    "financialReconciliationState", "clean", "escape", "formatDateTimeShort",
+    "financialReconciliationSourceLabel", "financialReconciliationStatusMarkup",
+    "financialReconciliationDifference", "formatMoney", "els",
+    `${appFunctionSource("renderFinancialReconciliationHistory")}\nreturn renderFinancialReconciliationHistory;`,
+  )(
+    () => current,
+    (value) => String(value || "").trim(),
+    (value) => String(value),
+    () => "2026-08-12 10:00",
+    (value) => ({ financial_documents: "Financial Documents", import_cgd_extrato_ordem: "CGD Bank Statement" })[value] || value,
+    (value) => value,
+    (value) => Number(value.difference_amount),
+    (value) => `${Number(value).toFixed(2)} €`,
+    els,
+  );
+  render();
+  assert.match(els.financialReconciliationHistoryRows.innerHTML, /Financial Documents/);
+  assert.match(els.financialReconciliationHistoryRows.innerHTML, /CGD Bank Statement/);
 });
 ```
 
