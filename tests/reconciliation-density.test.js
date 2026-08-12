@@ -36,7 +36,7 @@ const financialReconciliationSummaryMarkup = new Function(
 );
 
 function renderCurrentSummary({ status, difference, items }) {
-  const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal" }, items, audit: [] } };
+  const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"] }, items, audit: [] } };
   const els = {
     financialReconciliationCurrent: { innerHTML: "" },
     financialReconciliationNew: { hidden: true },
@@ -60,7 +60,7 @@ function renderCurrentSummary({ status, difference, items }) {
     () => ({ required: false, disabled: false, label: "Complete reconciliation" }),
     () => "",
     (value) => String(value),
-    (value) => value,
+    (value) => ({ financial_documents: "Financial Documents", import_cgd_extrato_ordem: "CGD Bank Statement" })[value] || value,
     (value) => `${Number(value).toFixed(2)} €`,
     () => "",
     (value) => `<span class="financial-reconciliation-status">${value}</span>`,
@@ -342,7 +342,8 @@ test("Started and Complete Current summaries omit source prose and count every l
   for (const markup of [started, complete]) {
     assert.match(markup, /#records: 2/);
     assert.match(markup, /Dif: 0\.00 €/);
-    assert.doesNotMatch(markup, /Financial Documents with|CGD Bank Statement|Difference:/);
+    assert.doesNotMatch(markup, /Financial Documents with CGD Bank Statement/);
+    assert.doesNotMatch(markup, /Difference:/);
   }
 });
 
