@@ -9,7 +9,9 @@ insert into financial_reconciliations (
   'smoke-legacy-backfill-' || txid_current()
 );
 \ir ../supabase-migrations/2026-08-11-financial-reconciliation-source-rules.sql
-do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean;
+\ir ../supabase-migrations/2026-08-12-financial-reconciliation-oldest-first-candidates.sql
+\ir ../supabase-migrations/2026-08-12-financial-reconciliation-oldest-first-candidates.sql
+do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); old_doc_id uuid := '00000000-0000-0000-0000-000000000101'; same_date_low_id uuid := '00000000-0000-0000-0000-000000000102'; same_date_high_id uuid := '00000000-0000-0000-0000-000000000103'; new_doc_id uuid := '00000000-0000-0000-0000-000000000104'; candidate_ids uuid[]; r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean;
 begin
   if not coalesce((
     select c.relrowsecurity
@@ -91,6 +93,24 @@ begin
   insert into import_cgd_extrato_ordem(id,import_batch,row_key,data,montante) values(fdm_bank_id,'smoke','recon-smoke-fdm-bank-'||fdm_bank_id,'2026-01-02',-30);
   insert into import_cgd_cartao_credito(id,import_batch,row_key,data,debito) values(card_id,'smoke','recon-smoke-card-'||card_id,'2026-01-02',30);
   insert into import_fdm_accounts(id,import_batch,account,date_time_raw,event_date,category,amount,invoice_flag) values(fdm_id,'smoke','smoke','2026-01-02','2026-01-02','Compras',-30,true);
+  insert into financial_documents(id,document_date,amount,fat,created_by,description) values
+    (old_doc_id,'2026-02-01',1,'S','smoke','oldest ordering fixture'),
+    (same_date_high_id,'2026-02-02',1,'S','smoke','same date high id ordering fixture'),
+    (same_date_low_id,'2026-02-02',1,'S','smoke','same date low id ordering fixture'),
+    (new_doc_id,'2026-02-03',1,'S','smoke','newest ordering fixture');
+  r := get_financial_reconciliation_workspace(
+    null,
+    'financial_documents',
+    '{"dateFrom":"2026-02-01","dateTo":"2026-02-03","amountMin":"1","amountMax":"1","description":"ordering fixture"}'::jsonb,
+    1,
+    4
+  );
+  select array_agg((candidate->>'id')::uuid order by ordinal)
+    into candidate_ids
+    from jsonb_array_elements(r->'candidates') with ordinality candidates(candidate, ordinal);
+  if candidate_ids is distinct from array[old_doc_id, same_date_low_id, same_date_high_id, new_doc_id] then
+    raise exception 'Candidates were not returned oldest-first with deterministic same-date ordering: %', candidate_ids;
+  end if;
   r:=financial_reconciliation_action('start','smoke',null,'financial_documents',doc_id,null); rid:=(r->'reconciliation'->>'id')::uuid;
   if r->'reconciliation'->'matching_source_rules' @> '[{"sourceType":"import_cgd_extrato_ordem","operator":"+"}]'::jsonb is not true then raise exception 'Start did not snapshot directional rules'; end if;
   select coalesce(jsonb_agg(jsonb_build_object(

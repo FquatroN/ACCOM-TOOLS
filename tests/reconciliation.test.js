@@ -13,6 +13,23 @@ const {
   validateWorkspaceQuery,
 } = require("../api/_reconciliation");
 
+const oldestFirstMigrationPath = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-12-financial-reconciliation-oldest-first-candidates.sql",
+);
+const oldestFirstMigration = fs.existsSync(oldestFirstMigrationPath)
+  ? fs.readFileSync(oldestFirstMigrationPath, "utf8")
+  : "";
+
+test("oldest-first migration targets the workspace function and declares deterministic clauses", () => {
+  assert.match(oldestFirstMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
+  assert.match(oldestFirstMigration, /new_page_order constant text := \$\$order by source_date asc, id asc offset v_offset limit p_page_size\$\$/i);
+  assert.match(oldestFirstMigration, /new_json_order constant text := \$\$order by x\.source_date asc, x\.id asc\$\$/i);
+  assert.match(oldestFirstMigration, /could not verify deterministic oldest-first candidate ordering/i);
+});
+
 test("Financial Documents-led groups sum all sources", () => {
   assert.equal(calculateDifference("financial_documents", [
     { sourceType: "import_cgd_extrato_ordem", operator: "+" },

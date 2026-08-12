@@ -150,8 +150,8 @@ Insert four eligible, unlocked Financial Documents after the existing fixtures:
 ```sql
 insert into financial_documents(id,document_date,amount,fat,created_by,description) values
   (old_doc_id,'2026-02-01',1,'S','smoke','oldest ordering fixture'),
-  (same_date_high_id,'2026-02-02',1,'S','smoke','same date high id fixture'),
-  (same_date_low_id,'2026-02-02',1,'S','smoke','same date low id fixture'),
+  (same_date_high_id,'2026-02-02',1,'S','smoke','same date high id ordering fixture'),
+  (same_date_low_id,'2026-02-02',1,'S','smoke','same date low id ordering fixture'),
   (new_doc_id,'2026-02-03',1,'S','smoke','newest ordering fixture');
 ```
 
