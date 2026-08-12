@@ -101,6 +101,7 @@ function completionActionHarness({ difference, items, comment }) {
     "financialReconciliationCompletionDraft",
     "financialReconciliationCompletionPresentation",
     "clean",
+    "els",
     "runFinancialReconciliationAction",
     `${appFunctionSource("completeFinancialReconciliation")}\nreturn completeFinancialReconciliation;`,
   )(
@@ -110,6 +111,7 @@ function completionActionHarness({ difference, items, comment }) {
     () => comment,
     presentation,
     (value) => String(value || "").trim(),
+    { financialReconciliationCurrent: { querySelector: () => ({ disabled: false }) } },
     (payload) => calls.push(payload),
   );
   complete();
@@ -126,6 +128,44 @@ test("non-zero difference submits only a valid mandatory comment", () => {
   assert.deepEqual(completionActionHarness({ difference: 8, items: [{}], comment: "   " }), []);
   assert.deepEqual(completionActionHarness({ difference: 8, items: [{}], comment: "variance approved" }), [
     { action: "force_complete", reconciliationId: "rec-1", comment: "variance approved" },
+  ]);
+});
+
+test("repeated completion activation while pending dispatches only once", () => {
+  const calls = [];
+  const button = { disabled: false };
+  const current = { pendingAction: "", workspace: { items: [{}] } };
+  const reconciliation = { id: "rec-1", difference_amount: 0 };
+  const complete = new Function(
+    "financialReconciliationActiveRecord",
+    "financialReconciliationState",
+    "financialReconciliationDifference",
+    "financialReconciliationCompletionDraft",
+    "financialReconciliationCompletionPresentation",
+    "clean",
+    "els",
+    "runFinancialReconciliationAction",
+    `${appFunctionSource("completeFinancialReconciliation")}\nreturn completeFinancialReconciliation;`,
+  )(
+    () => reconciliation,
+    () => current,
+    (value) => Number(value.difference_amount),
+    () => "optional note",
+    presentation,
+    (value) => String(value || "").trim(),
+    { financialReconciliationCurrent: { querySelector: () => button } },
+    (payload) => {
+      calls.push(payload);
+      current.pendingAction = payload.action;
+    },
+  );
+
+  complete();
+  complete();
+
+  assert.equal(button.disabled, true);
+  assert.deepEqual(calls, [
+    { action: "complete", reconciliationId: "rec-1", comment: "optional note" },
   ]);
 });
 

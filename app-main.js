@@ -21702,6 +21702,7 @@ function completeFinancialReconciliation() {
   const reconciliation = financialReconciliationActiveRecord();
   if (!reconciliation) return;
   const current = financialReconciliationState();
+  if (current.pendingAction) return;
   const comment = financialReconciliationCompletionDraft(reconciliation.id);
   const presentation = financialReconciliationCompletionPresentation(
     financialReconciliationDifference(reconciliation),
@@ -21709,6 +21710,8 @@ function completeFinancialReconciliation() {
     comment,
   );
   if (presentation.disabled) return;
+  const button = els.financialReconciliationCurrent?.querySelector("[data-financial-reconciliation-complete]");
+  if (button) button.disabled = true;
   runFinancialReconciliationAction({
     action: presentation.action,
     reconciliationId: reconciliation.id,
