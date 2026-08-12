@@ -24,6 +24,52 @@ function appFunctionSource(name) {
 }
 
 const financialReconciliationItemDetails = new Function(`${appFunctionSource("clean")}\n${appFunctionSource("formatDateOnly")}\n${appFunctionSource("financialReconciliationItemDetails")}\nreturn financialReconciliationItemDetails;`)();
+const financialReconciliationSummaryMarkup = new Function(
+  "financialReconciliationStatusMarkup",
+  "formatMoney",
+  "escape",
+  `${appFunctionSource("financialReconciliationSummaryMarkup")}\nreturn financialReconciliationSummaryMarkup;`,
+)(
+  (status) => `<span class="financial-reconciliation-status">${status}</span>`,
+  (amount) => `${Number(amount).toFixed(2)} €`,
+  (value) => String(value),
+);
+
+function renderCurrentSummary({ status, difference, items }) {
+  const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal" }, items, audit: [] } };
+  const els = {
+    financialReconciliationCurrent: { innerHTML: "" },
+    financialReconciliationNew: { hidden: true },
+    financialReconciliationReopen: { hidden: true },
+    financialReconciliationDelete: { hidden: true },
+  };
+  const render = new Function(
+    "financialReconciliationState", "normalizeFinancialReconciliationWorkspace", "financialReconciliationActiveRecord",
+    "financialReconciliationDifference", "clean", "financialReconciliationCompletionDraft",
+    "financialReconciliationCompletionPresentation", "financialReconciliationItemDetails", "escape",
+    "financialReconciliationSourceLabel", "formatMoney", "formatDateTimeShort",
+    "financialReconciliationStatusMarkup", "financialReconciliationSummaryMarkup", "els",
+    `${appFunctionSource("renderFinancialReconciliationCurrent")}\nreturn renderFinancialReconciliationCurrent;`,
+  )(
+    () => current,
+    (value) => value,
+    () => current.workspace.reconciliation,
+    (value) => Number(value.difference_amount),
+    (value) => String(value || "").trim(),
+    () => "",
+    () => ({ required: false, disabled: false, label: "Complete reconciliation" }),
+    () => "",
+    (value) => String(value),
+    (value) => value,
+    (value) => `${Number(value).toFixed(2)} €`,
+    () => "",
+    (value) => `<span class="financial-reconciliation-status">${value}</span>`,
+    financialReconciliationSummaryMarkup,
+    els,
+  );
+  render();
+  return els.financialReconciliationCurrent.innerHTML;
+}
 const reconciliationSettingsDestinationHelpers = new Function("appFeatures", "lastMainView", `
 const state = { lastMainView, access: { appFeatures } };
 ${appFunctionSource("clean")}
@@ -270,6 +316,61 @@ test("reconciliation density rules are scoped to workbench and eligible records"
   assert.match(css, /\.financial-reconciliation-completion textarea\s*\{[\s\S]*min-height:\s*4\.5rem;/);
   assert.match(css, /\.financial-reconciliation-items li\s*\{[\s\S]*column-gap:\s*\.45rem;[\s\S]*row-gap:\s*\.12rem;/);
   assert.match(css, /\.financial-reconciliation-item-details\s*\{[\s\S]*line-height:\s*1\.15;[\s\S]*margin-top:\s*0;/);
+  assert.match(css, /\.financial-reconciliation-summary\s*\{[\s\S]*grid-template-columns:\s*auto 1fr auto;[\s\S]*align-items:\s*center;/);
+  assert.match(css, /\.financial-reconciliation-record-count\s*\{[\s\S]*text-align:\s*center;[\s\S]*white-space:\s*nowrap;/);
+  assert.doesNotMatch(css, /\.financial-reconciliation-summary p\s*\{/);
+});
+
+test("Current reconciliation summary shows status record count and short difference", () => {
+  assert.equal(
+    financialReconciliationSummaryMarkup("started", 2, 0),
+    '<div class="financial-reconciliation-summary"><span class="financial-reconciliation-status">started</span><strong class="financial-reconciliation-record-count">#records: 2</strong><strong class="financial-reconciliation-difference">Dif: 0.00 €</strong></div>',
+  );
+  assert.equal(
+    financialReconciliationSummaryMarkup("complete", 3, -10),
+    '<div class="financial-reconciliation-summary"><span class="financial-reconciliation-status">complete</span><strong class="financial-reconciliation-record-count">#records: 3</strong><strong class="financial-reconciliation-difference financial-reconciliation-forced-difference">Dif: -10.00 €</strong></div>',
+  );
+});
+
+test("Started and Complete Current summaries omit source prose and count every locked source", () => {
+  const items = [
+    { source_type: "financial_documents", source_id: "doc-1", amount_snapshot: 10 },
+    { source_type: "import_cgd_extrato_ordem", source_id: "bank-1", amount_snapshot: -10 },
+  ];
+  const started = renderCurrentSummary({ status: "started", difference: 0, items });
+  const complete = renderCurrentSummary({ status: "complete", difference: 0, items });
+  for (const markup of [started, complete]) {
+    assert.match(markup, /#records: 2/);
+    assert.match(markup, /Dif: 0\.00 €/);
+    assert.doesNotMatch(markup, /Financial Documents with|CGD Bank Statement|Difference:/);
+  }
+});
+
+test("Reconciliation history still renders base and matching source labels", () => {
+  const els = { financialReconciliationHistoryRows: { innerHTML: "" } };
+  const current = {
+    selectedReconciliationId: "",
+    workspace: { history: [{ id: "rec-1", created_at: "2026-08-12T10:00:00Z", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"], status: "complete", difference_amount: 0 }] },
+  };
+  const render = new Function(
+    "financialReconciliationState", "clean", "escape", "formatDateTimeShort",
+    "financialReconciliationSourceLabel", "financialReconciliationStatusMarkup",
+    "financialReconciliationDifference", "formatMoney", "els",
+    `${appFunctionSource("renderFinancialReconciliationHistory")}\nreturn renderFinancialReconciliationHistory;`,
+  )(
+    () => current,
+    (value) => String(value || "").trim(),
+    (value) => String(value),
+    () => "2026-08-12 10:00",
+    (value) => ({ financial_documents: "Financial Documents", import_cgd_extrato_ordem: "CGD Bank Statement" })[value] || value,
+    (value) => value,
+    (value) => Number(value.difference_amount),
+    (value) => `${Number(value).toFixed(2)} €`,
+    els,
+  );
+  render();
+  assert.match(els.financialReconciliationHistoryRows.innerHTML, /Financial Documents/);
+  assert.match(els.financialReconciliationHistoryRows.innerHTML, /CGD Bank Statement/);
 });
 
 test("reconciliation item details omit empty fields", () => {

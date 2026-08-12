@@ -21545,6 +21545,11 @@ function financialReconciliationItemDetails(item) {
   return [clean(item.source_date) ? formatDateOnly(item.source_date) : "", clean(item.supplier), clean(item.description)].filter(Boolean).join(" · ");
 }
 
+function financialReconciliationSummaryMarkup(status, itemCount, difference) {
+  const numericDifference = Number(difference || 0);
+  return `<div class="financial-reconciliation-summary">${financialReconciliationStatusMarkup(status)}<strong class="financial-reconciliation-record-count">#records: ${escape(Number(itemCount) || 0)}</strong><strong class="financial-reconciliation-difference${numericDifference === 0 ? "" : " financial-reconciliation-forced-difference"}">Dif: ${escape(formatMoney(numericDifference))}</strong></div>`;
+}
+
 function renderFinancialReconciliationCurrent() {
   const workspace = financialReconciliationState().workspace || normalizeFinancialReconciliationWorkspace({});
   const reconciliation = financialReconciliationActiveRecord();
@@ -21557,6 +21562,7 @@ function renderFinancialReconciliationCurrent() {
     return;
   }
   const difference = financialReconciliationDifference(reconciliation);
+  const summary = financialReconciliationSummaryMarkup(reconciliation.status, workspace.items.length, difference);
   const complete = clean(reconciliation.status) === "complete";
   const completionDraft = financialReconciliationCompletionDraft(reconciliation.id);
   const completion = financialReconciliationCompletionPresentation(difference, workspace.items.length, completionDraft);
@@ -21568,14 +21574,13 @@ function renderFinancialReconciliationCurrent() {
     const comment = clean(entry.comment);
     return `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}${comment ? ` · ${escape(comment)}` : ""}</span></li>`;
   }).join("") || "<li>No audit entries yet.</li>";
-  const matchingSources = reconciliationRulesFor(reconciliation.base_source_type).map((rule) => financialReconciliationSourceLabel(rule.sourceType));
   const completionControls = complete ? `<p class="field-hint">Completed ${escape(reconciliation.completion_type || "normally")}${reconciliation.forced_completion_comment ? ` · ${escape(reconciliation.forced_completion_comment)}` : ""}</p>` : `<div class="financial-reconciliation-completion">
     <label>Completion comment <span class="field-hint">${completion.required ? "Comment is required because the difference is not zero" : "Comment is optional because the difference is zero"}</span>
       <textarea data-financial-reconciliation-completion-comment rows="3" ${completion.required ? 'required aria-required="true"' : ""} placeholder="Add a completion comment.">${escape(completionDraft)}</textarea>
     </label>
     <button type="button" ${completion.required ? 'class="danger"' : ""} data-financial-reconciliation-complete ${completion.disabled ? "disabled" : ""}>${completion.label}</button>
   </div>`;
-  els.financialReconciliationCurrent.innerHTML = `<div class="financial-reconciliation-summary"><div>${financialReconciliationStatusMarkup(reconciliation.status)}<p>${escape(financialReconciliationSourceLabel(reconciliation.base_source_type))} with ${escape(matchingSources.join(", "))}</p></div><strong class="financial-reconciliation-difference${difference === 0 ? "" : " financial-reconciliation-forced-difference"}">Difference: ${escape(formatMoney(difference))}</strong></div><h3>Locked records</h3><ul class="financial-reconciliation-items">${items}</ul>${completionControls}<h3>Audit trail</h3><ul class="financial-reconciliation-audit">${audit}</ul>`;
+  els.financialReconciliationCurrent.innerHTML = `${summary}<h3>Locked records</h3><ul class="financial-reconciliation-items">${items}</ul>${completionControls}<h3>Audit trail</h3><ul class="financial-reconciliation-audit">${audit}</ul>`;
   if (els.financialReconciliationReopen) els.financialReconciliationReopen.hidden = !complete;
   if (els.financialReconciliationNew) els.financialReconciliationNew.hidden = !complete;
   if (els.financialReconciliationDelete) els.financialReconciliationDelete.hidden = false;

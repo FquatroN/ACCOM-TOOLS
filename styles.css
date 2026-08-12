@@ -6386,20 +6386,20 @@ button[id^="close-settings"] {
 }
 
 .financial-reconciliation-summary {
-  display: flex;
-  gap: .75rem;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: .55rem;
+  align-items: center;
   padding: .75rem;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface-soft, rgba(255,255,255,.55));
 }
 
-.financial-reconciliation-summary p {
-  margin: .5rem 0 0;
+.financial-reconciliation-record-count {
   color: var(--muted);
-  font-size: .86rem;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .financial-reconciliation-difference {
@@ -6469,8 +6469,10 @@ button[id^="close-settings"] {
 
 @media (max-width: 620px) {
   .financial-reconciliation-filter-wide { grid-column: span 1; }
-  .financial-reconciliation-summary { align-items: stretch; flex-direction: column; }
-  .financial-reconciliation-difference { text-align: left; }
+  .financial-reconciliation-summary {
+    grid-template-columns: auto 1fr auto;
+    gap: .35rem;
+  }
 }
 
 .financial-docs-history-table td,
