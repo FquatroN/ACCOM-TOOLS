@@ -25,6 +25,7 @@
 - No new table, persistent aggregate column, or data backfill.
 - The new migration must be idempotent, detect unexpected installed-function drift, and live in the normal `supabase-migrations/` folder.
 - SQL smoke behavior is authoritative. If PostgreSQL is unavailable, retain a minimal static migration safeguard and report the unexecuted SQL gap honestly.
+- Automated layout coverage is limited to the structural DOM contract and real source-switch/render behavior. Wide/narrow field fitting, wrapping, and relative widths are browser-verification requirements; do not use CSS source-pattern assertions as their authority.
 
 ## File Structure
 
@@ -55,19 +56,12 @@
 Add this focused test to `tests/reconciliation-density.test.js` after the existing workbench source-selector test:
 
 ```js
-test("workbench places source controls above one compact filter row", () => {
+test("workbench exposes source controls before the dynamic filter row", () => {
   assert.match(
     html,
     /class="financial-reconciliation-source-row"[\s\S]*id="financial-reconciliation-source"[\s\S]*id="financial-reconciliation-rule-hint"[\s\S]*<\/div>\s*<div id="financial-reconciliation-dynamic-filters"/,
   );
-  assert.match(css, /\.financial-reconciliation-filters\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
-  assert.match(css, /\.financial-reconciliation-source-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(12rem,\s*18rem\) minmax\(0,\s*1fr\);/);
-  assert.match(css, /\.financial-reconciliation-dynamic-filters\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*nowrap;/);
-  assert.match(css, /\.financial-reconciliation-filter-description\s*\{[\s\S]*flex:\s*1 1 10rem;/);
-  assert.match(css, /\.financial-reconciliation-filter-dateFrom,[\s\S]*\.financial-reconciliation-filter-dateTo\s*\{[\s\S]*flex:\s*0 1 8\.75rem;/);
-  assert.match(css, /\.financial-reconciliation-filter-amountMin,[\s\S]*\.financial-reconciliation-filter-amountMax\s*\{[\s\S]*flex:\s*0 1 7\.5rem;/);
-  assert.match(css, /\.financial-reconciliation-filter-supplier,[\s\S]*\.financial-reconciliation-filter-category\s*\{[\s\S]*flex:\s*0 1 8rem;/);
-  assert.match(css, /@media \(max-width:\s*1200px\)[\s\S]*\.financial-reconciliation-dynamic-filters\s*\{[\s\S]*flex-wrap:\s*wrap;/);
+  assert.match(appMain, /class="financial-reconciliation-filter-\$\{escape\(field\)\}"/);
 });
 ```
 
@@ -79,7 +73,7 @@ Run:
 node --test --test-isolation=none tests/reconciliation-density.test.js
 ```
 
-Expected: FAIL in `workbench places source controls above one compact filter row` because the source-row wrapper and new flex sizing rules do not exist.
+Expected: FAIL in `workbench exposes source controls before the dynamic filter row` because the source-row wrapper does not exist.
 
 - [ ] **Step 3: Add explicit source and filter rows**
 
@@ -164,6 +158,8 @@ git diff --check
 ```
 
 Expected: all tests pass; no whitespace errors. Confirm the existing source-change tests still pass without changes.
+
+Do not add CSS source-pattern assertions for field fitting. Task 4's browser checks are authoritative for the wide-screen single-row fit, compact relative widths, and responsive wrapping.
 
 - [ ] **Step 6: Commit Task 1**
 
