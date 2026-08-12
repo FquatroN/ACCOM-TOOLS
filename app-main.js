@@ -1299,6 +1299,7 @@ const state = {
     workspace: null,
     selectedReconciliationId: "",
     pendingAction: "",
+    completionCommentDraft: { reconciliationId: "", value: "" },
   },
   guestsBiRows: [],
   guestsBiYears: [],
@@ -21316,6 +21317,26 @@ function financialReconciliationState() {
   return state.financialReconciliation;
 }
 
+function financialReconciliationCompletionDraft(reconciliationId) {
+  const current = financialReconciliationState();
+  const normalizedId = clean(reconciliationId);
+  if (clean(current.completionCommentDraft?.reconciliationId) !== normalizedId) {
+    current.completionCommentDraft = { reconciliationId: normalizedId, value: "" };
+  }
+  return String(current.completionCommentDraft?.value ?? "");
+}
+
+function updateFinancialReconciliationCompletionDraft(reconciliationId, value) {
+  financialReconciliationState().completionCommentDraft = {
+    reconciliationId: clean(reconciliationId),
+    value: String(value ?? ""),
+  };
+}
+
+function clearFinancialReconciliationCompletionDraft() {
+  financialReconciliationState().completionCommentDraft = { reconciliationId: "", value: "" };
+}
+
 function financialReconciliationActiveRecord() {
   const workspace = financialReconciliationState().workspace;
   return workspace?.reconciliation && typeof workspace.reconciliation === "object" ? workspace.reconciliation : null;
@@ -21519,6 +21540,16 @@ function renderFinancialReconciliationCandidates() {
 
 function financialReconciliationDifference(reconciliation) {
   return Number(reconciliation?.difference_amount ?? reconciliation?.differenceAmount ?? 0);
+}
+
+function financialReconciliationCompletionPresentation(difference, itemCount, comment) {
+  const required = Number(difference) !== 0;
+  return {
+    action: required ? "force_complete" : "complete",
+    label: required ? "Force complete" : "Complete reconciliation",
+    required,
+    disabled: Number(itemCount) <= 0 || (required && !clean(comment)),
+  };
 }
 
 function financialReconciliationItemDetails(item) {
