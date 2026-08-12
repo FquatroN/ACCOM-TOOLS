@@ -266,6 +266,10 @@ test("reconciliation density rules are scoped to workbench and eligible records"
   assert.match(css, /\.financial-reconciliation-item-details\s*\{\s*font-size:\s*\.68rem;/);
   assert.match(css, /\.financial-reconciliation-current\s*\{\s*font-size:\s*\.86rem;/);
   assert.match(css, /\.financial-reconciliation-current h3\s*\{[\s\S]*font-size:\s*\.82rem;/);
+  assert.match(css, /\.financial-reconciliation-completion\s*\{[\s\S]*display:\s*grid;[\s\S]*gap:\s*\.35rem;/);
+  assert.match(css, /\.financial-reconciliation-completion textarea\s*\{[\s\S]*min-height:\s*4\.5rem;/);
+  assert.match(css, /\.financial-reconciliation-items li\s*\{[\s\S]*column-gap:\s*\.45rem;[\s\S]*row-gap:\s*\.12rem;/);
+  assert.match(css, /\.financial-reconciliation-item-details\s*\{[\s\S]*line-height:\s*1\.15;[\s\S]*margin-top:\s*0;/);
 });
 
 test("reconciliation item details omit empty fields", () => {

@@ -6367,6 +6367,24 @@ button[id^="close-settings"] {
   font-size: .82rem;
 }
 
+.financial-reconciliation-completion {
+  display: grid;
+  gap: .35rem;
+  margin-top: .65rem;
+}
+
+.financial-reconciliation-completion label {
+  display: grid;
+  gap: .25rem;
+  font-size: .74rem;
+}
+
+.financial-reconciliation-completion textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+  font: inherit;
+}
+
 .financial-reconciliation-summary {
   display: flex;
   gap: .75rem;
@@ -6404,7 +6422,8 @@ button[id^="close-settings"] {
 .financial-reconciliation-items li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: .45rem;
+  column-gap: .45rem;
+  row-gap: .12rem;
   align-items: center;
   padding: .55rem .65rem;
   border: 1px solid var(--border);
@@ -6416,7 +6435,8 @@ button[id^="close-settings"] {
   font-size: .68rem;
   grid-column: 1 / -1;
   color: var(--muted);
-  line-height: 1.3;
+  line-height: 1.15;
+  margin-top: 0;
   overflow-wrap: anywhere;
 }
 
