@@ -3,6 +3,7 @@
 begin;
 
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
 
 -- definition/config preservation
 update public.financial_reconciliation_automatic_rule_definitions
@@ -26,6 +27,7 @@ set enabled = true,
 where id = true;
 
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
 
 do $$
 declare
@@ -347,6 +349,104 @@ begin
       and automatic_proposal_id = v_proposal_id
   ) then
     raise exception 'Complete automatic provenance was not persisted.';
+  end if;
+end $$;
+
+-- document-number containment
+-- description score immediately below and at 0.60
+-- supplier word score immediately below and at 0.70
+-- blank identity fields
+do $$
+declare v_candidate_count integer;
+begin
+  if public.financial_reconciliation_match_normalize(' Fatura Nº 12, Árvore! ') <> 'fatura 12 arvore'
+    or public.financial_reconciliation_match_compact('FT-2026/001234') <> 'ft2026001234' then
+    raise exception 'Deterministic normalization did not preserve significant text and numeric tokens.';
+  end if;
+  if public.financial_reconciliation_match_normalize('a de 12') <> '12' then
+    raise exception 'Short alphabetic identity tokens were retained.';
+  end if;
+  if public.financial_reconciliation_match_normalize('  ') <> '' then
+    raise exception 'Blank identity fields produced a normalized value.';
+  end if;
+  insert into public.financial_documents (id, document_date, doc_number, description, supplier_name, amount, fat)
+  values ('00000000-0000-0000-0000-000000000d01', date '2026-03-20', 'FT-2026/001234', 'Invoice service', 'Supplier', 100.00, 'S');
+  insert into public.import_cgd_extrato_ordem (id, import_batch, row_key, data, descritivo, montante) values
+    ('00000000-0000-0000-0000-000000000b01', 'smoke-analysis', 'smoke-analysis-seven', date '2026-03-27', 'Settlement FT2026001234', -100.00),
+    ('00000000-0000-0000-0000-000000000b02', 'smoke-analysis', 'smoke-analysis-eight', date '2026-03-28', 'Settlement FT2026001234', -100.00);
+  select candidate_count into strict v_candidate_count
+  from public.financial_reconciliation_automatic_rule_candidates(
+    'financial_documents_cgd_bank_statement', 1, 0.00, 7
+  ) where base_source_id = '00000000-0000-0000-0000-000000000d01';
+  if v_candidate_count <> 1 then raise exception 'Inclusive seven-day date boundary did not exclude the eighth day.'; end if;
+end $$;
+
+-- dates exactly 7 and 8 days apart
+-- differences exactly at and above tolerance
+-- one-to-one and one-to-many sums
+-- independent operators
+do $$
+declare v_count integer;
+begin
+  select count(*) into v_count from public.financial_reconciliation_automatic_build_combinations(
+    '{"amount":"100.00"}'::jsonb,
+    '[{"sourceType":"import_cgd_extrato_ordem","sourceId":"00000000-0000-0000-0000-000000000101","sourceDate":"2026-08-07","amount":"-99.00"}]'::jsonb,
+    '{"import_cgd_extrato_ordem":"+"}'::jsonb, 1.00, 4
+  );
+  if v_count <> 1 then raise exception 'Inclusive integer-cent tolerance rejected exact boundary.'; end if;
+  select count(*) into v_count from public.financial_reconciliation_automatic_build_combinations(
+    '{"amount":"100.00"}'::jsonb,
+    '[{"sourceType":"import_cgd_extrato_ordem","sourceId":"00000000-0000-0000-0000-000000000102","sourceDate":"2026-08-08","amount":"-98.99"}]'::jsonb,
+    '{"import_cgd_extrato_ordem":"+"}'::jsonb, 1.00, 4
+  );
+  if v_count <> 0 then raise exception 'Integer-cent tolerance accepted amount above boundary.'; end if;
+  select count(*) into v_count from public.financial_reconciliation_automatic_build_combinations(
+    '{"amount":"100.00"}'::jsonb,
+    '[{"sourceType":"import_cgd_extrato_ordem","sourceId":"00000000-0000-0000-0000-000000000103","sourceDate":"2026-08-14","amount":"-60.00"},{"sourceType":"import_cgd_cartao_credito","sourceId":"00000000-0000-0000-0000-000000000104","sourceDate":"2026-08-14","amount":"40.00"}]'::jsonb,
+    '{"import_cgd_extrato_ordem":"+","import_cgd_cartao_credito":"-"}'::jsonb, 0.00, 4
+  );
+  if v_count <> 1 then raise exception 'Heterogeneous candidates did not retain independent operators.'; end if;
+  select count(*) into v_count from public.financial_reconciliation_automatic_build_combinations(
+    '{"amount":"100.00"}'::jsonb,
+    '[{"sourceType":"import_cgd_extrato_ordem","sourceId":"00000000-0000-0000-0000-000000000105","sourceDate":"2026-08-14","amount":"-40.00"},{"sourceType":"import_cgd_extrato_ordem","sourceId":"00000000-0000-0000-0000-000000000106","sourceDate":"2026-08-14","amount":"-60.00"}]'::jsonb,
+    '{"import_cgd_extrato_ordem":"+"}'::jsonb, 0.00, 4
+  );
+  if v_count <> 1 then raise exception 'One-to-many integer-cent sum did not produce one complete group.'; end if;
+  select count(*) into v_count from public.financial_reconciliation_automatic_build_combinations(
+    '{"amount":"100.00"}'::jsonb,
+    '[{"sourceType":"import_cgd_extrato_ordem","sourceId":"00000000-0000-0000-0000-000000000107","sourceDate":"2026-08-14","amount":"-100.00"},{"sourceType":"import_cgd_extrato_ordem","sourceId":"00000000-0000-0000-0000-000000000108","sourceDate":"2026-08-14","amount":"-100.00"}]'::jsonb,
+    '{"import_cgd_extrato_ordem":"+"}'::jsonb, 0.00, 4
+  );
+  if v_count <> 2 then raise exception 'Two valid combinations did not remain ambiguous candidates.'; end if;
+end $$;
+
+-- two valid combinations for one base
+-- cross-base overlap
+-- candidate_limit
+-- Lisbon DST slot claim
+do $$
+declare v_first jsonb; v_second jsonb; v_candidate_count integer;
+begin
+  insert into public.financial_documents (id, document_date, doc_number, description, supplier_name, amount, fat)
+  values ('00000000-0000-0000-0000-000000000d02', date '2026-04-01', 'FT-2026/009999', 'Limit fixture', 'Supplier', 100.00, 'S');
+  insert into public.import_cgd_extrato_ordem (id, import_batch, row_key, data, descritivo, montante)
+  select ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid, 'smoke-analysis', 'smoke-limit-' || n,
+         date '2026-04-01', 'Settlement FT2026009999', -100.00
+  from generate_series(1, 13) n;
+  select candidate_count into strict v_candidate_count
+  from public.financial_reconciliation_automatic_rule_candidates(
+    'financial_documents_cgd_bank_statement', 1, 0.00, 7
+  ) where base_source_id = '00000000-0000-0000-0000-000000000d02';
+  if v_candidate_count <> 13 then raise exception 'Thirteen identity-qualified candidates did not trigger the candidate limit fixture.'; end if;
+  update public.financial_reconciliation_automatic_schedule set enabled = true, time_of_day = time '00:00' where id = true;
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true, include_in_scheduled_batch = true, allow_manual_execution = true
+  where rule_key = 'financial_documents_cgd_bank_statement';
+  select public.claim_financial_reconciliation_automatic_schedule('2026-03-29 00:30:00+00', 'smoke:schedule') into v_first;
+  select public.claim_financial_reconciliation_automatic_schedule('2026-03-29 01:30:00+00', 'smoke:schedule') into v_second;
+  if not (v_first->>'claimed')::boolean or not (v_second->>'claimed')::boolean
+    or v_first#>>'{run,runId}' <> v_second#>>'{run,runId}' then
+    raise exception 'Lisbon DST slot claim did not produce exactly one scheduled run.';
   end if;
 end $$;
 

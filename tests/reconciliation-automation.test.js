@@ -26,6 +26,12 @@ const SCHEMA_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-14-financial-reconciliation-automation-schema.sql",
 );
+const ANALYSIS_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-14-financial-reconciliation-automation-analysis.sql",
+);
 const SOURCE_RULE_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -361,6 +367,47 @@ test("automation schema migration pins the managed catalog and execution provena
   assert.match(schemaMigration, /unique \(priority\) deferrable initially deferred/);
 });
 
+test("automation analysis migration fixes deterministic matching, ambiguity, and RPC security contracts", () => {
+  assert.equal(fs.existsSync(ANALYSIS_MIGRATION_PATH), true, "automation analysis migration must exist");
+  const analysisMigration = fs.readFileSync(ANALYSIS_MIGRATION_PATH, "utf8");
+  const compactAnalysisMigration = analysisMigration.replace(/\s+/g, " ");
+
+  for (const signature of [
+    "financial_reconciliation_match_normalize(p_value text)",
+    "financial_reconciliation_match_compact(p_value text)",
+    "financial_reconciliation_automatic_build_combinations(p_base jsonb, p_candidates jsonb, p_operators jsonb, p_tolerance numeric, p_max_group_size integer)",
+    "financial_reconciliation_automatic_rule_candidates(p_rule_key text, p_rule_version integer, p_difference_allowed numeric, p_max_difference_days integer)",
+    "populate_financial_reconciliation_automatic_run(p_run_id uuid)",
+    "create_financial_reconciliation_automatic_analysis(p_rule_keys text[], p_mode text, p_actor text, p_client_request_id uuid)",
+    "claim_financial_reconciliation_automatic_schedule(p_now timestamptz, p_actor text)",
+    "get_financial_reconciliation_automatic_run(p_run_id uuid)",
+  ]) {
+    const escapedSignature = signature
+      .replace(/[.*+?^${}|[\]\\]/g, "\\$&")
+      .replace(/\(/g, "\\(\\s*")
+      .replace(/\)/g, "\\s*\\)");
+    assert.match(compactAnalysisMigration, new RegExp(`create or replace function public\\.${escapedSignature}`));
+  }
+
+  assert.match(analysisMigration, /language\s+sql\s+stable\s+strict/);
+  assert.match(analysisMigration, /unaccent\(/);
+  assert.match(analysisMigration, /similarity\(normalized_document_description, normalized_bank_description\)/);
+  assert.match(analysisMigration, /word_similarity\(normalized_supplier_name, normalized_bank_description\)/);
+  assert.match(analysisMigration, /description_score >= 0\.60/);
+  assert.match(analysisMigration, /supplier_score >= 0\.70/);
+  assert.match(analysisMigration, /document_number.*matched/si);
+  assert.match(analysisMigration, /order by base_date, base_id/);
+  assert.match(analysisMigration, /round\(\(p_base->>'amount'\)::numeric \* 100\)::bigint/);
+  assert.match(analysisMigration, /abs\(calculated_difference_cents\) <= tolerance_cents/);
+  assert.match(analysisMigration, /candidate_limit/);
+  assert.match(analysisMigration, /cross_base_overlap/);
+  assert.match(analysisMigration, /Europe\/Lisbon/);
+  assert.match(analysisMigration, /security definer set search_path = public, pg_temp/g);
+  assert.match(analysisMigration, /revoke all on function public\.populate_financial_reconciliation_automatic_run\(uuid\) from public, anon, authenticated;/);
+  assert.match(analysisMigration, /grant execute on function public\.get_financial_reconciliation_automatic_run\(uuid\) to service_role;/);
+  assert.doesNotMatch(analysisMigration, /grant execute on function public\.[^;]+ to (?:anon|authenticated);/);
+});
+
 test("automation settings RPCs validate and replace the complete payload atomically", () => {
   assert.equal(fs.existsSync(SCHEMA_MIGRATION_PATH), true, "automation schema migration must exist");
   const schemaMigration = fs.readFileSync(SCHEMA_MIGRATION_PATH, "utf8");
@@ -418,6 +465,18 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     "managed rule version",
     "source-rule lock recheck",
     "priority swap",
+    "document-number containment",
+    "description score immediately below and at 0.60",
+    "supplier word score immediately below and at 0.70",
+    "blank identity fields",
+    "dates exactly 7 and 8 days apart",
+    "differences exactly at and above tolerance",
+    "one-to-one and one-to-many sums",
+    "independent operators",
+    "two valid combinations for one base",
+    "cross-base overlap",
+    "candidate_limit",
+    "Lisbon DST slot claim",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }
