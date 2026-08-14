@@ -391,6 +391,8 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
 
   assert.match(analysisMigration, /language\s+sql\s+stable\s+strict/);
   assert.match(analysisMigration, /unaccent\(/);
+  assert.match(analysisMigration, /regexp_split_to_table\([\s\S]*'\[\[:space:\]\]\+'/);
+  assert.doesNotMatch(analysisMigration, /'\\\\s\+'/);
   assert.match(analysisMigration, /similarity\(normalized_document_description, normalized_bank_description\)/);
   assert.match(analysisMigration, /word_similarity\(normalized_supplier_name, normalized_bank_description\)/);
   assert.match(analysisMigration, /description_score >= 0\.60/);
@@ -401,9 +403,15 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
   assert.match(analysisMigration, /abs\(calculated_difference_cents\) <= tolerance_cents/);
   assert.match(analysisMigration, /candidate_limit/);
   assert.match(analysisMigration, /cross_base_overlap/);
+  assert.match(analysisMigration, /jsonb_array_elements\(p\.candidate_groups\)/);
+  assert.match(analysisMigration, /counts = \(select jsonb_build_object\([\s\S]*from public\.financial_reconciliation_automatic_proposals/);
   assert.match(analysisMigration, /Europe\/Lisbon/);
   assert.match(analysisMigration, /security definer set search_path = public, pg_temp/g);
   assert.match(analysisMigration, /revoke all on function public\.populate_financial_reconciliation_automatic_run\(uuid\) from public, anon, authenticated;/);
+  assert.match(analysisMigration, /revoke all on function public\.financial_reconciliation_match_normalize\(text\) from public, anon, authenticated;/);
+  assert.match(analysisMigration, /revoke all on function public\.financial_reconciliation_match_compact\(text\) from public, anon, authenticated;/);
+  assert.match(analysisMigration, /grant execute on function public\.financial_reconciliation_match_normalize\(text\) to service_role;/);
+  assert.match(analysisMigration, /grant execute on function public\.financial_reconciliation_match_compact\(text\) to service_role;/);
   assert.match(analysisMigration, /grant execute on function public\.get_financial_reconciliation_automatic_run\(uuid\) to service_role;/);
   assert.doesNotMatch(analysisMigration, /grant execute on function public\.[^;]+ to (?:anon|authenticated);/);
 });
@@ -477,6 +485,11 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     "cross-base overlap",
     "candidate_limit",
     "Lisbon DST slot claim",
+    "Description threshold below fixture was accepted",
+    "Supplier threshold below fixture was accepted",
+    "Blank identity fixture produced a candidate",
+    "Cross-base overlap did not mark every affected proposal ambiguous",
+    "Candidate-limit run did not persist exactly one ambiguous proposal",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }

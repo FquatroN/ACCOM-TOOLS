@@ -7,7 +7,7 @@ as $$
     select token, ordinal
     from regexp_split_to_table(
       btrim(regexp_replace(unaccent(lower(p_value)), '[^[:alnum:]]+', ' ', 'g')),
-      '\\s+'
+      '[[:space:]]+'
     ) with ordinality as values(token, ordinal)
   )
   select coalesce(string_agg(token, ' ' order by ordinal), '')
@@ -302,15 +302,31 @@ begin
     select item->>'sourceType' as source_type, item->>'sourceId' as source_id,
            count(distinct p.base_source_id) as base_count
     from public.financial_reconciliation_automatic_proposals p
-    join lateral jsonb_array_elements(p.items) item on true
-    where p.run_id = v_run.id and p.status = 'proposed'
+    join lateral (
+      select item.value as item from jsonb_array_elements(p.items) as item(value)
+      union all
+      select item.value as item
+      from jsonb_array_elements(p.candidate_groups) as candidate_group(value)
+      join lateral jsonb_array_elements(
+        case when jsonb_typeof(candidate_group.value) = 'array' then candidate_group.value else jsonb_build_array(candidate_group.value) end
+      ) as item(value) on true
+    ) source_item on true
+    where p.run_id = v_run.id and p.status in ('proposed', 'ambiguous')
     group by item->>'sourceType', item->>'sourceId'
   ), overlapping as (
     select distinct p.id
     from public.financial_reconciliation_automatic_proposals p
-    join lateral jsonb_array_elements(p.items) item on true
+    join lateral (
+      select item.value as item from jsonb_array_elements(p.items) as item(value)
+      union all
+      select item.value as item
+      from jsonb_array_elements(p.candidate_groups) as candidate_group(value)
+      join lateral jsonb_array_elements(
+        case when jsonb_typeof(candidate_group.value) = 'array' then candidate_group.value else jsonb_build_array(candidate_group.value) end
+      ) as item(value) on true
+    ) source_item on true
     join source_usage u on u.source_type = item->>'sourceType' and u.source_id = item->>'sourceId'
-    where p.run_id = v_run.id and p.status = 'proposed' and u.base_count > 1
+    where p.run_id = v_run.id and p.status in ('proposed', 'ambiguous') and u.base_count > 1
   )
   update public.financial_reconciliation_automatic_proposals p
   set status = 'ambiguous', reason = 'cross_base_overlap', updated_at = now()
@@ -318,7 +334,11 @@ begin
 
   update public.financial_reconciliation_automatic_runs
   set status = 'ready', analysis_completed_at = now(), updated_at = now(),
-      counts = jsonb_build_object('bases', v_total, 'proposed', v_proposed, 'ambiguous', v_ambiguous)
+      counts = (select jsonb_build_object(
+        'bases', count(distinct base_source_id),
+        'proposed', count(*) filter (where status = 'proposed'),
+        'ambiguous', count(*) filter (where status = 'ambiguous')
+      ) from public.financial_reconciliation_automatic_proposals where run_id = v_run.id)
   where id = v_run.id;
   return public.get_financial_reconciliation_automatic_run(v_run.id);
 end $$;
@@ -398,12 +418,16 @@ begin
   return jsonb_build_object('claimed', true, 'resumed', false, 'run', public.get_financial_reconciliation_automatic_run(v_run_id));
 end $$;
 
+revoke all on function public.financial_reconciliation_match_normalize(text) from public, anon, authenticated;
+revoke all on function public.financial_reconciliation_match_compact(text) from public, anon, authenticated;
 revoke all on function public.financial_reconciliation_automatic_build_combinations(jsonb,jsonb,jsonb,numeric,integer) from public, anon, authenticated;
 revoke all on function public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer) from public, anon, authenticated;
 revoke all on function public.populate_financial_reconciliation_automatic_run(uuid) from public, anon, authenticated;
 revoke all on function public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid) from public, anon, authenticated;
 revoke all on function public.claim_financial_reconciliation_automatic_schedule(timestamptz,text) from public, anon, authenticated;
 revoke all on function public.get_financial_reconciliation_automatic_run(uuid) from public, anon, authenticated;
+grant execute on function public.financial_reconciliation_match_normalize(text) to service_role;
+grant execute on function public.financial_reconciliation_match_compact(text) to service_role;
 grant execute on function public.financial_reconciliation_automatic_build_combinations(jsonb,jsonb,jsonb,numeric,integer) to service_role;
 grant execute on function public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer) to service_role;
 grant execute on function public.populate_financial_reconciliation_automatic_run(uuid) to service_role;
