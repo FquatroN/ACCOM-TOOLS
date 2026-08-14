@@ -21934,6 +21934,7 @@ async function loadFinancialReconciliationAutomationRules() {
     automation.loaded = true;
     setFinancialReconciliationAutomationStatus(automation.rules.length ? "Automatic rules loaded." : "No automatic rules are available for manual analysis.");
   } catch (error) {
+    automation.rules = [];
     automation.loaded = false;
     setFinancialReconciliationAutomationStatus(`Failed to load automatic rules: ${error.message}`, "error");
   } finally {
@@ -21965,9 +21966,15 @@ function financialReconciliationAutomationReasonLabel(reason) {
     cross_base_overlap: "A destination record overlaps another proposal",
     source_snapshot_changed: "Source details changed after analysis",
     rule_version_changed: "The rule changed after analysis",
+    rule_snapshot_changed: "Rule configuration changed after analysis",
+    operator_changed: "Signed operator changed after analysis",
+    tolerance_changed: "Allowed tolerance changed after analysis",
+    combination_changed: "Candidate combination changed after analysis",
+    proposal_evidence_changed: "Identity evidence changed after analysis",
     source_locked: "A source record is already locked",
     execution_failed: "Execution could not be completed",
     deselected: "Not selected for execution",
+    not_selected: "Not selected for execution",
   };
   return labels[clean(reason)] || "Proposal is not executable";
 }
@@ -22017,13 +22024,24 @@ function financialReconciliationAutomationProposalMarkup(proposal, run, rules, s
   const rule = (Array.isArray(rules) ? rules : []).find((entry) => clean(entry?.ruleKey) === clean(value.ruleKey) && Number(entry?.ruleVersion) === Number(value.ruleVersion)) || definition;
   const operator = clean(definition.operator);
   const items = Array.isArray(value.items) ? value.items : [];
-  const candidateGroups = (Array.isArray(value.candidateGroups) ? value.candidateGroups : []).map((group) => Array.isArray(group) ? group : [group]);
+  const rawCandidateGroups = Array.isArray(value.candidateGroups) ? value.candidateGroups : [];
+  const candidateGroups = rawCandidateGroups.map((group) => Array.isArray(group) ? group : [group]);
   const destinationMarkup = items.map((item, index) => financialReconciliationAutomationItemMarkup(item, `Destination ${index + 1}`, operator)).join("");
-  const groupsMarkup = status === "ambiguous" ? candidateGroups.map((group, groupIndex) => `<section class="financial-reconciliation-automation-candidate-group"><h4>Candidate group ${groupIndex + 1}</h4>${group.map((item, itemIndex) => financialReconciliationAutomationItemMarkup(item, `Candidate ${itemIndex + 1}`, operator)).join("")}</section>`).join("") : "";
-  const reason = executable ? "" : `<p class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;
+  const groupsMarkup = status !== "ambiguous" ? "" : clean(value.reason) === "candidate_limit"
+    ? rawCandidateGroups.map((item, itemIndex) => financialReconciliationAutomationItemMarkup(item, `Candidate ${itemIndex + 1}`, operator)).join("")
+    : candidateGroups.map((group, groupIndex) => `<section class="financial-reconciliation-automation-candidate-group"><h4>Candidate group ${groupIndex + 1}</h4>${group.map((item, itemIndex) => financialReconciliationAutomationItemMarkup(item, `Candidate ${itemIndex + 1}`, operator)).join("")}</section>`).join("");
+  const reason = executable || !clean(value.reason) ? "" : `<p class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;
+  const baseSource = financialReconciliationSourceLabel(clean(value.baseSnapshot?.sourceType)) || "unknown source";
+  const baseId = clean(value.baseSnapshot?.sourceId) || clean(value.baseSourceId) || "unknown record";
+  const accessibleName = `${executable ? "Execute" : "Review"} automatic proposal for ${baseSource} record ${baseId}`;
+  const executionOutcome = (Array.isArray(run?.executionOutcomes) ? run.executionOutcomes : []).find((outcome) => clean(outcome?.proposalId ?? outcome?.id) === clean(value.id));
+  const executionOutcomeStatus = clean(executionOutcome?.status).toLowerCase();
+  const executionOutcomeMarkup = executionOutcomeStatus && executionOutcomeStatus !== status
+    ? `<p class="financial-reconciliation-automation-attempt financial-reconciliation-automation-attempt--${escape(executionOutcomeStatus)}">Execution attempt: ${escape(executionOutcomeStatus)} &middot; ${escape(financialReconciliationAutomationReasonLabel(executionOutcome.reason))}</p>`
+    : "";
   return `<article class="financial-reconciliation-automation-proposal financial-reconciliation-automation-proposal--${escape(status || "unknown")}" tabindex="-1">
-    <header><label><input type="checkbox" data-financial-reconciliation-automation-proposal-id="${escape(clean(value.id))}" ${selected ? "checked" : ""} ${!executable || pending ? "disabled" : ""} /><span>${executable ? "Execute proposal" : "Review only"}</span></label><span class="financial-reconciliation-automation-proposal-status">${escape(status || "unknown")}</span></header>
-    ${reason}
+    <header><label><input type="checkbox" aria-label="${escape(accessibleName)}" data-financial-reconciliation-automation-proposal-id="${escape(clean(value.id))}" ${selected ? "checked" : ""} ${!executable || pending ? "disabled" : ""} /><span>${executable ? "Execute proposal" : "Review only"}</span></label><span class="financial-reconciliation-automation-proposal-status">${escape(status || "unknown")}</span></header>
+    ${reason}${executionOutcomeMarkup}
     <div class="financial-reconciliation-automation-proposal-records">${financialReconciliationAutomationItemMarkup(value.baseSnapshot, "Base record")}${destinationMarkup}${groupsMarkup}</div>
     <footer><span>Difference ${escape(formatMoney(Number(value.calculatedDifference || 0)))}</span><span>Allowed ${escape(formatMoney(Number(value.allowedDifference ?? definition.differenceAllowed ?? 0)))}</span><span>${escape(clean(rule.displayName) || clean(value.ruleKey))} &middot; version ${escape(Number(value.ruleVersion) || 1)}</span></footer>
   </article>`;
@@ -22031,26 +22049,34 @@ function financialReconciliationAutomationProposalMarkup(proposal, run, rules, s
 
 function financialReconciliationAutomationResultsMarkup(run) {
   const proposals = Array.isArray(run?.proposals) ? run.proposals : [];
-  const labels = { completed: "Completed", stale: "Stale", failed: "Failed" };
+  const executionOutcomes = Array.isArray(run?.executionOutcomes) && run.executionOutcomes.length ? run.executionOutcomes : proposals;
+  const labels = { completed: "Completed", stale: "Stale", failed: "Failed", ambiguous: "Ambiguous", deselected: "Skipped / deselected" };
   const runSummary = run && typeof run === "object" ? `<span class="financial-reconciliation-automation-run-summary">Run ${escape(clean(run.runId) || "-")} &middot; ${escape(clean(run.status) || "unknown")} &middot; ${escape(clean(run.trigger) || "unknown")}</span>` : "";
   const outcomes = Object.entries(labels).map(([status, label]) => {
-    const count = proposals.filter((proposal) => clean(proposal?.status).toLowerCase() === status).length;
+    const source = status === "ambiguous" || status === "deselected" ? proposals : executionOutcomes;
+    const count = source.filter((proposal) => clean(proposal?.status).toLowerCase() === status).length;
     return `<span class="financial-reconciliation-automation-result financial-reconciliation-automation-result--${status}"><strong>${escape(label)}</strong><span>${escape(count)}</span></span>`;
   }).join("");
   return `${runSummary}${outcomes}`;
 }
 
-function renderFinancialReconciliationAutomation() {
+function renderFinancialReconciliationAutomation(focusProposalId = "") {
   const automation = financialReconciliationState().automation;
   const pending = clean(automation.pendingAction);
   const proposals = Array.isArray(automation.run?.proposals) ? automation.run.proposals : [];
   const executable = proposals.filter((proposal) => clean(proposal?.status) === "proposed");
   const selectedCount = executable.filter((proposal) => automation.selectedProposalIds.has(clean(proposal.id))).length;
-  if (els.financialReconciliationWorkbenchAutomationRules) els.financialReconciliationWorkbenchAutomationRules.innerHTML = financialReconciliationAutomationRulesMarkup(automation.rules, pending);
+  if (els.financialReconciliationWorkbenchAutomationRules) els.financialReconciliationWorkbenchAutomationRules.innerHTML = financialReconciliationAutomationRulesMarkup(automation.loaded ? automation.rules : [], pending);
   if (els.financialReconciliationWorkbenchAutomationProposals) {
     els.financialReconciliationWorkbenchAutomationProposals.innerHTML = proposals.length
       ? proposals.map((proposal) => financialReconciliationAutomationProposalMarkup(proposal, automation.run, automation.rules, automation.selectedProposalIds, Boolean(pending))).join("")
       : '<p class="empty">Analyze a rule to create auditable proposals.</p>';
+    const focusId = clean(focusProposalId);
+    if (focusId) {
+      const nextInput = Array.from(els.financialReconciliationWorkbenchAutomationProposals.querySelectorAll("[data-financial-reconciliation-automation-proposal-id]"))
+        .find((input) => clean(input.dataset.financialReconciliationAutomationProposalId) === focusId);
+      nextInput?.focus();
+    }
   }
   if (els.financialReconciliationWorkbenchAutomationResults) els.financialReconciliationWorkbenchAutomationResults.innerHTML = financialReconciliationAutomationResultsMarkup(automation.run);
   if (els.financialReconciliationWorkbenchAutomationSelectAll) els.financialReconciliationWorkbenchAutomationSelectAll.disabled = Boolean(pending) || !executable.length;
@@ -22064,6 +22090,7 @@ function renderFinancialReconciliationAutomation() {
 async function analyzeFinancialReconciliationAutomationRule(ruleKey) {
   const automation = financialReconciliationState().automation;
   const key = clean(ruleKey);
+  if (!automation.loaded) return;
   const rule = automation.rules.find((entry) => clean(entry?.ruleKey) === key && entry?.enabled === true && entry?.allowManualExecution === true);
   if (!rule || automation.pendingAction) return;
   automation.selectedProposalIds = new Set();
@@ -22109,7 +22136,7 @@ function toggleFinancialReconciliationAutomationProposal(proposalId, checked) {
   if (!executable) return;
   if (checked) automation.selectedProposalIds.add(id);
   else automation.selectedProposalIds.delete(id);
-  renderFinancialReconciliationAutomation();
+  renderFinancialReconciliationAutomation(id);
 }
 
 async function executeFinancialReconciliationAutomationSelection() {
@@ -22131,11 +22158,12 @@ async function executeFinancialReconciliationAutomationSelection() {
       method: "POST",
       body: { action: "execute_selected", runId: clean(automation.run?.runId), proposalIds },
     });
-    automation.run = result?.run || automation.run;
+    const executionOutcomes = Array.isArray(result?.outcomes) ? result.outcomes.map((outcome) => ({ ...outcome })) : [];
+    automation.run = result?.run ? { ...result.run, executionOutcomes } : { ...(automation.run || {}), executionOutcomes };
     automation.selectedProposalIds = new Set();
     current.loaded = false;
     await loadFinancialReconciliationWorkspace({ silent: true });
-    const outcomes = Array.isArray(automation.run?.proposals) ? automation.run.proposals : [];
+    const outcomes = executionOutcomes.length ? executionOutcomes : (Array.isArray(automation.run?.proposals) ? automation.run.proposals : []);
     const completed = outcomes.filter((proposal) => clean(proposal?.status) === "completed").length;
     const stale = outcomes.filter((proposal) => clean(proposal?.status) === "stale").length;
     const failed = outcomes.filter((proposal) => clean(proposal?.status) === "failed").length;

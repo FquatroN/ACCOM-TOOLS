@@ -669,6 +669,7 @@ declare
   v_proposal_id uuid;
   v_run_id uuid;
   v_snapshot jsonb;
+  v_public_run jsonb;
   v_public_proposal jsonb;
   v_result jsonb;
 begin
@@ -691,6 +692,10 @@ begin
   select run_id, base_snapshot into strict v_run_id, v_snapshot
   from public.financial_reconciliation_automatic_proposals
   where id = v_proposal_id;
+  v_public_run := public.get_financial_reconciliation_automatic_run(v_run_id);
+  if v_public_run#>>'{definitions,0,displayName}' <> 'Financial Documents to CGD Bank Statement' then
+    raise exception 'Automatic run snapshot omitted the managed friendly rule name.';
+  end if;
   if v_snapshot is distinct from jsonb_build_object(
     'sourceType', 'financial_documents',
     'sourceId', v_document_id,
@@ -704,7 +709,7 @@ begin
   end if;
 
   select proposal.value into strict v_public_proposal
-  from jsonb_array_elements(public.get_financial_reconciliation_automatic_run(v_run_id)->'proposals') proposal(value)
+  from jsonb_array_elements(v_public_run->'proposals') proposal(value)
   where proposal.value->>'id' = v_proposal_id::text;
   if v_public_proposal->'baseSnapshot' is distinct from v_snapshot then
     raise exception 'Automatic run detail omitted or changed the base snapshot.';

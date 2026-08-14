@@ -662,6 +662,34 @@ test("manual rule loader uses the app-authorized catalog without schedule admini
   assert.equal(Object.hasOwn(current.automation, "schedule"), false);
 });
 
+test("failed manual catalog reload clears stale Analyze rules", async () => {
+  const current = {
+    automation: { rules: workbenchRules(), run: null, selectedProposalIds: new Set(), pendingAction: "", loaded: false },
+  };
+  const loadRules = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "clone",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    `${appFunctionSource("loadFinancialReconciliationAutomationRules").replace(/^function /, "async function ")}
+     return loadFinancialReconciliationAutomationRules;`,
+  )(
+    () => current,
+    async () => { throw new Error("catalog unavailable"); },
+    (value) => String(value ?? "").trim(),
+    (value) => JSON.parse(JSON.stringify(value)),
+    () => {},
+    () => {},
+  );
+
+  await loadRules();
+
+  assert.deepEqual(current.automation.rules, []);
+  assert.equal(current.automation.loaded, false);
+});
+
 test("Analyze sends one rule and a fresh UUID, clears old selection, and selects only proposals", async () => {
   const current = {
     automation: {
@@ -781,6 +809,86 @@ test("proposal markup starts executable rows selected and audits every ambiguous
   assert.match(ambiguousMarkup, /type="checkbox"[^>]*disabled/);
   assert.match(ambiguousMarkup, /Multiple qualifying combinations/);
   assert.match(ambiguousMarkup, /Candidate group 1[\s\S]*Candidate group A[\s\S]*Candidate group 2[\s\S]*Candidate group B/);
+  assert.match(proposedMarkup, new RegExp(`aria-label="Execute automatic proposal for Financial Documents record ${baseSnapshot.sourceId}"`));
+});
+
+test("scheduled-only batch proposals use the immutable friendly rule name", () => {
+  const proposalMarkup = compileWorkbenchProposalMarkup();
+  const proposal = {
+    id: WORKBENCH_PROPOSAL_1,
+    ruleKey: "scheduled-only-rule",
+    ruleVersion: 8,
+    status: "proposed",
+    baseSnapshot: { sourceType: "financial_documents", sourceId: "document-8", sourceDate: "2026-08-08", description: "Batch", amount: 8 },
+    items: [],
+    candidateGroups: [],
+    calculatedDifference: 0,
+    allowedDifference: 0,
+  };
+  const run = workbenchRun([proposal]);
+  run.definitions = [{ ruleKey: "scheduled-only-rule", ruleVersion: 8, displayName: "Scheduled friendly name", operator: "-", differenceAllowed: "0.00" }];
+
+  const markup = proposalMarkup(proposal, run, [], new Set([WORKBENCH_PROPOSAL_1]), false);
+
+  assert.match(markup, /Scheduled friendly name[\s\S]*version 8/i);
+});
+
+test("candidate-limit ambiguity labels a flat candidate list without inventing combinations", () => {
+  const proposalMarkup = compileWorkbenchProposalMarkup();
+  const candidate = (id) => ({ sourceType: "import_cgd_extrato_ordem", sourceId: id, sourceDate: "2026-08-02", description: id, amount: -1 });
+  const proposal = {
+    id: WORKBENCH_PROPOSAL_2,
+    ruleKey: "manual-enabled",
+    ruleVersion: 3,
+    status: "ambiguous",
+    reason: "candidate_limit",
+    baseSnapshot: { sourceType: "financial_documents", sourceId: "document-limit", sourceDate: "2026-08-01", description: "Limit", amount: 13 },
+    items: [],
+    candidateGroups: [candidate("candidate-a"), candidate("candidate-b")],
+    allowedDifference: 1,
+  };
+
+  const markup = proposalMarkup(proposal, workbenchRun([proposal]), workbenchRules(), new Set(), false);
+
+  assert.match(markup, /Candidate 1[\s\S]*candidate-a[\s\S]*Candidate 2[\s\S]*candidate-b/);
+  assert.doesNotMatch(markup, /Candidate group/);
+});
+
+test("completed proposals do not invent a generic failure reason", () => {
+  const proposalMarkup = compileWorkbenchProposalMarkup();
+  const proposal = {
+    id: WORKBENCH_PROPOSAL_1,
+    ruleKey: "manual-enabled",
+    ruleVersion: 3,
+    status: "completed",
+    reason: "",
+    baseSnapshot: { sourceType: "financial_documents", sourceId: "document-complete", sourceDate: "2026-08-01", description: "Complete", amount: 1 },
+    items: [],
+    candidateGroups: [],
+    calculatedDifference: 0,
+    allowedDifference: 1,
+  };
+
+  const markup = proposalMarkup(proposal, workbenchRun([proposal]), workbenchRules(), new Set(), false);
+
+  assert.doesNotMatch(markup, /Proposal is not executable/);
+});
+
+test("all authoritative proposal reasons have safe auditable labels", () => {
+  const reasonLabel = new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationAutomationReasonLabel")}
+     return financialReconciliationAutomationReasonLabel;`,
+  )((value) => String(value ?? "").trim());
+  const expected = {
+    rule_snapshot_changed: "Rule configuration changed after analysis",
+    operator_changed: "Signed operator changed after analysis",
+    tolerance_changed: "Allowed tolerance changed after analysis",
+    combination_changed: "Candidate combination changed after analysis",
+    proposal_evidence_changed: "Identity evidence changed after analysis",
+    not_selected: "Not selected for execution",
+  };
+  for (const [reason, label] of Object.entries(expected)) assert.equal(reasonLabel(reason), label);
 });
 
 test("select-all and clear-all change executable proposals only", () => {
@@ -814,6 +922,20 @@ test("select-all and clear-all change executable proposals only", () => {
   assert.deepEqual([...current.automation.selectedProposalIds], [WORKBENCH_PROPOSAL_1]);
   functions.toggleFinancialReconciliationAutomationProposal(WORKBENCH_PROPOSAL_2, true);
   assert.deepEqual([...current.automation.selectedProposalIds], [WORKBENCH_PROPOSAL_1]);
+  let restoredFocusId = "";
+  const focusAwareFunctions = new Function(
+    "financialReconciliationState",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    `${appFunctionSource("toggleFinancialReconciliationAutomationProposal")}
+     return { toggleFinancialReconciliationAutomationProposal };`,
+  )(
+    () => current,
+    (value) => String(value ?? "").trim(),
+    (value) => { restoredFocusId = value; },
+  );
+  focusAwareFunctions.toggleFinancialReconciliationAutomationProposal(WORKBENCH_PROPOSAL_1, false);
+  assert.equal(restoredFocusId, WORKBENCH_PROPOSAL_1);
   functions.setFinancialReconciliationAutomationSelection("clear");
   assert.deepEqual([...current.automation.selectedProposalIds], []);
 });
@@ -834,8 +956,13 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
   const refreshedRun = workbenchRun([
     { id: WORKBENCH_PROPOSAL_1, status: "completed" },
     { id: WORKBENCH_PROPOSAL_2, status: "stale", reason: "source_snapshot_changed" },
-    { id: WORKBENCH_PROPOSAL_3, status: "failed", reason: "execution_failed" },
+    { id: WORKBENCH_PROPOSAL_3, status: "deselected", reason: "not_selected" },
   ]);
+  const executionOutcomes = [
+    { proposalId: WORKBENCH_PROPOSAL_1, status: "completed" },
+    { proposalId: WORKBENCH_PROPOSAL_2, status: "stale", reason: "source_snapshot_changed" },
+    { proposalId: WORKBENCH_PROPOSAL_3, status: "failed", reason: "execution_failed" },
+  ];
   const calls = [];
   const statuses = [];
   let resolveRequest;
@@ -854,7 +981,7 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
     () => current,
     (url, options) => {
       calls.push({ url, options });
-      return new Promise((resolve) => { resolveRequest = () => resolve({ run: refreshedRun, outcomes: refreshedRun.proposals }); });
+      return new Promise((resolve) => { resolveRequest = () => resolve({ run: refreshedRun, outcomes: executionOutcomes }); });
     },
     (value) => String(value ?? "").trim(),
     () => {},
@@ -881,18 +1008,22 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
   resolveRequest();
   await Promise.all([first, duplicate]);
 
-  assert.equal(current.automation.run, refreshedRun);
+  assert.notEqual(current.automation.run, refreshedRun);
+  assert.deepEqual(current.automation.run.proposals, refreshedRun.proposals, "persisted proposal lifecycle remains authoritative");
+  assert.deepEqual(current.automation.run.executionOutcomes, executionOutcomes, "attempt outcomes remain separately visible");
   assert.deepEqual([...current.automation.selectedProposalIds], []);
   assert.equal(current.automation.pendingAction, "");
   assert.equal(current.loaded, true, "the workspace loader owns its loaded state after refresh");
   assert.equal(refreshCount, 1);
+  assert.match(statuses.at(-1).message, /1 completed, 1 stale, 1 failed/i);
+  assert.equal(statuses.at(-1).tone, "error");
 
   await execute();
   assert.equal(calls.length, 1);
   assert.match(statuses.at(-1).message, /select at least one executable proposal/i);
 });
 
-test("completed, stale, and failed automatic outcomes render as separate summaries", () => {
+test("completed, stale, failed, ambiguous, and deselected outcomes render as separate summaries", () => {
   const resultsMarkup = new Function(
     "clean",
     "escape",
@@ -902,14 +1033,23 @@ test("completed, stale, and failed automatic outcomes render as separate summari
     (value) => String(value ?? "").trim(),
     new Function(`${appFunctionSource("escape")}; return escape;`)(),
   );
-  const markup = resultsMarkup(workbenchRun([
+  const run = workbenchRun([
     { id: WORKBENCH_PROPOSAL_1, status: "completed" },
     { id: WORKBENCH_PROPOSAL_2, status: "stale", reason: "source_snapshot_changed" },
-    { id: WORKBENCH_PROPOSAL_3, status: "failed", reason: "execution_failed" },
-  ]));
+    { id: WORKBENCH_PROPOSAL_3, status: "deselected", reason: "not_selected" },
+    { id: "ambiguous-id", status: "ambiguous", reason: "multiple_combinations" },
+  ]);
+  run.executionOutcomes = [
+    { proposalId: WORKBENCH_PROPOSAL_1, status: "completed" },
+    { proposalId: WORKBENCH_PROPOSAL_2, status: "stale" },
+    { proposalId: WORKBENCH_PROPOSAL_3, status: "failed", reason: "execution_failed" },
+  ];
+  const markup = resultsMarkup(run);
 
   assert.match(markup, new RegExp(`Run ${WORKBENCH_RUN_ID}[\\s\\S]*ready[\\s\\S]*manual`, "i"));
   assert.match(markup, /financial-reconciliation-automation-result--completed[\s\S]*Completed[\s\S]*1/);
   assert.match(markup, /financial-reconciliation-automation-result--stale[\s\S]*Stale[\s\S]*1/);
   assert.match(markup, /financial-reconciliation-automation-result--failed[\s\S]*Failed[\s\S]*1/);
+  assert.match(markup, /financial-reconciliation-automation-result--ambiguous[\s\S]*Ambiguous[\s\S]*1/);
+  assert.match(markup, /financial-reconciliation-automation-result--deselected[\s\S]*Skipped \/ deselected[\s\S]*1/);
 });

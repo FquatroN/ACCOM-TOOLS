@@ -213,6 +213,8 @@ test("automatic proposal review wraps evidence and keeps controls reachable on n
   assert.match(css, /\.financial-reconciliation-automation-proposal:focus-within\s*\{/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-workbench-automation-actions\s*\{[\s\S]*align-items:\s*stretch;/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-workbench-automation-actions button\s*\{[\s\S]*width:\s*100%;/);
+  assert.match(appMain, /function renderFinancialReconciliationAutomation\(focusProposalId = ""\)/);
+  assert.match(appMain, /querySelectorAll\("\[data-financial-reconciliation-automation-proposal-id\]"\)[\s\S]*\.focus\(\)/);
 });
 
 test("workbench rule snapshots keep only valid unique signed sources", () => {

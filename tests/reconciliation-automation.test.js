@@ -1157,6 +1157,8 @@ test("automatic proposals persist immutable base snapshots and expose an RPC-onl
   assert.match(analysisMigration, /base_snapshot,\s*items,\s*evidence,\s*candidate_groups/);
   assert.equal((analysisMigration.match(/v_base\.base_snapshot/g) || []).length >= 6, true,
     "every proposal path and combination calculation must use the authoritative base snapshot");
+  assert.equal((analysisMigration.match(/'displayName', d\.display_name/g) || []).length, 2,
+    "manual and scheduled run snapshots must retain the managed friendly rule name");
   assert.match(executionMigration, /v_base\.base_snapshot is distinct from v_proposal\.base_snapshot/);
 
   assert.match(schemaMigration, /create or replace function public\.get_financial_reconciliation_automatic_manual_rules\(\)/);

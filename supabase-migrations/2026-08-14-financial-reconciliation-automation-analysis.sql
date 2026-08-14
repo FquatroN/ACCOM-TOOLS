@@ -364,7 +364,7 @@ begin
   lock table public.financial_reconciliation_source_rules in share row exclusive mode;
   lock table public.financial_reconciliation_automatic_rule_configs in share row exclusive mode;
   select coalesce(jsonb_agg(jsonb_build_object(
-    'ruleKey', c.rule_key, 'ruleVersion', c.rule_version, 'priority', c.priority,
+    'ruleKey', c.rule_key, 'ruleVersion', c.rule_version, 'displayName', d.display_name, 'priority', c.priority,
     'differenceAllowed', c.difference_allowed, 'maxDifferenceDays', c.max_difference_days,
     'definition', d.definition, 'operator', sr.operator
   ) order by c.priority, c.rule_key), '[]'::jsonb)
@@ -399,7 +399,7 @@ begin
   where trigger = 'scheduled' and scheduled_slot = v_slot and finished_at is null order by started_at for update;
   if found then return jsonb_build_object('claimed', true, 'resumed', true, 'run', public.get_financial_reconciliation_automatic_run(v_run_id)); end if;
   select coalesce(jsonb_agg(jsonb_build_object(
-    'ruleKey', c.rule_key, 'ruleVersion', c.rule_version, 'priority', c.priority,
+    'ruleKey', c.rule_key, 'ruleVersion', c.rule_version, 'displayName', d.display_name, 'priority', c.priority,
     'differenceAllowed', c.difference_allowed, 'maxDifferenceDays', c.max_difference_days,
     'definition', d.definition, 'operator', sr.operator
   ) order by c.priority, c.rule_key), '[]'::jsonb)
