@@ -1081,3 +1081,22 @@ test("persisted completion remains authoritative when the execution response is 
     attemptFailures: 1,
   });
 });
+
+test("persisted failures are not double-counted as transport-uncertain attempts", () => {
+  const outcomeCounts = new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationAutomationOutcomeCounts")}
+     return financialReconciliationAutomationOutcomeCounts;`,
+  )((value) => String(value ?? "").trim());
+  const run = workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "failed", reason: "execution_failed" }]);
+  run.executionOutcomes = [{ proposalId: WORKBENCH_PROPOSAL_1, status: "failed", reason: "execution_failed" }];
+
+  assert.deepEqual(outcomeCounts(run), {
+    completed: 0,
+    stale: 0,
+    failed: 1,
+    ambiguous: 0,
+    deselected: 0,
+    attemptFailures: 0,
+  });
+});

@@ -22054,8 +22054,10 @@ function financialReconciliationAutomationOutcomeCounts(run) {
     const status = clean(proposal?.status).toLowerCase();
     if (Object.prototype.hasOwnProperty.call(counts, status)) counts[status] += 1;
   }
+  const persistedStatuses = new Map(proposals.map((proposal) => [clean(proposal?.id), clean(proposal?.status).toLowerCase()]));
   counts.attemptFailures = (Array.isArray(run?.executionOutcomes) ? run.executionOutcomes : [])
-    .filter((outcome) => clean(outcome?.status).toLowerCase() === "failed").length;
+    .filter((outcome) => clean(outcome?.status).toLowerCase() === "failed"
+      && persistedStatuses.get(clean(outcome?.proposalId ?? outcome?.id)) !== "failed").length;
   return counts;
 }
 
