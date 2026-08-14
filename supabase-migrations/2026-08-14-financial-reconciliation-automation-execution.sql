@@ -234,6 +234,7 @@ begin
   where candidates.base_source_id = v_proposal.base_source_id;
   if not found
     or v_base.base_source_date is distinct from v_proposal.base_source_date
+    or v_base.base_snapshot is distinct from v_proposal.base_snapshot
     or v_base.candidate_count > 12 then
     update public.financial_reconciliation_automatic_proposals
     set status = 'stale', reason = 'source_snapshot_changed', updated_at = now()

@@ -207,6 +207,7 @@ begin
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', p.id, 'runId', p.run_id, 'ruleKey', p.rule_key, 'ruleVersion', p.rule_version,
     'baseSourceType', p.base_source_type, 'baseSourceId', p.base_source_id, 'baseSourceDate', p.base_source_date,
+    'baseSnapshot', p.base_snapshot,
     'items', p.items, 'evidence', p.evidence, 'candidateGroups', p.candidate_groups,
     'calculatedDifference', p.calculated_difference, 'allowedDifference', p.allowed_difference,
     'status', p.status, 'reason', p.reason, 'signature', p.signature, 'reconciliationId', p.reconciliation_id,
@@ -249,10 +250,10 @@ begin
       if v_base.candidate_count > 12 then
         insert into public.financial_reconciliation_automatic_proposals (
           run_id, rule_key, rule_version, base_source_type, base_source_id, base_source_date,
-          candidate_groups, allowed_difference, status, reason, signature
+          base_snapshot, candidate_groups, allowed_difference, status, reason, signature
         ) values (
           v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer, 'financial_documents',
-          v_base.base_source_id, v_base.base_source_date, v_base.candidates,
+          v_base.base_source_id, v_base.base_source_date, v_base.base_snapshot, v_base.candidates,
           (v_rule->>'differenceAllowed')::numeric, 'ambiguous', 'candidate_limit',
           encode(digest('candidate_limit:' || v_base.base_source_id::text, 'sha256'), 'hex')
         ) on conflict do nothing;
@@ -270,10 +271,10 @@ begin
           );
           insert into public.financial_reconciliation_automatic_proposals (
             run_id, rule_key, rule_version, base_source_type, base_source_id, base_source_date,
-            items, evidence, candidate_groups, calculated_difference, allowed_difference, status, signature
+            base_snapshot, items, evidence, candidate_groups, calculated_difference, allowed_difference, status, signature
           ) values (
             v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer, 'financial_documents',
-            v_base.base_source_id, v_base.base_source_date, v_combination.items,
+            v_base.base_source_id, v_base.base_source_date, v_base.base_snapshot, v_combination.items,
             (select coalesce(jsonb_agg(value->'evidence'), '[]'::jsonb) from jsonb_array_elements(v_combination.items) value),
             jsonb_build_array(v_combination.items), v_combination.calculated_difference,
             (v_rule->>'differenceAllowed')::numeric, 'proposed', v_combination.signature
@@ -282,10 +283,10 @@ begin
         elsif v_combination_count > 1 then
           insert into public.financial_reconciliation_automatic_proposals (
             run_id, rule_key, rule_version, base_source_type, base_source_id, base_source_date,
-            candidate_groups, allowed_difference, status, reason, signature
+            base_snapshot, candidate_groups, allowed_difference, status, reason, signature
           ) values (
             v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer, 'financial_documents',
-            v_base.base_source_id, v_base.base_source_date,
+            v_base.base_source_id, v_base.base_source_date, v_base.base_snapshot,
             (select coalesce(jsonb_agg(items order by signature), '[]'::jsonb) from public.financial_reconciliation_automatic_build_combinations(
               v_base.base_snapshot, v_base.candidates, jsonb_build_object('import_cgd_extrato_ordem', v_operator),
               (v_rule->>'differenceAllowed')::numeric, 4

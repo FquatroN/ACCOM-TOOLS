@@ -494,6 +494,57 @@ test("manual automation GET authorizes app access and validates the run detail R
   assert.equal(invalidRpcCalled, false);
 });
 
+test("manual automation GET exposes only the app-authorized enabled manual rule catalog", async () => {
+  const authorizations = [];
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    requireFeature: async (_request, area, feature) => {
+      authorizations.push({ area, feature });
+      return {
+        user: { email: "user@example.com", id: "user-1" },
+        access: { profile: { id: "profile-1" } },
+      };
+    },
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return {
+        rules: [{
+          rule_key: AUTOMATIC_RULE_KEY,
+          rule_version: 1,
+          display_name: "Financial Documents to CGD Bank Statement",
+          enabled: true,
+          allow_manual_execution: true,
+          difference_allowed: "1.00",
+          max_difference_days: 7,
+          diagnostic: "hidden",
+        }],
+      };
+    },
+  }), async (handler) => {
+    await handler({ method: "GET", query: { view: "rules" } }, response);
+  });
+
+  assert.deepEqual(authorizations, [{ area: "app", feature: "financial-reconciliation" }]);
+  assert.deepEqual(calls, [{
+    resource: "rpc/get_financial_reconciliation_automatic_manual_rules",
+    options: { method: "POST", body: {} },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    rules: [{
+      ruleKey: AUTOMATIC_RULE_KEY,
+      ruleVersion: 1,
+      displayName: "Financial Documents to CGD Bank Statement",
+      enabled: true,
+      allowManualExecution: true,
+      differenceAllowed: "1.00",
+      maxDifferenceDays: 7,
+    }],
+  });
+  assert.equal(Object.hasOwn(response.body, "schedule"), false);
+});
+
 test("analyze_rule authorizes app access and sends exactly one manually enabled rule", async () => {
   const authorizations = [];
   const calls = [];
@@ -1088,6 +1139,41 @@ test("automation execution migration revalidates and completes each proposal ato
   assert.doesNotMatch(executionMigration, /grant [^;]+ on table public\.financial_reconciliation_automatic_/);
 });
 
+test("automatic proposals persist immutable base snapshots and expose an RPC-only manual catalog", () => {
+  const schemaMigration = fs.readFileSync(SCHEMA_MIGRATION_PATH, "utf8");
+  const analysisMigration = fs.readFileSync(ANALYSIS_MIGRATION_PATH, "utf8");
+  const executionMigration = fs.readFileSync(EXECUTION_MIGRATION_PATH, "utf8");
+
+  assert.match(schemaMigration, /base_snapshot jsonb not null default '\{\}'::jsonb check \(jsonb_typeof\(base_snapshot\) = 'object'\)/);
+  assert.match(schemaMigration, /alter table public\.financial_reconciliation_automatic_proposals[\s\S]*add column if not exists base_snapshot jsonb not null default '\{\}'::jsonb/);
+  assert.match(schemaMigration, /financial_reconciliation_automatic_proposals_base_snapshot_object_check[\s\S]*jsonb_typeof\(base_snapshot\) = 'object'/);
+  assert.match(schemaMigration, /create or replace function public\.prevent_financial_reconciliation_automatic_proposal_snapshot_change\(\)/);
+  assert.match(schemaMigration, /new\.base_snapshot is distinct from old\.base_snapshot[\s\S]*Automatic proposal base snapshot is immutable\./);
+  assert.match(schemaMigration, /create trigger financial_reconciliation_automatic_proposal_snapshot_immutable/);
+
+  assert.match(analysisMigration, /'baseSnapshot', p\.base_snapshot/);
+  assert.equal((analysisMigration.match(/base_snapshot,\s*candidate_groups/g) || []).length, 2,
+    "ambiguous proposal paths must snapshot their base record");
+  assert.match(analysisMigration, /base_snapshot,\s*items,\s*evidence,\s*candidate_groups/);
+  assert.equal((analysisMigration.match(/v_base\.base_snapshot/g) || []).length >= 6, true,
+    "every proposal path and combination calculation must use the authoritative base snapshot");
+  assert.match(executionMigration, /v_base\.base_snapshot is distinct from v_proposal\.base_snapshot/);
+
+  assert.match(schemaMigration, /create or replace function public\.get_financial_reconciliation_automatic_manual_rules\(\)/);
+  assert.match(schemaMigration, /where c\.enabled\s+and c\.allow_manual_execution/);
+  assert.match(schemaMigration, /'rules', v_rules/);
+  assert.doesNotMatch(
+    schemaMigration.slice(
+      schemaMigration.indexOf("create or replace function public.get_financial_reconciliation_automatic_manual_rules()"),
+      schemaMigration.indexOf("create or replace function public.replace_financial_reconciliation_automation_settings"),
+    ),
+    /financial_reconciliation_automatic_schedule|'schedule'|'lastScheduledRun'|updated_by|error_summary/,
+  );
+  assert.match(schemaMigration, /revoke all on function public\.get_financial_reconciliation_automatic_manual_rules\(\) from public, anon, authenticated, service_role;/);
+  assert.match(schemaMigration, /grant execute on function public\.get_financial_reconciliation_automatic_manual_rules\(\) to service_role;/);
+  assert.doesNotMatch(schemaMigration, /grant [^;]+ on table public\.financial_reconciliation_automatic_/);
+});
+
 test("automation settings RPCs validate and replace the complete payload atomically", () => {
   assert.equal(fs.existsSync(SCHEMA_MIGRATION_PATH), true, "automation schema migration must exist");
   const schemaMigration = fs.readFileSync(SCHEMA_MIGRATION_PATH, "utf8");
@@ -1183,6 +1269,9 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     "automatic lifecycle action changed provenance",
     "automatic lifecycle snapshots were not rechecked before completion",
     "failed proposal was not persisted as failed",
+    "manual rule catalog is filtered and RPC-only",
+    "proposal base snapshot is complete and immutable",
+    "execution rejects a changed base snapshot",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }

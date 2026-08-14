@@ -176,6 +176,17 @@ module.exports = async function handler(req, res) {
   try {
     if (req.method === "GET") {
       await requireManagedFeature(req, "app");
+      const view = cleanText(req.query?.view);
+      if (view) {
+        if (view !== "rules" || cleanText(req.query?.run_id)) {
+          throw inputError("Automation view is invalid.");
+        }
+        const rules = await restQuery("rpc/get_financial_reconciliation_automatic_manual_rules", {
+          method: "POST",
+          body: {},
+        });
+        return res.status(200).json(toAutomationPublicResult(rules));
+      }
       const runId = normalizeRunId(req.query?.run_id);
       const run = await restQuery("rpc/get_financial_reconciliation_automatic_run", {
         method: "POST",

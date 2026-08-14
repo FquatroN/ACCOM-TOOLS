@@ -100,7 +100,10 @@ begin
 
   if has_function_privilege('anon', 'public.get_financial_reconciliation_automation_settings()', 'EXECUTE')
     or has_function_privilege('authenticated', 'public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.get_financial_reconciliation_automatic_manual_rules()', 'EXECUTE')
+    or has_function_privilege('authenticated', 'public.get_financial_reconciliation_automatic_manual_rules()', 'EXECUTE')
     or not has_function_privilege('service_role', 'public.get_financial_reconciliation_automation_settings()', 'EXECUTE')
+    or not has_function_privilege('service_role', 'public.get_financial_reconciliation_automatic_manual_rules()', 'EXECUTE')
     or not has_function_privilege('service_role', 'public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)', 'EXECUTE') then
     raise exception 'Automation RPC privileges are invalid.';
   end if;
@@ -110,6 +113,41 @@ begin
     or not has_function_privilege('service_role', 'public.financial_reconciliation_match_compact(text)', 'EXECUTE') then
     raise exception 'Automatic matching helper privileges inherit from PUBLIC.';
   end if;
+end $$;
+
+-- manual rule catalog is filtered and RPC-only
+do $$
+declare
+  v_catalog jsonb;
+  v_rule jsonb;
+begin
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true, allow_manual_execution = true
+  where rule_key = 'financial_documents_cgd_bank_statement';
+
+  select public.get_financial_reconciliation_automatic_manual_rules() into v_catalog;
+  if jsonb_typeof(v_catalog) <> 'object'
+    or jsonb_array_length(v_catalog->'rules') <> 1
+    or v_catalog ? 'schedule'
+    or v_catalog ? 'lastScheduledRun' then
+    raise exception 'Manual automatic rule catalog exposed the wrong public envelope.';
+  end if;
+  v_rule := v_catalog->'rules'->0;
+  if v_rule->>'ruleKey' <> 'financial_documents_cgd_bank_statement'
+    or v_rule->>'enabled' <> 'true'
+    or v_rule->>'allowManualExecution' <> 'true'
+    or not (v_rule ?& array[
+      'ruleKey','ruleVersion','displayName','baseSourceType','destinationSourceTypes',
+      'logicDescription','definition','enabled','allowManualExecution',
+      'differenceAllowed','maxDifferenceDays','priority'
+    ])
+    or v_rule ?| array['includeInScheduledBatch','updatedBy','updatedAt','errorSummary','diagnostic'] then
+    raise exception 'Manual automatic rule catalog exposed unsafe or incomplete fields.';
+  end if;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = false, allow_manual_execution = false
+  where rule_key = 'financial_documents_cgd_bank_statement';
 end $$;
 
 -- table constraints
@@ -620,6 +658,81 @@ begin
     and proposal.base_source_id = p_base_source_id
     and proposal.status = 'proposed';
   return v_proposal_id;
+end $$;
+
+-- proposal base snapshot is complete and immutable
+-- execution rejects a changed base snapshot
+do $$
+declare
+  v_document_id uuid := '10000000-0000-0000-0000-000000000100';
+  v_bank_id uuid := '20000000-0000-0000-0000-000000000100';
+  v_proposal_id uuid;
+  v_run_id uuid;
+  v_snapshot jsonb;
+  v_public_proposal jsonb;
+  v_result jsonb;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, amount, fat
+  ) values (
+    v_document_id, date '2026-09-30', 'AUTO-SNAPSHOT-0100',
+    'Original invoice description', 'Snapshot Supplier', 90.00, 'S'
+  );
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    v_bank_id, 'smoke-snapshot', 'smoke-auto-snapshot-0100', date '2026-09-30',
+    'Payment AUTOSNAPSHOT0100', -90.00
+  );
+
+  v_proposal_id := pg_temp.make_automatic_proposal(
+    v_document_id, 'smoke:base-snapshot', '30000000-0000-0000-0000-000000000100'
+  );
+  select run_id, base_snapshot into strict v_run_id, v_snapshot
+  from public.financial_reconciliation_automatic_proposals
+  where id = v_proposal_id;
+  if v_snapshot is distinct from jsonb_build_object(
+    'sourceType', 'financial_documents',
+    'sourceId', v_document_id,
+    'sourceDate', date '2026-09-30',
+    'amount', 90.00,
+    'docNumber', 'AUTO-SNAPSHOT-0100',
+    'description', 'Original invoice description',
+    'supplierName', 'Snapshot Supplier'
+  ) then
+    raise exception 'Automatic proposal did not persist the complete base snapshot.';
+  end if;
+
+  select proposal.value into strict v_public_proposal
+  from jsonb_array_elements(public.get_financial_reconciliation_automatic_run(v_run_id)->'proposals') proposal(value)
+  where proposal.value->>'id' = v_proposal_id::text;
+  if v_public_proposal->'baseSnapshot' is distinct from v_snapshot then
+    raise exception 'Automatic run detail omitted or changed the base snapshot.';
+  end if;
+
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set base_snapshot = jsonb_build_object('sourceType', 'tampered')
+    where id = v_proposal_id;
+    raise exception 'Automatic proposal base snapshot accepted mutation.';
+  exception when raise_exception then
+    if sqlerrm <> 'Automatic proposal base snapshot is immutable.' then raise; end if;
+  end;
+
+  update public.financial_documents
+  set description = 'Changed after analysis'
+  where id = v_document_id;
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, 'smoke:base-snapshot'
+  );
+  if v_result->>'status' <> 'stale'
+    or v_result->>'reason' <> 'source_snapshot_changed'
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals
+      where id = v_proposal_id and reconciliation_id is not null
+    ) then
+    raise exception 'Execution accepted a source record that differed from its base snapshot.';
+  end if;
 end $$;
 
 -- non-zero automatic completion and idempotency

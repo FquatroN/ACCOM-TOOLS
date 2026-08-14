@@ -99,6 +99,7 @@ create table if not exists public.financial_reconciliation_automatic_proposals (
   base_source_type text not null,
   base_source_id uuid not null,
   base_source_date date not null,
+  base_snapshot jsonb not null default '{}'::jsonb check (jsonb_typeof(base_snapshot) = 'object'),
   items jsonb not null default '[]'::jsonb check (jsonb_typeof(items) = 'array'),
   evidence jsonb not null default '[]'::jsonb check (jsonb_typeof(evidence) = 'array'),
   candidate_groups jsonb not null default '[]'::jsonb check (jsonb_typeof(candidate_groups) = 'array'),
@@ -116,6 +117,46 @@ create table if not exists public.financial_reconciliation_automatic_proposals (
   foreign key (rule_key, rule_version) references public.financial_reconciliation_automatic_rule_definitions(rule_key, version),
   unique (run_id, rule_key, base_source_type, base_source_id, signature)
 );
+
+alter table public.financial_reconciliation_automatic_proposals
+  add column if not exists base_snapshot jsonb not null default '{}'::jsonb;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.financial_reconciliation_automatic_proposals'::regclass
+      and conname = 'financial_reconciliation_automatic_proposals_base_snapshot_object_check'
+  ) then
+    alter table public.financial_reconciliation_automatic_proposals
+      add constraint financial_reconciliation_automatic_proposals_base_snapshot_object_check
+      check (jsonb_typeof(base_snapshot) = 'object') not valid;
+  end if;
+end $$;
+
+alter table public.financial_reconciliation_automatic_proposals
+  validate constraint financial_reconciliation_automatic_proposals_base_snapshot_object_check;
+
+create or replace function public.prevent_financial_reconciliation_automatic_proposal_snapshot_change()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.base_snapshot is distinct from old.base_snapshot then
+    raise exception 'Automatic proposal base snapshot is immutable.';
+  end if;
+  return new;
+end $$;
+
+revoke all on function public.prevent_financial_reconciliation_automatic_proposal_snapshot_change()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists financial_reconciliation_automatic_proposal_snapshot_immutable
+  on public.financial_reconciliation_automatic_proposals;
+create trigger financial_reconciliation_automatic_proposal_snapshot_immutable
+before update of base_snapshot on public.financial_reconciliation_automatic_proposals
+for each row execute function public.prevent_financial_reconciliation_automatic_proposal_snapshot_change();
 
 alter table public.financial_reconciliations
   add column if not exists origin text not null default 'user' check (origin in ('user','automatic')),
@@ -281,6 +322,35 @@ begin
     'rules', v_rules,
     'lastScheduledRun', v_last_scheduled_run
   );
+end $$;
+
+create or replace function public.get_financial_reconciliation_automatic_manual_rules()
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  v_rules jsonb;
+begin
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'ruleKey', d.rule_key,
+    'ruleVersion', c.rule_version,
+    'displayName', d.display_name,
+    'baseSourceType', d.base_source_type,
+    'destinationSourceTypes', d.destination_source_types,
+    'logicDescription', d.logic_description,
+    'definition', d.definition,
+    'enabled', c.enabled,
+    'allowManualExecution', c.allow_manual_execution,
+    'differenceAllowed', c.difference_allowed,
+    'maxDifferenceDays', c.max_difference_days,
+    'priority', c.priority
+  ) order by c.priority, d.rule_key), '[]'::jsonb)
+  into v_rules
+  from public.financial_reconciliation_automatic_rule_configs c
+  join public.financial_reconciliation_automatic_rule_definitions d
+    on d.rule_key = c.rule_key and d.version = c.rule_version
+  where c.enabled
+    and c.allow_manual_execution;
+
+  return jsonb_build_object('rules', v_rules);
 end $$;
 
 create or replace function public.replace_financial_reconciliation_automation_settings(p_schedule jsonb, p_rules jsonb, p_actor text)
@@ -480,8 +550,10 @@ begin
 end $$;
 
 revoke all on function public.get_financial_reconciliation_automation_settings() from public, anon, authenticated;
+revoke all on function public.get_financial_reconciliation_automatic_manual_rules() from public, anon, authenticated, service_role;
 revoke all on function public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text) from public, anon, authenticated;
 grant execute on function public.get_financial_reconciliation_automation_settings() to service_role;
+grant execute on function public.get_financial_reconciliation_automatic_manual_rules() to service_role;
 grant execute on function public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text) to service_role;
 
 notify pgrst, 'reload schema';
