@@ -51,6 +51,7 @@ const MANUAL_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-au
 const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
 const PROPOSAL_ID_2 = "00000000-0000-0000-0000-000000000004";
 const PROPOSAL_ID_3 = "00000000-0000-0000-0000-000000000005";
+const CASE_UUID = "abcdefab-cdef-abcd-efab-cdefabcdefab";
 
 function responseRecorder() {
   return {
@@ -458,7 +459,10 @@ test("manual automation GET authorizes app access and validates the run detail R
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     requireFeature: async (_request, area, feature) => {
       authorizations.push({ area, feature });
-      return { user: { email: "user@example.com", id: "user-1" } };
+      return {
+        user: { email: "user@example.com", id: "user-1" },
+        access: { profile: { id: "profile-1" } },
+      };
     },
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
@@ -497,7 +501,10 @@ test("analyze_rule authorizes app access and sends exactly one manually enabled 
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     requireFeature: async (_request, area, feature) => {
       authorizations.push({ area, feature });
-      return { user: { email: "user@example.com", id: "user-1" } };
+      return {
+        user: { email: "user@example.com", id: "user-1" },
+        access: { profile: { id: "profile-1" } },
+      };
     },
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
@@ -588,7 +595,10 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     requireFeature: async (_request, area, feature) => {
       authorizations.push({ area, feature });
-      return { user: { email: "user@example.com", id: "user-1" } };
+      return {
+        user: { email: "user@example.com", id: "user-1" },
+        access: { profile: { id: "profile-1" } },
+      };
     },
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
@@ -681,13 +691,6 @@ test("execute_selected rejects mixed, scheduled, finished, or foreign-actor runs
       finishedAt: null,
       proposals: [{ id: PROPOSAL_ID, status: "proposed" }],
     }, 400],
-    ["finished run", {
-      runId: RUN_ID,
-      trigger: "manual",
-      actor: "user@example.com",
-      finishedAt: "2026-08-14T10:00:00Z",
-      proposals: [{ id: PROPOSAL_ID, status: "completed" }],
-    }, 409],
     ["foreign actor", {
       runId: RUN_ID,
       trigger: "manual",
@@ -719,10 +722,71 @@ test("execute_selected rejects mixed, scheduled, finished, or foreign-actor runs
   }
 });
 
-test("administrator automation endpoints reject fallback access before any RPC", async () => {
+test("execute_selected returns authoritative persisted outcomes when a finished manual run is retried", async () => {
+  const calls = [];
+  const response = responseRecorder();
+  const finishedRun = {
+    runId: RUN_ID,
+    trigger: "manual",
+    actor: "user@example.com",
+    status: "partial",
+    finishedAt: "2026-08-14T10:00:00Z",
+    proposals: [
+      { id: PROPOSAL_ID, status: "completed", reconciliationId: "00000000-0000-0000-0000-000000000006" },
+      { id: PROPOSAL_ID_2, status: "stale", reason: "source_snapshot_changed" },
+      { id: PROPOSAL_ID_3, status: "failed", reason: "execution_failed" },
+    ],
+  };
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return finishedRun;
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: {
+        action: "execute_selected",
+        runId: RUN_ID,
+        proposalIds: [PROPOSAL_ID, PROPOSAL_ID_2, PROPOSAL_ID_3],
+      },
+    }, response);
+  });
+
+  assert.deepEqual(calls, [{
+    resource: "rpc/get_financial_reconciliation_automatic_run",
+    options: { method: "POST", body: { p_run_id: RUN_ID } },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    run: finishedRun,
+    outcomes: [
+      {
+        proposalId: PROPOSAL_ID,
+        runId: RUN_ID,
+        status: "completed",
+        reconciliationId: "00000000-0000-0000-0000-000000000006",
+      },
+      { proposalId: PROPOSAL_ID_2, runId: RUN_ID, status: "stale", reason: "source_snapshot_changed" },
+      { proposalId: PROPOSAL_ID_3, runId: RUN_ID, status: "failed", reason: "execution_failed" },
+    ],
+  });
+});
+
+test("automation endpoints reject fallback access before any RPC", async () => {
   for (const [handlerPath, request] of [
     [SETTINGS_HANDLER_PATH, { method: "GET" }],
     [MANUAL_HANDLER_PATH, { method: "POST", body: { action: "analyze_batch", clientRequestId: REQUEST_ID } }],
+    [MANUAL_HANDLER_PATH, { method: "GET", query: { run_id: RUN_ID } }],
+    [MANUAL_HANDLER_PATH, {
+      method: "POST",
+      body: { action: "analyze_rule", ruleKeys: [AUTOMATIC_RULE_KEY], clientRequestId: REQUEST_ID },
+    }],
+    [MANUAL_HANDLER_PATH, {
+      method: "POST",
+      body: { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID] },
+    }],
+    [MANUAL_HANDLER_PATH, { method: "DELETE" }],
   ]) {
     let rpcCalled = false;
     const response = responseRecorder();
@@ -741,6 +805,44 @@ test("administrator automation endpoints reject fallback access before any RPC",
     assert.equal(response.statusCode, 403);
     assert.equal(rpcCalled, false);
   }
+});
+
+test("manual automation canonicalizes valid UUID spellings and rejects case-variant duplicates", async () => {
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return { runId: RUN_ID };
+    },
+  }), async (handler) => {
+    await handler({ method: "GET", query: { run_id: CASE_UUID.toUpperCase() } }, response);
+  });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(calls, [{
+    resource: "rpc/get_financial_reconciliation_automatic_run",
+    options: { method: "POST", body: { p_run_id: CASE_UUID } },
+  }]);
+
+  const duplicateResponse = responseRecorder();
+  let duplicateRpcCalled = false;
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => {
+      duplicateRpcCalled = true;
+      return {};
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: {
+        action: "execute_selected",
+        runId: RUN_ID,
+        proposalIds: [CASE_UUID, CASE_UUID.toUpperCase()],
+      },
+    }, duplicateResponse);
+  });
+  assert.equal(duplicateResponse.statusCode, 400);
+  assert.equal(duplicateRpcCalled, false);
 });
 
 test("automation handlers set Allow, reject invalid payloads before RPCs, and safely map RPC errors", async () => {

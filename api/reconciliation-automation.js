@@ -37,11 +37,19 @@ function actorFor(auth) {
   return cleanText(auth.user?.email) || cleanText(auth.user?.id);
 }
 
+async function requireManagedFeature(req, area) {
+  const auth = await requireFeature(req, area, "financial-reconciliation");
+  if (!cleanText(auth.access?.profile?.id)) {
+    throw statusError("You do not have permission for this feature.", 403);
+  }
+  return auth;
+}
+
 function normalizeRunId(value) {
   if (typeof value !== "string" || !UUID_PATTERN.test(value)) {
     throw inputError("Run ID must be a valid UUID.");
   }
-  return value;
+  return value.toLowerCase();
 }
 
 function requireClientRequestId(input) {
@@ -74,7 +82,7 @@ async function createAnalysis(input, actor, mode) {
 }
 
 async function analyzeRule(req, body) {
-  const auth = await requireFeature(req, "app", "financial-reconciliation");
+  const auth = await requireManagedFeature(req, "app");
   const input = requireClientRequestId(normalizeAnalyzePayload(body));
   if (input.action !== "analyze_rule" || input.ruleKeys.length !== 1) {
     throw inputError("Analyze rule requires exactly one manually enabled rule.");
@@ -83,10 +91,7 @@ async function analyzeRule(req, body) {
 }
 
 async function analyzeBatch(req, body) {
-  const auth = await requireFeature(req, "settings", "financial-reconciliation");
-  if (!cleanText(auth.access?.profile?.id)) {
-    throw statusError("You do not have permission for this feature.", 403);
-  }
+  const auth = await requireManagedFeature(req, "settings");
   requireBatchFields(body);
   const settings = toAutomationPublicResult(await restQuery(
     "rpc/get_financial_reconciliation_automation_settings",
@@ -104,8 +109,16 @@ async function analyzeBatch(req, body) {
 }
 
 async function executeSelected(req, body) {
-  const auth = await requireFeature(req, "app", "financial-reconciliation");
-  const input = normalizeExecutePayload(body);
+  const auth = await requireManagedFeature(req, "app");
+  const normalizedInput = normalizeExecutePayload(body);
+  const input = {
+    ...normalizedInput,
+    runId: normalizedInput.runId.toLowerCase(),
+    proposalIds: normalizedInput.proposalIds.map((proposalId) => proposalId.toLowerCase()),
+  };
+  if (new Set(input.proposalIds).size !== input.proposalIds.length) {
+    throw inputError("Proposal IDs must contain between 1 and 100 unique proposal IDs.");
+  }
   const actor = actorFor(auth);
   const outcomes = [];
   const run = toAutomationPublicResult(await restQuery(
@@ -115,15 +128,29 @@ async function executeSelected(req, body) {
   if (run?.runId !== input.runId || run?.trigger !== "manual") {
     throw inputError("Selected proposals must belong to the requested manual run.");
   }
-  if (run.finishedAt) {
-    throw statusError("The requested automation run is already finished.", 409);
-  }
   if (cleanText(run.actor) !== actor) {
     throw statusError("You do not have permission for this automation run.", 403);
   }
-  const proposalIds = new Set((Array.isArray(run.proposals) ? run.proposals : []).map((proposal) => proposal?.id));
-  if (input.proposalIds.some((proposalId) => !proposalIds.has(proposalId))) {
+  const proposals = new Map((Array.isArray(run.proposals) ? run.proposals : [])
+    .map((proposal) => [cleanText(proposal?.id).toLowerCase(), proposal]));
+  if (input.proposalIds.some((proposalId) => !proposals.has(proposalId))) {
     throw inputError("Selected proposals must belong to the requested manual run.");
+  }
+  if (run.finishedAt) {
+    return {
+      run,
+      outcomes: input.proposalIds.map((proposalId) => {
+        const proposal = proposals.get(proposalId);
+        const outcome = {
+          proposalId,
+          runId: input.runId,
+          status: proposal.status,
+        };
+        if (proposal.reason) outcome.reason = proposal.reason;
+        if (proposal.reconciliationId) outcome.reconciliationId = proposal.reconciliationId;
+        return outcome;
+      }),
+    };
   }
 
   for (const proposalId of input.proposalIds) {
@@ -148,7 +175,7 @@ async function executeSelected(req, body) {
 module.exports = async function handler(req, res) {
   try {
     if (req.method === "GET") {
-      await requireFeature(req, "app", "financial-reconciliation");
+      await requireManagedFeature(req, "app");
       const runId = normalizeRunId(req.query?.run_id);
       const run = await restQuery("rpc/get_financial_reconciliation_automatic_run", {
         method: "POST",
@@ -168,7 +195,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(result);
     }
 
-    await requireFeature(req, "app", "financial-reconciliation");
+    await requireManagedFeature(req, "app");
     res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ error: "Method not allowed." });
   } catch (error) {
