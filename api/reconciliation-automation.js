@@ -15,6 +15,24 @@ function inputError(message) {
   return error;
 }
 
+function statusError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function safePublicError(error) {
+  const mapped = mapRpcError(error);
+  if (!error?.supabasePayload && mapped.statusCode < 500) return mapped;
+  const safe = new Error(mapped.statusCode === 409
+    ? "The reconciliation automation state changed. Refresh and try again."
+    : mapped.statusCode >= 500
+      ? "Unexpected server error."
+      : "Reconciliation automation request could not be completed.");
+  safe.statusCode = mapped.statusCode;
+  return safe;
+}
+
 function actorFor(auth) {
   return cleanText(auth.user?.email) || cleanText(auth.user?.id);
 }
@@ -66,6 +84,9 @@ async function analyzeRule(req, body) {
 
 async function analyzeBatch(req, body) {
   const auth = await requireFeature(req, "settings", "financial-reconciliation");
+  if (!cleanText(auth.access?.profile?.id)) {
+    throw statusError("You do not have permission for this feature.", 403);
+  }
   requireBatchFields(body);
   const settings = toAutomationPublicResult(await restQuery(
     "rpc/get_financial_reconciliation_automation_settings",
@@ -87,6 +108,23 @@ async function executeSelected(req, body) {
   const input = normalizeExecutePayload(body);
   const actor = actorFor(auth);
   const outcomes = [];
+  const run = toAutomationPublicResult(await restQuery(
+    "rpc/get_financial_reconciliation_automatic_run",
+    { method: "POST", body: { p_run_id: input.runId } },
+  ));
+  if (run?.runId !== input.runId || run?.trigger !== "manual") {
+    throw inputError("Selected proposals must belong to the requested manual run.");
+  }
+  if (run.finishedAt) {
+    throw statusError("The requested automation run is already finished.", 409);
+  }
+  if (cleanText(run.actor) !== actor) {
+    throw statusError("You do not have permission for this automation run.", 403);
+  }
+  const proposalIds = new Set((Array.isArray(run.proposals) ? run.proposals : []).map((proposal) => proposal?.id));
+  if (input.proposalIds.some((proposalId) => !proposalIds.has(proposalId))) {
+    throw inputError("Selected proposals must belong to the requested manual run.");
+  }
 
   for (const proposalId of input.proposalIds) {
     try {
@@ -100,11 +138,11 @@ async function executeSelected(req, body) {
     }
   }
 
-  const run = await restQuery("rpc/finish_financial_reconciliation_automatic_run", {
+  const finalizedRun = await restQuery("rpc/finish_financial_reconciliation_automatic_run", {
     method: "POST",
     body: { p_run_id: input.runId },
   });
-  return { run: toAutomationPublicResult(run), outcomes };
+  return { run: toAutomationPublicResult(finalizedRun), outcomes };
 }
 
 module.exports = async function handler(req, res) {
@@ -134,6 +172,6 @@ module.exports = async function handler(req, res) {
     res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ error: "Method not allowed." });
   } catch (error) {
-    return sendError(res, mapRpcError(error));
+    return sendError(res, safePublicError(error));
   }
 };
