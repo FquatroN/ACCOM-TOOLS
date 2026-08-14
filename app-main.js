@@ -22047,15 +22047,25 @@ function financialReconciliationAutomationProposalMarkup(proposal, run, rules, s
   </article>`;
 }
 
-function financialReconciliationAutomationResultsMarkup(run) {
+function financialReconciliationAutomationOutcomeCounts(run) {
   const proposals = Array.isArray(run?.proposals) ? run.proposals : [];
-  const executionOutcomes = Array.isArray(run?.executionOutcomes) && run.executionOutcomes.length ? run.executionOutcomes : proposals;
-  const labels = { completed: "Completed", stale: "Stale", failed: "Failed", ambiguous: "Ambiguous", deselected: "Skipped / deselected" };
+  const counts = { completed: 0, stale: 0, failed: 0, ambiguous: 0, deselected: 0, attemptFailures: 0 };
+  for (const proposal of proposals) {
+    const status = clean(proposal?.status).toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(counts, status)) counts[status] += 1;
+  }
+  counts.attemptFailures = (Array.isArray(run?.executionOutcomes) ? run.executionOutcomes : [])
+    .filter((outcome) => clean(outcome?.status).toLowerCase() === "failed").length;
+  return counts;
+}
+
+function financialReconciliationAutomationResultsMarkup(run) {
+  const counts = financialReconciliationAutomationOutcomeCounts(run);
+  const labels = { completed: "Completed", stale: "Stale", failed: "Failed", ambiguous: "Ambiguous", deselected: "Skipped / deselected", attemptFailures: "Execution attempt failures" };
   const runSummary = run && typeof run === "object" ? `<span class="financial-reconciliation-automation-run-summary">Run ${escape(clean(run.runId) || "-")} &middot; ${escape(clean(run.status) || "unknown")} &middot; ${escape(clean(run.trigger) || "unknown")}</span>` : "";
-  const outcomes = Object.entries(labels).map(([status, label]) => {
-    const source = status === "ambiguous" || status === "deselected" ? proposals : executionOutcomes;
-    const count = source.filter((proposal) => clean(proposal?.status).toLowerCase() === status).length;
-    return `<span class="financial-reconciliation-automation-result financial-reconciliation-automation-result--${status}"><strong>${escape(label)}</strong><span>${escape(count)}</span></span>`;
+  const outcomes = Object.entries(labels).map(([key, label]) => {
+    const className = key === "attemptFailures" ? "attempt-failed" : key;
+    return `<span class="financial-reconciliation-automation-result financial-reconciliation-automation-result--${className}"><strong>${escape(label)}</strong><span>${escape(counts[key])}</span></span>`;
   }).join("");
   return `${runSummary}${outcomes}`;
 }
@@ -22163,12 +22173,11 @@ async function executeFinancialReconciliationAutomationSelection() {
     automation.selectedProposalIds = new Set();
     current.loaded = false;
     await loadFinancialReconciliationWorkspace({ silent: true });
-    const outcomes = executionOutcomes.length ? executionOutcomes : (Array.isArray(automation.run?.proposals) ? automation.run.proposals : []);
-    const completed = outcomes.filter((proposal) => clean(proposal?.status) === "completed").length;
-    const stale = outcomes.filter((proposal) => clean(proposal?.status) === "stale").length;
-    const failed = outcomes.filter((proposal) => clean(proposal?.status) === "failed").length;
-    setFinancialReconciliationAutomationStatus(`Execution finished: ${completed} completed, ${stale} stale, ${failed} failed.`, failed ? "error" : "success");
-    showToast(`${completed} automatic reconciliation${completed === 1 ? "" : "s"} completed.`, failed ? "error" : "success");
+    const counts = financialReconciliationAutomationOutcomeCounts(automation.run);
+    const attemptSummary = counts.attemptFailures ? ` ${counts.attemptFailures} execution attempt failure${counts.attemptFailures === 1 ? "" : "s"} reported.` : "";
+    const tone = counts.failed || counts.attemptFailures ? "error" : "success";
+    setFinancialReconciliationAutomationStatus(`Execution finished: ${counts.completed} completed, ${counts.stale} stale, ${counts.failed} failed.${attemptSummary}`, tone);
+    showToast(`${counts.completed} automatic reconciliation${counts.completed === 1 ? "" : "s"} completed.${attemptSummary}`, tone);
   } catch (error) {
     setFinancialReconciliationAutomationStatus(`Execution failed: ${error.message}`, "error");
     showToast(error.message, "error");

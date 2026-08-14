@@ -975,6 +975,7 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
     "setFinancialReconciliationAutomationStatus",
     "loadFinancialReconciliationWorkspace",
     "showToast",
+    "financialReconciliationAutomationOutcomeCounts",
     `${appFunctionSource("executeFinancialReconciliationAutomationSelection").replace(/^function /, "async function ")}
      return executeFinancialReconciliationAutomationSelection;`,
   )(
@@ -988,6 +989,11 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
     (message, tone) => statuses.push({ message, tone }),
     async () => { refreshCount += 1; current.loaded = true; },
     () => {},
+    new Function(
+      "clean",
+      `${appFunctionSource("financialReconciliationAutomationOutcomeCounts")}
+       return financialReconciliationAutomationOutcomeCounts;`,
+    )((value) => String(value ?? "").trim()),
   );
 
   const first = execute();
@@ -1015,7 +1021,8 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
   assert.equal(current.automation.pendingAction, "");
   assert.equal(current.loaded, true, "the workspace loader owns its loaded state after refresh");
   assert.equal(refreshCount, 1);
-  assert.match(statuses.at(-1).message, /1 completed, 1 stale, 1 failed/i);
+  assert.match(statuses.at(-1).message, /1 completed, 1 stale, 0 failed/i);
+  assert.match(statuses.at(-1).message, /1 execution attempt failure/i);
   assert.equal(statuses.at(-1).tone, "error");
 
   await execute();
@@ -1027,7 +1034,8 @@ test("completed, stale, failed, ambiguous, and deselected outcomes render as sep
   const resultsMarkup = new Function(
     "clean",
     "escape",
-    `${appFunctionSource("financialReconciliationAutomationResultsMarkup")}
+    `${appFunctionSource("financialReconciliationAutomationOutcomeCounts")}
+     ${appFunctionSource("financialReconciliationAutomationResultsMarkup")}
      return financialReconciliationAutomationResultsMarkup;`,
   )(
     (value) => String(value ?? "").trim(),
@@ -1049,7 +1057,27 @@ test("completed, stale, failed, ambiguous, and deselected outcomes render as sep
   assert.match(markup, new RegExp(`Run ${WORKBENCH_RUN_ID}[\\s\\S]*ready[\\s\\S]*manual`, "i"));
   assert.match(markup, /financial-reconciliation-automation-result--completed[\s\S]*Completed[\s\S]*1/);
   assert.match(markup, /financial-reconciliation-automation-result--stale[\s\S]*Stale[\s\S]*1/);
-  assert.match(markup, /financial-reconciliation-automation-result--failed[\s\S]*Failed[\s\S]*1/);
+  assert.match(markup, /financial-reconciliation-automation-result--failed[\s\S]*Failed[\s\S]*0/);
   assert.match(markup, /financial-reconciliation-automation-result--ambiguous[\s\S]*Ambiguous[\s\S]*1/);
   assert.match(markup, /financial-reconciliation-automation-result--deselected[\s\S]*Skipped \/ deselected[\s\S]*1/);
+  assert.match(markup, /financial-reconciliation-automation-result--attempt-failed[\s\S]*Execution attempt failures[\s\S]*1/);
+});
+
+test("persisted completion remains authoritative when the execution response is transport-uncertain", () => {
+  const outcomeCounts = new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationAutomationOutcomeCounts")}
+     return financialReconciliationAutomationOutcomeCounts;`,
+  )((value) => String(value ?? "").trim());
+  const run = workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "completed" }]);
+  run.executionOutcomes = [{ proposalId: WORKBENCH_PROPOSAL_1, status: "failed", reason: "execution_failed" }];
+
+  assert.deepEqual(outcomeCounts(run), {
+    completed: 1,
+    stale: 0,
+    failed: 0,
+    ambiguous: 0,
+    deselected: 0,
+    attemptFailures: 1,
+  });
 });
