@@ -4,6 +4,7 @@ begin;
 
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 
 -- definition/config preservation
 update public.financial_reconciliation_automatic_rule_definitions
@@ -28,6 +29,7 @@ where id = true;
 
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 
 do $$
 declare
@@ -563,6 +565,529 @@ begin
   if not (v_first->>'claimed')::boolean or not (v_second->>'claimed')::boolean
     or v_first#>>'{run,runId}' <> v_second#>>'{run,runId}' then
     raise exception 'Lisbon DST slot claim did not produce exactly one scheduled run.';
+  end if;
+end $$;
+
+-- automatic execution RPC privileges
+do $$
+begin
+  if has_function_privilege('anon', 'public.execute_financial_reconciliation_automatic_proposal(uuid,text)', 'EXECUTE')
+    or has_function_privilege('authenticated', 'public.execute_financial_reconciliation_automatic_proposal(uuid,text)', 'EXECUTE')
+    or not has_function_privilege('service_role', 'public.execute_financial_reconciliation_automatic_proposal(uuid,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.finish_financial_reconciliation_automatic_run(uuid)', 'EXECUTE')
+    or has_function_privilege('authenticated', 'public.finish_financial_reconciliation_automatic_run(uuid)', 'EXECUTE')
+    or not has_function_privilege('service_role', 'public.finish_financial_reconciliation_automatic_run(uuid)', 'EXECUTE') then
+    raise exception 'Automatic execution RPC privileges are invalid.';
+  end if;
+end $$;
+
+update public.financial_reconciliation_automatic_rule_configs
+set enabled = true,
+    allow_manual_execution = true,
+    include_in_scheduled_batch = true,
+    difference_allowed = 1.00,
+    max_difference_days = 7
+where rule_key = 'financial_documents_cgd_bank_statement';
+
+update public.financial_reconciliation_source_rules
+set operator = '+'
+where base_source_type = 'financial_documents'
+  and matching_source_type = 'import_cgd_extrato_ordem';
+
+create or replace function pg_temp.make_automatic_proposal(
+  p_base_source_id uuid,
+  p_actor text,
+  p_client_request_id uuid
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_run jsonb;
+  v_run_id uuid;
+  v_proposal_id uuid;
+begin
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_bank_statement'],
+    'manual_rule',
+    p_actor,
+    p_client_request_id
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  select proposal.id into strict v_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_run_id
+    and proposal.base_source_id = p_base_source_id
+    and proposal.status = 'proposed';
+  return v_proposal_id;
+end $$;
+
+-- non-zero automatic completion and idempotency
+-- all automatic items were not locked
+-- automatic provenance was not persisted
+-- generated automatic completion comment was not stable
+-- repeated automatic execution duplicated items or audit rows
+-- automatic reopen/delete provenance
+-- automatic lifecycle action changed provenance
+do $$
+declare
+  v_document_id uuid := '10000000-0000-0000-0000-000000000101';
+  v_bank_id uuid := '20000000-0000-0000-0000-000000000101';
+  v_proposal_id uuid;
+  v_run_id uuid;
+  v_reconciliation_id uuid;
+  v_repeated_id uuid;
+  v_result jsonb;
+  v_workspace jsonb;
+  v_history jsonb;
+  v_expected_comment text;
+  v_items_before integer;
+  v_audit_before integer;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, amount, fat
+  ) values (
+    v_document_id, date '2026-10-01', 'AUTO-NONZERO-0101', '', '', 100.35, 'S'
+  );
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    v_bank_id, 'smoke-execution', 'smoke-auto-nonzero-0101', date '2026-10-01',
+    'Payment AUTONONZERO0101', -100.00
+  );
+
+  v_proposal_id := pg_temp.make_automatic_proposal(
+    v_document_id, 'smoke:automatic-nonzero', '30000000-0000-0000-0000-000000000101'
+  );
+  select run_id into strict v_run_id
+  from public.financial_reconciliation_automatic_proposals
+  where id = v_proposal_id;
+  update public.financial_reconciliation_automatic_runs
+  set trigger = 'scheduled', scope = 'batch', client_request_id = null,
+      scheduled_slot = '2026-10-01'
+  where id = v_run_id;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, 'smoke:automatic-nonzero'
+  );
+  v_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+  v_expected_comment := 'Automatically completed by rule Financial Documents to CGD Bank Statement v1; difference '
+    || chr(8364) || '0.35 within allowed tolerance ' || chr(8364)
+    || '1.00; trigger Scheduled; batch ' || v_run_id::text || '.';
+
+  if (select count(*) from public.financial_reconciliation_items where reconciliation_id = v_reconciliation_id) <> 2
+    or not exists (
+      select 1 from public.financial_reconciliation_items
+      where reconciliation_id = v_reconciliation_id
+        and source_type = 'financial_documents' and source_id = v_document_id
+    )
+    or not exists (
+      select 1 from public.financial_reconciliation_items
+      where reconciliation_id = v_reconciliation_id
+        and source_type = 'import_cgd_extrato_ordem' and source_id = v_bank_id
+    ) then
+    raise exception 'All automatic items were not locked.';
+  end if;
+
+  if not exists (
+    select 1 from public.financial_reconciliations reconciliation
+    where reconciliation.id = v_reconciliation_id
+      and reconciliation.status = 'complete'
+      and reconciliation.completion_type = 'forced'
+      and reconciliation.difference_amount = 0.35
+      and reconciliation.forced_completion_comment = v_expected_comment
+      and reconciliation.origin = 'automatic'
+      and reconciliation.automatic_trigger = 'scheduled'
+      and reconciliation.automatic_rule_key = 'financial_documents_cgd_bank_statement'
+      and reconciliation.automatic_rule_version = 1
+      and reconciliation.automatic_run_id = v_run_id
+      and reconciliation.automatic_proposal_id = v_proposal_id
+  ) then
+    raise exception 'Automatic provenance was not persisted.';
+  end if;
+  if (select forced_completion_comment from public.financial_reconciliations where id = v_reconciliation_id)
+      is distinct from v_expected_comment then
+    raise exception 'Generated automatic completion comment was not stable.';
+  end if;
+
+  if not exists (
+    select 1 from public.financial_reconciliation_audit audit
+    where audit.reconciliation_id = v_reconciliation_id
+      and audit.action = 'automatic_complete'
+      and audit.metadata @> jsonb_build_object(
+        'trigger', 'scheduled',
+        'runId', v_run_id,
+        'proposalSignature', (select signature from public.financial_reconciliation_automatic_proposals where id = v_proposal_id),
+        'tolerance', 1.00
+      )
+      and audit.metadata ?& array[
+        'ruleSnapshot','configSnapshot','operatorSnapshot','identityEvidence',
+        'proposalSignature','trigger','runId','tolerance'
+      ]
+  ) then
+    raise exception 'Automatic completion audit metadata was incomplete.';
+  end if;
+
+  v_workspace := public.get_financial_reconciliation_workspace(
+    v_reconciliation_id, 'financial_documents', '{}'::jsonb, 1, 50
+  );
+  select history.value into strict v_history
+  from jsonb_array_elements(v_workspace->'history') history(value)
+  where history.value->>'id' = v_reconciliation_id::text;
+  if v_workspace#>>'{reconciliation,origin}' <> 'automatic'
+    or v_workspace#>>'{reconciliation,automaticTrigger}' <> 'scheduled'
+    or v_workspace#>>'{reconciliation,automaticRuleKey}' <> 'financial_documents_cgd_bank_statement'
+    or v_workspace#>>'{reconciliation,automaticRuleVersion}' <> '1'
+    or v_workspace#>>'{reconciliation,automaticRunId}' <> v_run_id::text
+    or v_history->>'origin' <> 'automatic'
+    or v_history->>'automaticTrigger' <> 'scheduled'
+    or v_history->>'automaticRuleKey' <> 'financial_documents_cgd_bank_statement'
+    or v_history->>'automaticRuleVersion' <> '1'
+    or v_history->>'automaticRunId' <> v_run_id::text
+    or jsonb_typeof(v_history->'sourceSummary') <> 'array' then
+    raise exception 'Workspace/history automatic provenance or source summaries were not preserved.';
+  end if;
+
+  select count(*) into v_items_before
+  from public.financial_reconciliation_items where reconciliation_id = v_reconciliation_id;
+  select count(*) into v_audit_before
+  from public.financial_reconciliation_audit where reconciliation_id = v_reconciliation_id;
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, 'smoke:automatic-nonzero'
+  );
+  v_repeated_id := (v_result->>'reconciliationId')::uuid;
+  if v_repeated_id <> v_reconciliation_id
+    or (select count(*) from public.financial_reconciliation_items where reconciliation_id = v_reconciliation_id) <> v_items_before
+    or (select count(*) from public.financial_reconciliation_audit where reconciliation_id = v_reconciliation_id) <> v_audit_before then
+    raise exception 'Repeated automatic execution duplicated items or audit rows.';
+  end if;
+
+  perform public.financial_reconciliation_action(
+    'reopen', 'smoke:automatic-lifecycle', v_reconciliation_id, null, null, null
+  );
+  if not exists (
+    select 1 from public.financial_reconciliations
+    where id = v_reconciliation_id and status = 'started'
+      and origin = 'automatic' and automatic_run_id = v_run_id
+      and automatic_proposal_id = v_proposal_id
+  ) or (select count(*) from public.financial_reconciliation_items where reconciliation_id = v_reconciliation_id) <> 2 then
+    raise exception 'Automatic lifecycle action changed provenance.';
+  end if;
+  perform public.financial_reconciliation_action(
+    'force_complete', 'smoke:automatic-lifecycle', v_reconciliation_id, null, null,
+    'Smoke lifecycle completion.'
+  );
+  perform public.financial_reconciliation_action(
+    'delete', 'smoke:automatic-lifecycle', v_reconciliation_id, null, null, null
+  );
+  if not exists (
+    select 1 from public.financial_reconciliations
+    where id = v_reconciliation_id and deleted_at is not null
+      and origin = 'automatic' and automatic_run_id = v_run_id
+      and automatic_proposal_id = v_proposal_id
+  ) or exists (
+    select 1 from public.financial_reconciliation_items where reconciliation_id = v_reconciliation_id
+  ) then
+    raise exception 'Automatic lifecycle action changed provenance.';
+  end if;
+end $$;
+
+-- zero-difference automatic completion
+-- zero-difference automatic completion did not retain structured audit metadata
+do $$
+declare
+  v_document_id uuid := '10000000-0000-0000-0000-000000000102';
+  v_bank_one_id uuid := '20000000-0000-0000-0000-000000000102';
+  v_bank_two_id uuid := '20000000-0000-0000-0000-000000000103';
+  v_proposal_id uuid;
+  v_reconciliation_id uuid;
+  v_result jsonb;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, amount, fat
+  ) values (
+    v_document_id, date '2026-10-02', 'AUTO-ZERO-0102', '', '', 200.00, 'S'
+  );
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values
+    (v_bank_one_id, 'smoke-execution', 'smoke-auto-zero-0102-a', date '2026-10-02', 'Payment AUTOZERO0102', -80.00),
+    (v_bank_two_id, 'smoke-execution', 'smoke-auto-zero-0102-b', date '2026-10-03', 'Payment AUTOZERO0102', -120.00);
+
+  v_proposal_id := pg_temp.make_automatic_proposal(
+    v_document_id, 'smoke:automatic-zero', '30000000-0000-0000-0000-000000000102'
+  );
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, 'smoke:automatic-zero'
+  );
+  v_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+
+  if not exists (
+    select 1 from public.financial_reconciliations
+    where id = v_reconciliation_id and status = 'complete'
+      and completion_type = 'normal' and difference_amount = 0
+      and forced_completion_comment is null and origin = 'automatic'
+  )
+    or (select count(*) from public.financial_reconciliation_items where reconciliation_id = v_reconciliation_id) <> 3
+    or not exists (
+      select 1 from public.financial_reconciliation_audit
+      where reconciliation_id = v_reconciliation_id and action = 'automatic_complete'
+        and comment is null
+        and metadata ?& array[
+          'ruleSnapshot','configSnapshot','operatorSnapshot','identityEvidence',
+          'proposalSignature','trigger','runId','tolerance'
+        ]
+    ) then
+    raise exception 'Zero-difference automatic completion did not retain structured audit metadata.';
+  end if;
+end $$;
+
+-- stale amount/date/lock/rule/operator/evidence
+-- stale automatic proposal created a reconciliation
+do $$
+declare
+  v_kind text;
+  v_document_id uuid;
+  v_bank_id uuid;
+  v_manual_reconciliation_id uuid;
+  v_proposal_id uuid;
+  v_result jsonb;
+  v_doc_number text;
+  v_original_definition jsonb;
+begin
+  select definition into strict v_original_definition
+  from public.financial_reconciliation_automatic_rule_definitions
+  where rule_key = 'financial_documents_cgd_bank_statement' and version = 1;
+
+  foreach v_kind in array array['amount','date','lock','rule','operator','evidence'] loop
+    v_document_id := gen_random_uuid();
+    v_bank_id := gen_random_uuid();
+    v_doc_number := 'STALE' || upper(v_kind) || replace(v_document_id::text, '-', '');
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, amount, fat
+    ) values (
+      v_document_id, date '2026-11-01', v_doc_number, '',
+      case when v_kind = 'evidence' then 'Evidence Supplier' else '' end,
+      50.00, 'S'
+    );
+    insert into public.import_cgd_extrato_ordem (
+      id, import_batch, row_key, data, descritivo, montante
+    ) values (
+      v_bank_id, 'smoke-stale', 'smoke-stale-' || v_kind || '-' || v_bank_id,
+      date '2026-11-01', 'Payment ' || v_doc_number || case when v_kind = 'evidence' then ' Evidence Supplier' else '' end,
+      -50.00
+    );
+    v_proposal_id := pg_temp.make_automatic_proposal(
+      v_document_id, 'smoke:stale-' || v_kind, gen_random_uuid()
+    );
+
+    if v_kind = 'amount' then
+      update public.financial_documents set amount = 51.00 where id = v_document_id;
+    elsif v_kind = 'date' then
+      update public.financial_documents set document_date = date '2026-12-01' where id = v_document_id;
+    elsif v_kind = 'lock' then
+      v_result := public.financial_reconciliation_action(
+        'start', 'smoke:stale-lock', null, 'import_cgd_extrato_ordem', v_bank_id, null
+      );
+      v_manual_reconciliation_id := (v_result#>>'{reconciliation,id}')::uuid;
+    elsif v_kind = 'rule' then
+      update public.financial_reconciliation_automatic_rule_definitions
+      set definition = definition || '{"smokeChanged":true}'::jsonb
+      where rule_key = 'financial_documents_cgd_bank_statement' and version = 1;
+    elsif v_kind = 'operator' then
+      update public.financial_reconciliation_source_rules set operator = '-'
+      where base_source_type = 'financial_documents'
+        and matching_source_type = 'import_cgd_extrato_ordem';
+    elsif v_kind = 'evidence' then
+      update public.financial_documents set supplier_name = 'Changed Identity'
+      where id = v_document_id;
+    end if;
+
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_proposal_id, 'smoke:stale-' || v_kind
+    );
+    if v_result->>'status' <> 'stale'
+      or not exists (
+        select 1 from public.financial_reconciliation_automatic_proposals
+        where id = v_proposal_id and status = 'stale'
+      )
+      or exists (
+        select 1 from public.financial_reconciliations
+        where automatic_proposal_id = v_proposal_id
+      ) then
+      raise exception 'Stale automatic proposal created a reconciliation.';
+    end if;
+
+    if v_kind = 'lock' then
+      perform public.financial_reconciliation_action(
+        'delete', 'smoke:stale-lock', v_manual_reconciliation_id, null, null, null
+      );
+    elsif v_kind = 'rule' then
+      update public.financial_reconciliation_automatic_rule_definitions
+      set definition = v_original_definition
+      where rule_key = 'financial_documents_cgd_bank_statement' and version = 1;
+    elsif v_kind = 'operator' then
+      update public.financial_reconciliation_source_rules set operator = '+'
+      where base_source_type = 'financial_documents'
+        and matching_source_type = 'import_cgd_extrato_ordem';
+    end if;
+  end loop;
+end $$;
+
+-- post-write rollback and later-proposal isolation
+-- failed proposal left partial lifecycle mutations
+-- later proposal was blocked by an earlier failed RPC transaction
+create or replace function pg_temp.reject_automatic_complete()
+returns trigger language plpgsql as $trigger$
+begin
+  if new.action = 'automatic_complete' and new.actor = 'smoke:rollback' then
+    raise exception 'Smoke forced automatic audit failure.';
+  end if;
+  return new;
+end $trigger$;
+
+create trigger reconciliation_automatic_rollback_smoke
+  before insert on public.financial_reconciliation_audit
+  for each row execute function pg_temp.reject_automatic_complete();
+
+do $$
+declare
+  v_failed_document_id uuid := '10000000-0000-0000-0000-000000000103';
+  v_failed_bank_id uuid := '20000000-0000-0000-0000-000000000104';
+  v_later_document_id uuid := '10000000-0000-0000-0000-000000000104';
+  v_later_bank_id uuid := '20000000-0000-0000-0000-000000000105';
+  v_failed_proposal_id uuid;
+  v_later_proposal_id uuid;
+  v_run_id uuid;
+  v_result jsonb;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, amount, fat
+  ) values
+    (v_failed_document_id, date '2026-12-10', 'AUTO-ROLLBACK-0103', '', '', 75.00, 'S'),
+    (v_later_document_id, date '2026-12-11', 'AUTO-LATER-0104', '', '', 80.00, 'S');
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values
+    (v_failed_bank_id, 'smoke-rollback', 'smoke-auto-rollback-0103', date '2026-12-10', 'Payment AUTOROLLBACK0103', -75.00),
+    (v_later_bank_id, 'smoke-rollback', 'smoke-auto-later-0104', date '2026-12-11', 'Payment AUTOLATER0104', -80.00);
+
+  v_failed_proposal_id := pg_temp.make_automatic_proposal(
+    v_failed_document_id, 'smoke:rollback-run', '30000000-0000-0000-0000-000000000103'
+  );
+  select run_id into strict v_run_id
+  from public.financial_reconciliation_automatic_proposals
+  where id = v_failed_proposal_id;
+  select id into strict v_later_proposal_id
+  from public.financial_reconciliation_automatic_proposals
+  where run_id = v_run_id and base_source_id = v_later_document_id and status = 'proposed';
+
+  begin
+    perform public.execute_financial_reconciliation_automatic_proposal(
+      v_failed_proposal_id, 'smoke:rollback'
+    );
+    raise exception 'Expected the automatic completion audit trigger to fail.';
+  exception when raise_exception then
+    if sqlerrm <> 'Smoke forced automatic audit failure.' then raise; end if;
+  end;
+
+  if exists (
+      select 1 from public.financial_reconciliations
+      where automatic_proposal_id = v_failed_proposal_id
+    )
+    or exists (
+      select 1 from public.financial_reconciliation_items
+      where (source_type = 'financial_documents' and source_id = v_failed_document_id)
+         or (source_type = 'import_cgd_extrato_ordem' and source_id = v_failed_bank_id)
+    )
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals
+      where id = v_failed_proposal_id and status = 'proposed'
+    ) then
+    raise exception 'Failed proposal left partial lifecycle mutations.';
+  end if;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_later_proposal_id, 'smoke:later'
+  );
+  if v_result->>'status' <> 'completed'
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals
+      where id = v_later_proposal_id and status = 'completed'
+    ) then
+    raise exception 'Later proposal was blocked by an earlier failed RPC transaction.';
+  end if;
+
+  v_result := public.finish_financial_reconciliation_automatic_run(v_run_id);
+  if v_result->>'status' <> 'completed'
+    or v_result#>>'{counts,completed}' <> '1'
+    or v_result#>>'{counts,deselected}' <> '1' then
+    raise exception 'Automatic run did not finalize completed work and deselect untouched proposals.';
+  end if;
+end $$;
+
+drop trigger reconciliation_automatic_rollback_smoke on public.financial_reconciliation_audit;
+
+-- automatic run finalization
+do $$
+declare
+  v_partial_run_id uuid;
+  v_failed_run_id uuid;
+  v_completed_run_id uuid;
+  v_result jsonb;
+begin
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, client_request_id, analysis_completed_at
+  ) values (
+    'manual', 'rule', 'smoke:finish-partial', gen_random_uuid(), now()
+  ) returning id into v_partial_run_id;
+  insert into public.financial_reconciliation_automatic_proposals (
+    run_id, rule_key, rule_version, base_source_type, base_source_id,
+    base_source_date, allowed_difference, status, signature
+  ) values
+    (v_partial_run_id, 'financial_documents_cgd_bank_statement', 1, 'financial_documents', gen_random_uuid(), date '2026-12-20', 0, 'completed', 'finish-partial-completed'),
+    (v_partial_run_id, 'financial_documents_cgd_bank_statement', 1, 'financial_documents', gen_random_uuid(), date '2026-12-20', 0, 'stale', 'finish-partial-stale');
+  v_result := public.finish_financial_reconciliation_automatic_run(v_partial_run_id);
+  if v_result->>'status' <> 'partial'
+    or v_result#>>'{counts,completed}' <> '1'
+    or v_result#>>'{counts,stale}' <> '1'
+    or v_result->>'finishedAt' is null then
+    raise exception 'Mixed automatic outcomes did not finalize as partial.';
+  end if;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, client_request_id, analysis_completed_at
+  ) values (
+    'manual', 'rule', 'smoke:finish-failed', gen_random_uuid(), now()
+  ) returning id into v_failed_run_id;
+  insert into public.financial_reconciliation_automatic_proposals (
+    run_id, rule_key, rule_version, base_source_type, base_source_id,
+    base_source_date, allowed_difference, status, signature
+  ) values (
+    v_failed_run_id, 'financial_documents_cgd_bank_statement', 1, 'financial_documents',
+    gen_random_uuid(), date '2026-12-21', 0, 'failed', 'finish-failed'
+  );
+  v_result := public.finish_financial_reconciliation_automatic_run(v_failed_run_id);
+  if v_result->>'status' <> 'failed' or v_result#>>'{counts,failed}' <> '1' then
+    raise exception 'Failed-only automatic outcomes did not finalize as failed.';
+  end if;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, client_request_id, analysis_completed_at
+  ) values (
+    'manual', 'rule', 'smoke:finish-completed', gen_random_uuid(), now()
+  ) returning id into v_completed_run_id;
+  insert into public.financial_reconciliation_automatic_proposals (
+    run_id, rule_key, rule_version, base_source_type, base_source_id,
+    base_source_date, allowed_difference, status, signature
+  ) values
+    (v_completed_run_id, 'financial_documents_cgd_bank_statement', 1, 'financial_documents', gen_random_uuid(), date '2026-12-22', 0, 'ambiguous', 'finish-completed-ambiguous'),
+    (v_completed_run_id, 'financial_documents_cgd_bank_statement', 1, 'financial_documents', gen_random_uuid(), date '2026-12-22', 0, 'proposed', 'finish-completed-deselected');
+  v_result := public.finish_financial_reconciliation_automatic_run(v_completed_run_id);
+  if v_result->>'status' <> 'completed'
+    or v_result#>>'{counts,ambiguous}' <> '1'
+    or v_result#>>'{counts,deselected}' <> '1' then
+    raise exception 'Expected skips did not finalize as completed.';
   end if;
 end $$;
 

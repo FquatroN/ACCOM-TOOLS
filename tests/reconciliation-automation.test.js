@@ -32,6 +32,12 @@ const ANALYSIS_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-14-financial-reconciliation-automation-analysis.sql",
 );
+const EXECUTION_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-14-financial-reconciliation-automation-execution.sql",
+);
 const SOURCE_RULE_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -39,6 +45,7 @@ const SOURCE_RULE_MIGRATION_PATH = path.join(
   "2026-08-11-financial-reconciliation-source-rules.sql",
 );
 const RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-automation-rpc.smoke.sql");
+const MANUAL_RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-rpc.smoke.sql");
 
 function managedSettings(overrides = {}) {
   return {
@@ -416,6 +423,88 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
   assert.doesNotMatch(analysisMigration, /grant execute on function public\.[^;]+ to (?:anon|authenticated);/);
 });
 
+test("automation execution migration revalidates and completes each proposal atomically", () => {
+  assert.equal(fs.existsSync(EXECUTION_MIGRATION_PATH), true, "automation execution migration must exist");
+  const executionMigration = fs.readFileSync(EXECUTION_MIGRATION_PATH, "utf8");
+  const compactExecutionMigration = executionMigration.replace(/\s+/g, " ");
+
+  for (const signature of [
+    "execute_financial_reconciliation_automatic_proposal(p_proposal_id uuid, p_actor text)",
+    "finish_financial_reconciliation_automatic_run(p_run_id uuid)",
+  ]) {
+    const escapedSignature = signature
+      .replace(/[.*+?^${}|[\]\\]/g, "\\$&")
+      .replace(/\(/g, "\\(\\s*")
+      .replace(/\)/g, "\\s*\\)");
+    assert.match(compactExecutionMigration, new RegExp(`create or replace function public\\.${escapedSignature}`));
+  }
+
+  assert.match(executionMigration, /security definer set search_path = public, pg_temp/g);
+  assert.match(executionMigration, /financial_reconciliation_audit_action_check[\s\S]*'automatic_complete'/);
+  assert.match(executionMigration, /from public\.financial_reconciliation_automatic_runs[\s\S]*for update/);
+  assert.match(executionMigration, /from public\.financial_reconciliation_automatic_proposals[\s\S]*for update/);
+  assert.match(executionMigration, /if v_proposal\.status = 'completed'[\s\S]*v_proposal\.reconciliation_id/);
+  assert.match(executionMigration, /status in \('ambiguous',\s*'deselected',\s*'failed'\)/);
+  assert.match(executionMigration, /financial_reconciliation_automatic_rule_candidates\(/);
+  assert.match(executionMigration, /financial_reconciliation_automatic_build_combinations\(/);
+  assert.match(executionMigration, /v_combination\.signature\s+is distinct from\s+v_proposal\.signature/);
+  assert.match(executionMigration, /v_combination\.items\s+is distinct from\s+v_proposal\.items/);
+  assert.match(executionMigration, /v_current_evidence\s+is distinct from\s+v_proposal\.evidence/);
+  assert.match(executionMigration, /v_proposal\.allowed_difference\s+is distinct from\s+\(v_rule_snapshot->>'differenceAllowed'\)::numeric/);
+  assert.match(executionMigration, /order by[\s\S]*value->>'sourceType'[\s\S]*value->>'sourceDate'[\s\S]*value->>'sourceId'/);
+
+  const startCall = executionMigration.search(/public\.financial_reconciliation_action\(\s*'start'/);
+  const provenanceUpdate = executionMigration.indexOf("origin = 'automatic'");
+  const completionCall = Math.max(
+    executionMigration.search(/public\.financial_reconciliation_action\(\s*'complete'/),
+    executionMigration.search(/public\.financial_reconciliation_action\(\s*'force_complete'/),
+  );
+  assert.ok(startCall >= 0 && provenanceUpdate > startCall && completionCall > provenanceUpdate,
+    "provenance must be set after start and before completion");
+  assert.match(executionMigration, /Automatically completed by rule Financial Documents to CGD Bank Statement v1; difference/);
+  assert.equal((executionMigration.match(/chr\(8364\)/g) || []).length, 2, "stable comment must contain two euro symbols");
+  assert.match(executionMigration, /within allowed tolerance/);
+  assert.match(executionMigration, /trigger [^;]+; batch [^;]+\./);
+  assert.match(executionMigration, /'automatic_complete'/);
+  for (const metadataKey of [
+    "ruleSnapshot",
+    "configSnapshot",
+    "operatorSnapshot",
+    "identityEvidence",
+    "proposalSignature",
+    "trigger",
+    "runId",
+    "tolerance",
+  ]) {
+    assert.match(executionMigration, new RegExp(`'${metadataKey}'`));
+  }
+  assert.match(executionMigration, /set status = 'completed'[\s\S]*reconciliation_id = v_reconciliation_id[\s\S]*completed_at =/);
+
+  assert.match(executionMigration, /set status = 'deselected'[\s\S]*where run_id = v_run\.id[\s\S]*and status = 'proposed'/);
+  assert.match(executionMigration, /'completed', count\(\*\) filter \(where status = 'completed'\)/);
+  assert.match(executionMigration, /'stale', count\(\*\) filter \(where status = 'stale'\)/);
+  assert.match(executionMigration, /'failed', count\(\*\) filter \(where status = 'failed'\)/);
+  assert.match(executionMigration, /status = case[\s\S]*'partial'[\s\S]*'failed'[\s\S]*'completed'/);
+  assert.match(executionMigration, /finished_at = now\(\)/);
+
+  assert.match(executionMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
+  assert.match(executionMigration, /Unexpected reconciliation workspace function definition; could not install automatic provenance\./);
+  for (const field of ["origin", "automaticTrigger", "automaticRuleKey", "automaticRuleVersion", "automaticRunId"]) {
+    assert.match(executionMigration, new RegExp(`'${field}'`));
+  }
+  assert.match(executionMigration, /'sourceSummary'/);
+
+  for (const signature of [
+    "execute_financial_reconciliation_automatic_proposal(uuid,text)",
+    "finish_financial_reconciliation_automatic_run(uuid)",
+  ]) {
+    const escaped = signature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(executionMigration, new RegExp(`revoke all on function public\\.${escaped}\\s+from public, anon, authenticated, service_role;`));
+    assert.match(executionMigration, new RegExp(`grant execute on function public\\.${escaped}\\s+to service_role;`));
+  }
+  assert.doesNotMatch(executionMigration, /grant [^;]+ on table public\.financial_reconciliation_automatic_/);
+});
+
 test("automation settings RPCs validate and replace the complete payload atomically", () => {
   assert.equal(fs.existsSync(SCHEMA_MIGRATION_PATH), true, "automation schema migration must exist");
   const schemaMigration = fs.readFileSync(SCHEMA_MIGRATION_PATH, "utf8");
@@ -461,6 +550,7 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
   assert.match(smokeSql, /^begin;/m);
   assert.match(smokeSql, /\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-schema\.sql/g);
   assert.equal((smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-schema\.sql/g) || []).length, 2);
+  assert.equal((smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-execution\.sql/g) || []).length, 2);
   for (const contract of [
     "definition/config preservation",
     "RLS and privileges",
@@ -492,6 +582,22 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     "Candidate-limit run did not persist exactly one ambiguous proposal",
     "Description below fixture was not boundary-adjacent",
     "Supplier below fixture was not boundary-adjacent",
+    "automatic execution RPC privileges",
+    "non-zero automatic completion and idempotency",
+    "zero-difference automatic completion",
+    "stale amount/date/lock/rule/operator/evidence",
+    "post-write rollback and later-proposal isolation",
+    "automatic reopen/delete provenance",
+    "automatic run finalization",
+    "all automatic items were not locked",
+    "automatic provenance was not persisted",
+    "generated automatic completion comment was not stable",
+    "zero-difference automatic completion did not retain structured audit metadata",
+    "repeated automatic execution duplicated items or audit rows",
+    "stale automatic proposal created a reconciliation",
+    "failed proposal left partial lifecycle mutations",
+    "later proposal was blocked by an earlier failed RPC transaction",
+    "automatic lifecycle action changed provenance",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }
@@ -503,4 +609,12 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
   assert.match(smokeSql, /Mismatched managed rule version partially changed settings\./);
   assert.doesNotMatch(smokeSql, /Settings PUT did not update approved editable fields\./);
   assert.match(smokeSql, /^rollback;/m);
+
+  const manualSmokeSql = fs.readFileSync(MANUAL_RPC_SMOKE_PATH, "utf8");
+  assert.match(manualSmokeSql, /\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-execution\.sql/);
+  assert.match(manualSmokeSql, /Manual lifecycle did not preserve user origin and null automation provenance/);
+  assert.match(manualSmokeSql, /automaticTrigger/);
+  assert.match(manualSmokeSql, /automaticRuleKey/);
+  assert.match(manualSmokeSql, /automaticRuleVersion/);
+  assert.match(manualSmokeSql, /automaticRunId/);
 });

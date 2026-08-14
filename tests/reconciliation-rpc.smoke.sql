@@ -13,6 +13,9 @@ insert into financial_reconciliations (
 \ir ../supabase-migrations/2026-08-12-financial-reconciliation-oldest-first-candidates.sql
 \ir ../supabase-migrations/2026-08-12-financial-reconciliation-history-source-summary.sql
 \ir ../supabase-migrations/2026-08-12-financial-reconciliation-history-source-summary.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); old_doc_id uuid := '00000000-0000-0000-0000-000000000101'; same_date_low_id uuid := '00000000-0000-0000-0000-000000000102'; same_date_high_id uuid := '00000000-0000-0000-0000-000000000103'; new_doc_id uuid := '00000000-0000-0000-0000-000000000104'; candidate_ids uuid[]; r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean; history_rid uuid := gen_random_uuid(); history_row jsonb; history_source_ids text[]; history_card_item_id uuid := gen_random_uuid();
 begin
   if not coalesce((
@@ -195,7 +198,27 @@ begin
   end if;
   perform financial_reconciliation_action('add_item','smoke',rid,'import_cgd_extrato_ordem',bank_id,null);
   if (select difference_amount from financial_reconciliations where id=rid) <> 0 then raise exception 'Expected zero difference'; end if;
-  perform financial_reconciliation_action('complete','smoke',rid,null,null,null);
+  r := financial_reconciliation_action('complete','smoke',rid,null,null,null);
+  if not exists (
+      select 1 from public.financial_reconciliations manual_reconciliation
+      where manual_reconciliation.id = rid
+        and manual_reconciliation.origin = 'user'
+        and manual_reconciliation.automatic_trigger is null
+        and manual_reconciliation.automatic_rule_key is null
+        and manual_reconciliation.automatic_rule_version is null
+        and manual_reconciliation.automatic_run_id is null
+        and manual_reconciliation.automatic_proposal_id is null
+    )
+    or not (r->'reconciliation' ?& array[
+      'origin','automaticTrigger','automaticRuleKey','automaticRuleVersion','automaticRunId'
+    ])
+    or r#>>'{reconciliation,origin}' <> 'user'
+    or r#>'{reconciliation,automaticTrigger}' <> 'null'::jsonb
+    or r#>'{reconciliation,automaticRuleKey}' <> 'null'::jsonb
+    or r#>'{reconciliation,automaticRuleVersion}' <> 'null'::jsonb
+    or r#>'{reconciliation,automaticRunId}' <> 'null'::jsonb then
+    raise exception 'Manual lifecycle did not preserve user origin and null automation provenance';
+  end if;
   perform financial_reconciliation_action('reopen','smoke',rid,null,null,null);
   perform financial_reconciliation_action('remove_item','smoke',rid,'import_cgd_extrato_ordem',bank_id,null);
   if exists(select 1 from financial_reconciliation_items where source_type='import_cgd_extrato_ordem' and source_id=bank_id) then raise exception 'Removed record is still locked'; end if;
