@@ -26,8 +26,33 @@ create table if not exists public.financial_reconciliation_automatic_rule_config
   updated_by text not null default '',
   updated_at timestamptz not null default now(),
   foreign key (rule_key, rule_version) references public.financial_reconciliation_automatic_rule_definitions(rule_key, version),
-  unique (priority)
+  constraint financial_reconciliation_automatic_rule_configs_priority_key
+    unique (priority) deferrable initially deferred
 );
+
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.financial_reconciliation_automatic_rule_configs'::regclass
+      and conname = 'financial_reconciliation_automatic_rule_configs_priority_key'
+      and not condeferrable
+  ) then
+    alter table public.financial_reconciliation_automatic_rule_configs
+      drop constraint financial_reconciliation_automatic_rule_configs_priority_key;
+    alter table public.financial_reconciliation_automatic_rule_configs
+      add constraint financial_reconciliation_automatic_rule_configs_priority_key
+      unique (priority) deferrable initially deferred;
+  elsif not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.financial_reconciliation_automatic_rule_configs'::regclass
+      and conname = 'financial_reconciliation_automatic_rule_configs_priority_key'
+  ) then
+    alter table public.financial_reconciliation_automatic_rule_configs
+      add constraint financial_reconciliation_automatic_rule_configs_priority_key
+      unique (priority) deferrable initially deferred;
+  end if;
+end $$;
 
 create table if not exists public.financial_reconciliation_automatic_schedule (
   id boolean primary key default true check (id),
@@ -188,17 +213,11 @@ alter table public.financial_reconciliation_automatic_schedule enable row level 
 alter table public.financial_reconciliation_automatic_runs enable row level security;
 alter table public.financial_reconciliation_automatic_proposals enable row level security;
 
-revoke all on table public.financial_reconciliation_automatic_rule_definitions from public, anon, authenticated;
-revoke all on table public.financial_reconciliation_automatic_rule_configs from public, anon, authenticated;
-revoke all on table public.financial_reconciliation_automatic_schedule from public, anon, authenticated;
-revoke all on table public.financial_reconciliation_automatic_runs from public, anon, authenticated;
-revoke all on table public.financial_reconciliation_automatic_proposals from public, anon, authenticated;
-
-grant select on table public.financial_reconciliation_automatic_rule_definitions to service_role;
-grant select, insert, update, delete on table public.financial_reconciliation_automatic_rule_configs to service_role;
-grant select, insert, update, delete on table public.financial_reconciliation_automatic_schedule to service_role;
-grant select, insert, update, delete on table public.financial_reconciliation_automatic_runs to service_role;
-grant select, insert, update, delete on table public.financial_reconciliation_automatic_proposals to service_role;
+revoke all on table public.financial_reconciliation_automatic_rule_definitions from public, anon, authenticated, service_role;
+revoke all on table public.financial_reconciliation_automatic_rule_configs from public, anon, authenticated, service_role;
+revoke all on table public.financial_reconciliation_automatic_schedule from public, anon, authenticated, service_role;
+revoke all on table public.financial_reconciliation_automatic_runs from public, anon, authenticated, service_role;
+revoke all on table public.financial_reconciliation_automatic_proposals from public, anon, authenticated, service_role;
 
 create or replace function public.get_financial_reconciliation_automation_settings()
 returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -394,6 +413,10 @@ begin
     raise exception 'Automation settings require every managed rule exactly once.';
   end if;
 
+  lock table public.financial_reconciliation_source_rules in share row exclusive mode;
+  lock table public.financial_reconciliation_automatic_rule_configs in share row exclusive mode;
+  lock table public.financial_reconciliation_automatic_schedule in share row exclusive mode;
+
   if exists (
     select 1
     from jsonb_array_elements(p_rules) rule
@@ -412,12 +435,8 @@ begin
     raise exception 'No directional source rule exists for an enabled automatic rule.';
   end if;
 
-  lock table public.financial_reconciliation_automatic_rule_configs in share row exclusive mode;
-  lock table public.financial_reconciliation_automatic_schedule in share row exclusive mode;
-
   update public.financial_reconciliation_automatic_rule_configs c
-  set rule_version = input.rule_version,
-      enabled = input.enabled,
+  set enabled = input.enabled,
       allow_manual_execution = input.allow_manual_execution,
       include_in_scheduled_batch = input.include_in_scheduled_batch,
       difference_allowed = input.difference_allowed::numeric(14,2),

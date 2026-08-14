@@ -26,6 +26,12 @@ const SCHEMA_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-14-financial-reconciliation-automation-schema.sql",
 );
+const SOURCE_RULE_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-11-financial-reconciliation-source-rules.sql",
+);
 const RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-automation-rpc.smoke.sql");
 
 function managedSettings(overrides = {}) {
@@ -307,7 +313,6 @@ test("automation schema migration pins the managed catalog and execution provena
   ]) {
     assert.match(schemaMigration, new RegExp(`create table if not exists public\\.${table}`));
     assert.match(schemaMigration, new RegExp(`alter table public\\.${table} enable row level security;`));
-    assert.match(schemaMigration, new RegExp(`revoke all on table public\\.${table} from public, anon, authenticated;`));
   }
 
   assert.match(schemaMigration, /create extension if not exists pgcrypto;/);
@@ -343,26 +348,37 @@ test("automation schema migration pins the managed catalog and execution provena
   assert.match(schemaMigration, /automatic_proposal_id uuid null references public\.financial_reconciliation_automatic_proposals\(id\)/);
   assert.match(schemaMigration, /origin = 'user'[\s\S]*automatic_proposal_id is null/);
   assert.match(schemaMigration, /origin = 'automatic'[\s\S]*automatic_proposal_id is not null/);
-  assert.match(schemaMigration, /grant select on table public\.financial_reconciliation_automatic_rule_definitions to service_role;/);
   for (const table of [
+    "financial_reconciliation_automatic_rule_definitions",
     "financial_reconciliation_automatic_rule_configs",
     "financial_reconciliation_automatic_schedule",
     "financial_reconciliation_automatic_runs",
     "financial_reconciliation_automatic_proposals",
   ]) {
-    assert.match(schemaMigration, new RegExp(`grant select, insert, update, delete on table public\\.${table} to service_role;`));
+    assert.match(schemaMigration, new RegExp(`revoke all on table public\\.${table} from public, anon, authenticated, service_role;`));
+    assert.doesNotMatch(schemaMigration, new RegExp(`grant [^;]+ on table public\\.${table} to service_role;`));
   }
+  assert.match(schemaMigration, /unique \(priority\) deferrable initially deferred/);
 });
 
 test("automation settings RPCs validate and replace the complete payload atomically", () => {
   assert.equal(fs.existsSync(SCHEMA_MIGRATION_PATH), true, "automation schema migration must exist");
   const schemaMigration = fs.readFileSync(SCHEMA_MIGRATION_PATH, "utf8");
+  const sourceRuleMigration = fs.readFileSync(SOURCE_RULE_MIGRATION_PATH, "utf8");
 
   assert.match(schemaMigration, /create or replace function public\.get_financial_reconciliation_automation_settings\(\)/);
   assert.match(schemaMigration, /create or replace function public\.replace_financial_reconciliation_automation_settings\(p_schedule jsonb, p_rules jsonb, p_actor text\)/);
   assert.match(schemaMigration, /security definer set search_path = public, pg_temp/);
   assert.match(schemaMigration, /lock table public\.financial_reconciliation_automatic_rule_configs in share row exclusive mode;/);
   assert.match(schemaMigration, /lock table public\.financial_reconciliation_automatic_schedule in share row exclusive mode;/);
+  assert.match(schemaMigration, /lock table public\.financial_reconciliation_source_rules in share row exclusive mode;/);
+  assert.match(sourceRuleMigration, /lock table public\.financial_reconciliation_source_rules in share row exclusive mode;/);
+  const sourceRuleLock = schemaMigration.indexOf("lock table public.financial_reconciliation_source_rules in share row exclusive mode;");
+  const configLock = schemaMigration.indexOf("lock table public.financial_reconciliation_automatic_rule_configs in share row exclusive mode;");
+  const scheduleLock = schemaMigration.indexOf("lock table public.financial_reconciliation_automatic_schedule in share row exclusive mode;");
+  const sourceRuleRecheck = schemaMigration.lastIndexOf("No directional source rule exists for an enabled automatic rule.");
+  assert.ok(sourceRuleLock < configLock && configLock < scheduleLock, "settings locks must use source-rules/config/schedule order");
+  assert.ok(scheduleLock < sourceRuleRecheck, "directional source rules must be rechecked after locking");
   assert.match(schemaMigration, /Automation settings require every managed rule exactly once\./);
   assert.match(schemaMigration, /Duplicate automatic rule priority\./);
   assert.match(schemaMigration, /Automatic rule version is invalid\./);
@@ -372,6 +388,7 @@ test("automation settings RPCs validate and replace the complete payload atomica
   assert.match(schemaMigration, /'lastScheduledRun'/);
   assert.match(schemaMigration, /revoke all on function public\.get_financial_reconciliation_automation_settings\(\) from public, anon, authenticated;/);
   assert.match(schemaMigration, /grant execute on function public\.replace_financial_reconciliation_automation_settings\(jsonb,jsonb,text\) to service_role;/);
+  assert.doesNotMatch(schemaMigration, /set rule_version = input\.rule_version/);
   assert.match(schemaMigration, /notify pgrst, 'reload schema';/);
 });
 
@@ -390,6 +407,10 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     "duplicate-priority rejection",
     "atomic rollback",
     "provenance checks",
+    "RPC-only privileges",
+    "managed rule version",
+    "source-rule lock recheck",
+    "priority swap",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }

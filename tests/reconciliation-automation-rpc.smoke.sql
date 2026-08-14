@@ -64,6 +64,7 @@ begin
 end $$;
 
 -- RLS and privileges
+-- RPC-only privileges
 do $$
 declare
   v_table text;
@@ -85,20 +86,14 @@ begin
       or has_table_privilege('authenticated', format('public.%I', v_table), 'SELECT') then
       raise exception 'Application roles retain direct privileges on %.', v_table;
     end if;
-    if not has_table_privilege('service_role', format('public.%I', v_table), 'SELECT') then
-      raise exception 'service_role cannot read %.', v_table;
+    if has_table_privilege('service_role', format('public.%I', v_table), 'SELECT')
+      or has_table_privilege('service_role', format('public.%I', v_table), 'INSERT')
+      or has_table_privilege('service_role', format('public.%I', v_table), 'UPDATE')
+      or has_table_privilege('service_role', format('public.%I', v_table), 'DELETE') then
+      raise exception 'service_role retains direct table privileges on %.', v_table;
     end if;
   end loop;
 
-  if has_table_privilege('service_role', 'public.financial_reconciliation_automatic_rule_definitions', 'INSERT') then
-    raise exception 'service_role must not mutate managed definitions directly.';
-  end if;
-  if not has_table_privilege('service_role', 'public.financial_reconciliation_automatic_rule_configs', 'INSERT,UPDATE,DELETE')
-    or not has_table_privilege('service_role', 'public.financial_reconciliation_automatic_schedule', 'INSERT,UPDATE,DELETE')
-    or not has_table_privilege('service_role', 'public.financial_reconciliation_automatic_runs', 'INSERT,UPDATE,DELETE')
-    or not has_table_privilege('service_role', 'public.financial_reconciliation_automatic_proposals', 'INSERT,UPDATE,DELETE') then
-    raise exception 'service_role mutation privileges are incomplete.';
-  end if;
   if has_function_privilege('anon', 'public.get_financial_reconciliation_automation_settings()', 'EXECUTE')
     or has_function_privilege('authenticated', 'public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)', 'EXECUTE')
     or not has_function_privilege('service_role', 'public.get_financial_reconciliation_automation_settings()', 'EXECUTE')
@@ -133,6 +128,16 @@ begin
     raise exception 'Rule config constraint accepted a negative tolerance.';
   exception when check_violation then null;
   end;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.financial_reconciliation_automatic_rule_configs'::regclass
+      and conname = 'financial_reconciliation_automatic_rule_configs_priority_key'
+      and condeferrable
+      and condeferred
+  ) then
+    raise exception 'Automatic rule priority uniqueness is not initially deferred.';
+  end if;
 end $$;
 
 -- unknown-rule rejection
@@ -165,6 +170,68 @@ begin
   end;
 end $$;
 
+-- managed rule version
+do $$
+declare
+  v_rule_version integer;
+begin
+  insert into public.financial_reconciliation_automatic_rule_definitions (
+    rule_key, version, display_name, base_source_type, destination_source_types,
+    logic_description, definition
+  )
+  select rule_key, 2, display_name, base_source_type, destination_source_types,
+         logic_description, definition
+  from public.financial_reconciliation_automatic_rule_definitions
+  where rule_key = 'financial_documents_cgd_bank_statement' and version = 1;
+
+  perform public.replace_financial_reconciliation_automation_settings(
+    '{"enabled":true,"time_of_day":"04:30","time_zone":"Europe/Lisbon"}'::jsonb,
+    '[{"rule_key":"financial_documents_cgd_bank_statement","rule_version":2,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"3.21","max_difference_days":9,"priority":1}]'::jsonb,
+    'smoke:managed-version'
+  );
+
+  select rule_version into strict v_rule_version
+  from public.financial_reconciliation_automatic_rule_configs
+  where rule_key = 'financial_documents_cgd_bank_statement';
+  if v_rule_version <> 1 then
+    raise exception 'Settings PUT changed managed rule identity.';
+  end if;
+  if not exists (
+    select 1 from public.financial_reconciliation_automatic_rule_configs
+    where rule_key = 'financial_documents_cgd_bank_statement'
+      and difference_allowed = 3.21
+      and max_difference_days = 9
+      and updated_by = 'smoke:managed-version'
+  ) then
+    raise exception 'Settings PUT did not update approved editable fields.';
+  end if;
+end $$;
+
+-- source-rule lock recheck
+do $$
+begin
+  delete from public.financial_reconciliation_source_rules
+  where base_source_type = 'financial_documents'
+    and matching_source_type = 'import_cgd_extrato_ordem';
+
+  begin
+    perform public.replace_financial_reconciliation_automation_settings(
+      '{"enabled":true,"time_of_day":"04:30","time_zone":"Europe/Lisbon"}'::jsonb,
+      '[{"rule_key":"financial_documents_cgd_bank_statement","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":7,"priority":1}]'::jsonb,
+      'smoke:missing-source-rule'
+    );
+    raise exception 'Enabled automatic rule without a directional source rule was accepted.';
+  exception when raise_exception then
+    if sqlerrm <> 'No directional source rule exists for an enabled automatic rule.' then raise; end if;
+  end;
+
+  insert into public.financial_reconciliation_source_rules (
+    base_source_type, matching_source_type, operator
+  ) values (
+    'financial_documents', 'import_cgd_extrato_ordem', '+'
+  );
+end $$;
+
 -- atomic rollback
 do $$
 declare
@@ -184,6 +251,40 @@ begin
   select public.get_financial_reconciliation_automation_settings() into v_after;
   if v_after <> v_before then
     raise exception 'Rejected settings payload partially changed persisted settings.';
+  end if;
+end $$;
+
+-- priority swap
+do $$
+begin
+  insert into public.financial_reconciliation_automatic_rule_definitions (
+    rule_key, version, display_name, base_source_type, destination_source_types,
+    logic_description, definition
+  ) values (
+    'smoke_second_rule', 1, 'Smoke second rule', 'financial_documents',
+    '["import_cgd_extrato_ordem"]'::jsonb, 'Smoke fixture.', '{}'::jsonb
+  );
+  insert into public.financial_reconciliation_automatic_rule_configs (
+    rule_key, rule_version, enabled, allow_manual_execution,
+    include_in_scheduled_batch, difference_allowed, max_difference_days, priority
+  ) values (
+    'smoke_second_rule', 1, false, false, false, 0.00, 7, 2
+  );
+
+  perform public.replace_financial_reconciliation_automation_settings(
+    '{"enabled":true,"time_of_day":"04:30","time_zone":"Europe/Lisbon"}'::jsonb,
+    '[{"rule_key":"financial_documents_cgd_bank_statement","rule_version":1,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"3.21","max_difference_days":9,"priority":2},{"rule_key":"smoke_second_rule","rule_version":1,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"0.00","max_difference_days":7,"priority":1}]'::jsonb,
+    'smoke:priority-swap'
+  );
+
+  if not exists (
+      select 1 from public.financial_reconciliation_automatic_rule_configs
+      where rule_key = 'financial_documents_cgd_bank_statement' and priority = 2
+    ) or not exists (
+      select 1 from public.financial_reconciliation_automatic_rule_configs
+      where rule_key = 'smoke_second_rule' and priority = 1
+    ) then
+    raise exception 'Automatic rule priorities did not swap atomically.';
   end if;
 end $$;
 
