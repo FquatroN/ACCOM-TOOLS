@@ -376,9 +376,16 @@ test("automation settings RPCs validate and replace the complete payload atomica
   const sourceRuleLock = schemaMigration.indexOf("lock table public.financial_reconciliation_source_rules in share row exclusive mode;");
   const configLock = schemaMigration.indexOf("lock table public.financial_reconciliation_automatic_rule_configs in share row exclusive mode;");
   const scheduleLock = schemaMigration.indexOf("lock table public.financial_reconciliation_automatic_schedule in share row exclusive mode;");
+  const managedVersionCheck = schemaMigration.indexOf("Submitted automatic rule version does not match managed configuration.");
   const sourceRuleRecheck = schemaMigration.lastIndexOf("No directional source rule exists for an enabled automatic rule.");
+  const settingsUpdate = schemaMigration.indexOf("update public.financial_reconciliation_automatic_rule_configs c");
+  const lockedValidation = schemaMigration.slice(sourceRuleLock, settingsUpdate);
   assert.ok(sourceRuleLock < configLock && configLock < scheduleLock, "settings locks must use source-rules/config/schedule order");
+  assert.ok(scheduleLock < managedVersionCheck && managedVersionCheck < sourceRuleRecheck, "managed version equality must be checked under lock before source rules");
   assert.ok(scheduleLock < sourceRuleRecheck, "directional source rules must be rechecked after locking");
+  assert.match(lockedValidation, /join public\.financial_reconciliation_automatic_rule_configs managed_config/);
+  assert.match(lockedValidation, /d\.version = managed_config\.rule_version/);
+  assert.doesNotMatch(lockedValidation, /d\.version = \(rule->>'rule_version'\)::integer/);
   assert.match(schemaMigration, /Automation settings require every managed rule exactly once\./);
   assert.match(schemaMigration, /Duplicate automatic rule priority\./);
   assert.match(schemaMigration, /Automatic rule version is invalid\./);
@@ -414,5 +421,8 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }
+  assert.match(smokeSql, /Submitted automatic rule version does not match managed configuration\./);
+  assert.match(smokeSql, /Mismatched managed rule version partially changed settings\./);
+  assert.doesNotMatch(smokeSql, /Settings PUT did not update approved editable fields\./);
   assert.match(smokeSql, /^rollback;/m);
 });

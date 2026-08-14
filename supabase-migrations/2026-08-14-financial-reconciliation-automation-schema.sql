@@ -420,9 +420,21 @@ begin
   if exists (
     select 1
     from jsonb_array_elements(p_rules) rule
+    join public.financial_reconciliation_automatic_rule_configs managed_config
+      on managed_config.rule_key = rule->>'rule_key'
+    where managed_config.rule_version <> (rule->>'rule_version')::integer
+  ) then
+    raise exception 'Submitted automatic rule version does not match managed configuration.';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(p_rules) rule
+    join public.financial_reconciliation_automatic_rule_configs managed_config
+      on managed_config.rule_key = rule->>'rule_key'
     join public.financial_reconciliation_automatic_rule_definitions d
-      on d.rule_key = rule->>'rule_key'
-     and d.version = (rule->>'rule_version')::integer
+      on d.rule_key = managed_config.rule_key
+     and d.version = managed_config.rule_version
     cross join lateral jsonb_array_elements_text(d.destination_source_types) destination(source_type)
     where (rule->>'enabled')::boolean
       and not exists (

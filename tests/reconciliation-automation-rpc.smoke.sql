@@ -173,7 +173,8 @@ end $$;
 -- managed rule version
 do $$
 declare
-  v_rule_version integer;
+  v_before jsonb;
+  v_after jsonb;
 begin
   insert into public.financial_reconciliation_automatic_rule_definitions (
     rule_key, version, display_name, base_source_type, destination_source_types,
@@ -184,26 +185,20 @@ begin
   from public.financial_reconciliation_automatic_rule_definitions
   where rule_key = 'financial_documents_cgd_bank_statement' and version = 1;
 
-  perform public.replace_financial_reconciliation_automation_settings(
-    '{"enabled":true,"time_of_day":"04:30","time_zone":"Europe/Lisbon"}'::jsonb,
-    '[{"rule_key":"financial_documents_cgd_bank_statement","rule_version":2,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"3.21","max_difference_days":9,"priority":1}]'::jsonb,
-    'smoke:managed-version'
-  );
-
-  select rule_version into strict v_rule_version
-  from public.financial_reconciliation_automatic_rule_configs
-  where rule_key = 'financial_documents_cgd_bank_statement';
-  if v_rule_version <> 1 then
-    raise exception 'Settings PUT changed managed rule identity.';
-  end if;
-  if not exists (
-    select 1 from public.financial_reconciliation_automatic_rule_configs
-    where rule_key = 'financial_documents_cgd_bank_statement'
-      and difference_allowed = 3.21
-      and max_difference_days = 9
-      and updated_by = 'smoke:managed-version'
-  ) then
-    raise exception 'Settings PUT did not update approved editable fields.';
+  select public.get_financial_reconciliation_automation_settings() into v_before;
+  begin
+    perform public.replace_financial_reconciliation_automation_settings(
+      '{"enabled":false,"time_of_day":"23:45","time_zone":"Europe/Lisbon"}'::jsonb,
+      '[{"rule_key":"financial_documents_cgd_bank_statement","rule_version":2,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"3.21","max_difference_days":9,"priority":1}]'::jsonb,
+      'smoke:managed-version'
+    );
+    raise exception 'Settings PUT accepted a mismatched managed rule version.';
+  exception when raise_exception then
+    if sqlerrm <> 'Submitted automatic rule version does not match managed configuration.' then raise; end if;
+  end;
+  select public.get_financial_reconciliation_automation_settings() into v_after;
+  if v_after <> v_before then
+    raise exception 'Mismatched managed rule version partially changed settings.';
   end if;
 end $$;
 
