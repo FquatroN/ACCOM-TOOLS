@@ -2517,15 +2517,47 @@
               <div id="settings-view-financial-reconciliation" hidden>
                 <div class="actions">
                   <button id="close-settings-financial-reconciliation" type="button" class="ghost">Back To App</button>
-                  <button id="financial-reconciliation-settings-save" type="button" class="ghost">Save Configuration</button>
                 </div>
-                <section class="settings-block">
-                  <div class="bar"><h3>Reconciliation rules</h3></div>
-                  <label>Source<select id="financial-reconciliation-settings-base-source"></select></label>
-                  <p class="field-hint">Each row is one direction. Configure the reverse direction separately.</p>
-                  <table class="settings-table financial-reconciliation-settings-table"><thead><tr><th>Compatible source</th><th>Operator</th></tr></thead><tbody id="financial-reconciliation-settings-rules-body"></tbody></table>
-                  <p id="financial-reconciliation-settings-status" class="auth-status"></p>
-                </section>
+                <div class="actions financial-reconciliation-settings-tabs" role="tablist" aria-label="Reconciliation settings">
+                  <button id="financial-reconciliation-settings-source-tab" type="button" class="active-tab" role="tab" aria-selected="true" aria-controls="financial-reconciliation-settings-source-panel">Source rules</button>
+                  <button id="financial-reconciliation-settings-automatic-tab" type="button" class="ghost" role="tab" aria-selected="false" aria-controls="financial-reconciliation-settings-automatic-panel">Automatic reconciliation</button>
+                </div>
+                <div id="financial-reconciliation-settings-source-panel" role="tabpanel" aria-labelledby="financial-reconciliation-settings-source-tab">
+                  <section class="settings-block">
+                    <div class="bar">
+                      <h3>Reconciliation rules</h3>
+                      <div class="actions"><button id="financial-reconciliation-settings-save" type="button" class="ghost">Save Configuration</button></div>
+                    </div>
+                    <label>Source<select id="financial-reconciliation-settings-base-source"></select></label>
+                    <p class="field-hint">Each row is one direction. Configure the reverse direction separately.</p>
+                    <table class="settings-table financial-reconciliation-settings-table"><thead><tr><th>Compatible source</th><th>Operator</th></tr></thead><tbody id="financial-reconciliation-settings-rules-body"></tbody></table>
+                    <p id="financial-reconciliation-settings-status" class="auth-status" aria-live="polite"></p>
+                  </section>
+                </div>
+                <div id="financial-reconciliation-settings-automatic-panel" role="tabpanel" aria-labelledby="financial-reconciliation-settings-automatic-tab" tabindex="0" hidden>
+                  <section class="settings-block financial-reconciliation-automation-settings">
+                    <div class="bar">
+                      <div>
+                        <h3>Automatic reconciliation</h3>
+                        <p class="field-hint">Managed matching logic is versioned and read only. Save applies the complete schedule and rule configuration atomically.</p>
+                      </div>
+                      <div class="actions">
+                        <button id="financial-reconciliation-automation-run-batch-now" type="button" class="ghost">Run batch now</button>
+                        <button id="financial-reconciliation-automation-save" type="button" class="ghost">Save</button>
+                      </div>
+                    </div>
+                    <div class="financial-reconciliation-automation-schedule">
+                      <label class="financial-reconciliation-automation-check"><input id="financial-reconciliation-automation-schedule-enabled" type="checkbox" />Schedule enabled</label>
+                      <label for="financial-reconciliation-automation-schedule-time">Daily time<input id="financial-reconciliation-automation-schedule-time" type="time" step="60" /></label>
+                      <p>Time zone <strong id="financial-reconciliation-automation-time-zone">Europe/Lisbon</strong></p>
+                      <p id="financial-reconciliation-automation-last-execution">Last execution: Never</p>
+                      <p id="financial-reconciliation-automation-last-result">Last result: None</p>
+                      <p id="financial-reconciliation-automation-next-execution">Next expected execution: Schedule disabled</p>
+                    </div>
+                    <div id="financial-reconciliation-automation-rules" class="financial-reconciliation-automation-rule-list"></div>
+                    <p id="financial-reconciliation-automation-status" class="auth-status" aria-live="polite"></p>
+                  </section>
+                </div>
               </div>
 
               <div id="settings-view-bi-settings" hidden>

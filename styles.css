@@ -1159,6 +1159,200 @@ td {
   margin-right: .45rem;
 }
 
+.financial-reconciliation-settings-tabs {
+  margin: .65rem 0;
+}
+
+.financial-reconciliation-settings-tabs > button {
+  min-height: 2.25rem;
+}
+
+#financial-reconciliation-settings-source-panel,
+#financial-reconciliation-settings-automatic-panel {
+  min-width: 0;
+}
+
+.financial-reconciliation-automation-settings > .bar {
+  align-items: flex-start;
+}
+
+.financial-reconciliation-automation-settings > .bar h3 {
+  margin-bottom: .15rem;
+}
+
+.financial-reconciliation-automation-schedule {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: .6rem;
+  align-items: end;
+  margin: .75rem 0;
+  padding: .7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.financial-reconciliation-automation-schedule label,
+.financial-reconciliation-automation-schedule p {
+  min-width: 0;
+  margin: 0;
+  font-size: .76rem;
+}
+
+.financial-reconciliation-automation-check {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  min-height: 2.15rem;
+}
+
+.financial-reconciliation-automation-check input {
+  width: auto;
+  margin: 0;
+}
+
+.financial-reconciliation-automation-rule-list {
+  display: grid;
+  gap: .65rem;
+}
+
+.financial-reconciliation-automation-rule-card {
+  min-width: 0;
+  padding: .75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.financial-reconciliation-automation-rule-card:focus-within {
+  border-color: #3aa895;
+  box-shadow: 0 0 0 3px rgba(58, 168, 149, .14);
+}
+
+.financial-reconciliation-automation-rule-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .65rem;
+  min-width: 0;
+}
+
+.financial-reconciliation-automation-rule-head h4 {
+  margin: 0;
+  font-size: .9rem;
+  overflow-wrap: anywhere;
+}
+
+.financial-reconciliation-automation-rule-version,
+.financial-reconciliation-automation-source-technical {
+  color: var(--muted);
+  font-size: .68rem;
+  overflow-wrap: anywhere;
+}
+
+.financial-reconciliation-automation-rule-reorder {
+  display: flex;
+  flex: 0 0 auto;
+  gap: .35rem;
+}
+
+.financial-reconciliation-automation-rule-reorder button {
+  min-height: 1.9rem;
+  padding: .25rem .5rem;
+  font-size: .72rem;
+}
+
+.financial-reconciliation-automation-sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .45rem;
+  margin: .55rem 0;
+  font-size: .74rem;
+}
+
+.financial-reconciliation-automation-sources p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.financial-reconciliation-automation-rule-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .5rem;
+  align-items: end;
+  margin-top: .6rem;
+}
+
+.financial-reconciliation-automation-rule-controls label {
+  min-width: 0;
+  font-size: .72rem;
+}
+
+.financial-reconciliation-automation-rule-controls .financial-reconciliation-automation-check {
+  align-self: center;
+}
+
+.financial-reconciliation-automation-rule-controls input[type="number"] {
+  min-width: 0;
+}
+
+.financial-reconciliation-automation-definition {
+  margin-top: .65rem;
+  border-top: 1px solid var(--line);
+  padding-top: .55rem;
+}
+
+.financial-reconciliation-automation-definition summary {
+  cursor: pointer;
+  font-size: .74rem;
+  font-weight: 700;
+}
+
+.financial-reconciliation-automation-logic {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin: .5rem 0 0;
+  max-width: 100%;
+  padding: .55rem;
+  border-radius: 8px;
+  background: #f7f4ee;
+  font: .68rem/1.35 "IBM Plex Mono", monospace;
+}
+
+@media (max-width: 768px) {
+  .financial-reconciliation-settings-tabs > button {
+    flex: 1 1 12rem;
+  }
+
+  .financial-reconciliation-automation-schedule,
+  .financial-reconciliation-automation-sources {
+    grid-template-columns: 1fr;
+  }
+
+  .financial-reconciliation-automation-rule-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .financial-reconciliation-automation-rule-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .financial-reconciliation-automation-rule-reorder {
+    flex-wrap: wrap;
+  }
+
+  .financial-reconciliation-automation-rule-reorder button {
+    flex: 1 1 8rem;
+  }
+
+  .financial-reconciliation-automation-schedule input,
+  .financial-reconciliation-automation-rule-controls input {
+    font-size: 16px;
+  }
+}
+
 .compact-table {
   min-width: 0;
 }

@@ -115,6 +115,26 @@ test("settings exposes a reconciliation rule editor", () => {
   assert.match(html, /id="financial-reconciliation-settings-save"/);
 });
 
+test("automatic reconciliation settings stay dense, wrapping, and reachable on narrow screens", () => {
+  assert.match(html, /class="[^"]*financial-reconciliation-settings-tabs[^"]*"/);
+  const sourcePanel = html.slice(
+    html.indexOf('id="financial-reconciliation-settings-source-panel"'),
+    html.indexOf('id="financial-reconciliation-settings-automatic-panel"'),
+  );
+  for (const id of [
+    "financial-reconciliation-settings-base-source",
+    "financial-reconciliation-settings-rules-body",
+    "financial-reconciliation-settings-save",
+  ]) assert.match(sourcePanel, new RegExp(`id="${id}"`));
+  assert.match(css, /\.financial-reconciliation-automation-rule-list\s*\{[\s\S]*display:\s*grid;[\s\S]*gap:\s*\.65rem;/);
+  assert.match(css, /\.financial-reconciliation-automation-schedule\s*\{[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(10rem,\s*1fr\)\);/);
+  assert.match(css, /\.financial-reconciliation-automation-logic\s*\{[\s\S]*overflow-wrap:\s*anywhere;[\s\S]*white-space:\s*pre-wrap;/);
+  assert.match(css, /\.financial-reconciliation-automation-rule-controls\s*\{[\s\S]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-automation-rule-controls\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-settings-tabs\s*>\s*button\s*\{[\s\S]*flex:\s*1 1 12rem;/);
+  assert.match(css, /\.financial-reconciliation-automation-rule-card\s*:focus-within\s*\{/);
+});
+
 test("reconciliation settings validates and sends one atomic replacement RPC", () => {
   assert.match(reconciliationSettingsApi, /requireFeature\(req, "settings", "financial-reconciliation"\)/);
   assert.match(supabaseApi, /SETTINGS_FEATURES = \[[^\]]*"financial-reconciliation"/);
