@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const {
   AUTOMATIC_RULE_KEY,
@@ -18,6 +20,13 @@ const { mapRpcError } = require("../api/_reconciliation");
 const RUN_ID = "00000000-0000-0000-0000-000000000001";
 const PROPOSAL_ID = "00000000-0000-0000-0000-000000000002";
 const REQUEST_ID = "00000000-0000-0000-0000-000000000003";
+const SCHEMA_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-14-financial-reconciliation-automation-schema.sql",
+);
+const RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-automation-rpc.smoke.sql");
 
 function managedSettings(overrides = {}) {
   return {
@@ -283,4 +292,106 @@ test("automation RPC errors expose safe client statuses", () => {
   for (const [message, statusCode] of cases) {
     assert.equal(mapRpcError(new Error(message)).statusCode, statusCode, message);
   }
+});
+
+test("automation schema migration pins the managed catalog and execution provenance contract", () => {
+  assert.equal(fs.existsSync(SCHEMA_MIGRATION_PATH), true, "automation schema migration must exist");
+  const schemaMigration = fs.readFileSync(SCHEMA_MIGRATION_PATH, "utf8");
+
+  for (const table of [
+    "financial_reconciliation_automatic_rule_definitions",
+    "financial_reconciliation_automatic_rule_configs",
+    "financial_reconciliation_automatic_schedule",
+    "financial_reconciliation_automatic_runs",
+    "financial_reconciliation_automatic_proposals",
+  ]) {
+    assert.match(schemaMigration, new RegExp(`create table if not exists public\\.${table}`));
+    assert.match(schemaMigration, new RegExp(`alter table public\\.${table} enable row level security;`));
+    assert.match(schemaMigration, new RegExp(`revoke all on table public\\.${table} from public, anon, authenticated;`));
+  }
+
+  assert.match(schemaMigration, /create extension if not exists pgcrypto;/);
+  assert.match(schemaMigration, /create extension if not exists unaccent;/);
+  assert.match(schemaMigration, /create extension if not exists pg_trgm;/);
+  assert.match(schemaMigration, /'financial_documents_cgd_bank_statement',\s*1/);
+  assert.match(schemaMigration, /"destinationSourceTypes": \["import_cgd_extrato_ordem"\]/);
+  assert.match(schemaMigration, /"identityBranches"/);
+  assert.match(schemaMigration, /"document_number"/);
+  assert.match(schemaMigration, /"description_similarity"/);
+  assert.match(schemaMigration, /"supplier_similarity"/);
+  assert.match(schemaMigration, /"documentNumberMinimumCompactLength": 4/);
+  assert.match(schemaMigration, /"descriptionSimilarityThreshold": 0\.60/);
+  assert.match(schemaMigration, /"supplierWordSimilarityThreshold": 0\.70/);
+  assert.match(schemaMigration, /"maxDestinationRecords": 4/);
+  assert.match(schemaMigration, /"maxIdentityCandidatesPerBase": 12/);
+  assert.match(schemaMigration, /enabled boolean not null default false/);
+  assert.match(schemaMigration, /'financial_documents_cgd_bank_statement', 1, false, false, false, 0\.00, 7, 1/);
+  assert.match(schemaMigration, /on conflict \(rule_key\) do nothing;/);
+  assert.match(schemaMigration, /on conflict \(id\) do nothing;/);
+
+  assert.match(schemaMigration, /id boolean primary key default true check \(id\)/);
+  assert.match(schemaMigration, /time_of_day time without time zone not null default '02:00'/);
+  assert.match(schemaMigration, /time_zone text not null default 'Europe\/Lisbon' check \(time_zone = 'Europe\/Lisbon'\)/);
+  assert.match(schemaMigration, /unique \(actor, client_request_id\)/);
+  assert.match(schemaMigration, /create unique index if not exists financial_reconciliation_automatic_runs_scheduled_slot_uidx[\s\S]*where scheduled_slot is not null;/);
+  assert.match(schemaMigration, /status text not null default 'analyzing' check \(status in \('analyzing','ready','running','completed','partial','failed'\)\)/);
+  assert.match(schemaMigration, /status text not null default 'proposed' check \(status in \('proposed','ambiguous','deselected','executing','completed','stale','failed'\)\)/);
+  assert.match(schemaMigration, /unique \(run_id, rule_key, base_source_type, base_source_id, signature\)/);
+  assert.match(schemaMigration, /check \(origin in \('user','automatic'\)\)/);
+  assert.match(schemaMigration, /automatic_trigger text null check \(automatic_trigger in \('manual','scheduled'\)\)/);
+  assert.match(schemaMigration, /automatic_run_id uuid null references public\.financial_reconciliation_automatic_runs\(id\)/);
+  assert.match(schemaMigration, /automatic_proposal_id uuid null references public\.financial_reconciliation_automatic_proposals\(id\)/);
+  assert.match(schemaMigration, /origin = 'user'[\s\S]*automatic_proposal_id is null/);
+  assert.match(schemaMigration, /origin = 'automatic'[\s\S]*automatic_proposal_id is not null/);
+  assert.match(schemaMigration, /grant select on table public\.financial_reconciliation_automatic_rule_definitions to service_role;/);
+  for (const table of [
+    "financial_reconciliation_automatic_rule_configs",
+    "financial_reconciliation_automatic_schedule",
+    "financial_reconciliation_automatic_runs",
+    "financial_reconciliation_automatic_proposals",
+  ]) {
+    assert.match(schemaMigration, new RegExp(`grant select, insert, update, delete on table public\\.${table} to service_role;`));
+  }
+});
+
+test("automation settings RPCs validate and replace the complete payload atomically", () => {
+  assert.equal(fs.existsSync(SCHEMA_MIGRATION_PATH), true, "automation schema migration must exist");
+  const schemaMigration = fs.readFileSync(SCHEMA_MIGRATION_PATH, "utf8");
+
+  assert.match(schemaMigration, /create or replace function public\.get_financial_reconciliation_automation_settings\(\)/);
+  assert.match(schemaMigration, /create or replace function public\.replace_financial_reconciliation_automation_settings\(p_schedule jsonb, p_rules jsonb, p_actor text\)/);
+  assert.match(schemaMigration, /security definer set search_path = public, pg_temp/);
+  assert.match(schemaMigration, /lock table public\.financial_reconciliation_automatic_rule_configs in share row exclusive mode;/);
+  assert.match(schemaMigration, /lock table public\.financial_reconciliation_automatic_schedule in share row exclusive mode;/);
+  assert.match(schemaMigration, /Automation settings require every managed rule exactly once\./);
+  assert.match(schemaMigration, /Duplicate automatic rule priority\./);
+  assert.match(schemaMigration, /Automatic rule version is invalid\./);
+  assert.match(schemaMigration, /No directional source rule exists for an enabled automatic rule\./);
+  assert.match(schemaMigration, /'timeOfDay'/);
+  assert.match(schemaMigration, /'destinationSourceTypes'/);
+  assert.match(schemaMigration, /'lastScheduledRun'/);
+  assert.match(schemaMigration, /revoke all on function public\.get_financial_reconciliation_automation_settings\(\) from public, anon, authenticated;/);
+  assert.match(schemaMigration, /grant execute on function public\.replace_financial_reconciliation_automation_settings\(jsonb,jsonb,text\) to service_role;/);
+  assert.match(schemaMigration, /notify pgrst, 'reload schema';/);
+});
+
+test("automation SQL smoke transaction covers reapply, security, validation, rollback, and provenance", () => {
+  assert.equal(fs.existsSync(RPC_SMOKE_PATH), true, "automation SQL smoke transaction must exist");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+
+  assert.match(smokeSql, /^begin;/m);
+  assert.match(smokeSql, /\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-schema\.sql/g);
+  assert.equal((smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-schema\.sql/g) || []).length, 2);
+  for (const contract of [
+    "definition/config preservation",
+    "RLS and privileges",
+    "table constraints",
+    "unknown-rule rejection",
+    "duplicate-priority rejection",
+    "atomic rollback",
+    "provenance checks",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
+  assert.match(smokeSql, /^rollback;/m);
 });
