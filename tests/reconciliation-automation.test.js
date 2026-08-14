@@ -64,6 +64,9 @@ test("automation settings reject invalid managed schedule and editable rule valu
     ["unknown rule version", { rules: [{ ...managedSettings().rules[0], ruleVersion: 2 }] }, /rule version/i],
     ["definition field", { rules: [{ ...managedSettings().rules[0], definition: {} }] }, /editable managed-rule fields/i],
     ["threshold field", { rules: [{ ...managedSettings().rules[0], thresholds: {} }] }, /editable managed-rule fields/i],
+    ["unsupported top-level field", { unexpected: true }, /unsupported field/i],
+    ["unsupported schedule field", { schedule: { ...managedSettings().schedule, unexpected: true } }, /unsupported field/i],
+    ["unsupported rule field", { rules: [{ ...managedSettings().rules[0], unexpected: true }] }, /editable managed-rule fields/i],
   ];
 
   for (const [name, override, expected] of cases) {
@@ -109,6 +112,7 @@ test("analysis normalizes managed rule keys and validates request UUIDs", () => 
   });
 
   for (const payload of [
+    { action: "analyze_rule" },
     { action: "analyze_rule", ruleKeys: [] },
     { action: "analyze_rule", ruleKeys: ["other"] },
     { action: "analyze_rule", ruleKeys: [AUTOMATIC_RULE_KEY], clientRequestId: "not-a-uuid" },
@@ -197,6 +201,71 @@ test("automation public result recursively maps known fields and strips diagnost
 });
 
 test("automation public result preserves primitives and null without coercion", () => {
+  for (const value of [null, undefined, "text", 0, false]) {
+    assert.equal(toAutomationPublicResult(value), value);
+  }
+});
+
+test("automation public result exhaustively maps the controller contract without leaking diagnostics", () => {
+  const mappings = [
+    ["rule_key", "ruleKey"],
+    ["rule_version", "ruleVersion"],
+    ["display_name", "displayName"],
+    ["base_source_type", "baseSourceType"],
+    ["destination_source_types", "destinationSourceTypes"],
+    ["logic_description", "logicDescription"],
+    ["allow_manual_execution", "allowManualExecution"],
+    ["include_in_scheduled_batch", "includeInScheduledBatch"],
+    ["difference_allowed", "differenceAllowed"],
+    ["max_difference_days", "maxDifferenceDays"],
+    ["time_of_day", "timeOfDay"],
+    ["time_zone", "timeZone"],
+    ["last_scheduled_run", "lastScheduledRun"],
+    ["client_request_id", "clientRequestId"],
+    ["scheduled_slot", "scheduledSlot"],
+    ["definition_config_snapshot", "definitionConfigSnapshot"],
+    ["analysis_completed_at", "analysisCompletedAt"],
+    ["started_at", "startedAt"],
+    ["finished_at", "finishedAt"],
+    ["run_id", "runId"],
+    ["base_source_id", "baseSourceId"],
+    ["base_source_date", "baseSourceDate"],
+    ["candidate_groups", "candidateGroups"],
+    ["calculated_difference", "calculatedDifference"],
+    ["allowed_difference", "allowedDifference"],
+    ["reconciliation_id", "reconciliationId"],
+    ["automatic_trigger", "automaticTrigger"],
+    ["automatic_rule_key", "automaticRuleKey"],
+    ["automatic_rule_version", "automaticRuleVersion"],
+    ["automatic_run_id", "automaticRunId"],
+    ["automatic_proposal_id", "automaticProposalId"],
+    ["source_type", "sourceType"],
+    ["source_id", "sourceId"],
+    ["source_date", "sourceDate"],
+    ["amount_snapshot", "amountSnapshot"],
+    ["created_at", "createdAt"],
+    ["updated_at", "updatedAt"],
+  ];
+  const strippedKeys = ["error_detail", "internal_error", "error_summary", "diagnostic", "stack"];
+  const mappedFields = Object.fromEntries(mappings.map(([inputKey], index) => [inputKey, {
+    nested_value: index,
+    diagnostics: Object.fromEntries(strippedKeys.map((key) => [key, "remove"])),
+  }]));
+  const input = {
+    payload: [mappedFields],
+    unknown_public_field: { items: [{ still_unknown: true }] },
+    diagnostics: Object.fromEntries(strippedKeys.map((key) => [key, "remove"])),
+  };
+  const before = JSON.parse(JSON.stringify(input));
+  const result = toAutomationPublicResult(input);
+
+  assert.deepEqual(input, before);
+  assert.deepEqual(result.unknown_public_field, { items: [{ still_unknown: true }] });
+  assert.deepEqual(result.diagnostics, {});
+  for (const [inputKey, outputKey] of mappings) {
+    assert.deepEqual(result.payload[0][outputKey], { nested_value: mappings.findIndex(([key]) => key === inputKey), diagnostics: {} });
+    assert.equal(Object.hasOwn(result.payload[0], inputKey), false);
+  }
   for (const value of [null, undefined, "text", 0, false]) {
     assert.equal(toAutomationPublicResult(value), value);
   }
