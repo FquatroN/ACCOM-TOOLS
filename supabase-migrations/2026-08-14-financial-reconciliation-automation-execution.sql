@@ -28,6 +28,7 @@ declare
   v_current_destination_source_types jsonb;
   v_current_rule_version integer;
   v_current_operator text;
+  v_locked_destination_count integer;
   v_base record;
   v_combination record;
   v_combination_count integer;
@@ -35,9 +36,16 @@ declare
   v_action_result jsonb;
   v_item record;
   v_reconciliation_id uuid;
+  v_expected_item_count integer;
+  v_actual_item_count integer;
+  v_expected_matching_source_rules jsonb;
+  v_actual_matching_source_rules jsonb;
+  v_actual_difference numeric;
   v_completion_action text;
   v_comment text;
   v_trigger_label text;
+  v_failure_message text;
+  v_failure_detail text;
 begin
   if p_proposal_id is null then
     raise exception 'Automation proposal ID is required.';
@@ -131,11 +139,12 @@ begin
   from public.financial_reconciliation_automatic_rule_definitions definition
   join public.financial_reconciliation_automatic_rule_configs config
     on config.rule_key = definition.rule_key
-  left join public.financial_reconciliation_source_rules source_rule
+  join public.financial_reconciliation_source_rules source_rule
     on source_rule.base_source_type = definition.base_source_type
    and source_rule.matching_source_type = 'import_cgd_extrato_ordem'
   where definition.rule_key = v_proposal.rule_key
-    and definition.version = v_proposal.rule_version;
+    and definition.version = v_proposal.rule_version
+  for share of definition, config, source_rule;
 
   if not found
     or v_current_rule_version is distinct from v_proposal.rule_version
@@ -166,6 +175,52 @@ begin
     return jsonb_build_object(
       'proposalId', v_proposal.id, 'runId', v_run.id,
       'status', 'stale', 'reason', 'tolerance_changed'
+    );
+  end if;
+
+  perform document.id
+  from public.financial_documents document
+  where document.id = v_proposal.base_source_id
+  for update;
+  if not found then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'source_snapshot_changed', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'source_snapshot_changed'
+    );
+  end if;
+  if jsonb_array_length(v_proposal.items) = 0
+    or exists (
+      select 1 from jsonb_array_elements(v_proposal.items) item(value)
+      where value->>'sourceType' <> 'import_cgd_extrato_ordem'
+        or coalesce(value->>'sourceId', '') !~
+          '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        or coalesce(value->>'sourceDate', '') !~ '^\d{4}-\d{2}-\d{2}$'
+    ) then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'source_snapshot_changed', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'source_snapshot_changed'
+    );
+  end if;
+  perform bank.id
+  from jsonb_array_elements(v_proposal.items) item(value)
+  join public.import_cgd_extrato_ordem bank
+    on bank.id = (item.value->>'sourceId')::uuid
+  order by item.value->>'sourceType', bank.data, bank.id
+  for update of bank;
+  get diagnostics v_locked_destination_count = row_count;
+  if v_locked_destination_count <> jsonb_array_length(v_proposal.items) then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'source_snapshot_changed', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'source_snapshot_changed'
     );
   end if;
 
@@ -231,103 +286,194 @@ begin
     );
   end if;
 
-  update public.financial_reconciliation_automatic_proposals
-  set status = 'executing', reason = '', error = '', error_detail = '', updated_at = now()
-  where id = v_proposal.id;
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'executing', reason = '', error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
 
-  v_action_result := public.financial_reconciliation_action(
-    'start', p_actor, null, v_proposal.base_source_type, v_proposal.base_source_id, null
-  );
-  v_reconciliation_id := (v_action_result#>>'{reconciliation,id}')::uuid;
-  if v_reconciliation_id is null then
-    raise exception 'Automatic reconciliation start returned no reconciliation.';
-  end if;
-
-  for v_item in
-    select value
-    from jsonb_array_elements(v_proposal.items) item(value)
-    order by value->>'sourceType', (value->>'sourceDate')::date, value->>'sourceId'
-  loop
-    perform public.financial_reconciliation_action(
-      'add_item', p_actor, v_reconciliation_id,
-      v_item.value->>'sourceType', (v_item.value->>'sourceId')::uuid, null
+    v_action_result := public.financial_reconciliation_action(
+      'start', p_actor, null, v_proposal.base_source_type, v_proposal.base_source_id, null
     );
-  end loop;
+    v_reconciliation_id := (v_action_result#>>'{reconciliation,id}')::uuid;
+    if v_reconciliation_id is null then
+      raise exception 'Automatic reconciliation start returned no reconciliation.';
+    end if;
 
-  update public.financial_reconciliations
-  set origin = 'automatic',
-      automatic_trigger = v_run.trigger,
-      automatic_rule_key = v_proposal.rule_key,
-      automatic_rule_version = v_proposal.rule_version,
-      automatic_run_id = v_run.id,
-      automatic_proposal_id = v_proposal.id,
-      updated_at = timezone('utc', now())
-  where id = v_reconciliation_id;
+    for v_item in
+      select value
+      from jsonb_array_elements(v_proposal.items) item(value)
+      order by value->>'sourceType', (value->>'sourceDate')::date, value->>'sourceId'
+    loop
+      perform public.financial_reconciliation_action(
+        'add_item', p_actor, v_reconciliation_id,
+        v_item.value->>'sourceType', (v_item.value->>'sourceId')::uuid, null
+      );
+    end loop;
 
-  if v_proposal.calculated_difference = 0 then
-    v_completion_action := 'complete';
-    v_comment := null;
-  else
-    v_completion_action := 'force_complete';
-    v_trigger_label := case v_run.trigger when 'manual' then 'Manual' else 'Scheduled' end;
-    v_comment := 'Automatically completed by rule Financial Documents to CGD Bank Statement v1; difference '
-      || chr(8364) || to_char(v_proposal.calculated_difference, 'FM999999999990.00')
-      || ' within allowed tolerance ' || chr(8364)
-      || to_char(v_proposal.allowed_difference, 'FM999999999990.00')
-      || '; trigger ' || v_trigger_label || '; batch ' || v_run.id::text || '.';
-  end if;
+    v_expected_item_count := 1 + jsonb_array_length(v_proposal.items);
+    select count(*) into v_actual_item_count
+    from public.financial_reconciliation_items item
+    where item.reconciliation_id = v_reconciliation_id;
+    if v_actual_item_count <> v_expected_item_count
+      or exists (
+        select 1
+        from public.financial_reconciliation_items locked_item
+        where locked_item.reconciliation_id = v_reconciliation_id
+          and (
+            (
+              locked_item.source_type = v_proposal.base_source_type
+              and (
+                locked_item.source_id <> v_proposal.base_source_id
+                or locked_item.amount_snapshot is distinct from (v_base.base_snapshot->>'amount')::numeric
+              )
+            )
+            or
+            (
+              locked_item.source_type <> v_proposal.base_source_type
+              and not exists (
+                select 1
+                from jsonb_array_elements(v_proposal.items) proposal_item(value)
+                where proposal_item.value->>'sourceType' = locked_item.source_type
+                  and (proposal_item.value->>'sourceId')::uuid = locked_item.source_id
+                  and (proposal_item.value->>'amount')::numeric = locked_item.amount_snapshot
+              )
+            )
+          )
+      ) then
+      raise exception 'Automatic reconciliation lifecycle snapshots changed after revalidation.';
+    end if;
 
-  if v_completion_action = 'complete' then
-    perform public.financial_reconciliation_action(
-      'complete', p_actor, v_reconciliation_id, null, null, null
+    v_expected_matching_source_rules := jsonb_build_object(
+      'sourceType', 'import_cgd_extrato_ordem',
+      'operator', v_rule_snapshot->>'operator'
     );
-  else
-    perform public.financial_reconciliation_action(
-      'force_complete', p_actor, v_reconciliation_id, null, null, v_comment
-    );
-  end if;
+    select matching_rule.value, reconciliation.difference_amount
+    into v_actual_matching_source_rules, v_actual_difference
+    from public.financial_reconciliations reconciliation
+    join lateral jsonb_array_elements(reconciliation.matching_source_rules) matching_rule(value)
+      on matching_rule.value->>'sourceType' = 'import_cgd_extrato_ordem'
+    where reconciliation.id = v_reconciliation_id;
+    if not found
+      or v_actual_matching_source_rules is distinct from v_expected_matching_source_rules
+      or v_actual_difference is distinct from v_proposal.calculated_difference
+      or abs(v_actual_difference) > v_proposal.allowed_difference then
+      raise exception 'Automatic reconciliation lifecycle snapshots changed after revalidation.';
+    end if;
 
-  insert into public.financial_reconciliation_audit (
-    reconciliation_id, action, actor, comment, difference_amount, metadata
-  ) values (
-    v_reconciliation_id,
-    'automatic_complete',
-    p_actor,
-    v_comment,
-    v_proposal.calculated_difference,
-    jsonb_build_object(
-      'ruleSnapshot', jsonb_build_object(
-        'ruleKey', v_proposal.rule_key,
-        'ruleVersion', v_proposal.rule_version,
-        'definition', v_rule_snapshot->'definition'
-      ),
-      'configSnapshot', jsonb_build_object(
-        'differenceAllowed', (v_rule_snapshot->>'differenceAllowed')::numeric,
-        'maxDifferenceDays', (v_rule_snapshot->>'maxDifferenceDays')::integer,
-        'priority', (v_rule_snapshot->>'priority')::integer
-      ),
-      'operatorSnapshot', jsonb_build_object(
-        'import_cgd_extrato_ordem', v_rule_snapshot->>'operator'
-      ),
-      'identityEvidence', v_proposal.evidence,
-      'proposalSignature', v_proposal.signature,
-      'trigger', v_run.trigger,
-      'runId', v_run.id,
+    update public.financial_reconciliations
+    set origin = 'automatic',
+        automatic_trigger = v_run.trigger,
+        automatic_rule_key = v_proposal.rule_key,
+        automatic_rule_version = v_proposal.rule_version,
+        automatic_run_id = v_run.id,
+        automatic_proposal_id = v_proposal.id,
+        updated_at = timezone('utc', now())
+    where id = v_reconciliation_id;
+
+    if v_actual_difference = 0 then
+      v_completion_action := 'complete';
+      v_comment := null;
+    else
+      v_completion_action := 'force_complete';
+      v_trigger_label := case v_run.trigger when 'manual' then 'Manual' else 'Scheduled' end;
+      v_comment := 'Automatically completed by rule Financial Documents to CGD Bank Statement v1; difference '
+        || chr(8364) || to_char(v_actual_difference, 'FM999999999990.00')
+        || ' within allowed tolerance ' || chr(8364)
+        || to_char(v_proposal.allowed_difference, 'FM999999999990.00')
+        || '; trigger ' || v_trigger_label || '; batch ' || v_run.id::text || '.';
+    end if;
+
+    if v_completion_action = 'complete' then
+      perform public.financial_reconciliation_action(
+        'complete', p_actor, v_reconciliation_id, null, null, null
+      );
+    else
+      perform public.financial_reconciliation_action(
+        'force_complete', p_actor, v_reconciliation_id, null, null, v_comment
+      );
+    end if;
+
+    insert into public.financial_reconciliation_audit (
+      reconciliation_id, action, actor, comment, difference_amount, metadata
+    ) values (
+      v_reconciliation_id,
+      'automatic_complete',
+      p_actor,
+      v_comment,
+      v_actual_difference,
+      jsonb_build_object(
+        'ruleSnapshot', jsonb_build_object(
+          'ruleKey', v_proposal.rule_key,
+          'ruleVersion', v_proposal.rule_version,
+          'definition', v_rule_snapshot->'definition'
+        ),
+        'configSnapshot', jsonb_build_object(
+          'differenceAllowed', (v_rule_snapshot->>'differenceAllowed')::numeric,
+          'maxDifferenceDays', (v_rule_snapshot->>'maxDifferenceDays')::integer,
+          'priority', (v_rule_snapshot->>'priority')::integer
+        ),
+        'operatorSnapshot', jsonb_build_object(
+          'import_cgd_extrato_ordem', v_rule_snapshot->>'operator'
+        ),
+        'identityEvidence', v_proposal.evidence,
+        'proposalSignature', v_proposal.signature,
+        'trigger', v_run.trigger,
+        'runId', v_run.id,
+        'proposalId', v_proposal.id,
+        'tolerance', v_proposal.allowed_difference,
+        'calculatedDifference', v_actual_difference
+      )
+    );
+
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'completed',
+        reconciliation_id = v_reconciliation_id,
+        completed_at = now(),
+        reason = '',
+        error = '',
+        error_detail = '',
+        updated_at = now()
+    where id = v_proposal.id;
+  exception when others then
+    get stacked diagnostics
+      v_failure_message = message_text,
+      v_failure_detail = pg_exception_detail;
+    if v_failure_message in (
+      'Automatic reconciliation lifecycle snapshots changed after revalidation.',
+      'This record is already reconciled.'
+    ) then
+      update public.financial_reconciliation_automatic_proposals
+      set status = 'stale',
+          reason = 'source_snapshot_changed',
+          reconciliation_id = null,
+          completed_at = null,
+          error = '',
+          error_detail = '',
+          updated_at = now()
+      where id = v_proposal.id;
+      return jsonb_build_object(
+        'proposalId', v_proposal.id,
+        'runId', v_run.id,
+        'status', 'stale',
+        'reason', 'source_snapshot_changed'
+      );
+    end if;
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'failed',
+        reason = 'execution_failed',
+        reconciliation_id = null,
+        completed_at = null,
+        error = 'Automatic reconciliation execution failed.',
+        error_detail = left(concat_ws(' ', v_failure_message, nullif(v_failure_detail, '')), 2000),
+        updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
       'proposalId', v_proposal.id,
-      'tolerance', v_proposal.allowed_difference,
-      'calculatedDifference', v_proposal.calculated_difference
-    )
-  );
-
-  update public.financial_reconciliation_automatic_proposals
-  set status = 'completed',
-      reconciliation_id = v_reconciliation_id,
-      completed_at = now(),
-      reason = '',
-      error = '',
-      error_detail = '',
-      updated_at = now()
-  where id = v_proposal.id;
+      'runId', v_run.id,
+      'status', 'failed',
+      'reason', 'execution_failed'
+    );
+  end;
 
   return jsonb_build_object(
     'proposalId', v_proposal.id,

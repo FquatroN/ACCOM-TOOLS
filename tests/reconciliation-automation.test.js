@@ -443,6 +443,9 @@ test("automation execution migration revalidates and completes each proposal ato
   assert.match(executionMigration, /financial_reconciliation_audit_action_check[\s\S]*'automatic_complete'/);
   assert.match(executionMigration, /from public\.financial_reconciliation_automatic_runs[\s\S]*for update/);
   assert.match(executionMigration, /from public\.financial_reconciliation_automatic_proposals[\s\S]*for update/);
+  assert.match(executionMigration, /from public\.financial_documents[\s\S]*for update/);
+  assert.match(executionMigration, /(?:from|join) public\.import_cgd_extrato_ordem[\s\S]*for update/);
+  assert.match(executionMigration, /for share of definition, config, source_rule/);
   assert.match(executionMigration, /if v_proposal\.status = 'completed'[\s\S]*v_proposal\.reconciliation_id/);
   assert.match(executionMigration, /status in \('ambiguous',\s*'deselected',\s*'failed'\)/);
   assert.match(executionMigration, /financial_reconciliation_automatic_rule_candidates\(/);
@@ -479,6 +482,10 @@ test("automation execution migration revalidates and completes each proposal ato
     assert.match(executionMigration, new RegExp(`'${metadataKey}'`));
   }
   assert.match(executionMigration, /set status = 'completed'[\s\S]*reconciliation_id = v_reconciliation_id[\s\S]*completed_at =/);
+  assert.match(executionMigration, /v_actual_matching_source_rules\s+is distinct from\s+v_expected_matching_source_rules/);
+  assert.match(executionMigration, /v_actual_difference\s+is distinct from\s+v_proposal\.calculated_difference/);
+  assert.match(executionMigration, /abs\(v_actual_difference\) > v_proposal\.allowed_difference/);
+  assert.match(executionMigration, /exception when others[\s\S]*get stacked diagnostics[\s\S]*set status = 'failed'/);
 
   assert.match(executionMigration, /set status = 'deselected'[\s\S]*where run_id = v_run\.id[\s\S]*and status = 'proposed'/);
   assert.match(executionMigration, /'completed', count\(\*\) filter \(where status = 'completed'\)/);
@@ -598,6 +605,8 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     "failed proposal left partial lifecycle mutations",
     "later proposal was blocked by an earlier failed RPC transaction",
     "automatic lifecycle action changed provenance",
+    "automatic lifecycle snapshots were not rechecked before completion",
+    "failed proposal was not persisted as failed",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }

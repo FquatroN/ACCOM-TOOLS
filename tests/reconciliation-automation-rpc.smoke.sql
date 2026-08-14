@@ -627,6 +627,7 @@ end $$;
 -- automatic provenance was not persisted
 -- generated automatic completion comment was not stable
 -- repeated automatic execution duplicated items or audit rows
+-- automatic lifecycle snapshots were not rechecked before completion
 -- automatic reopen/delete provenance
 -- automatic lifecycle action changed provenance
 do $$
@@ -936,6 +937,7 @@ end $$;
 
 -- post-write rollback and later-proposal isolation
 -- failed proposal left partial lifecycle mutations
+-- failed proposal was not persisted as failed
 -- later proposal was blocked by an earlier failed RPC transaction
 create or replace function pg_temp.reject_automatic_complete()
 returns trigger language plpgsql as $trigger$
@@ -982,16 +984,12 @@ begin
   from public.financial_reconciliation_automatic_proposals
   where run_id = v_run_id and base_source_id = v_later_document_id and status = 'proposed';
 
-  begin
-    perform public.execute_financial_reconciliation_automatic_proposal(
-      v_failed_proposal_id, 'smoke:rollback'
-    );
-    raise exception 'Expected the automatic completion audit trigger to fail.';
-  exception when raise_exception then
-    if sqlerrm <> 'Smoke forced automatic audit failure.' then raise; end if;
-  end;
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_failed_proposal_id, 'smoke:rollback'
+  );
 
-  if exists (
+  if v_result->>'status' <> 'failed'
+    or exists (
       select 1 from public.financial_reconciliations
       where automatic_proposal_id = v_failed_proposal_id
     )
@@ -1002,7 +1000,7 @@ begin
     )
     or not exists (
       select 1 from public.financial_reconciliation_automatic_proposals
-      where id = v_failed_proposal_id and status = 'proposed'
+      where id = v_failed_proposal_id and status = 'failed'
     ) then
     raise exception 'Failed proposal left partial lifecycle mutations.';
   end if;
@@ -1019,10 +1017,11 @@ begin
   end if;
 
   v_result := public.finish_financial_reconciliation_automatic_run(v_run_id);
-  if v_result->>'status' <> 'completed'
+  if v_result->>'status' <> 'partial'
     or v_result#>>'{counts,completed}' <> '1'
-    or v_result#>>'{counts,deselected}' <> '1' then
-    raise exception 'Automatic run did not finalize completed work and deselect untouched proposals.';
+    or v_result#>>'{counts,failed}' <> '1'
+    or v_result#>>'{counts,deselected}' <> '0' then
+    raise exception 'Failed proposal was not persisted as failed.';
   end if;
 end $$;
 
