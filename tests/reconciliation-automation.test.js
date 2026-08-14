@@ -46,6 +46,63 @@ const SOURCE_RULE_MIGRATION_PATH = path.join(
 );
 const RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-automation-rpc.smoke.sql");
 const MANUAL_RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-rpc.smoke.sql");
+const SETTINGS_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation-settings.js");
+const MANUAL_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation.js");
+const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
+const PROPOSAL_ID_2 = "00000000-0000-0000-0000-000000000004";
+const PROPOSAL_ID_3 = "00000000-0000-0000-0000-000000000005";
+
+function responseRecorder() {
+  return {
+    statusCode: 0,
+    body: null,
+    headers: {},
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+    setHeader(name, value) {
+      this.headers[name] = value;
+      return this;
+    },
+  };
+}
+
+async function withMockedHandler(handlerPath, supabase, run) {
+  const previousHandler = require.cache[handlerPath];
+  const previousSupabase = require.cache[SUPABASE_MODULE_PATH];
+  delete require.cache[handlerPath];
+  require.cache[SUPABASE_MODULE_PATH] = {
+    id: SUPABASE_MODULE_PATH,
+    filename: SUPABASE_MODULE_PATH,
+    loaded: true,
+    exports: supabase,
+  };
+
+  try {
+    await run(require(handlerPath));
+  } finally {
+    delete require.cache[handlerPath];
+    if (previousHandler) require.cache[handlerPath] = previousHandler;
+    if (previousSupabase) require.cache[SUPABASE_MODULE_PATH] = previousSupabase;
+    else delete require.cache[SUPABASE_MODULE_PATH];
+  }
+}
+
+function mockedSupabase(overrides = {}) {
+  return {
+    cleanText: (value) => String(value ?? "").trim(),
+    parseBody: async (request) => request.body || {},
+    requireFeature: async () => ({ user: { email: "user@example.com", id: "user-1" } }),
+    restQuery: async () => ({}),
+    sendError: (response, error) => response.status(error.statusCode || 500).json({ error: error.message }),
+    ...overrides,
+  };
+}
 
 function managedSettings(overrides = {}) {
   return {
@@ -311,6 +368,312 @@ test("automation RPC errors expose safe client statuses", () => {
   for (const [message, statusCode] of cases) {
     assert.equal(mapRpcError(new Error(message)).statusCode, statusCode, message);
   }
+});
+
+test("automation settings GET authorizes and calls only the settings RPC", async () => {
+  const authorizations = [];
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    requireFeature: async (_request, area, feature) => {
+      authorizations.push({ area, feature });
+      return { user: { email: "admin@example.com", id: "admin-1" } };
+    },
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return {
+        schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
+        rules: [{ rule_key: AUTOMATIC_RULE_KEY, rule_version: 1, diagnostic: "hidden" }],
+      };
+    },
+  }), async (handler) => {
+    await handler({ method: "GET" }, response);
+  });
+
+  assert.deepEqual(authorizations, [{ area: "settings", feature: "financial-reconciliation" }]);
+  assert.deepEqual(calls, [{
+    resource: "rpc/get_financial_reconciliation_automation_settings",
+    options: { method: "POST", body: {} },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    schedule: { enabled: true, timeOfDay: "02:15", timeZone: AUTOMATIC_TIME_ZONE },
+    rules: [{ ruleKey: AUTOMATIC_RULE_KEY, ruleVersion: 1 }],
+  });
+});
+
+test("automation settings PUT normalizes the complete payload and actor into one replacement RPC", async () => {
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    requireFeature: async () => ({ user: { email: " admin@example.com ", id: "admin-1" } }),
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return { schedule: { time_of_day: "02:15" }, rules: [{ rule_key: AUTOMATIC_RULE_KEY }] };
+    },
+  }), async (handler) => {
+    await handler({ method: "PUT", body: managedSettings() }, response);
+  });
+
+  assert.deepEqual(calls, [{
+    resource: "rpc/replace_financial_reconciliation_automation_settings",
+    options: {
+      method: "POST",
+      body: {
+        p_schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
+        p_rules: [{
+          rule_key: AUTOMATIC_RULE_KEY,
+          rule_version: 1,
+          enabled: true,
+          allow_manual_execution: true,
+          include_in_scheduled_batch: false,
+          difference_allowed: "1.25",
+          max_difference_days: 7,
+          priority: 1,
+        }],
+        p_actor: "admin@example.com",
+      },
+    },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    schedule: { timeOfDay: "02:15" },
+    rules: [{ ruleKey: AUTOMATIC_RULE_KEY }],
+  });
+});
+
+test("manual automation GET authorizes app access and validates the run detail RPC", async () => {
+  const authorizations = [];
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    requireFeature: async (_request, area, feature) => {
+      authorizations.push({ area, feature });
+      return { user: { email: "user@example.com", id: "user-1" } };
+    },
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return { run_id: RUN_ID, proposals: [{ source_id: "bank-1", internal_error: "hidden" }] };
+    },
+  }), async (handler) => {
+    await handler({ method: "GET", query: { run_id: RUN_ID } }, response);
+  });
+
+  assert.deepEqual(authorizations, [{ area: "app", feature: "financial-reconciliation" }]);
+  assert.deepEqual(calls, [{
+    resource: "rpc/get_financial_reconciliation_automatic_run",
+    options: { method: "POST", body: { p_run_id: RUN_ID } },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { runId: RUN_ID, proposals: [{ sourceId: "bank-1" }] });
+
+  const invalidResponse = responseRecorder();
+  let invalidRpcCalled = false;
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => {
+      invalidRpcCalled = true;
+      return {};
+    },
+  }), async (handler) => {
+    await handler({ method: "GET", query: { run_id: "not-a-uuid" } }, invalidResponse);
+  });
+  assert.equal(invalidResponse.statusCode, 400);
+  assert.equal(invalidRpcCalled, false);
+});
+
+test("analyze_rule authorizes app access and sends exactly one manually enabled rule", async () => {
+  const authorizations = [];
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    requireFeature: async (_request, area, feature) => {
+      authorizations.push({ area, feature });
+      return { user: { email: "user@example.com", id: "user-1" } };
+    },
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return { run_id: RUN_ID, status: "ready" };
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: { action: "analyze_rule", ruleKeys: [AUTOMATIC_RULE_KEY], clientRequestId: REQUEST_ID },
+    }, response);
+  });
+
+  assert.deepEqual(authorizations, [{ area: "app", feature: "financial-reconciliation" }]);
+  assert.deepEqual(calls, [{
+    resource: "rpc/create_financial_reconciliation_automatic_analysis",
+    options: {
+      method: "POST",
+      body: {
+        p_rule_keys: [AUTOMATIC_RULE_KEY],
+        p_mode: "manual_rule",
+        p_actor: "user@example.com",
+        p_client_request_id: REQUEST_ID,
+      },
+    },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { runId: RUN_ID, status: "ready" });
+});
+
+test("analyze_batch authorizes settings access and analyzes every enabled batch rule without execution", async () => {
+  const authorizations = [];
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    requireFeature: async (_request, area, feature) => {
+      authorizations.push({ area, feature });
+      return { user: { email: "admin@example.com", id: "admin-1" } };
+    },
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      if (resource === "rpc/get_financial_reconciliation_automation_settings") {
+        return {
+          rules: [{
+            rule_key: AUTOMATIC_RULE_KEY,
+            enabled: true,
+            include_in_scheduled_batch: true,
+          }],
+        };
+      }
+      return { run_id: RUN_ID, scope: "batch", status: "ready" };
+    },
+  }), async (handler) => {
+    await handler({ method: "POST", body: { action: "analyze_batch", clientRequestId: REQUEST_ID } }, response);
+  });
+
+  assert.deepEqual(authorizations, [{ area: "settings", feature: "financial-reconciliation" }]);
+  assert.deepEqual(calls, [
+    {
+      resource: "rpc/get_financial_reconciliation_automation_settings",
+      options: { method: "POST", body: {} },
+    },
+    {
+      resource: "rpc/create_financial_reconciliation_automatic_analysis",
+      options: {
+        method: "POST",
+        body: {
+          p_rule_keys: [AUTOMATIC_RULE_KEY],
+          p_mode: "manual_batch",
+          p_actor: "admin@example.com",
+          p_client_request_id: REQUEST_ID,
+        },
+      },
+    },
+  ]);
+  assert.equal(calls.some(({ resource }) => resource.includes("execute_financial")), false);
+  assert.deepEqual(response.body, { runId: RUN_ID, scope: "batch", status: "ready" });
+});
+
+test("execute_selected runs proposal RPCs sequentially, retains partial failures, and finalizes after the loop", async () => {
+  const authorizations = [];
+  const calls = [];
+  let activeExecutions = 0;
+  let maximumActiveExecutions = 0;
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    requireFeature: async (_request, area, feature) => {
+      authorizations.push({ area, feature });
+      return { user: { email: "user@example.com", id: "user-1" } };
+    },
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+        activeExecutions += 1;
+        maximumActiveExecutions = Math.max(maximumActiveExecutions, activeExecutions);
+        await new Promise((resolve) => setImmediate(resolve));
+        activeExecutions -= 1;
+        if (options.body.p_proposal_id === PROPOSAL_ID_2) throw new Error("secret database diagnostic");
+        if (options.body.p_proposal_id === PROPOSAL_ID_3) {
+          return { proposalId: PROPOSAL_ID_3, runId: RUN_ID, status: "stale", reason: "source_snapshot_changed" };
+        }
+        return { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed" };
+      }
+      return { run_id: RUN_ID, status: "partial", diagnostic: "hidden" };
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: {
+        action: "execute_selected",
+        runId: RUN_ID,
+        proposalIds: [PROPOSAL_ID, PROPOSAL_ID_2, PROPOSAL_ID_3],
+      },
+    }, response);
+  });
+
+  assert.deepEqual(authorizations, [{ area: "app", feature: "financial-reconciliation" }]);
+  assert.equal(maximumActiveExecutions, 1);
+  assert.deepEqual(calls, [
+    {
+      resource: "rpc/execute_financial_reconciliation_automatic_proposal",
+      options: { method: "POST", body: { p_proposal_id: PROPOSAL_ID, p_actor: "user@example.com" } },
+    },
+    {
+      resource: "rpc/execute_financial_reconciliation_automatic_proposal",
+      options: { method: "POST", body: { p_proposal_id: PROPOSAL_ID_2, p_actor: "user@example.com" } },
+    },
+    {
+      resource: "rpc/execute_financial_reconciliation_automatic_proposal",
+      options: { method: "POST", body: { p_proposal_id: PROPOSAL_ID_3, p_actor: "user@example.com" } },
+    },
+    {
+      resource: "rpc/finish_financial_reconciliation_automatic_run",
+      options: { method: "POST", body: { p_run_id: RUN_ID } },
+    },
+  ]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    run: { runId: RUN_ID, status: "partial" },
+    outcomes: [
+      { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed" },
+      { proposalId: PROPOSAL_ID_2, status: "failed", reason: "execution_failed" },
+      { proposalId: PROPOSAL_ID_3, runId: RUN_ID, status: "stale", reason: "source_snapshot_changed" },
+    ],
+  });
+  assert.doesNotMatch(JSON.stringify(response.body), /secret database diagnostic/);
+});
+
+test("automation handlers set Allow, reject invalid payloads before RPCs, and safely map RPC errors", async () => {
+  const settingsMethodResponse = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase(), async (handler) => {
+    await handler({ method: "POST" }, settingsMethodResponse);
+  });
+  assert.equal(settingsMethodResponse.statusCode, 405);
+  assert.equal(settingsMethodResponse.headers.Allow, "GET, PUT");
+
+  const manualMethodResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase(), async (handler) => {
+    await handler({ method: "DELETE" }, manualMethodResponse);
+  });
+  assert.equal(manualMethodResponse.statusCode, 405);
+  assert.equal(manualMethodResponse.headers.Allow, "GET, POST");
+
+  let invalidRpcCalled = false;
+  const invalidSettingsResponse = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => {
+      invalidRpcCalled = true;
+      return {};
+    },
+  }), async (handler) => {
+    await handler({ method: "PUT", body: managedSettings({ unexpected: true }) }, invalidSettingsResponse);
+  });
+  assert.equal(invalidSettingsResponse.statusCode, 400);
+  assert.equal(invalidRpcCalled, false);
+
+  const mappedErrorResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => {
+      throw new Error("Stale proposal selected.");
+    },
+  }), async (handler) => {
+    await handler({ method: "GET", query: { run_id: RUN_ID } }, mappedErrorResponse);
+  });
+  assert.equal(mappedErrorResponse.statusCode, 409);
+  assert.deepEqual(mappedErrorResponse.body, { error: "Stale proposal selected." });
 });
 
 test("automation schema migration pins the managed catalog and execution provenance contract", () => {
