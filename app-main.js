@@ -1281,6 +1281,7 @@ const state = {
     rules: [],
     lastScheduledRun: null,
   },
+  reconciliationAutomationSettingsDirty: false,
   biSettings: clone(DEFAULT_BI_SETTINGS),
   biSettingsLoaded: false,
   biSettingsTab: "sale-categories",
@@ -1997,6 +1998,7 @@ const els = {
   financialReconciliationAutomationRules: document.getElementById("financial-reconciliation-automation-rules"),
   financialReconciliationAutomationSave: document.getElementById("financial-reconciliation-automation-save"),
   financialReconciliationAutomationRunBatchNow: document.getElementById("financial-reconciliation-automation-run-batch-now"),
+  financialReconciliationAutomationRunHint: document.getElementById("financial-reconciliation-automation-run-hint"),
   financialReconciliationAutomationStatus: document.getElementById("financial-reconciliation-automation-status"),
   biSettingsSave: document.getElementById("bi-settings-save"),
   biSettingsSaleCategoriesTab: document.getElementById("bi-settings-sale-categories-tab"),
@@ -2879,6 +2881,8 @@ function bindEvents() {
   els.financialReconciliationSettingsRulesBody?.addEventListener("change", onReconciliationSettingsRuleChange);
   els.financialReconciliationSettingsSourceTab?.addEventListener("click", () => setReconciliationSettingsTab("source-rules"));
   els.financialReconciliationSettingsAutomaticTab?.addEventListener("click", () => setReconciliationSettingsTab("automatic"));
+  els.financialReconciliationSettingsSourceTab?.addEventListener("keydown", onReconciliationSettingsTabKeydown);
+  els.financialReconciliationSettingsAutomaticTab?.addEventListener("keydown", onReconciliationSettingsTabKeydown);
   els.financialReconciliationAutomationScheduleEnabled?.addEventListener("change", onReconciliationAutomationSettingsInput);
   els.financialReconciliationAutomationScheduleTime?.addEventListener("input", onReconciliationAutomationSettingsInput);
   els.financialReconciliationAutomationRules?.addEventListener("input", onReconciliationAutomationSettingsInput);
@@ -21384,6 +21388,7 @@ function applyReconciliationAutomationSettingsResult(result) {
     ? clone(result.lastScheduledRun)
     : null;
   current.loaded = true;
+  state.reconciliationAutomationSettingsDirty = false;
 }
 
 function reconciliationAutomationSettingsPayload() {
@@ -21428,6 +21433,80 @@ function reconciliationAutomationSettingsPayload() {
   };
 }
 
+function updateReconciliationAutomationControls() {
+  const current = state.reconciliationAutomationSettings;
+  const validPayload = reconciliationAutomationSettingsPayload();
+  const timeValid = /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(clean(current?.schedule?.timeOfDay));
+  if (els.financialReconciliationAutomationScheduleTime) {
+    if (timeValid) els.financialReconciliationAutomationScheduleTime.removeAttribute("aria-invalid");
+    else els.financialReconciliationAutomationScheduleTime.setAttribute("aria-invalid", "true");
+  }
+  const ruleFields = els.financialReconciliationAutomationRules?.querySelectorAll("[data-reconciliation-automation-rule-field]") || [];
+  for (const field of ruleFields) {
+    const fieldName = clean(field.dataset?.reconciliationAutomationRuleField);
+    const raw = clean(field.value);
+    let invalid = false;
+    if (fieldName === "differenceAllowed") {
+      if (!/^\d+(?:\.\d{1,2})?$/.test(raw)) invalid = true;
+      else {
+        const [whole, fraction = ""] = raw.split(".");
+        invalid = !Number.isSafeInteger((Number(whole) * 100) + Number(fraction.padEnd(2, "0")));
+      }
+    } else if (fieldName === "maxDifferenceDays") {
+      const value = Number(raw);
+      invalid = !/^\d+$/.test(raw) || !Number.isInteger(value) || value < 0 || value > 365;
+    }
+    if (invalid) field.setAttribute("aria-invalid", "true");
+    else field.removeAttribute("aria-invalid");
+  }
+
+  const dirty = state.reconciliationAutomationSettingsDirty === true;
+  const hasBatchRule = (Array.isArray(current.rules) ? current.rules : [])
+    .some((rule) => rule?.enabled === true && rule?.includeInScheduledBatch === true);
+  const canOpenWorkbench = canAppFinancialReconciliation();
+  if (els.financialReconciliationAutomationSave) {
+    els.financialReconciliationAutomationSave.disabled = current.loading || !current.loaded || !validPayload;
+  }
+  if (els.financialReconciliationAutomationRunBatchNow) {
+    els.financialReconciliationAutomationRunBatchNow.disabled = current.loading
+      || !current.loaded
+      || !validPayload
+      || dirty
+      || !hasBatchRule
+      || !canOpenWorkbench;
+  }
+  if (els.financialReconciliationAutomationRunHint) {
+    els.financialReconciliationAutomationRunHint.textContent = !current.loaded
+      ? "Load the automatic reconciliation configuration before running analysis."
+      : !validPayload
+        ? "Correct invalid fields and save the configuration before running analysis."
+        : dirty
+          ? "Save configuration changes before running analysis."
+          : !hasBatchRule
+            ? "Enable at least one rule for Scheduled batches before running analysis."
+            : !canOpenWorkbench
+              ? "Reconciliation app access is required to review batch proposals."
+              : "Run batch now performs analysis only and opens proposals for review.";
+  }
+}
+
+function formatReconciliationAutomationDateTime(value) {
+  const raw = clean(value);
+  if (!raw) return "-";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Lisbon",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} Europe/Lisbon`;
+}
+
 function renderReconciliationAutomationSettings() {
   const current = state.reconciliationAutomationSettings;
   const automaticActive = current.activeTab === "automatic";
@@ -21437,6 +21516,8 @@ function renderReconciliationAutomationSettings() {
   els.financialReconciliationSettingsAutomaticTab?.classList.toggle("ghost", !automaticActive);
   els.financialReconciliationSettingsSourceTab?.setAttribute("aria-selected", String(!automaticActive));
   els.financialReconciliationSettingsAutomaticTab?.setAttribute("aria-selected", String(automaticActive));
+  els.financialReconciliationSettingsSourceTab?.setAttribute("tabindex", automaticActive ? "-1" : "0");
+  els.financialReconciliationSettingsAutomaticTab?.setAttribute("tabindex", automaticActive ? "0" : "-1");
   if (els.financialReconciliationSettingsSourcePanel) els.financialReconciliationSettingsSourcePanel.hidden = automaticActive;
   if (els.financialReconciliationSettingsAutomaticPanel) els.financialReconciliationSettingsAutomaticPanel.hidden = !automaticActive;
 
@@ -21445,14 +21526,14 @@ function renderReconciliationAutomationSettings() {
     els.financialReconciliationAutomationScheduleEnabled.disabled = current.loading;
   }
   if (els.financialReconciliationAutomationScheduleTime) {
-    els.financialReconciliationAutomationScheduleTime.value = clean(current.schedule.timeOfDay) || "02:00";
+    els.financialReconciliationAutomationScheduleTime.value = clean(current.schedule.timeOfDay);
     els.financialReconciliationAutomationScheduleTime.disabled = current.loading;
   }
   const lastRun = current.lastScheduledRun;
   const lastRunAt = clean(lastRun?.finishedAt || lastRun?.startedAt);
   if (els.financialReconciliationAutomationLastExecution) {
     els.financialReconciliationAutomationLastExecution.textContent = lastRun
-      ? `Last execution: ${formatDateTimeShort(lastRunAt)}${clean(lastRun.status) ? ` · ${clean(lastRun.status)}` : ""}`
+      ? `Last execution: ${formatReconciliationAutomationDateTime(lastRunAt)}${clean(lastRun.status) ? ` · ${clean(lastRun.status)}` : ""}`
       : "Last execution: Never";
   }
   if (els.financialReconciliationAutomationLastResult) {
@@ -21485,7 +21566,7 @@ function renderReconciliationAutomationSettings() {
         : "None";
       const definitionText = JSON.stringify(rule?.definition && typeof rule.definition === "object" ? rule.definition : {}, null, 2);
       const logicText = [clean(rule?.logicDescription), definitionText].filter(Boolean).join("\n\n");
-      return `<article class="financial-reconciliation-automation-rule-card" data-reconciliation-automation-rule-card="${escape(ruleKey)}">
+      return `<article class="financial-reconciliation-automation-rule-card" data-reconciliation-automation-rule-card="${escape(ruleKey)}" tabindex="-1">
   <div class="financial-reconciliation-automation-rule-head">
     <div><h4>${escape(rule?.displayName || ruleKey || "Managed rule")}</h4><span class="financial-reconciliation-automation-rule-version">Version ${escape(rule?.ruleVersion)} · managed definition</span></div>
     <div class="financial-reconciliation-automation-rule-reorder"><button type="button" class="ghost" data-reconciliation-automation-move="up" data-reconciliation-automation-rule-key="${escape(ruleKey)}" ${index === 0 || current.loading ? "disabled" : ""}>Move up</button><button type="button" class="ghost" data-reconciliation-automation-move="down" data-reconciliation-automation-rule-key="${escape(ruleKey)}" ${index === orderedRules.length - 1 || current.loading ? "disabled" : ""}>Move down</button></div>
@@ -21495,16 +21576,14 @@ function renderReconciliationAutomationSettings() {
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="enabled" ${rule?.enabled === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Enabled</label>
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="allowManualExecution" ${rule?.allowManualExecution === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Manual</label>
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="includeInScheduledBatch" ${rule?.includeInScheduledBatch === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Scheduled</label>
-    <label>Difference allowed<input type="number" min="0" step="0.01" inputmode="decimal" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="differenceAllowed" value="${escape(rule?.differenceAllowed)}" ${current.loading ? "disabled" : ""} /></label>
-    <label>Max difference days<input type="number" min="0" max="365" step="1" inputmode="numeric" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="maxDifferenceDays" value="${escape(rule?.maxDifferenceDays)}" ${current.loading ? "disabled" : ""} /></label>
+    <label>Difference allowed<input type="number" min="0" step="0.01" inputmode="decimal" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="differenceAllowed" value="${escape(rule?.differenceAllowed)}" ${current.loading ? "disabled" : ""} /></label>
+    <label>Max difference days<input type="number" min="0" max="365" step="1" inputmode="numeric" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="maxDifferenceDays" value="${escape(rule?.maxDifferenceDays)}" ${current.loading ? "disabled" : ""} /></label>
   </div>
   <details class="financial-reconciliation-automation-definition"><summary>Managed definition (read only)</summary><pre class="financial-reconciliation-automation-logic">${escape(logicText)}</pre></details>
 </article>`;
     }).join("") : '<p class="empty">No managed automatic reconciliation rules are available.</p>';
   }
-  const validPayload = reconciliationAutomationSettingsPayload();
-  if (els.financialReconciliationAutomationSave) els.financialReconciliationAutomationSave.disabled = current.loading || !current.loaded || !validPayload;
-  if (els.financialReconciliationAutomationRunBatchNow) els.financialReconciliationAutomationRunBatchNow.disabled = current.loading || !current.loaded;
+  updateReconciliationAutomationControls();
 }
 
 async function loadReconciliationAutomationSettings() {
@@ -21532,18 +21611,44 @@ function setReconciliationSettingsTab(tab) {
   if (nextTab === "automatic" && !state.reconciliationAutomationSettings.loaded) loadReconciliationAutomationSettings();
 }
 
+function onReconciliationSettingsTabKeydown(event) {
+  const sourceTab = els.financialReconciliationSettingsSourceTab;
+  const automaticTab = els.financialReconciliationSettingsAutomaticTab;
+  let nextTab = null;
+  if (event.key === "Home") nextTab = sourceTab;
+  else if (event.key === "End") nextTab = automaticTab;
+  else if (event.key === "ArrowRight" || event.key === "ArrowDown") nextTab = event.currentTarget === sourceTab ? automaticTab : sourceTab;
+  else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextTab = event.currentTarget === automaticTab ? sourceTab : automaticTab;
+  if (!nextTab) return;
+  event.preventDefault();
+  setReconciliationSettingsTab(nextTab === automaticTab ? "automatic" : "source-rules");
+  nextTab.focus();
+}
+
+function updateReconciliationAutomationNextExecution() {
+  if (!els.financialReconciliationAutomationNextExecution) return;
+  const schedule = state.reconciliationAutomationSettings.schedule;
+  els.financialReconciliationAutomationNextExecution.textContent = schedule.enabled
+    ? `Next expected execution: Daily at ${clean(schedule.timeOfDay) || "invalid time"} Europe/Lisbon`
+    : "Next expected execution: Schedule disabled";
+}
+
 function onReconciliationAutomationSettingsInput(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
   const current = state.reconciliationAutomationSettings;
   if (target.id === "financial-reconciliation-automation-schedule-enabled") {
     current.schedule.enabled = target.checked === true;
-    renderReconciliationAutomationSettings();
+    state.reconciliationAutomationSettingsDirty = true;
+    updateReconciliationAutomationNextExecution();
+    updateReconciliationAutomationControls();
     return;
   }
   if (target.id === "financial-reconciliation-automation-schedule-time") {
     current.schedule.timeOfDay = clean(target.value);
-    renderReconciliationAutomationSettings();
+    state.reconciliationAutomationSettingsDirty = true;
+    updateReconciliationAutomationNextExecution();
+    updateReconciliationAutomationControls();
     return;
   }
   const ruleKey = clean(target.dataset.reconciliationAutomationRuleKey);
@@ -21553,13 +21658,24 @@ function onReconciliationAutomationSettingsInput(event) {
   rule[field] = ["enabled", "allowManualExecution", "includeInScheduledBatch"].includes(field)
     ? target.checked === true
     : clean(target.value);
-  renderReconciliationAutomationSettings();
+  state.reconciliationAutomationSettingsDirty = true;
+  updateReconciliationAutomationControls();
 }
 
 function onReconciliationAutomationSettingsClick(event) {
   const button = event.target instanceof HTMLElement ? event.target.closest("button[data-reconciliation-automation-move]") : null;
   if (!button || button.disabled) return;
   moveReconciliationAutomationRule(button.dataset.reconciliationAutomationRuleKey, button.dataset.reconciliationAutomationMove);
+}
+
+function focusReconciliationAutomationRuleMove(ruleKey, direction) {
+  const cards = Array.from(els.financialReconciliationAutomationRules?.querySelectorAll("[data-reconciliation-automation-rule-card]") || []);
+  const card = cards.find((item) => clean(item.dataset?.reconciliationAutomationRuleCard) === clean(ruleKey));
+  if (!card) return;
+  const buttons = Array.from(card.querySelectorAll("button[data-reconciliation-automation-move]"));
+  const preferred = buttons.find((button) => !button.disabled && clean(button.dataset?.reconciliationAutomationMove) === direction);
+  const focusTarget = preferred || buttons.find((button) => !button.disabled) || card;
+  focusTarget.focus();
 }
 
 function moveReconciliationAutomationRule(ruleKey, direction) {
@@ -21571,9 +21687,11 @@ function moveReconciliationAutomationRule(ruleKey, direction) {
   const targetIndex = direction === "up" ? index - 1 : direction === "down" ? index + 1 : index;
   if (index >= 0 && targetIndex >= 0 && targetIndex < orderedRules.length && targetIndex !== index) {
     [orderedRules[index], orderedRules[targetIndex]] = [orderedRules[targetIndex], orderedRules[index]];
+    state.reconciliationAutomationSettingsDirty = true;
   }
   current.rules = orderedRules.map((rule, ruleIndex) => ({ ...rule, priority: ruleIndex + 1 }));
   renderReconciliationAutomationSettings();
+  focusReconciliationAutomationRuleMove(ruleKey, direction);
 }
 
 async function saveReconciliationAutomationSettings() {
@@ -21604,6 +21722,22 @@ async function saveReconciliationAutomationSettings() {
 async function runReconciliationAutomationBatchNow() {
   const settings = state.reconciliationAutomationSettings;
   if (settings.loading) return;
+  if (state.reconciliationAutomationSettingsDirty) {
+    setReconciliationAutomationSettingsStatus("Save configuration changes before running batch analysis.", true);
+    return;
+  }
+  if (!reconciliationAutomationSettingsPayload()) {
+    setReconciliationAutomationSettingsStatus("Correct invalid automatic reconciliation fields before running batch analysis.", true);
+    return;
+  }
+  if (!settings.rules.some((rule) => rule?.enabled === true && rule?.includeInScheduledBatch === true)) {
+    setReconciliationAutomationSettingsStatus("Enable at least one rule for Scheduled batches before running batch analysis.", true);
+    return;
+  }
+  if (!canAppFinancialReconciliation()) {
+    setReconciliationAutomationSettingsStatus("Reconciliation app access is required to review batch proposals.", true);
+    return;
+  }
   settings.loading = true;
   renderReconciliationAutomationSettings();
   try {
@@ -21615,7 +21749,6 @@ async function runReconciliationAutomationBatchNow() {
     if (!current.automation) {
       current.automation = { rules: [], run: null, selectedProposalIds: new Set(), pendingAction: "", loaded: false };
     }
-    current.automation.rules = Array.isArray(settings.rules) ? settings.rules.slice() : [];
     current.automation.run = run;
     current.automation.selectedProposalIds = new Set((Array.isArray(run?.proposals) ? run.proposals : [])
       .filter((proposal) => proposal?.status === "proposed")

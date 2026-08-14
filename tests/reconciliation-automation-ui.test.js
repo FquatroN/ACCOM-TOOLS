@@ -89,48 +89,68 @@ function fakeClassList() {
   };
 }
 
-function renderAutomationSettings(settings) {
-  const state = { reconciliationAutomationSettings: settings };
+function renderAutomationSettings(settings, { dirty = false, canOpenWorkbench = true } = {}) {
+  const state = {
+    reconciliationAutomationSettings: settings,
+    reconciliationAutomationSettingsDirty: dirty,
+  };
   const els = {
     financialReconciliationSettingsSourceTab: { classList: fakeClassList(), setAttribute(name, value) { this[name] = value; } },
     financialReconciliationSettingsAutomaticTab: { classList: fakeClassList(), setAttribute(name, value) { this[name] = value; } },
     financialReconciliationSettingsSourcePanel: { hidden: false },
     financialReconciliationSettingsAutomaticPanel: { hidden: true },
     financialReconciliationAutomationScheduleEnabled: { checked: false, disabled: false },
-    financialReconciliationAutomationScheduleTime: { value: "", disabled: false },
+    financialReconciliationAutomationScheduleTime: {
+      value: "",
+      disabled: false,
+      setAttribute(name, value) { this[name] = value; },
+      removeAttribute(name) { delete this[name]; },
+    },
     financialReconciliationAutomationLastExecution: { textContent: "" },
     financialReconciliationAutomationLastResult: { textContent: "" },
     financialReconciliationAutomationNextExecution: { textContent: "" },
-    financialReconciliationAutomationRules: { innerHTML: "" },
+    financialReconciliationAutomationRules: { innerHTML: "", querySelectorAll: () => [] },
     financialReconciliationAutomationSave: { disabled: false },
     financialReconciliationAutomationRunBatchNow: { disabled: false },
+    financialReconciliationAutomationRunHint: { textContent: "" },
   };
   const payload = compilePayload(state);
+  const clean = new Function(`${appFunctionSource("clean")}; return clean;`)();
+  const updateControls = new Function(
+    "state",
+    "els",
+    "clean",
+    "canAppFinancialReconciliation",
+    "reconciliationAutomationSettingsPayload",
+    `${appFunctionSource("updateReconciliationAutomationControls")}
+     return updateReconciliationAutomationControls;`,
+  )(state, els, clean, () => canOpenWorkbench, payload);
   const render = new Function(
     "state",
     "els",
     "clean",
     "escape",
-    "formatDateTimeShort",
+    "formatReconciliationAutomationDateTime",
     "financialReconciliationSourceLabel",
     "reconciliationAutomationSettingsPayload",
+    "updateReconciliationAutomationControls",
     `${appFunctionSource("renderReconciliationAutomationSettings")}
      return renderReconciliationAutomationSettings;`,
   )(
     state,
     els,
-    (value) => String(value ?? "").trim(),
-    (value) => String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;"),
-    (value) => value ? "2026-08-14 02:00" : "-",
+    clean,
+    new Function(`${appFunctionSource("escape")}; return escape;`)(),
+    new Function(
+      "clean",
+      `${appFunctionSource("formatReconciliationAutomationDateTime")}; return formatReconciliationAutomationDateTime;`,
+    )(clean),
     (value) => ({
       financial_documents: "Financial Documents",
       import_cgd_extrato_ordem: "CGD Bank Statement",
     })[value] || value,
     payload,
+    updateControls,
   );
   render();
   return els;
@@ -152,6 +172,7 @@ test("reconciliation settings expose accessible source and automatic tabs", () =
   }
   assert.match(html, /role="tablist"[\s\S]*aria-controls="financial-reconciliation-settings-source-panel"[\s\S]*aria-controls="financial-reconciliation-settings-automatic-panel"/);
   assert.match(html, /id="financial-reconciliation-automation-time-zone"[^>]*>Europe\/Lisbon</);
+  assert.match(html, /id="financial-reconciliation-automation-schedule-time"[^>]*aria-describedby="financial-reconciliation-automation-status"/);
 });
 
 test("actual renderer keeps managed definition text, versions, and thresholds read only and escaped", () => {
@@ -185,7 +206,7 @@ test("actual renderer summarizes the last scheduled result separately from execu
     },
   }));
 
-  assert.equal(els.financialReconciliationAutomationLastExecution.textContent, "Last execution: 2026-08-14 02:00 · partial");
+  assert.equal(els.financialReconciliationAutomationLastExecution.textContent, "Last execution: 2026-08-14 03:01 Europe/Lisbon · partial");
   assert.equal(els.financialReconciliationAutomationLastResult.textContent, "Last result: proposed 4 · completed 3 · failed 1");
 });
 
@@ -224,20 +245,24 @@ test("actual serializer emits only approved schedule and managed-rule configurat
 });
 
 test("actual reorder helper produces stable unique consecutive priorities", () => {
-  const state = { reconciliationAutomationSettings: automationSettings() };
+  const state = { reconciliationAutomationSettings: automationSettings(), reconciliationAutomationSettingsDirty: false };
+  const focusCalls = [];
   const move = new Function(
     "state",
     "renderReconciliationAutomationSettings",
+    "focusReconciliationAutomationRuleMove",
     `${appFunctionSource("clean")}
      ${appFunctionSource("moveReconciliationAutomationRule")}
      return moveReconciliationAutomationRule;`,
-  )(state, () => {});
+  )(state, () => {}, (...args) => focusCalls.push(args));
 
   move("rule-b", "up");
   assert.deepEqual(
     state.reconciliationAutomationSettings.rules.map(({ ruleKey, priority }) => ({ ruleKey, priority })),
     [{ ruleKey: "rule-b", priority: 1 }, { ruleKey: "rule-a", priority: 2 }],
   );
+  assert.equal(state.reconciliationAutomationSettingsDirty, true);
+  assert.deepEqual(focusCalls[0], ["rule-b", "up"]);
   move("rule-b", "up");
   assert.deepEqual(state.reconciliationAutomationSettings.rules.map((rule) => rule.priority), [1, 2]);
 });
@@ -257,6 +282,33 @@ test("invalid local automation values disable Save", () => {
   }
 });
 
+test("empty time remains visible as invalid instead of being replaced with the default", () => {
+  const invalid = automationSettings({
+    schedule: { enabled: true, timeOfDay: "", timeZone: "Europe/Lisbon" },
+  });
+  const els = renderAutomationSettings(invalid);
+
+  assert.equal(els.financialReconciliationAutomationScheduleTime.value, "");
+  assert.equal(els.financialReconciliationAutomationScheduleTime["aria-invalid"], "true");
+  assert.equal(els.financialReconciliationAutomationSave.disabled, true);
+});
+
+test("Run batch control requires saved settings, an eligible rule, and workbench access", () => {
+  const dirtyEls = renderAutomationSettings(automationSettings(), { dirty: true });
+  assert.equal(dirtyEls.financialReconciliationAutomationRunBatchNow.disabled, true);
+  assert.match(dirtyEls.financialReconciliationAutomationRunHint.textContent, /save configuration changes/i);
+
+  const noAccessEls = renderAutomationSettings(automationSettings(), { canOpenWorkbench: false });
+  assert.equal(noAccessEls.financialReconciliationAutomationRunBatchNow.disabled, true);
+  assert.match(noAccessEls.financialReconciliationAutomationRunHint.textContent, /reconciliation app access/i);
+
+  const noRuleEls = renderAutomationSettings(automationSettings({
+    rules: managedRules().map((rule) => ({ ...rule, includeInScheduledBatch: false })),
+  }));
+  assert.equal(noRuleEls.financialReconciliationAutomationRunBatchNow.disabled, true);
+  assert.match(noRuleEls.financialReconciliationAutomationRunHint.textContent, /at least one rule/i);
+});
+
 test("automation inputs change only the local draft until one atomic Save", async () => {
   class FakeHTMLElement {
     constructor(dataset, values) {
@@ -265,21 +317,46 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     }
   }
   const settings = automationSettings();
-  const state = { reconciliationAutomationSettings: settings };
+  const state = {
+    reconciliationAutomationSettings: settings,
+    reconciliationAutomationSettingsDirty: false,
+    financialReconciliation: { automation: { loaded: true } },
+  };
   const requests = [];
+  let validationUpdates = 0;
   const input = new Function(
     "HTMLElement",
     "state",
     "clean",
-    "renderReconciliationAutomationSettings",
+    "updateReconciliationAutomationNextExecution",
+    "updateReconciliationAutomationControls",
     `${appFunctionSource("onReconciliationAutomationSettingsInput")}
      return onReconciliationAutomationSettingsInput;`,
-  )(FakeHTMLElement, state, (value) => String(value ?? "").trim(), () => {});
+  )(FakeHTMLElement, state, (value) => String(value ?? "").trim(), () => {}, () => { validationUpdates += 1; });
   input({ target: new FakeHTMLElement({ reconciliationAutomationRuleKey: "rule-a", reconciliationAutomationRuleField: "differenceAllowed" }, { value: "3.25" }) });
   assert.equal(settings.rules.find((rule) => rule.ruleKey === "rule-a").differenceAllowed, "3.25");
+  assert.equal(state.reconciliationAutomationSettingsDirty, true);
+  assert.equal(validationUpdates, 1);
   assert.deepEqual(requests, []);
 
   const payload = compilePayload(state);
+  const statuses = [];
+  const applyResult = new Function(
+    "state",
+    "clean",
+    "clone",
+    `${appFunctionSource("applyReconciliationAutomationSettingsResult")}
+     return applyReconciliationAutomationSettingsResult;`,
+  )(
+    state,
+    new Function(`${appFunctionSource("clean")}; return clean;`)(),
+    new Function(`${appFunctionSource("clone")}; return clone;`)(),
+  );
+  const financialState = new Function(
+    "state",
+    `${appFunctionSource("financialReconciliationState")}
+     return financialReconciliationState;`,
+  )(state);
   const save = new Function(
     "state",
     "api",
@@ -287,18 +364,26 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     "renderReconciliationAutomationSettings",
     "setReconciliationAutomationSettingsStatus",
     "applyReconciliationAutomationSettingsResult",
+    "financialReconciliationState",
     `${appFunctionSource("saveReconciliationAutomationSettings").replace(/^function /, "async function ")}
      return saveReconciliationAutomationSettings;`,
   )(
     state,
     async (url, options) => {
       requests.push({ url, options });
-      return { schedule: options.body.schedule, rules: settings.rules, lastScheduledRun: null };
+      return {
+        schedule: options.body.schedule,
+        rules: settings.rules.map((rule) => rule.ruleKey === "rule-a"
+          ? { ...rule, ruleVersion: 9, displayName: "Authoritative name", definition: { authoritative: true } }
+          : rule),
+        lastScheduledRun: null,
+      };
     },
     payload,
     () => {},
-    () => {},
-    () => {},
+    (message, isError) => statuses.push({ message, isError }),
+    applyResult,
+    financialState,
   );
   await save();
 
@@ -306,14 +391,21 @@ test("automation inputs change only the local draft until one atomic Save", asyn
   assert.equal(requests[0].url, "/api/reconciliation-automation-settings");
   assert.equal(requests[0].options.method, "PUT");
   assert.equal(requests[0].options.body.rules[0].differenceAllowed, "3.25");
+  assert.equal(state.reconciliationAutomationSettingsDirty, false);
+  assert.equal(state.reconciliationAutomationSettings.rules[0].ruleVersion, 9);
+  assert.equal(state.reconciliationAutomationSettings.rules[0].displayName, "Authoritative name");
+  assert.deepEqual(state.reconciliationAutomationSettings.rules[0].definition, { authoritative: true });
+  assert.equal(state.financialReconciliation.automation.loaded, false);
+  assert.deepEqual(statuses, [{ message: "Automatic reconciliation configuration saved.", isError: undefined }]);
 });
 
 test("Run batch now stores analysis, navigates to Reconciliation, renders, and never executes", async () => {
   const requests = [];
   const sequence = [];
   const run = { runId: "00000000-0000-0000-0000-000000000001", proposals: [{ id: "proposal-1", status: "proposed" }] };
-  const current = { automation: { rules: [], run: null, selectedProposalIds: new Set(), pendingAction: "", loaded: false } };
-  const state = { reconciliationAutomationSettings: automationSettings() };
+  const existingRules = [{ ruleKey: "authoritative-workbench-rule" }];
+  const current = { automation: { rules: existingRules, run: null, selectedProposalIds: new Set(), pendingAction: "", loaded: false } };
+  const state = { reconciliationAutomationSettings: automationSettings(), reconciliationAutomationSettingsDirty: false };
   const runBatchNow = new Function(
     "state",
     "api",
@@ -323,6 +415,8 @@ test("Run batch now stores analysis, navigates to Reconciliation, renders, and n
     "renderFinancialReconciliation",
     "renderReconciliationAutomationSettings",
     "setReconciliationAutomationSettingsStatus",
+    "canAppFinancialReconciliation",
+    "reconciliationAutomationSettingsPayload",
     `${appFunctionSource("runReconciliationAutomationBatchNow").replace(/^function /, "async function ")}
      return runReconciliationAutomationBatchNow;`,
   )(
@@ -338,6 +432,8 @@ test("Run batch now stores analysis, navigates to Reconciliation, renders, and n
     () => sequence.push(`render:${current.automation.run?.runId || "missing"}`),
     () => {},
     () => {},
+    () => true,
+    compilePayload(state),
   );
 
   await runBatchNow();
@@ -350,6 +446,77 @@ test("Run batch now stores analysis, navigates to Reconciliation, renders, and n
     },
   }]);
   assert.equal(current.automation.run, run);
+  assert.equal(current.automation.rules, existingRules);
   assert.deepEqual(sequence, ["api", "view:financial-reconciliation", `render:${run.runId}`]);
   assert.doesNotMatch(JSON.stringify(requests), /execute_selected|proposalIds/);
+});
+
+test("Run batch now refuses dispatch for dirty settings or missing workbench access", async () => {
+  for (const scenario of [
+    { dirty: true, canOpenWorkbench: true, expected: /save.*before running/i },
+    { dirty: false, canOpenWorkbench: false, expected: /reconciliation app access/i },
+  ]) {
+    const requests = [];
+    const statuses = [];
+    const state = {
+      reconciliationAutomationSettings: automationSettings(),
+      reconciliationAutomationSettingsDirty: scenario.dirty,
+    };
+    const runBatchNow = new Function(
+      "state",
+      "api",
+      "crypto",
+      "financialReconciliationState",
+      "setView",
+      "renderFinancialReconciliation",
+      "renderReconciliationAutomationSettings",
+      "setReconciliationAutomationSettingsStatus",
+      "canAppFinancialReconciliation",
+      "reconciliationAutomationSettingsPayload",
+      `${appFunctionSource("runReconciliationAutomationBatchNow").replace(/^function /, "async function ")}
+       return runReconciliationAutomationBatchNow;`,
+    )(
+      state,
+      async (...args) => requests.push(args),
+      { randomUUID: () => "00000000-0000-0000-0000-000000000099" },
+      () => ({ automation: {} }),
+      async () => {},
+      () => {},
+      () => {},
+      (message, isError) => statuses.push({ message, isError }),
+      () => scenario.canOpenWorkbench,
+      compilePayload(state),
+    );
+
+    await runBatchNow();
+
+    assert.deepEqual(requests, []);
+    assert.match(statuses.at(-1).message, scenario.expected);
+    assert.equal(statuses.at(-1).isError, true);
+  }
+});
+
+test("settings tabs support roving focus and horizontal keyboard activation", () => {
+  const activations = [];
+  const sourceTab = { focusCalled: 0, focus() { this.focusCalled += 1; } };
+  const automaticTab = { focusCalled: 0, focus() { this.focusCalled += 1; } };
+  const els = {
+    financialReconciliationSettingsSourceTab: sourceTab,
+    financialReconciliationSettingsAutomaticTab: automaticTab,
+  };
+  const onKeydown = new Function(
+    "els",
+    "setReconciliationSettingsTab",
+    `${appFunctionSource("onReconciliationSettingsTabKeydown")}
+     return onReconciliationSettingsTabKeydown;`,
+  )(els, (tab) => activations.push(tab));
+  let prevented = 0;
+
+  onKeydown({ key: "ArrowRight", currentTarget: sourceTab, preventDefault: () => { prevented += 1; } });
+  onKeydown({ key: "Home", currentTarget: automaticTab, preventDefault: () => { prevented += 1; } });
+
+  assert.deepEqual(activations, ["automatic", "source-rules"]);
+  assert.equal(automaticTab.focusCalled, 1);
+  assert.equal(sourceTab.focusCalled, 1);
+  assert.equal(prevented, 2);
 });

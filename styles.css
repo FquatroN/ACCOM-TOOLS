@@ -1297,6 +1297,11 @@ td {
   min-width: 0;
 }
 
+.financial-reconciliation-automation-settings input[aria-invalid="true"] {
+  border-color: var(--danger);
+  outline-color: var(--danger);
+}
+
 .financial-reconciliation-automation-definition {
   margin-top: .65rem;
   border-top: 1px solid var(--line);

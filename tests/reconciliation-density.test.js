@@ -133,6 +133,7 @@ test("automatic reconciliation settings stay dense, wrapping, and reachable on n
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-automation-rule-controls\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-settings-tabs\s*>\s*button\s*\{[\s\S]*flex:\s*1 1 12rem;/);
   assert.match(css, /\.financial-reconciliation-automation-rule-card\s*:focus-within\s*\{/);
+  assert.match(css, /\.financial-reconciliation-automation-settings\s+input\[aria-invalid="true"\]\s*\{[\s\S]*border-color:/);
 });
 
 test("reconciliation settings validates and sends one atomic replacement RPC", () => {

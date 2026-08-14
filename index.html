@@ -2518,9 +2518,9 @@
                 <div class="actions">
                   <button id="close-settings-financial-reconciliation" type="button" class="ghost">Back To App</button>
                 </div>
-                <div class="actions financial-reconciliation-settings-tabs" role="tablist" aria-label="Reconciliation settings">
-                  <button id="financial-reconciliation-settings-source-tab" type="button" class="active-tab" role="tab" aria-selected="true" aria-controls="financial-reconciliation-settings-source-panel">Source rules</button>
-                  <button id="financial-reconciliation-settings-automatic-tab" type="button" class="ghost" role="tab" aria-selected="false" aria-controls="financial-reconciliation-settings-automatic-panel">Automatic reconciliation</button>
+                <div class="actions financial-reconciliation-settings-tabs" role="tablist" aria-label="Reconciliation settings" aria-orientation="horizontal">
+                  <button id="financial-reconciliation-settings-source-tab" type="button" class="active-tab" role="tab" tabindex="0" aria-selected="true" aria-controls="financial-reconciliation-settings-source-panel">Source rules</button>
+                  <button id="financial-reconciliation-settings-automatic-tab" type="button" class="ghost" role="tab" tabindex="-1" aria-selected="false" aria-controls="financial-reconciliation-settings-automatic-panel">Automatic reconciliation</button>
                 </div>
                 <div id="financial-reconciliation-settings-source-panel" role="tabpanel" aria-labelledby="financial-reconciliation-settings-source-tab">
                   <section class="settings-block">
@@ -2548,13 +2548,14 @@
                     </div>
                     <div class="financial-reconciliation-automation-schedule">
                       <label class="financial-reconciliation-automation-check"><input id="financial-reconciliation-automation-schedule-enabled" type="checkbox" />Schedule enabled</label>
-                      <label for="financial-reconciliation-automation-schedule-time">Daily time<input id="financial-reconciliation-automation-schedule-time" type="time" step="60" /></label>
+                      <label for="financial-reconciliation-automation-schedule-time">Daily time<input id="financial-reconciliation-automation-schedule-time" type="time" step="60" aria-describedby="financial-reconciliation-automation-status" /></label>
                       <p>Time zone <strong id="financial-reconciliation-automation-time-zone">Europe/Lisbon</strong></p>
                       <p id="financial-reconciliation-automation-last-execution">Last execution: Never</p>
                       <p id="financial-reconciliation-automation-last-result">Last result: None</p>
                       <p id="financial-reconciliation-automation-next-execution">Next expected execution: Schedule disabled</p>
                     </div>
                     <div id="financial-reconciliation-automation-rules" class="financial-reconciliation-automation-rule-list"></div>
+                    <p id="financial-reconciliation-automation-run-hint" class="field-hint">Run batch now performs analysis only and opens proposals for review.</p>
                     <p id="financial-reconciliation-automation-status" class="auth-status" aria-live="polite"></p>
                   </section>
                 </div>
