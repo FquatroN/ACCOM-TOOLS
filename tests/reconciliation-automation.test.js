@@ -490,9 +490,15 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     "Blank identity fixture produced a candidate",
     "Cross-base overlap did not mark every affected proposal ambiguous",
     "Candidate-limit run did not persist exactly one ambiguous proposal",
+    "Description below fixture was not boundary-adjacent",
+    "Supplier below fixture was not boundary-adjacent",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }
+  assert.match(smokeSql, /similarity\('abcdefg', candidate\)[\s\S]*where score < 0\.60[\s\S]*order by 0\.60 - score/);
+  assert.match(smokeSql, /word_similarity\('abcdefg', candidate\)[\s\S]*where score < 0\.70[\s\S]*order by 0\.70 - score/);
+  assert.match(smokeSql, /0\.60 - v_description_below_score > 0\.05/);
+  assert.match(smokeSql, /0\.70 - v_supplier_below_score > 0\.05/);
   assert.match(smokeSql, /Submitted automatic rule version does not match managed configuration\./);
   assert.match(smokeSql, /Mismatched managed rule version partially changed settings\./);
   assert.doesNotMatch(smokeSql, /Settings PUT did not update approved editable fields\./);

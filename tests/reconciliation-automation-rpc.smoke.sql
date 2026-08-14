@@ -366,8 +366,12 @@ do $$
 declare
   v_candidate_count integer;
   v_description_score real;
+  v_description_below text;
+  v_description_below_score real;
   v_supplier_score real;
   v_supplier_at text;
+  v_supplier_below text;
+  v_supplier_below_score real;
 begin
   if public.financial_reconciliation_match_normalize(' Fatura Nº 12, Árvore! ') <> 'fatura 12 arvore'
     or public.financial_reconciliation_match_compact('FT-2026/001234') <> 'ft2026001234' then
@@ -401,11 +405,30 @@ begin
     from generate_series(1, 7) prefix_length cross join generate_series(1, 12) suffix_length
   ) scores where abs(score - 0.70) < 0.000001 order by candidate limit 1;
   if v_supplier_at is null then raise exception 'No repeatable supplier word-similarity fixture reached 0.70.'; end if;
+  select candidate, score into v_description_below, v_description_below_score from (
+    select candidate, similarity('abcdefg', candidate) as score
+    from (values ('abc'), ('abcd'), ('abcde'), ('abcdey'), ('abcdeyx'), ('abcdef'), ('abcdefx')) corpus(candidate)
+  ) scores where score < 0.60 order by 0.60 - score, candidate limit 1;
+  -- Description below fixture was not boundary-adjacent
+  if v_description_below is null or v_description_below_score >= 0.60 or 0.60 - v_description_below_score > 0.05 then
+    raise exception 'Description below fixture was not boundary-adjacent.';
+  end if;
+  select candidate, score into v_supplier_below, v_supplier_below_score from (
+    select candidate, word_similarity('abcdefg', candidate) as score
+    from (
+      select left('abcdefg', prefix_length) || repeat('z', suffix_length) as candidate
+      from generate_series(1, 7) prefix_length cross join generate_series(1, 12) suffix_length
+    ) corpus
+  ) scores where score < 0.70 order by 0.70 - score, candidate limit 1;
+  -- Supplier below fixture was not boundary-adjacent
+  if v_supplier_below is null or v_supplier_below_score >= 0.70 or 0.70 - v_supplier_below_score > 0.05 then
+    raise exception 'Supplier below fixture was not boundary-adjacent.';
+  end if;
   insert into public.import_cgd_extrato_ordem (id, import_batch, row_key, data, descritivo, montante) values
     ('00000000-0000-0000-0000-000000000b03', 'smoke-analysis', 'smoke-description-at', date '2026-05-01', 'abcdefx', -10.00),
-    ('00000000-0000-0000-0000-000000000b04', 'smoke-analysis', 'smoke-description-below', date '2026-06-01', 'abcdeyx', -10.00),
+    ('00000000-0000-0000-0000-000000000b04', 'smoke-analysis', 'smoke-description-below', date '2026-06-01', v_description_below, -10.00),
     ('00000000-0000-0000-0000-000000000b05', 'smoke-analysis', 'smoke-supplier-at', date '2026-07-01', v_supplier_at, -10.00),
-    ('00000000-0000-0000-0000-000000000b06', 'smoke-analysis', 'smoke-supplier-below', date '2026-08-01', 'zzzzzzzzzz', -10.00),
+    ('00000000-0000-0000-0000-000000000b06', 'smoke-analysis', 'smoke-supplier-below', date '2026-08-01', v_supplier_below, -10.00),
     ('00000000-0000-0000-0000-000000000b07', 'smoke-analysis', 'smoke-blank-identity', date '2026-09-01', '', -10.00);
   select ((candidates->0->'evidence'->'description'->>'score')::real) into strict v_description_score
   from public.financial_reconciliation_automatic_rule_candidates('financial_documents_cgd_bank_statement', 1, 0.00, 7)
