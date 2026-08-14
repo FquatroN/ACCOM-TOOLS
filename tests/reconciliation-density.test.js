@@ -56,8 +56,8 @@ const historySourceHelpers = new Function(
   (value) => String(value || "").trim(),
 );
 
-function renderCurrentSummary({ status, difference, items }) {
-  const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"] }, items, audit: [] } };
+function renderCurrentSummary({ status, difference, items, origin, automaticTrigger }) {
+  const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"], origin, automaticTrigger }, items, audit: [] } };
   const els = {
     financialReconciliationCurrent: { innerHTML: "" },
     financialReconciliationNew: { hidden: true },
@@ -69,7 +69,7 @@ function renderCurrentSummary({ status, difference, items }) {
     "financialReconciliationDifference", "clean", "financialReconciliationCompletionDraft",
     "financialReconciliationCompletionPresentation", "financialReconciliationItemDetails", "escape",
     "financialReconciliationSourceLabel", "formatMoney", "formatDateTimeShort",
-    "financialReconciliationStatusMarkup", "financialReconciliationSummaryMarkup", "els",
+    "financialReconciliationStatusMarkup", "financialReconciliationSummaryMarkup", "els", "financialReconciliationOriginMarkup",
     `${appFunctionSource("renderFinancialReconciliationCurrent")}\nreturn renderFinancialReconciliationCurrent;`,
   )(
     () => current,
@@ -87,6 +87,7 @@ function renderCurrentSummary({ status, difference, items }) {
     (value) => `<span class="financial-reconciliation-status">${value}</span>`,
     financialReconciliationSummaryMarkup,
     els,
+    (value) => `<span class="origin">${value.origin === "automatic" ? "Automatic" : "User"}</span>`,
   );
   render();
   return els.financialReconciliationCurrent.innerHTML;
@@ -187,6 +188,31 @@ test("workbench exposes source controls before the dynamic filter row", () => {
     /class="financial-reconciliation-source-row"[\s\S]*id="financial-reconciliation-source"[\s\S]*id="financial-reconciliation-rule-hint"[\s\S]*<\/div>\s*<div id="financial-reconciliation-dynamic-filters"/,
   );
   assert.match(appMain, /class="financial-reconciliation-filter-\$\{escape\(field\)\}"/);
+});
+
+test("automatic proposal review sits after filters and before reconciliation history", () => {
+  const filtersIndex = html.indexOf('id="financial-reconciliation-filters"');
+  const automationIndex = html.indexOf('id="financial-reconciliation-workbench-automation"');
+  const historyIndex = html.indexOf('class="card financial-reconciliation-history-card"');
+  assert.ok(filtersIndex >= 0 && automationIndex > filtersIndex && historyIndex > automationIndex);
+  for (const id of [
+    "financial-reconciliation-workbench-automation-rules",
+    "financial-reconciliation-workbench-automation-status",
+    "financial-reconciliation-workbench-automation-select-all",
+    "financial-reconciliation-workbench-automation-clear-all",
+    "financial-reconciliation-workbench-automation-proposals",
+    "financial-reconciliation-workbench-automation-execute",
+    "financial-reconciliation-workbench-automation-results",
+  ]) assert.match(html, new RegExp(`id="${id}"`));
+});
+
+test("automatic proposal review wraps evidence and keeps controls reachable on narrow screens", () => {
+  assert.match(css, /\.financial-reconciliation-workbench-automation-rules\s*\{[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*18rem\),\s*1fr\)\);/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal\s*\{[\s\S]*overflow-wrap:\s*anywhere;/);
+  assert.match(css, /\.financial-reconciliation-automation-evidence\s*\{[\s\S]*white-space:\s*normal;/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal:focus-within\s*\{/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-workbench-automation-actions\s*\{[\s\S]*align-items:\s*stretch;/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-workbench-automation-actions button\s*\{[\s\S]*width:\s*100%;/);
 });
 
 test("workbench rule snapshots keep only valid unique signed sources", () => {
@@ -397,6 +423,17 @@ test("Started and Complete Current summaries omit source prose and count every l
   }
 });
 
+test("Current reconciliation renders its structured origin beside status", () => {
+  const markup = renderCurrentSummary({
+    status: "complete",
+    difference: 0,
+    items: [],
+    origin: "automatic",
+    automaticTrigger: "manual",
+  });
+  assert.match(markup, /financial-reconciliation-summary[\s\S]*class="origin">Automatic<\/span>[\s\S]*#records: 0/);
+});
+
 test("history source text uses raw ordered source aggregates", () => {
   const record = {
     sourceSummary: [
@@ -462,6 +499,7 @@ function renderHistory(record, selectedReconciliationId = "") {
     "financialReconciliationDifference",
     "formatMoney",
     "els",
+    "financialReconciliationOriginMarkup",
     `${appFunctionSource("renderFinancialReconciliationHistory")}
      return renderFinancialReconciliationHistory;`,
   )(
@@ -474,6 +512,7 @@ function renderHistory(record, selectedReconciliationId = "") {
     (value) => Number(value.difference_amount),
     (value) => `${Number(value).toFixed(2)} €`,
     els,
+    (value) => `<span class="origin">${value.origin === "automatic" ? `Automatic Â· ${value.automaticTrigger === "scheduled" ? "Scheduled" : "Manual"}` : "User"}</span>`,
   );
   render();
   return els.financialReconciliationHistoryRows.innerHTML;
@@ -491,7 +530,7 @@ test("history renders one wrapping source summary and preserves row behavior", (
     ],
   }, "rec-1");
 
-  assert.match(html, /<th>Created<\/th><th>Source<\/th><th>Status<\/th><th>Difference<\/th><th><\/th>/);
+  assert.match(html, /<th>Created<\/th><th>Source<\/th><th>Origin<\/th><th>Status<\/th><th>Difference<\/th><th><\/th>/);
   assert.doesNotMatch(html, /<th>Base source<\/th>|<th>Matching sources<\/th>/);
   assert.match(markup, /class="selected"/);
   assert.match(markup, /class="financial-reconciliation-history-source"/);
@@ -499,6 +538,35 @@ test("history renders one wrapping source summary and preserves row behavior", (
   assert.match(markup, /Complete/);
   assert.match(markup, /0\.00 €/);
   assert.match(markup, /data-financial-reconciliation-select="rec-1">Open<\/button>/);
+});
+
+test("origin presentation is backward compatible and distinguishes automatic triggers", () => {
+  const originPresentation = new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationOriginPresentation")}
+     return financialReconciliationOriginPresentation;`,
+  )((value) => String(value ?? "").trim());
+
+  assert.deepEqual(originPresentation({}), {
+    key: "user",
+    label: "User",
+    className: "financial-reconciliation-origin--user",
+  });
+  assert.deepEqual(originPresentation({ origin: "user" }), {
+    key: "user",
+    label: "User",
+    className: "financial-reconciliation-origin--user",
+  });
+  assert.deepEqual(originPresentation({ origin: "automatic", automaticTrigger: "manual" }), {
+    key: "automatic-manual",
+    label: "Automatic \u00b7 Manual",
+    className: "financial-reconciliation-origin--automatic-manual",
+  });
+  assert.deepEqual(originPresentation({ origin: "automatic", automatic_trigger: "scheduled" }), {
+    key: "automatic-scheduled",
+    label: "Automatic \u00b7 Scheduled",
+    className: "financial-reconciliation-origin--automatic-scheduled",
+  });
 });
 
 test("reconciliation item details omit empty fields", () => {

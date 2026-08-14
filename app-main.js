@@ -1956,6 +1956,13 @@ const els = {
   financialReconciliationStatus: document.getElementById("financial-reconciliation-status"),
   financialReconciliationCurrent: document.getElementById("financial-reconciliation-current"),
   financialReconciliationHistoryRows: document.getElementById("financial-reconciliation-history-rows"),
+  financialReconciliationWorkbenchAutomationRules: document.getElementById("financial-reconciliation-workbench-automation-rules"),
+  financialReconciliationWorkbenchAutomationStatus: document.getElementById("financial-reconciliation-workbench-automation-status"),
+  financialReconciliationWorkbenchAutomationSelectAll: document.getElementById("financial-reconciliation-workbench-automation-select-all"),
+  financialReconciliationWorkbenchAutomationClearAll: document.getElementById("financial-reconciliation-workbench-automation-clear-all"),
+  financialReconciliationWorkbenchAutomationProposals: document.getElementById("financial-reconciliation-workbench-automation-proposals"),
+  financialReconciliationWorkbenchAutomationExecute: document.getElementById("financial-reconciliation-workbench-automation-execute"),
+  financialReconciliationWorkbenchAutomationResults: document.getElementById("financial-reconciliation-workbench-automation-results"),
   financialReconciliationNew: document.getElementById("financial-reconciliation-new"),
   financialReconciliationReopen: document.getElementById("financial-reconciliation-reopen"),
   financialReconciliationDelete: document.getElementById("financial-reconciliation-delete"),
@@ -2626,6 +2633,11 @@ function bindEvents() {
   els.financialReconciliationCurrent?.addEventListener("click", onFinancialReconciliationCurrentClick);
   els.financialReconciliationCurrent?.addEventListener("input", onFinancialReconciliationCurrentInput);
   els.financialReconciliationHistoryRows?.addEventListener("click", onFinancialReconciliationHistoryClick);
+  els.financialReconciliationWorkbenchAutomationRules?.addEventListener("click", onFinancialReconciliationAutomationRulesClick);
+  els.financialReconciliationWorkbenchAutomationProposals?.addEventListener("change", onFinancialReconciliationAutomationProposalsChange);
+  els.financialReconciliationWorkbenchAutomationSelectAll?.addEventListener("click", () => setFinancialReconciliationAutomationSelection("all"));
+  els.financialReconciliationWorkbenchAutomationClearAll?.addEventListener("click", () => setFinancialReconciliationAutomationSelection("clear"));
+  els.financialReconciliationWorkbenchAutomationExecute?.addEventListener("click", executeFinancialReconciliationAutomationSelection);
   els.financialReconciliationNew?.addEventListener("click", startNewFinancialReconciliation);
   els.financialReconciliationReopen?.addEventListener("click", reopenFinancialReconciliation);
   els.financialReconciliationDelete?.addEventListener("click", deleteFinancialReconciliation);
@@ -21755,7 +21767,7 @@ async function runReconciliationAutomationBatchNow() {
       .map((proposal) => proposal?.id)
       .filter(Boolean));
     current.automation.pendingAction = "";
-    current.automation.loaded = true;
+    current.automation.loaded = false;
     await setView("financial-reconciliation");
     renderFinancialReconciliation();
   } catch (error) {
@@ -21900,7 +21912,254 @@ async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
 
 async function ensureFinancialReconciliationData() {
   if (!financialReconciliationState().loaded) await loadFinancialReconciliationWorkspace({ silent: true });
+  if (!financialReconciliationState().automation.loaded) await loadFinancialReconciliationAutomationRules();
   renderFinancialReconciliation();
+}
+
+function setFinancialReconciliationAutomationStatus(message, tone = "") {
+  if (!els.financialReconciliationWorkbenchAutomationStatus) return;
+  els.financialReconciliationWorkbenchAutomationStatus.textContent = clean(message);
+  els.financialReconciliationWorkbenchAutomationStatus.classList.toggle("error", tone === "error");
+  els.financialReconciliationWorkbenchAutomationStatus.classList.toggle("success", tone === "success");
+}
+
+async function loadFinancialReconciliationAutomationRules() {
+  const automation = financialReconciliationState().automation;
+  if (automation.loaded || automation.pendingAction) return;
+  automation.pendingAction = "load";
+  renderFinancialReconciliationAutomation();
+  try {
+    const result = await api("/api/reconciliation-automation?view=rules");
+    automation.rules = Array.isArray(result?.rules) ? clone(result.rules) : [];
+    automation.loaded = true;
+    setFinancialReconciliationAutomationStatus(automation.rules.length ? "Automatic rules loaded." : "No automatic rules are available for manual analysis.");
+  } catch (error) {
+    automation.loaded = false;
+    setFinancialReconciliationAutomationStatus(`Failed to load automatic rules: ${error.message}`, "error");
+  } finally {
+    automation.pendingAction = "";
+    renderFinancialReconciliationAutomation();
+  }
+}
+
+function financialReconciliationAutomationRulesMarkup(rules, pendingAction) {
+  const eligible = (Array.isArray(rules) ? rules : []).filter((rule) => rule?.enabled === true && rule?.allowManualExecution === true);
+  if (!eligible.length) return '<p class="empty">No enabled rules allow manual analysis.</p>';
+  return eligible.map((rule) => {
+    const destinations = (Array.isArray(rule.destinationSourceTypes) ? rule.destinationSourceTypes : [])
+      .map((sourceType) => financialReconciliationSourceLabel(clean(sourceType))).filter(Boolean).join(", ") || "No destination source";
+    const pending = clean(pendingAction);
+    return `<article class="financial-reconciliation-automation-rule">
+      <div><strong>${escape(clean(rule.displayName) || clean(rule.ruleKey))}</strong><span>version ${escape(Number(rule.ruleVersion) || 1)}</span></div>
+      <p>${escape(financialReconciliationSourceLabel(clean(rule.baseSourceType)))} &rarr; ${escape(destinations)}</p>
+      <p class="field-hint">Difference ${escape(formatMoney(Number(rule.differenceAllowed || 0)))} &middot; ${escape(Number(rule.maxDifferenceDays) || 0)} days</p>
+      <button type="button" data-financial-reconciliation-automation-analyze data-financial-reconciliation-automation-rule-key="${escape(clean(rule.ruleKey))}" ${pending ? "disabled" : ""}>${pending === `analyze:${clean(rule.ruleKey)}` ? "Analyzing&hellip;" : "Analyze"}</button>
+    </article>`;
+  }).join("");
+}
+
+function financialReconciliationAutomationReasonLabel(reason) {
+  const labels = {
+    multiple_combinations: "Multiple qualifying combinations",
+    candidate_limit: "Too many qualifying candidates",
+    cross_base_overlap: "A destination record overlaps another proposal",
+    source_snapshot_changed: "Source details changed after analysis",
+    rule_version_changed: "The rule changed after analysis",
+    source_locked: "A source record is already locked",
+    execution_failed: "Execution could not be completed",
+    deselected: "Not selected for execution",
+  };
+  return labels[clean(reason)] || "Proposal is not executable";
+}
+
+function financialReconciliationAutomationRunDefinition(proposal, run) {
+  return (Array.isArray(run?.definitions) ? run.definitions : []).find((definition) => (
+    clean(definition?.ruleKey) === clean(proposal?.ruleKey)
+    && Number(definition?.ruleVersion) === Number(proposal?.ruleVersion)
+  )) || {};
+}
+
+function financialReconciliationAutomationIdentityEvidenceMarkup(evidence) {
+  const values = evidence && typeof evidence === "object" ? evidence : {};
+  const rows = [];
+  if (values.documentNumber?.matched === true) {
+    rows.push(`Document number matched${clean(values.documentNumber.normalized) ? `: ${escape(clean(values.documentNumber.normalized))}` : ""}`);
+  }
+  for (const [key, label] of [["description", "Description"], ["supplier", "Supplier"]]) {
+    const item = values[key];
+    if (item?.matched !== true) continue;
+    const score = Number(item.score);
+    const threshold = Number(item.threshold);
+    rows.push(`${label} score ${escape(Number.isFinite(score) ? score.toFixed(3) : "-")} \u2265 ${escape(Number.isFinite(threshold) ? threshold.toFixed(3) : "-")}`);
+  }
+  return rows.length ? `<ul class="financial-reconciliation-automation-evidence">${rows.map((row) => `<li>${row}</li>`).join("")}</ul>` : '<p class="financial-reconciliation-automation-evidence field-hint">No identity evidence was recorded.</p>';
+}
+
+function financialReconciliationAutomationItemMarkup(item, label, operator = "") {
+  const value = item && typeof item === "object" ? item : {};
+  const supplier = clean(value.supplierName ?? value.supplier);
+  const documentNumber = clean(value.docNumber ?? value.documentNumber);
+  return `<article class="financial-reconciliation-automation-item">
+    <div class="financial-reconciliation-automation-item-head"><strong>${escape(label)}</strong><span>${escape(financialReconciliationSourceLabel(clean(value.sourceType)) || "Unknown source")}</span></div>
+    <dl><div><dt>Date</dt><dd>${escape(formatDateOnly(value.sourceDate) || "-")}</dd></div><div><dt>Record</dt><dd>${escape(clean(value.sourceId) || "-")}</dd></div>${documentNumber ? `<div><dt>Document</dt><dd>${escape(documentNumber)}</dd></div>` : ""}${supplier ? `<div><dt>Supplier</dt><dd>${escape(supplier)}</dd></div>` : ""}<div><dt>Description</dt><dd>${escape(clean(value.description) || "-")}</dd></div></dl>
+    <strong class="financial-reconciliation-automation-item-amount">${escape(formatMoney(Number(value.amount || 0)))}</strong>
+    ${operator ? `<p class="field-hint">Operator ${escape(operator)}</p>` : ""}
+    ${value.evidence ? financialReconciliationAutomationIdentityEvidenceMarkup(value.evidence) : ""}
+  </article>`;
+}
+
+function financialReconciliationAutomationProposalMarkup(proposal, run, rules, selectedProposalIds, pending) {
+  const value = proposal && typeof proposal === "object" ? proposal : {};
+  const status = clean(value.status).toLowerCase();
+  const executable = status === "proposed";
+  const selected = executable && selectedProposalIds instanceof Set && selectedProposalIds.has(clean(value.id));
+  const definition = financialReconciliationAutomationRunDefinition(value, run);
+  const rule = (Array.isArray(rules) ? rules : []).find((entry) => clean(entry?.ruleKey) === clean(value.ruleKey) && Number(entry?.ruleVersion) === Number(value.ruleVersion)) || definition;
+  const operator = clean(definition.operator);
+  const items = Array.isArray(value.items) ? value.items : [];
+  const candidateGroups = (Array.isArray(value.candidateGroups) ? value.candidateGroups : []).map((group) => Array.isArray(group) ? group : [group]);
+  const destinationMarkup = items.map((item, index) => financialReconciliationAutomationItemMarkup(item, `Destination ${index + 1}`, operator)).join("");
+  const groupsMarkup = status === "ambiguous" ? candidateGroups.map((group, groupIndex) => `<section class="financial-reconciliation-automation-candidate-group"><h4>Candidate group ${groupIndex + 1}</h4>${group.map((item, itemIndex) => financialReconciliationAutomationItemMarkup(item, `Candidate ${itemIndex + 1}`, operator)).join("")}</section>`).join("") : "";
+  const reason = executable ? "" : `<p class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;
+  return `<article class="financial-reconciliation-automation-proposal financial-reconciliation-automation-proposal--${escape(status || "unknown")}" tabindex="-1">
+    <header><label><input type="checkbox" data-financial-reconciliation-automation-proposal-id="${escape(clean(value.id))}" ${selected ? "checked" : ""} ${!executable || pending ? "disabled" : ""} /><span>${executable ? "Execute proposal" : "Review only"}</span></label><span class="financial-reconciliation-automation-proposal-status">${escape(status || "unknown")}</span></header>
+    ${reason}
+    <div class="financial-reconciliation-automation-proposal-records">${financialReconciliationAutomationItemMarkup(value.baseSnapshot, "Base record")}${destinationMarkup}${groupsMarkup}</div>
+    <footer><span>Difference ${escape(formatMoney(Number(value.calculatedDifference || 0)))}</span><span>Allowed ${escape(formatMoney(Number(value.allowedDifference ?? definition.differenceAllowed ?? 0)))}</span><span>${escape(clean(rule.displayName) || clean(value.ruleKey))} &middot; version ${escape(Number(value.ruleVersion) || 1)}</span></footer>
+  </article>`;
+}
+
+function financialReconciliationAutomationResultsMarkup(run) {
+  const proposals = Array.isArray(run?.proposals) ? run.proposals : [];
+  const labels = { completed: "Completed", stale: "Stale", failed: "Failed" };
+  const runSummary = run && typeof run === "object" ? `<span class="financial-reconciliation-automation-run-summary">Run ${escape(clean(run.runId) || "-")} &middot; ${escape(clean(run.status) || "unknown")} &middot; ${escape(clean(run.trigger) || "unknown")}</span>` : "";
+  const outcomes = Object.entries(labels).map(([status, label]) => {
+    const count = proposals.filter((proposal) => clean(proposal?.status).toLowerCase() === status).length;
+    return `<span class="financial-reconciliation-automation-result financial-reconciliation-automation-result--${status}"><strong>${escape(label)}</strong><span>${escape(count)}</span></span>`;
+  }).join("");
+  return `${runSummary}${outcomes}`;
+}
+
+function renderFinancialReconciliationAutomation() {
+  const automation = financialReconciliationState().automation;
+  const pending = clean(automation.pendingAction);
+  const proposals = Array.isArray(automation.run?.proposals) ? automation.run.proposals : [];
+  const executable = proposals.filter((proposal) => clean(proposal?.status) === "proposed");
+  const selectedCount = executable.filter((proposal) => automation.selectedProposalIds.has(clean(proposal.id))).length;
+  if (els.financialReconciliationWorkbenchAutomationRules) els.financialReconciliationWorkbenchAutomationRules.innerHTML = financialReconciliationAutomationRulesMarkup(automation.rules, pending);
+  if (els.financialReconciliationWorkbenchAutomationProposals) {
+    els.financialReconciliationWorkbenchAutomationProposals.innerHTML = proposals.length
+      ? proposals.map((proposal) => financialReconciliationAutomationProposalMarkup(proposal, automation.run, automation.rules, automation.selectedProposalIds, Boolean(pending))).join("")
+      : '<p class="empty">Analyze a rule to create auditable proposals.</p>';
+  }
+  if (els.financialReconciliationWorkbenchAutomationResults) els.financialReconciliationWorkbenchAutomationResults.innerHTML = financialReconciliationAutomationResultsMarkup(automation.run);
+  if (els.financialReconciliationWorkbenchAutomationSelectAll) els.financialReconciliationWorkbenchAutomationSelectAll.disabled = Boolean(pending) || !executable.length;
+  if (els.financialReconciliationWorkbenchAutomationClearAll) els.financialReconciliationWorkbenchAutomationClearAll.disabled = Boolean(pending) || !selectedCount;
+  if (els.financialReconciliationWorkbenchAutomationExecute) {
+    els.financialReconciliationWorkbenchAutomationExecute.disabled = Boolean(pending) || !selectedCount;
+    els.financialReconciliationWorkbenchAutomationExecute.textContent = pending === "execute" ? "Executing…" : `Execute selected (${selectedCount})`;
+  }
+}
+
+async function analyzeFinancialReconciliationAutomationRule(ruleKey) {
+  const automation = financialReconciliationState().automation;
+  const key = clean(ruleKey);
+  const rule = automation.rules.find((entry) => clean(entry?.ruleKey) === key && entry?.enabled === true && entry?.allowManualExecution === true);
+  if (!rule || automation.pendingAction) return;
+  automation.selectedProposalIds = new Set();
+  automation.pendingAction = `analyze:${key}`;
+  setFinancialReconciliationAutomationStatus(`Analyzing ${clean(rule.displayName) || key}…`);
+  renderFinancialReconciliationAutomation();
+  try {
+    const run = await api("/api/reconciliation-automation", {
+      method: "POST",
+      body: { action: "analyze_rule", ruleKeys: [key], clientRequestId: crypto.randomUUID() },
+    });
+    automation.run = run;
+    automation.selectedProposalIds = new Set((Array.isArray(run?.proposals) ? run.proposals : [])
+      .filter((proposal) => clean(proposal?.status) === "proposed")
+      .map((proposal) => clean(proposal.id)).filter(Boolean));
+    setFinancialReconciliationAutomationStatus(`Analysis ready: ${automation.selectedProposalIds.size} executable proposal${automation.selectedProposalIds.size === 1 ? "" : "s"}.`, "success");
+    showToast("Automatic reconciliation analysis is ready.", "success");
+  } catch (error) {
+    setFinancialReconciliationAutomationStatus(`Analysis failed: ${error.message}`, "error");
+    showToast(error.message, "error");
+  } finally {
+    automation.pendingAction = "";
+    renderFinancialReconciliationAutomation();
+  }
+}
+
+function setFinancialReconciliationAutomationSelection(mode) {
+  const automation = financialReconciliationState().automation;
+  if (automation.pendingAction) return;
+  const executableIds = (Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
+    .filter((proposal) => clean(proposal?.status) === "proposed")
+    .map((proposal) => clean(proposal.id)).filter(Boolean);
+  automation.selectedProposalIds = mode === "all" ? new Set(executableIds) : new Set();
+  renderFinancialReconciliationAutomation();
+}
+
+function toggleFinancialReconciliationAutomationProposal(proposalId, checked) {
+  const automation = financialReconciliationState().automation;
+  if (automation.pendingAction) return;
+  const id = clean(proposalId);
+  const executable = (Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
+    .some((proposal) => clean(proposal?.id) === id && clean(proposal?.status) === "proposed");
+  if (!executable) return;
+  if (checked) automation.selectedProposalIds.add(id);
+  else automation.selectedProposalIds.delete(id);
+  renderFinancialReconciliationAutomation();
+}
+
+async function executeFinancialReconciliationAutomationSelection() {
+  const current = financialReconciliationState();
+  const automation = current.automation;
+  if (automation.pendingAction) return;
+  const proposalIds = [...new Set((Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
+    .filter((proposal) => clean(proposal?.status) === "proposed" && automation.selectedProposalIds.has(clean(proposal.id)))
+    .map((proposal) => clean(proposal.id)).filter(Boolean))];
+  if (!proposalIds.length) {
+    setFinancialReconciliationAutomationStatus("Select at least one executable proposal before executing.", "error");
+    return;
+  }
+  automation.pendingAction = "execute";
+  setFinancialReconciliationAutomationStatus(`Executing ${proposalIds.length} selected proposal${proposalIds.length === 1 ? "" : "s"}…`);
+  renderFinancialReconciliationAutomation();
+  try {
+    const result = await api("/api/reconciliation-automation", {
+      method: "POST",
+      body: { action: "execute_selected", runId: clean(automation.run?.runId), proposalIds },
+    });
+    automation.run = result?.run || automation.run;
+    automation.selectedProposalIds = new Set();
+    current.loaded = false;
+    await loadFinancialReconciliationWorkspace({ silent: true });
+    const outcomes = Array.isArray(automation.run?.proposals) ? automation.run.proposals : [];
+    const completed = outcomes.filter((proposal) => clean(proposal?.status) === "completed").length;
+    const stale = outcomes.filter((proposal) => clean(proposal?.status) === "stale").length;
+    const failed = outcomes.filter((proposal) => clean(proposal?.status) === "failed").length;
+    setFinancialReconciliationAutomationStatus(`Execution finished: ${completed} completed, ${stale} stale, ${failed} failed.`, failed ? "error" : "success");
+    showToast(`${completed} automatic reconciliation${completed === 1 ? "" : "s"} completed.`, failed ? "error" : "success");
+  } catch (error) {
+    setFinancialReconciliationAutomationStatus(`Execution failed: ${error.message}`, "error");
+    showToast(error.message, "error");
+  } finally {
+    automation.pendingAction = "";
+    renderFinancialReconciliationAutomation();
+  }
+}
+
+function onFinancialReconciliationAutomationRulesClick(event) {
+  const button = event.target.closest("[data-financial-reconciliation-automation-analyze]");
+  if (!button) return;
+  analyzeFinancialReconciliationAutomationRule(button.dataset.financialReconciliationAutomationRuleKey);
+}
+
+function onFinancialReconciliationAutomationProposalsChange(event) {
+  const input = event.target.closest("[data-financial-reconciliation-automation-proposal-id]");
+  if (!input) return;
+  toggleFinancialReconciliationAutomationProposal(input.dataset.financialReconciliationAutomationProposalId, input.checked);
 }
 
 function renderFinancialReconciliationSourceControls() {
@@ -22009,9 +22268,27 @@ function financialReconciliationItemDetails(item) {
   return [clean(item.source_date) ? formatDateOnly(item.source_date) : "", clean(item.supplier), clean(item.description)].filter(Boolean).join(" · ");
 }
 
-function financialReconciliationSummaryMarkup(status, itemCount, difference) {
+function financialReconciliationOriginPresentation(record) {
+  const origin = clean(record?.origin).toLowerCase();
+  const trigger = clean(record?.automaticTrigger ?? record?.automatic_trigger).toLowerCase();
+  if (origin === "automatic" && trigger === "manual") {
+    return { key: "automatic-manual", label: "Automatic · Manual", className: "financial-reconciliation-origin--automatic-manual" };
+  }
+  if (origin === "automatic" && trigger === "scheduled") {
+    return { key: "automatic-scheduled", label: "Automatic · Scheduled", className: "financial-reconciliation-origin--automatic-scheduled" };
+  }
+  return { key: "user", label: "User", className: "financial-reconciliation-origin--user" };
+}
+
+function financialReconciliationOriginMarkup(record) {
+  const origin = financialReconciliationOriginPresentation(record);
+  return `<span class="financial-reconciliation-origin ${escape(origin.className)}" data-financial-reconciliation-origin="${escape(origin.key)}">${escape(origin.label)}</span>`;
+}
+
+function financialReconciliationSummaryMarkup(status, itemCount, difference, originMarkup = "") {
   const numericDifference = Number(difference || 0);
-  return `<div class="financial-reconciliation-summary">${financialReconciliationStatusMarkup(status)}<strong class="financial-reconciliation-record-count">#records: ${escape(Number(itemCount) || 0)}</strong><strong class="financial-reconciliation-difference${numericDifference === 0 ? "" : " financial-reconciliation-forced-difference"}">Dif: ${escape(formatMoney(numericDifference))}</strong></div>`;
+  const statusMarkup = financialReconciliationStatusMarkup(status);
+  return `<div class="financial-reconciliation-summary">${originMarkup ? `<span class="financial-reconciliation-summary-origin">${statusMarkup}${originMarkup}</span>` : statusMarkup}<strong class="financial-reconciliation-record-count">#records: ${escape(Number(itemCount) || 0)}</strong><strong class="financial-reconciliation-difference${numericDifference === 0 ? "" : " financial-reconciliation-forced-difference"}">Dif: ${escape(formatMoney(numericDifference))}</strong></div>`;
 }
 
 function renderFinancialReconciliationCurrent() {
@@ -22026,7 +22303,7 @@ function renderFinancialReconciliationCurrent() {
     return;
   }
   const difference = financialReconciliationDifference(reconciliation);
-  const summary = financialReconciliationSummaryMarkup(reconciliation.status, workspace.items.length, difference);
+  const summary = financialReconciliationSummaryMarkup(reconciliation.status, workspace.items.length, difference, financialReconciliationOriginMarkup(reconciliation));
   const complete = clean(reconciliation.status) === "complete";
   const completionDraft = financialReconciliationCompletionDraft(reconciliation.id);
   const completion = financialReconciliationCompletionPresentation(difference, workspace.items.length, completionDraft);
@@ -22085,10 +22362,11 @@ function renderFinancialReconciliationHistory() {
   els.financialReconciliationHistoryRows.innerHTML = history.length ? history.map((record) => `<tr class="${clean(record.id) === financialReconciliationState().selectedReconciliationId ? "selected" : ""}">
   <td>${escape(formatDateTimeShort(record.created_at) || "-")}</td>
   <td class="financial-reconciliation-history-source">${escape(financialReconciliationHistorySourceText(record))}</td>
+  <td>${financialReconciliationOriginMarkup(record)}</td>
   <td>${financialReconciliationStatusMarkup(record.status)}</td>
   <td>${escape(formatMoney(financialReconciliationDifference(record)))}</td>
   <td><button type="button" class="ghost" data-financial-reconciliation-select="${escape(record.id)}">Open</button></td>
-</tr>`).join("") : '<tr><td colspan="5" class="empty">No reconciliations yet.</td></tr>';
+</tr>`).join("") : '<tr><td colspan="6" class="empty">No reconciliations yet.</td></tr>';
 }
 
 function renderFinancialReconciliation() {
@@ -22097,6 +22375,7 @@ function renderFinancialReconciliation() {
   renderFinancialReconciliationFilters();
   renderFinancialReconciliationCandidates();
   renderFinancialReconciliationCurrent();
+  renderFinancialReconciliationAutomation();
   renderFinancialReconciliationHistory();
 }
 

@@ -3907,9 +3907,29 @@
             </aside>
           </div>
 
+          <section id="financial-reconciliation-workbench-automation" class="card financial-reconciliation-workbench-automation">
+            <div class="bar financial-reconciliation-workbench-automation-head">
+              <div>
+                <h2>Automatic reconciliation</h2>
+                <p class="field-hint">Analyze a rule, review every proposal, then execute only the selected matches.</p>
+              </div>
+              <p id="financial-reconciliation-workbench-automation-status" class="auth-status" role="status" aria-live="polite"></p>
+            </div>
+            <div id="financial-reconciliation-workbench-automation-rules" class="financial-reconciliation-workbench-automation-rules"></div>
+            <div class="financial-reconciliation-workbench-automation-review">
+              <div class="actions financial-reconciliation-workbench-automation-actions">
+                <button id="financial-reconciliation-workbench-automation-select-all" type="button" class="ghost">Select all executable</button>
+                <button id="financial-reconciliation-workbench-automation-clear-all" type="button" class="ghost">Clear selection</button>
+                <button id="financial-reconciliation-workbench-automation-execute" type="button">Execute selected</button>
+              </div>
+              <div id="financial-reconciliation-workbench-automation-proposals" class="financial-reconciliation-workbench-automation-proposals"></div>
+              <div id="financial-reconciliation-workbench-automation-results" class="financial-reconciliation-workbench-automation-results" aria-live="polite"></div>
+            </div>
+          </section>
+
           <section class="card financial-reconciliation-history-card">
             <div class="bar"><h2>Reconciliation history</h2></div>
-            <div class="table-wrap compact-table-wrap"><table class="compact-table"><thead><tr><th>Created</th><th>Source</th><th>Status</th><th>Difference</th><th></th></tr></thead><tbody id="financial-reconciliation-history-rows"></tbody></table></div>
+            <div class="table-wrap compact-table-wrap"><table class="compact-table"><thead><tr><th>Created</th><th>Source</th><th>Origin</th><th>Status</th><th>Difference</th><th></th></tr></thead><tbody id="financial-reconciliation-history-rows"></tbody></table></div>
           </section>
 
         </section>
