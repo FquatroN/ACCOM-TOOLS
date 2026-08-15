@@ -803,6 +803,46 @@ test("Analyze sends one rule and a fresh UUID, clears old selection, and selects
   assert.equal(current.automation.pendingAction, "");
 });
 
+test("failed analysis preserves the displayed run and its prior selected proposals", async () => {
+  const retainedRun = workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "proposed" }]);
+  const retainedSelections = new Set([WORKBENCH_PROPOSAL_1]);
+  const current = {
+    automation: {
+      rules: workbenchRules(),
+      run: retainedRun,
+      selectedProposalIds: retainedSelections,
+      pendingAction: "",
+      loaded: true,
+    },
+  };
+  const analyze = new Function(
+    "financialReconciliationState",
+    "api",
+    "crypto",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "showToast",
+    `${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
+     return analyzeFinancialReconciliationAutomationRule;`,
+  )(
+    () => current,
+    async () => { throw new Error("analysis unavailable"); },
+    { randomUUID: () => "00000000-0000-0000-0000-000000000299" },
+    (value) => String(value ?? "").trim(),
+    () => {},
+    () => {},
+    () => {},
+  );
+
+  await analyze("manual-enabled");
+
+  assert.strictEqual(current.automation.run, retainedRun);
+  assert.strictEqual(current.automation.selectedProposalIds, retainedSelections);
+  assert.deepEqual([...current.automation.selectedProposalIds], [WORKBENCH_PROPOSAL_1]);
+  assert.equal(current.automation.pendingAction, "");
+});
+
 test("proposal markup starts executable rows selected and audits every ambiguous candidate group", () => {
   const proposalMarkup = compileWorkbenchProposalMarkup();
   const baseSnapshot = {
@@ -1044,7 +1084,7 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
     (value) => String(value ?? "").trim(),
     () => {},
     (message, tone) => statuses.push({ message, tone }),
-    async () => { refreshCount += 1; current.loaded = true; },
+    async () => { refreshCount += 1; current.loaded = true; return true; },
     () => {},
     new Function(
       "clean",
@@ -1085,6 +1125,87 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
   await execute();
   assert.equal(calls.length, 1);
   assert.match(statuses.at(-1).message, /select at least one executable proposal/i);
+});
+
+test("execution reports a shared-history refresh failure instead of a false success", async () => {
+  const current = {
+    loaded: true,
+    automation: {
+      run: workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "proposed" }]),
+      selectedProposalIds: new Set([WORKBENCH_PROPOSAL_1]),
+      pendingAction: "",
+    },
+  };
+  const statuses = [];
+  const toasts = [];
+  const execute = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "loadFinancialReconciliationWorkspace",
+    "showToast",
+    "financialReconciliationAutomationOutcomeCounts",
+    `${appFunctionSource("executeFinancialReconciliationAutomationSelection").replace(/^function /, "async function ")}
+     return executeFinancialReconciliationAutomationSelection;`,
+  )(
+    () => current,
+    async () => ({ run: workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "completed" }]), outcomes: [{ proposalId: WORKBENCH_PROPOSAL_1, status: "completed" }] }),
+    (value) => String(value ?? "").trim(),
+    () => {},
+    (message, tone) => statuses.push({ message, tone }),
+    async () => false,
+    (message, tone) => toasts.push({ message, tone }),
+    new Function(
+      "clean",
+      `${appFunctionSource("financialReconciliationAutomationOutcomeCounts")}
+       return financialReconciliationAutomationOutcomeCounts;`,
+    )((value) => String(value ?? "").trim()),
+  );
+
+  await execute();
+
+  assert.match(statuses.at(-1).message, /history.*failed/i);
+  assert.equal(statuses.at(-1).tone, "error");
+  assert.equal(toasts.at(-1).tone, "error");
+});
+
+test("history Open from Automatic activates and focuses Manual before loading the selected reconciliation", async () => {
+  class FakeElement {
+    constructor(dataset) { this.dataset = dataset; }
+    closest(selector) { return selector === "[data-financial-reconciliation-select]" ? this : null; }
+  }
+  const record = { id: "history-1", base_source_type: "financial_documents" };
+  const current = {
+    activeTab: "automatic",
+    selectedReconciliationId: "",
+    candidateSourceType: "import_cgd_extrato_ordem",
+    workspace: { history: [record] },
+    loaded: true,
+  };
+  const activations = [];
+  const openHistory = new Function(
+    "HTMLElement",
+    "financialReconciliationState",
+    "clean",
+    "setFinancialReconciliationTab",
+    "loadFinancialReconciliationWorkspace",
+    `${appFunctionSource("onFinancialReconciliationHistoryClick").replace(/^function /, "async function ")}
+     return onFinancialReconciliationHistoryClick;`,
+  )(
+    FakeElement,
+    () => current,
+    (value) => String(value ?? "").trim(),
+    async (tab, options) => { activations.push({ tab, options }); current.activeTab = tab; },
+    async () => {},
+  );
+
+  await openHistory({ target: new FakeElement({ financialReconciliationSelect: "history-1" }) });
+
+  assert.deepEqual(activations, [{ tab: "manual", options: { focus: true } }]);
+  assert.equal(current.activeTab, "manual");
+  assert.equal(current.selectedReconciliationId, "history-1");
 });
 
 test("completed, stale, failed, skipped, ambiguous, and deselected outcomes render as separate summaries", () => {

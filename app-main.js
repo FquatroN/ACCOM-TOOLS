@@ -3707,7 +3707,7 @@ async function setView(view, options = {}) {
   render();
   await ensureCurrentViewData();
   if (view === "financial-reconciliation" && financialReconciliationEntryTab(options) === "automatic") {
-    els.financialReconciliationAutomaticTab?.focus();
+    focusFinancialReconciliationTab("automatic");
   }
 }
 
@@ -21819,14 +21819,20 @@ function renderFinancialReconciliationTabs() {
   if (els.financialReconciliationAutomaticPanel) els.financialReconciliationAutomaticPanel.hidden = !automatic;
 }
 
+function focusFinancialReconciliationTab(tab) {
+  const next = normalizeFinancialReconciliationTab(tab);
+  if (state.currentView !== "financial-reconciliation" || financialReconciliationState().activeTab !== next) return;
+  (next === "automatic" ? els.financialReconciliationAutomaticTab : els.financialReconciliationManualTab)?.focus();
+}
+
 async function setFinancialReconciliationTab(tab, { focus = false } = {}) {
   const next = normalizeFinancialReconciliationTab(tab);
   financialReconciliationState().activeTab = next;
   renderFinancialReconciliation();
+  if (focus) (next === "automatic" ? els.financialReconciliationAutomaticTab : els.financialReconciliationManualTab)?.focus();
   if (next === "automatic" && !financialReconciliationState().automation.loaded) {
     await loadFinancialReconciliationAutomationRules();
   }
-  if (focus) (next === "automatic" ? els.financialReconciliationAutomaticTab : els.financialReconciliationManualTab)?.focus();
 }
 
 function onFinancialReconciliationTabKeydown(event) {
@@ -21947,6 +21953,7 @@ async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
       renderFinancialReconciliation();
       if (!silent) setFinancialReconciliationStatus("Reconciliation data loaded.");
     }
+    return true;
   } catch (error) {
     if (!current.reloadRequested) {
       current.workspace = previousWorkspace || normalizeFinancialReconciliationWorkspace({});
@@ -21955,6 +21962,7 @@ async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
       renderFinancialReconciliation();
       setFinancialReconciliationStatus(`Failed to load reconciliation data: ${error.message}. Your current reconciliation is still open.`, "error");
     }
+    return false;
   } finally {
     current.loading = false;
     if (current.reloadRequested) {
@@ -22163,6 +22171,7 @@ async function analyzeFinancialReconciliationAutomationRule(ruleKey) {
   if (!automation.loaded) return;
   const rule = automation.rules.find((entry) => clean(entry?.ruleKey) === key && entry?.enabled === true && entry?.allowManualExecution === true);
   if (!rule || automation.pendingAction) return;
+  const previousSelectedProposalIds = automation.selectedProposalIds;
   automation.selectedProposalIds = new Set();
   automation.pendingAction = `analyze:${key}`;
   setFinancialReconciliationAutomationStatus(`Analyzing ${clean(rule.displayName) || key}…`);
@@ -22179,6 +22188,7 @@ async function analyzeFinancialReconciliationAutomationRule(ruleKey) {
     setFinancialReconciliationAutomationStatus(`Analysis ready: ${automation.selectedProposalIds.size} executable proposal${automation.selectedProposalIds.size === 1 ? "" : "s"}.`, "success");
     showToast("Automatic reconciliation analysis is ready.", "success");
   } catch (error) {
+    automation.selectedProposalIds = previousSelectedProposalIds;
     setFinancialReconciliationAutomationStatus(`Analysis failed: ${error.message}`, "error");
     showToast(error.message, "error");
   } finally {
@@ -22232,7 +22242,13 @@ async function executeFinancialReconciliationAutomationSelection() {
     automation.run = result?.run ? { ...result.run, executionOutcomes } : { ...(automation.run || {}), executionOutcomes };
     automation.selectedProposalIds = new Set();
     current.loaded = false;
-    await loadFinancialReconciliationWorkspace({ silent: true });
+    const historyRefreshed = await loadFinancialReconciliationWorkspace({ silent: true });
+    if (!historyRefreshed) {
+      const message = "Execution completed, but the shared reconciliation history refresh failed.";
+      setFinancialReconciliationAutomationStatus(message, "error");
+      showToast(message, "error");
+      return;
+    }
     const counts = financialReconciliationAutomationOutcomeCounts(automation.run);
     const attemptSummary = counts.attemptFailures ? ` ${counts.attemptFailures} execution attempt failure${counts.attemptFailures === 1 ? "" : "s"} reported.` : "";
     const tone = counts.failed || counts.attemptFailures ? "error" : "success";
@@ -22653,6 +22669,7 @@ async function onFinancialReconciliationHistoryClick(event) {
   if (!button) return;
   const record = (financialReconciliationState().workspace?.history || []).find((item) => clean(item.id) === clean(button.dataset.financialReconciliationSelect));
   if (!record) return;
+  await setFinancialReconciliationTab("manual", { focus: true });
   const current = financialReconciliationState();
   current.selectedReconciliationId = clean(record.id);
   current.candidateSourceType = clean(record.base_source_type);

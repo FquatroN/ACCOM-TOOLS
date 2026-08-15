@@ -250,8 +250,9 @@ test("reconciliation separates manual and automatic work into accessible tabs wi
   const automaticPanel = html.indexOf('id="financial-reconciliation-automatic-panel"');
   const history = html.indexOf('class="card financial-reconciliation-history-card"');
   assert.ok(manualPanel >= 0 && automaticPanel > manualPanel && history > automaticPanel);
-  assert.match(html.slice(manualPanel, automaticPanel), /id="financial-reconciliation-status"[\s\S]*id="financial-reconciliation-filters"[\s\S]*id="financial-reconciliation-current"/);
+  assert.match(html.slice(manualPanel, automaticPanel), /id="financial-reconciliation-filters"[\s\S]*id="financial-reconciliation-current"/);
   assert.match(html.slice(automaticPanel, history), /id="financial-reconciliation-workbench-automation-rules"[\s\S]*id="financial-reconciliation-workbench-automation-proposals"/);
+  assert.match(html.slice(automaticPanel, history), /id="financial-reconciliation-status"[\s\S]*role="status"[\s\S]*aria-live="polite"/);
   assert.equal((html.match(/id="financial-reconciliation-history-rows"/g) || []).length, 1);
   assert.ok(html.indexOf('id="financial-reconciliation-history-rows"') > html.indexOf('id="financial-reconciliation-automatic-panel"'));
 });
@@ -280,8 +281,9 @@ function reconciliationTabElements() {
   const tab = () => ({
     classList: reconciliationTabClassList(),
     focused: false,
+    focusCalls: 0,
     setAttribute(name, value) { this[name] = value; },
-    focus() { this.focused = true; },
+    focus() { this.focused = true; this.focusCalls += 1; },
   });
   return {
     financialReconciliationManualTab: tab(),
@@ -291,7 +293,7 @@ function reconciliationTabElements() {
   };
 }
 
-function compileReconciliationTabController({ current, els, calls }) {
+function compileReconciliationTabController({ current, els, calls, loadRules = async () => { calls.push("load-rules"); current.automation.loaded = true; } }) {
   let controller;
   controller = new Function(
     "clean",
@@ -308,7 +310,7 @@ function compileReconciliationTabController({ current, els, calls }) {
     (value) => String(value ?? "").trim(),
     () => current,
     () => { calls.push(`render:${current.activeTab}`); controller.renderFinancialReconciliationTabs(); },
-    async () => { calls.push("load-rules"); current.automation.loaded = true; },
+    loadRules,
     els,
   );
   return controller;
@@ -347,6 +349,75 @@ test("reconciliation tab controller defaults to Manual and supports arrow activa
   await Promise.resolve();
   assert.equal(current.activeTab, "manual");
   assert.ok(calls.includes("prevent"));
+});
+
+test("late Automatic rule loading cannot steal focus after returning to Manual", async () => {
+  const current = { activeTab: "manual", automation: { loaded: false } };
+  const els = reconciliationTabElements();
+  const calls = [];
+  let resolveRules;
+  const controller = compileReconciliationTabController({
+    current,
+    els,
+    calls,
+    loadRules: () => new Promise((resolve) => { resolveRules = () => { current.automation.loaded = true; resolve(); }; }),
+  });
+
+  const automaticActivation = controller.setFinancialReconciliationTab("automatic", { focus: true });
+  await Promise.resolve();
+  assert.equal(els.financialReconciliationAutomaticTab.focusCalls, 1, "Automatic receives focus when it is activated");
+  await controller.setFinancialReconciliationTab("manual", { focus: true });
+  resolveRules();
+  await automaticActivation;
+
+  assert.equal(current.activeTab, "manual");
+  assert.equal(els.financialReconciliationManualTab.focusCalls, 1);
+  assert.equal(els.financialReconciliationAutomaticTab.focusCalls, 1, "the settled Automatic load does not refocus its stale tab");
+});
+
+test("late Settings Automatic handoff focus respects the tab selected while data loads", async () => {
+  const state = { access: { settingsFeatures: [] }, currentView: "settings", financialReconciliation: { activeTab: "manual" } };
+  const els = reconciliationTabElements();
+  let releaseDataLoad;
+  const setView = new Function(
+    "state",
+    "els",
+    "showToast",
+    "canAppFinancialReconciliation",
+    "setMobileNavOpen",
+    "syncAppRoute",
+    "renderLayout",
+    "renderSettingsSection",
+    "render",
+    "ensureCurrentViewData",
+    `${appFunctionSource("financialReconciliationState")}
+     ${appFunctionSource("clean")}
+     ${appFunctionSource("normalizeFinancialReconciliationTab")}
+     ${appFunctionSource("financialReconciliationEntryTab")}
+     ${appFunctionSource("focusFinancialReconciliationTab")}
+     ${appFunctionSource("setView")}
+     return setView;`,
+  )(
+    state,
+    els,
+    () => {},
+    () => true,
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => new Promise((resolve) => { releaseDataLoad = resolve; }),
+  );
+
+  const handoff = setView("financial-reconciliation", { financialReconciliationTab: "automatic" });
+  await Promise.resolve();
+
+  state.financialReconciliation.activeTab = "manual";
+  releaseDataLoad();
+  await handoff;
+
+  assert.equal(els.financialReconciliationAutomaticTab.focusCalls, 0);
 });
 
 test("automatic proposal review wraps evidence and keeps controls reachable on narrow screens", () => {
@@ -436,6 +507,43 @@ test("workspace loading replays a source refresh requested while a prior load is
   assert.deepEqual(requests, ["financial_documents:", "import_cgd_extrato_ordem:reconciliation-1"]);
   assert.equal(current.workspace.sourceConfig.sourceType, "import_cgd_extrato_ordem");
   assert.equal(current.workspace.reconciliation.id, "reconciliation-1");
+});
+
+test("workspace loading reports failure to callers while retaining the shared history workspace", async () => {
+  const retainedWorkspace = { sourceConfig: { sourceType: "financial_documents" }, history: [{ id: "history-1" }] };
+  const current = {
+    candidateSourceType: "financial_documents",
+    loaded: true,
+    loading: false,
+    reloadRequested: false,
+    workspace: retainedWorkspace,
+  };
+  const statuses = [];
+  const loadWorkspace = new Function(
+    "canAppFinancialReconciliation", "financialReconciliationState", "clean", "api",
+    "buildFinancialReconciliationWorkspaceUrl", "normalizeFinancialReconciliationWorkspace",
+    "financialReconciliationActiveRecord", "reconciliationRulesFor", "renderFinancialReconciliation",
+    "setFinancialReconciliationStatus",
+    `${appFunctionSource("loadFinancialReconciliationWorkspace").replace(/^function /, "async function ")}\nreturn loadFinancialReconciliationWorkspace;`,
+  )(
+    () => true,
+    () => current,
+    (value) => String(value || "").trim(),
+    async () => { throw new Error("history unavailable"); },
+    () => "workspace-url",
+    (value) => value,
+    () => null,
+    () => [],
+    () => {},
+    (message, tone) => statuses.push({ message, tone }),
+  );
+
+  const refreshed = await loadWorkspace({ silent: true });
+
+  assert.equal(refreshed, false);
+  assert.strictEqual(current.workspace, retainedWorkspace);
+  assert.match(statuses.at(-1).message, /failed to load reconciliation data/i);
+  assert.equal(statuses.at(-1).tone, "error");
 });
 
 test("successful actions refresh the selected source after preserving the returned reconciliation", async () => {
