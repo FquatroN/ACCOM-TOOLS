@@ -1884,7 +1884,12 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
   }
 
   assert.match(analysisMigration, /language\s+sql\s+stable\s+strict/);
-  assert.match(analysisMigration, /unaccent\(/);
+  assert.match(analysisMigration, /extensions\.unaccent\(/);
+  assert.match(analysisMigration, /extensions\.similarity\(/);
+  assert.match(analysisMigration, /extensions\.word_similarity\(/);
+  assert.match(analysisMigration, /extensions\.digest\(signature_items::text, 'sha256'::text\)/);
+  assert.equal((analysisMigration.match(/extensions\.digest\(/g) || []).length, 4);
+  assert.doesNotMatch(analysisMigration, /(^|[^.[:alnum:]_])(digest|unaccent|similarity|word_similarity)\(/m);
   assert.match(analysisMigration, /regexp_split_to_table\([\s\S]*'\[\[:space:\]\]\+'/);
   assert.doesNotMatch(analysisMigration, /'\\\\s\+'/);
   assert.match(analysisMigration, /financial_reconciliation_match_compact[\s\S]*unaccent\(lower\(p_value\)\)[\s\S]*'\[\^\[:alnum:\]\]'/);

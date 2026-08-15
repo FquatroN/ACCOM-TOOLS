@@ -6,7 +6,7 @@ as $$
   with tokens as (
     select token, ordinal
     from regexp_split_to_table(
-      btrim(regexp_replace(unaccent(lower(p_value)), '[^[:alnum:]]+', ' ', 'g')),
+      btrim(regexp_replace(extensions.unaccent(lower(p_value)), '[^[:alnum:]]+', ' ', 'g')),
       '[[:space:]]+'
     ) with ordinality as values(token, ordinal)
   )
@@ -20,7 +20,7 @@ returns text
 language sql
 stable strict
 as $$
-  select regexp_replace(unaccent(lower(p_value)), '[^[:alnum:]]', '', 'g')
+  select regexp_replace(extensions.unaccent(lower(p_value)), '[^[:alnum:]]', '', 'g')
 $$;
 
 create or replace function public.financial_reconciliation_automatic_build_combinations(
@@ -94,7 +94,7 @@ as $$
   select
     items,
     calculated_difference_cents::numeric / 100,
-    encode(digest(signature_items::text, 'sha256'), 'hex') as signature
+    encode(extensions.digest(signature_items::text, 'sha256'::text), 'hex') as signature
   from qualifying
   where abs(calculated_difference_cents) <= tolerance_cents
   order by signature
@@ -162,9 +162,9 @@ as $$
         and q.source_id is not null
         and position(q.compact_document_number in public.financial_reconciliation_match_compact(q.description)) > 0, false) as document_number_matched,
       case when nullif(q.normalized_document_description, '') is null or nullif(q.normalized_bank_description, '') is null then 0::real
-        else similarity(normalized_document_description, normalized_bank_description) end as description_score,
+        else extensions.similarity(normalized_document_description, normalized_bank_description) end as description_score,
       case when nullif(q.normalized_supplier_name, '') is null or nullif(q.normalized_bank_description, '') is null then 0::real
-        else word_similarity(normalized_supplier_name, normalized_bank_description) end as supplier_score
+        else extensions.word_similarity(normalized_supplier_name, normalized_bank_description) end as supplier_score
     from qualified q
   ),
   identity_candidates as (
@@ -256,7 +256,7 @@ begin
           v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer, 'financial_documents',
           v_base.base_source_id, v_base.base_source_date, v_base.base_snapshot, v_base.candidates,
           (v_rule->>'differenceAllowed')::numeric, 'ambiguous', 'candidate_limit',
-          encode(digest('candidate_limit:' || v_base.base_source_id::text, 'sha256'), 'hex')
+          encode(extensions.digest('candidate_limit:' || v_base.base_source_id::text, 'sha256'::text), 'hex')
         ) on conflict do nothing;
         v_ambiguous := v_ambiguous + 1;
       else
@@ -292,7 +292,7 @@ begin
               v_base.base_snapshot, v_base.candidates, jsonb_build_object('import_cgd_extrato_ordem', v_operator),
               (v_rule->>'differenceAllowed')::numeric, 4
             )), (v_rule->>'differenceAllowed')::numeric, 'ambiguous', 'multiple_combinations',
-            encode(digest('multiple:' || v_base.base_source_id::text, 'sha256'), 'hex')
+            encode(extensions.digest('multiple:' || v_base.base_source_id::text, 'sha256'::text), 'hex')
           ) on conflict do nothing;
           v_ambiguous := v_ambiguous + 1;
         else
@@ -303,7 +303,7 @@ begin
             v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer, 'financial_documents',
             v_base.base_source_id, v_base.base_source_date, v_base.base_snapshot, v_base.candidates,
             (v_rule->>'differenceAllowed')::numeric, 'skipped', 'no_qualifying_combination',
-            encode(digest('skipped:' || v_base.base_source_id::text, 'sha256'), 'hex')
+            encode(extensions.digest('skipped:' || v_base.base_source_id::text, 'sha256'::text), 'hex')
           ) on conflict do nothing;
         end if;
       end if;
