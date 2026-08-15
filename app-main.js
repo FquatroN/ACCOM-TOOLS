@@ -1299,6 +1299,7 @@ const state = {
   importDataEditingId: "",
   importDataEditDraft: null,
   financialReconciliation: {
+    activeTab: "manual",
     loaded: false,
     loading: false,
     reloadRequested: false,
@@ -1954,6 +1955,10 @@ const els = {
   financialReconciliationRows: document.getElementById("financial-reconciliation-rows"),
   financialReconciliationCount: document.getElementById("financial-reconciliation-count"),
   financialReconciliationStatus: document.getElementById("financial-reconciliation-status"),
+  financialReconciliationManualTab: document.getElementById("financial-reconciliation-manual-tab"),
+  financialReconciliationAutomaticTab: document.getElementById("financial-reconciliation-automatic-tab"),
+  financialReconciliationManualPanel: document.getElementById("financial-reconciliation-manual-panel"),
+  financialReconciliationAutomaticPanel: document.getElementById("financial-reconciliation-automatic-panel"),
   financialReconciliationCurrent: document.getElementById("financial-reconciliation-current"),
   financialReconciliationHistoryRows: document.getElementById("financial-reconciliation-history-rows"),
   financialReconciliationWorkbenchAutomationRules: document.getElementById("financial-reconciliation-workbench-automation-rules"),
@@ -2625,6 +2630,10 @@ function bindEvents() {
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.navImportData?.addEventListener("click", () => setView("import-data"));
   els.navFinancialReconciliation?.addEventListener("click", () => setView("financial-reconciliation"));
+  els.financialReconciliationManualTab?.addEventListener("click", () => setFinancialReconciliationTab("manual"));
+  els.financialReconciliationAutomaticTab?.addEventListener("click", () => setFinancialReconciliationTab("automatic"));
+  els.financialReconciliationManualTab?.addEventListener("keydown", onFinancialReconciliationTabKeydown);
+  els.financialReconciliationAutomaticTab?.addEventListener("keydown", onFinancialReconciliationTabKeydown);
   els.financialReconciliationSource?.addEventListener("change", onFinancialReconciliationSourceChange);
   els.financialReconciliationFilters?.addEventListener("change", onFinancialReconciliationFilterChange);
   els.financialReconciliationFilters?.addEventListener("input", onFinancialReconciliationFilterInput);
@@ -21782,6 +21791,42 @@ function financialReconciliationState() {
   return state.financialReconciliation;
 }
 
+function normalizeFinancialReconciliationTab(tab) {
+  return clean(tab) === "automatic" ? "automatic" : "manual";
+}
+
+function renderFinancialReconciliationTabs() {
+  const automatic = normalizeFinancialReconciliationTab(financialReconciliationState().activeTab) === "automatic";
+  financialReconciliationState().activeTab = automatic ? "automatic" : "manual";
+  els.financialReconciliationManualTab?.classList.toggle("active-tab", !automatic);
+  els.financialReconciliationManualTab?.classList.toggle("ghost", automatic);
+  els.financialReconciliationAutomaticTab?.classList.toggle("active-tab", automatic);
+  els.financialReconciliationAutomaticTab?.classList.toggle("ghost", !automatic);
+  els.financialReconciliationManualTab?.setAttribute("aria-selected", String(!automatic));
+  els.financialReconciliationAutomaticTab?.setAttribute("aria-selected", String(automatic));
+  els.financialReconciliationManualTab?.setAttribute("tabindex", automatic ? "-1" : "0");
+  els.financialReconciliationAutomaticTab?.setAttribute("tabindex", automatic ? "0" : "-1");
+  if (els.financialReconciliationManualPanel) els.financialReconciliationManualPanel.hidden = automatic;
+  if (els.financialReconciliationAutomaticPanel) els.financialReconciliationAutomaticPanel.hidden = !automatic;
+}
+
+async function setFinancialReconciliationTab(tab, { focus = false } = {}) {
+  const next = normalizeFinancialReconciliationTab(tab);
+  financialReconciliationState().activeTab = next;
+  renderFinancialReconciliation();
+  if (next === "automatic" && !financialReconciliationState().automation.loaded) {
+    await loadFinancialReconciliationAutomationRules();
+  }
+  if (focus) (next === "automatic" ? els.financialReconciliationAutomaticTab : els.financialReconciliationManualTab)?.focus();
+}
+
+function onFinancialReconciliationTabKeydown(event) {
+  if (!event || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+  const next = financialReconciliationState().activeTab === "automatic" ? "manual" : "automatic";
+  void setFinancialReconciliationTab(next, { focus: true });
+}
+
 function financialReconciliationCompletionDraft(reconciliationId) {
   const current = financialReconciliationState();
   const normalizedId = clean(reconciliationId);
@@ -22456,11 +22501,15 @@ function renderFinancialReconciliationHistory() {
 
 function renderFinancialReconciliation() {
   if (!canAppFinancialReconciliation()) return;
-  renderFinancialReconciliationSourceControls();
-  renderFinancialReconciliationFilters();
-  renderFinancialReconciliationCandidates();
-  renderFinancialReconciliationCurrent();
-  renderFinancialReconciliationAutomation();
+  renderFinancialReconciliationTabs();
+  if (financialReconciliationState().activeTab === "automatic") {
+    renderFinancialReconciliationAutomation();
+  } else {
+    renderFinancialReconciliationSourceControls();
+    renderFinancialReconciliationFilters();
+    renderFinancialReconciliationCandidates();
+    renderFinancialReconciliationCurrent();
+  }
   renderFinancialReconciliationHistory();
 }
 

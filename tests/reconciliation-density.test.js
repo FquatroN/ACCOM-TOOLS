@@ -11,9 +11,10 @@ const reconciliationSettingsApi = fs.readFileSync(path.join(root, "api", "reconc
 const supabaseApi = fs.readFileSync(path.join(root, "api", "_supabase.js"), "utf8");
 
 function appFunctionSource(name) {
-  const start = appMain.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `${name} should be defined in app-main.js`);
-  const bodyStart = appMain.indexOf("{", appMain.indexOf(")", start));
+  const functionStart = appMain.indexOf(`function ${name}(`);
+  assert.notEqual(functionStart, -1, `${name} should be defined in app-main.js`);
+  const start = appMain.slice(Math.max(0, functionStart - 6), functionStart) === "async " ? functionStart - 6 : functionStart;
+  const bodyStart = appMain.indexOf("{", appMain.indexOf(")", functionStart));
   let depth = 0;
   for (let index = bodyStart; index < appMain.length; index += 1) {
     if (appMain[index] === "{") depth += 1;
@@ -238,20 +239,96 @@ test("workbench exposes source controls before the dynamic filter row", () => {
   assert.match(appMain, /class="financial-reconciliation-filter-\$\{escape\(field\)\}"/);
 });
 
-test("automatic proposal review sits after filters and before reconciliation history", () => {
-  const filtersIndex = html.indexOf('id="financial-reconciliation-filters"');
-  const automationIndex = html.indexOf('id="financial-reconciliation-workbench-automation"');
-  const historyIndex = html.indexOf('class="card financial-reconciliation-history-card"');
-  assert.ok(filtersIndex >= 0 && automationIndex > filtersIndex && historyIndex > automationIndex);
-  for (const id of [
-    "financial-reconciliation-workbench-automation-rules",
-    "financial-reconciliation-workbench-automation-status",
-    "financial-reconciliation-workbench-automation-select-all",
-    "financial-reconciliation-workbench-automation-clear-all",
-    "financial-reconciliation-workbench-automation-proposals",
-    "financial-reconciliation-workbench-automation-execute",
-    "financial-reconciliation-workbench-automation-results",
-  ]) assert.match(html, new RegExp(`id="${id}"`));
+test("reconciliation separates manual and automatic work into accessible tabs with shared history", () => {
+  assert.match(html, /class="[^"]*financial-reconciliation-view-tabs[^"]*"[^>]*role="tablist"/);
+  assert.match(html, /id="financial-reconciliation-manual-tab"[^>]*role="tab"[^>]*aria-controls="financial-reconciliation-manual-panel"/);
+  assert.match(html, /id="financial-reconciliation-automatic-tab"[^>]*role="tab"[^>]*aria-controls="financial-reconciliation-automatic-panel"/);
+  assert.match(html, /id="financial-reconciliation-manual-panel"[^>]*role="tabpanel"[^>]*aria-labelledby="financial-reconciliation-manual-tab"/);
+  assert.match(html, /id="financial-reconciliation-automatic-panel"[^>]*role="tabpanel"[^>]*aria-labelledby="financial-reconciliation-automatic-tab"[^>]*hidden/);
+
+  const manualPanel = html.indexOf('id="financial-reconciliation-manual-panel"');
+  const automaticPanel = html.indexOf('id="financial-reconciliation-automatic-panel"');
+  const history = html.indexOf('class="card financial-reconciliation-history-card"');
+  assert.ok(manualPanel >= 0 && automaticPanel > manualPanel && history > automaticPanel);
+  assert.match(html.slice(manualPanel, automaticPanel), /id="financial-reconciliation-status"[\s\S]*id="financial-reconciliation-filters"[\s\S]*id="financial-reconciliation-current"/);
+  assert.match(html.slice(automaticPanel, history), /id="financial-reconciliation-workbench-automation-rules"[\s\S]*id="financial-reconciliation-workbench-automation-proposals"/);
+});
+
+function reconciliationTabClassList() {
+  const values = new Set();
+  return {
+    toggle(name, force) {
+      if (force) values.add(name);
+      else values.delete(name);
+    },
+    contains: (name) => values.has(name),
+  };
+}
+
+function reconciliationTabElements() {
+  const tab = () => ({
+    classList: reconciliationTabClassList(),
+    focused: false,
+    setAttribute(name, value) { this[name] = value; },
+    focus() { this.focused = true; },
+  });
+  return {
+    financialReconciliationManualTab: tab(),
+    financialReconciliationAutomaticTab: tab(),
+    financialReconciliationManualPanel: { hidden: false },
+    financialReconciliationAutomaticPanel: { hidden: true },
+  };
+}
+
+function compileReconciliationTabController({ current, els, calls }) {
+  let controller;
+  controller = new Function(
+    "clean",
+    "financialReconciliationState",
+    "renderFinancialReconciliation",
+    "loadFinancialReconciliationAutomationRules",
+    "els",
+    `${appFunctionSource("normalizeFinancialReconciliationTab")}
+     ${appFunctionSource("renderFinancialReconciliationTabs")}
+     ${appFunctionSource("setFinancialReconciliationTab")}
+     ${appFunctionSource("onFinancialReconciliationTabKeydown")}
+     return { normalizeFinancialReconciliationTab, renderFinancialReconciliationTabs, setFinancialReconciliationTab, onFinancialReconciliationTabKeydown };`,
+  )(
+    (value) => String(value ?? "").trim(),
+    () => current,
+    () => { calls.push(`render:${current.activeTab}`); controller.renderFinancialReconciliationTabs(); },
+    async () => { calls.push("load-rules"); current.automation.loaded = true; },
+    els,
+  );
+  return controller;
+}
+
+test("reconciliation tab controller defaults to Manual and supports arrow activation", async () => {
+  const current = {
+    activeTab: "manual",
+    filters: { description: "retained" },
+    automation: { loaded: true, run: { runId: "retained-run" } },
+  };
+  const calls = [];
+  const els = reconciliationTabElements();
+  const controller = compileReconciliationTabController({ current, els, calls });
+
+  controller.renderFinancialReconciliationTabs();
+  assert.equal(els.financialReconciliationManualPanel.hidden, false);
+  assert.equal(els.financialReconciliationAutomaticPanel.hidden, true);
+  assert.equal(els.financialReconciliationManualTab["aria-selected"], "true");
+
+  await controller.setFinancialReconciliationTab("automatic", { focus: true });
+  assert.equal(current.activeTab, "automatic");
+  assert.equal(current.filters.description, "retained");
+  assert.equal(current.automation.run.runId, "retained-run");
+  assert.equal(els.financialReconciliationAutomaticPanel.hidden, false);
+  assert.equal(els.financialReconciliationAutomaticTab.focused, true);
+
+  controller.onFinancialReconciliationTabKeydown({ key: "ArrowLeft", preventDefault() { calls.push("prevent"); } });
+  await Promise.resolve();
+  assert.equal(current.activeTab, "manual");
+  assert.ok(calls.includes("prevent"));
 });
 
 test("automatic proposal review wraps evidence and keeps controls reachable on narrow screens", () => {
