@@ -33,6 +33,47 @@ const historySourceSummaryMigration = fs.existsSync(historySourceSummaryMigratio
   ? fs.readFileSync(historySourceSummaryMigrationPath, "utf8")
   : "";
 
+const filterLovMigrationPath = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-15-financial-reconciliation-workspace-filter-lovs.sql",
+);
+const filterLovMigration = fs.existsSync(filterLovMigrationPath)
+  ? fs.readFileSync(filterLovMigrationPath, "utf8")
+  : "";
+
+test("workspace filter LOV migration preserves the RPC while adding source metadata", () => {
+  assert.match(filterLovMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
+  assert.match(filterLovMigration, /'filterOptions',v_filter_options/);
+  assert.match(filterLovMigration, /jsonb_build_array\('dateFrom','dateTo','amountMin','amountMax','description','supplier','payment','category'\)/);
+  assert.doesNotMatch(
+    filterLovMigration,
+    /jsonb_build_array\('dateFrom','dateTo','amountMin','amountMax','description','supplier','payment','account','category'\)/,
+  );
+  assert.match(filterLovMigration, /s\.supplier ilike[\s\S]+or s\.supplier_nif ilike/);
+  assert.match(filterLovMigration, /select distinct btrim\(payment\)/i);
+  assert.match(filterLovMigration, /select distinct btrim\(category\)/i);
+  assert.match(filterLovMigration, /select distinct btrim\(account\)/i);
+  assert.match(filterLovMigration, /order by lower\(option_value\),option_value/i);
+  assert.match(filterLovMigration, /btrim\(s\.payment\) = p_filters->>'payment'/);
+  assert.match(filterLovMigration, /btrim\(s\.account\) = p_filters->>'account'/);
+  assert.match(filterLovMigration, /btrim\(s\.category\) = p_filters->>'category'/);
+  assert.match(filterLovMigration, /security definer/i);
+  assert.match(filterLovMigration, /revoke all on function public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\) from public, anon, authenticated;/);
+  assert.match(filterLovMigration, /grant execute on function public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\) to service_role;/);
+
+  const rpcSmoke = fs.readFileSync(path.join(__dirname, "reconciliation-rpc.smoke.sql"), "utf8");
+  assert.equal(
+    (rpcSmoke.match(/2026-08-15-financial-reconciliation-workspace-filter-lovs\.sql/g) || []).length,
+    2,
+  );
+  assert.match(rpcSmoke, /Supplier Search did not match Supplier NIF/);
+  assert.match(rpcSmoke, /Supplier Search did not match Supplier Name/);
+  assert.match(rpcSmoke, /payment LOV is not trimmed, distinct, and nonblank/);
+  assert.match(rpcSmoke, /FDM Account LOV is not trimmed, distinct, and nonblank/);
+});
+
 test("history source-summary migration safely enriches the workspace function", () => {
   assert.match(historySourceSummaryMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
   assert.match(historySourceSummaryMigration, /'sourceSummary'/);
