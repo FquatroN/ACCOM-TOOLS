@@ -48,10 +48,15 @@ const RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-automation-rpc.smoke
 const MANUAL_RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-rpc.smoke.sql");
 const SETTINGS_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation-settings.js");
 const MANUAL_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation.js");
+const CRON_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation-cron.js");
+const VERCEL_CONFIG_PATH = path.join(__dirname, "..", "vercel.json");
+const README_PATH = path.join(__dirname, "..", "README.md");
 const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
 const PROPOSAL_ID_2 = "00000000-0000-0000-0000-000000000004";
 const PROPOSAL_ID_3 = "00000000-0000-0000-0000-000000000005";
 const CASE_UUID = "abcdefab-cdef-abcd-efab-cdefabcdefab";
+const CRON_SECRET = "test-cron-secret";
+const SCHEDULE_ACTOR = "system:reconciliation";
 
 function responseRecorder() {
   return {
@@ -92,6 +97,49 @@ async function withMockedHandler(handlerPath, supabase, run) {
     if (previousSupabase) require.cache[SUPABASE_MODULE_PATH] = previousSupabase;
     else delete require.cache[SUPABASE_MODULE_PATH];
   }
+}
+
+async function withCronEnvironment(nowIso, run) {
+  const NativeDate = global.Date;
+  const previousSecret = process.env.CRON_SECRET;
+  class FixedDate extends NativeDate {
+    constructor(...args) {
+      super(...(args.length ? args : [nowIso]));
+    }
+
+    static now() {
+      return new NativeDate(nowIso).getTime();
+    }
+  }
+
+  global.Date = FixedDate;
+  process.env.CRON_SECRET = CRON_SECRET;
+  try {
+    await run();
+  } finally {
+    global.Date = NativeDate;
+    if (previousSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previousSecret;
+  }
+}
+
+function uuidFor(value) {
+  return `00000000-0000-0000-0000-${String(value).padStart(12, "0")}`;
+}
+
+function scheduledRun(overrides = {}) {
+  return {
+    runId: RUN_ID,
+    trigger: "scheduled",
+    scope: "batch",
+    status: "ready",
+    actor: SCHEDULE_ACTOR,
+    analysisCompletedAt: "2026-08-15T02:00:01.000Z",
+    finishedAt: null,
+    definitions: [{ ruleKey: AUTOMATIC_RULE_KEY, priority: 1 }],
+    proposals: [],
+    ...overrides,
+  };
 }
 
 function mockedSupabase(overrides = {}) {
@@ -260,6 +308,454 @@ test("cron authentication accepts Vercel cron and the configured bearer secret",
   assert.equal(isCronRequest({ headers: { authorization: "Bearer secret" } }, "secret"), true);
   assert.equal(isCronRequest({ headers: { authorization: "Bearer wrong" } }, "secret"), false);
   assert.equal(isCronRequest({ headers: {} }, "secret"), false);
+});
+
+test("scheduled heartbeat accepts only protected GET and POST requests before any RPC", async () => {
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    for (const method of ["GET", "POST"]) {
+      let rpcCalled = false;
+      const response = responseRecorder();
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async () => {
+          rpcCalled = true;
+          return {};
+        },
+      }), async (handler) => {
+        await handler({ method, headers: { authorization: "Bearer wrong" } }, response);
+      });
+      assert.equal(response.statusCode, 401, method);
+      assert.deepEqual(response.body, { error: "Unauthorized." }, method);
+      assert.equal(rpcCalled, false, method);
+    }
+
+    let methodRpcCalled = false;
+    const methodResponse = responseRecorder();
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => {
+        methodRpcCalled = true;
+        return {};
+      },
+    }), async (handler) => {
+      await handler({ method: "DELETE", headers: { "x-vercel-cron": "1" } }, methodResponse);
+    });
+    assert.equal(methodResponse.statusCode, 405);
+    assert.equal(methodResponse.headers.Allow, "GET, POST");
+    assert.equal(methodRpcCalled, false);
+  });
+});
+
+test("scheduled heartbeat returns safe database reasons when disabled or not due", async () => {
+  const cases = [
+    ["schedule_disabled", "2026-08-15T01:00:00.000Z"],
+    ["before_scheduled_time", "2026-08-15T01:59:00.000Z"],
+    ["no_enabled_rules", "2026-08-15T02:00:00.000Z"],
+  ];
+
+  for (const [reason, nowIso] of cases) {
+    const calls = [];
+    const response = responseRecorder();
+    await withCronEnvironment(nowIso, async () => {
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async (resource, options) => {
+          calls.push({ resource, options });
+          return { claimed: false, reason, diagnostic: "hidden schedule state" };
+        },
+      }), async (handler) => {
+        await handler({ method: "GET", headers: { "x-vercel-cron": "1" } }, response);
+      });
+    });
+
+    assert.deepEqual(calls, [{
+      resource: "rpc/claim_financial_reconciliation_automatic_schedule",
+      options: {
+        method: "POST",
+        body: { p_now: nowIso, p_actor: SCHEDULE_ACTOR },
+      },
+    }], reason);
+    assert.equal(response.statusCode, 200, reason);
+    assert.deepEqual(response.body, { ok: true, claimed: false, reason, hasMore: false }, reason);
+    assert.doesNotMatch(JSON.stringify(response.body), /hidden schedule state/);
+  }
+});
+
+test("first scheduled claim populates analysis and executes proposals in stable priority and base order", async () => {
+  const lowPriorityRule = "future_low_priority_rule";
+  const proposalA = uuidFor(11);
+  const proposalB = uuidFor(12);
+  const proposalC = uuidFor(13);
+  const baseA = uuidFor(101);
+  const baseB = uuidFor(102);
+  const baseC = uuidFor(103);
+  const pendingRun = scheduledRun({
+    status: "analyzing",
+    analysisCompletedAt: null,
+    definitions: [
+      { ruleKey: lowPriorityRule, priority: 2 },
+      { ruleKey: AUTOMATIC_RULE_KEY, priority: 1 },
+    ],
+  });
+  const analyzedRun = scheduledRun({
+    definitions: pendingRun.definitions,
+    proposals: [
+      { id: proposalA, ruleKey: lowPriorityRule, baseSourceDate: "2026-08-01", baseSourceId: baseA, status: "proposed" },
+      { id: proposalB, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-03", baseSourceId: baseB, status: "proposed" },
+      { id: proposalC, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-02", baseSourceId: baseC, status: "proposed" },
+    ],
+  });
+  const completedRun = scheduledRun({
+    definitions: pendingRun.definitions,
+    status: "running",
+    proposals: [
+      { ...analyzedRun.proposals[0], status: "completed" },
+      { ...analyzedRun.proposals[1], status: "stale", reason: "source_snapshot_changed" },
+      { ...analyzedRun.proposals[2], status: "completed" },
+    ],
+  });
+  const finalizedRun = {
+    ...completedRun,
+    status: "partial",
+    finishedAt: "2026-08-15T02:00:04.000Z",
+    diagnostic: "hidden run detail",
+  };
+  const calls = [];
+  const response = responseRecorder();
+
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+          return { claimed: true, resumed: false, run: pendingRun, internal_error: "hidden claim detail" };
+        }
+        if (resource === "rpc/populate_financial_reconciliation_automatic_run") return analyzedRun;
+        if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+          const proposalId = options.body.p_proposal_id;
+          return proposalId === proposalB
+            ? { proposalId, runId: RUN_ID, status: "stale", reason: "source_snapshot_changed", error_detail: "hidden" }
+            : { proposalId, runId: RUN_ID, status: "completed", diagnostic: "hidden" };
+        }
+        if (resource === "rpc/get_financial_reconciliation_automatic_run") return completedRun;
+        if (resource === "rpc/finish_financial_reconciliation_automatic_run") return finalizedRun;
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "POST", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.deepEqual(calls, [
+    {
+      resource: "rpc/claim_financial_reconciliation_automatic_schedule",
+      options: {
+        method: "POST",
+        body: { p_now: "2026-08-15T02:00:00.000Z", p_actor: SCHEDULE_ACTOR },
+      },
+    },
+    {
+      resource: "rpc/populate_financial_reconciliation_automatic_run",
+      options: { method: "POST", body: { p_run_id: RUN_ID } },
+    },
+    ...[proposalC, proposalB, proposalA].map((proposalId) => ({
+      resource: "rpc/execute_financial_reconciliation_automatic_proposal",
+      options: { method: "POST", body: { p_proposal_id: proposalId, p_actor: SCHEDULE_ACTOR } },
+    })),
+    {
+      resource: "rpc/get_financial_reconciliation_automatic_run",
+      options: { method: "POST", body: { p_run_id: RUN_ID } },
+    },
+    {
+      resource: "rpc/finish_financial_reconciliation_automatic_run",
+      options: { method: "POST", body: { p_run_id: RUN_ID } },
+    },
+  ]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    ok: true,
+    claimed: true,
+    resumed: false,
+    runId: RUN_ID,
+    status: "partial",
+    counts: {
+      bases: 3,
+      proposed: 0,
+      ambiguous: 0,
+      deselected: 0,
+      executing: 0,
+      completed: 2,
+      stale: 1,
+      failed: 0,
+    },
+    attemptedCount: 3,
+    hasMore: false,
+  });
+  assert.doesNotMatch(JSON.stringify(response.body), /hidden|diagnostic|error_detail|internal_error/);
+});
+
+test("scheduled heartbeat caps sequential proposal attempts at 25 and leaves the run resumable", async () => {
+  const proposals = Array.from({ length: 27 }, (_, index) => ({
+    id: uuidFor(200 + index),
+    ruleKey: AUTOMATIC_RULE_KEY,
+    baseSourceDate: "2026-08-10",
+    baseSourceId: uuidFor(300 + index),
+    status: "proposed",
+  })).reverse();
+  const expectedIds = [...proposals]
+    .sort((left, right) => left.baseSourceId.localeCompare(right.baseSourceId) || left.id.localeCompare(right.id))
+    .slice(0, 25)
+    .map((proposal) => proposal.id);
+  const completedIds = new Set();
+  const calls = [];
+  let activeExecutions = 0;
+  let maximumActiveExecutions = 0;
+  const response = responseRecorder();
+
+  await withCronEnvironment("2026-08-15T02:01:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+          return { claimed: true, resumed: true, run: scheduledRun({ proposals }) };
+        }
+        if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+          activeExecutions += 1;
+          maximumActiveExecutions = Math.max(maximumActiveExecutions, activeExecutions);
+          await new Promise((resolve) => setImmediate(resolve));
+          completedIds.add(options.body.p_proposal_id);
+          activeExecutions -= 1;
+          return { proposalId: options.body.p_proposal_id, status: "completed" };
+        }
+        if (resource === "rpc/get_financial_reconciliation_automatic_run") {
+          return scheduledRun({
+            status: "running",
+            proposals: proposals.map((proposal) => ({
+              ...proposal,
+              status: completedIds.has(proposal.id) ? "completed" : "proposed",
+            })),
+          });
+        }
+        if (resource === "rpc/finish_financial_reconciliation_automatic_run") {
+          throw new Error("Run with pending work must not be finalized.");
+        }
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { "x-vercel-cron": "1" } }, response);
+    });
+  });
+
+  const executionIds = calls
+    .filter(({ resource }) => resource === "rpc/execute_financial_reconciliation_automatic_proposal")
+    .map(({ options }) => options.body.p_proposal_id);
+  assert.deepEqual(executionIds, expectedIds);
+  assert.equal(executionIds.length, 25);
+  assert.equal(maximumActiveExecutions, 1);
+  assert.equal(calls.some(({ resource }) => resource === "rpc/finish_financial_reconciliation_automatic_run"), false);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.counts, {
+    bases: 27,
+    proposed: 2,
+    ambiguous: 0,
+    deselected: 0,
+    executing: 0,
+    completed: 25,
+    stale: 0,
+    failed: 0,
+  });
+  assert.equal(response.body.attemptedCount, 25);
+  assert.equal(response.body.hasMore, true);
+});
+
+test("scheduled heartbeat continues after an isolated failure and finalizes only after a safe resume", async () => {
+  const firstProposal = uuidFor(401);
+  const secondProposal = uuidFor(402);
+  let heartbeat = 0;
+  let firstProposalAttempt = 0;
+  let secondCompleted = false;
+  let firstFailed = false;
+  const calls = [];
+  const firstResponse = responseRecorder();
+  const secondResponse = responseRecorder();
+
+  await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ heartbeat, resource, options });
+      const currentProposals = [
+        {
+          id: firstProposal,
+          ruleKey: AUTOMATIC_RULE_KEY,
+          baseSourceDate: "2026-08-10",
+          baseSourceId: uuidFor(501),
+          status: firstFailed ? "failed" : "proposed",
+          error_detail: "database stack hidden",
+        },
+        {
+          id: secondProposal,
+          ruleKey: AUTOMATIC_RULE_KEY,
+          baseSourceDate: "2026-08-11",
+          baseSourceId: uuidFor(502),
+          status: secondCompleted ? "completed" : "proposed",
+        },
+      ];
+      if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+        return { claimed: true, resumed: true, run: scheduledRun({ proposals: currentProposals }) };
+      }
+      if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+        if (options.body.p_proposal_id === firstProposal) {
+          firstProposalAttempt += 1;
+          if (firstProposalAttempt === 1) throw new Error("secret transport diagnostic");
+          firstFailed = true;
+          return { proposalId: firstProposal, status: "failed", reason: "execution_failed", stack: "hidden" };
+        }
+        secondCompleted = true;
+        return { proposalId: secondProposal, status: "completed" };
+      }
+      if (resource === "rpc/get_financial_reconciliation_automatic_run") {
+        return scheduledRun({ status: "running", proposals: currentProposals.map((proposal) => {
+          if (proposal.id === firstProposal) return { ...proposal, status: firstFailed ? "failed" : "proposed" };
+          return { ...proposal, status: secondCompleted ? "completed" : "proposed" };
+        }) });
+      }
+      if (resource === "rpc/finish_financial_reconciliation_automatic_run") {
+        return scheduledRun({
+          status: "partial",
+          finishedAt: "2026-08-15T02:02:05.000Z",
+          proposals: [
+            { ...currentProposals[0], status: "failed", reason: "execution_failed" },
+            { ...currentProposals[1], status: "completed" },
+          ],
+        });
+      }
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => {
+    await withCronEnvironment("2026-08-15T02:01:00.000Z", async () => {
+      await handler({ method: "POST", headers: { "x-vercel-cron": "1" } }, firstResponse);
+    });
+    heartbeat += 1;
+    await withCronEnvironment("2026-08-15T02:02:00.000Z", async () => {
+      await handler({ method: "POST", headers: { "x-vercel-cron": "1" } }, secondResponse);
+    });
+  });
+
+  const firstHeartbeatCalls = calls.filter((call) => call.heartbeat === 0).map((call) => call.resource);
+  const secondHeartbeatCalls = calls.filter((call) => call.heartbeat === 1).map((call) => call.resource);
+  assert.deepEqual(firstHeartbeatCalls, [
+    "rpc/claim_financial_reconciliation_automatic_schedule",
+    "rpc/execute_financial_reconciliation_automatic_proposal",
+    "rpc/execute_financial_reconciliation_automatic_proposal",
+    "rpc/get_financial_reconciliation_automatic_run",
+  ]);
+  assert.deepEqual(secondHeartbeatCalls, [
+    "rpc/claim_financial_reconciliation_automatic_schedule",
+    "rpc/execute_financial_reconciliation_automatic_proposal",
+    "rpc/get_financial_reconciliation_automatic_run",
+    "rpc/finish_financial_reconciliation_automatic_run",
+  ]);
+  assert.equal(firstResponse.body.hasMore, true);
+  assert.equal(firstResponse.body.counts.proposed, 1);
+  assert.equal(firstResponse.body.counts.completed, 1);
+  assert.equal(secondResponse.body.hasMore, false);
+  assert.equal(secondResponse.body.counts.failed, 1);
+  assert.equal(secondResponse.body.counts.completed, 1);
+  assert.doesNotMatch(JSON.stringify([firstResponse.body, secondResponse.body]), /secret|diagnostic|stack|error_detail/);
+});
+
+test("scheduled heartbeat delegates Lisbon DST slot identity to the database claim", async () => {
+  const calls = [];
+  const firstResponse = responseRecorder();
+  const secondResponse = responseRecorder();
+  let claimCount = 0;
+  const finishedRun = scheduledRun({
+    status: "completed",
+    scheduledSlot: "2026-03-29",
+    finishedAt: "2026-03-29T00:31:00.000Z",
+    diagnostic: "hidden",
+  });
+
+  await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      claimCount += 1;
+      return { claimed: true, resumed: claimCount > 1, run: finishedRun };
+    },
+  }), async (handler) => {
+    await withCronEnvironment("2026-03-29T00:30:00.000Z", async () => {
+      await handler({ method: "GET", headers: { "x-vercel-cron": "1" } }, firstResponse);
+    });
+    await withCronEnvironment("2026-03-29T01:30:00.000Z", async () => {
+      await handler({ method: "POST", headers: { "x-vercel-cron": "1" } }, secondResponse);
+    });
+  });
+
+  assert.deepEqual(calls, [
+    {
+      resource: "rpc/claim_financial_reconciliation_automatic_schedule",
+      options: {
+        method: "POST",
+        body: { p_now: "2026-03-29T00:30:00.000Z", p_actor: SCHEDULE_ACTOR },
+      },
+    },
+    {
+      resource: "rpc/claim_financial_reconciliation_automatic_schedule",
+      options: {
+        method: "POST",
+        body: { p_now: "2026-03-29T01:30:00.000Z", p_actor: SCHEDULE_ACTOR },
+      },
+    },
+  ]);
+  assert.equal(firstResponse.body.runId, RUN_ID);
+  assert.equal(firstResponse.body.resumed, false);
+  assert.equal(secondResponse.body.runId, RUN_ID);
+  assert.equal(secondResponse.body.resumed, true);
+  assert.equal(firstResponse.body.hasMore, false);
+  assert.equal(secondResponse.body.hasMore, false);
+  assert.doesNotMatch(JSON.stringify([firstResponse.body, secondResponse.body]), /diagnostic|scheduledSlot/);
+});
+
+test("scheduled heartbeat never exposes unexpected database diagnostics", async () => {
+  const response = responseRecorder();
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => {
+        const error = new Error("relation internal_schedule_secret does not exist");
+        error.supabasePayload = { details: "database credentials hidden" };
+        throw error;
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { "x-vercel-cron": "1" } }, response);
+    });
+  });
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
+  assert.doesNotMatch(JSON.stringify(response.body), /internal_schedule_secret|credentials|relation/);
+});
+
+test("deployment config and README describe the protected reconciliation heartbeat rollout", () => {
+  const vercelConfig = JSON.parse(fs.readFileSync(VERCEL_CONFIG_PATH, "utf8"));
+  assert.equal(vercelConfig.crons.filter((cron) => cron.path === "/api/reconciliation-automation-cron").length, 1);
+  assert.deepEqual(
+    vercelConfig.crons.find((cron) => cron.path === "/api/reconciliation-automation-cron"),
+    { path: "/api/reconciliation-automation-cron", schedule: "* * * * *" },
+  );
+
+  const readme = fs.readFileSync(README_PATH, "utf8");
+  const migrationNames = [
+    "2026-08-14-financial-reconciliation-automation-schema.sql",
+    "2026-08-14-financial-reconciliation-automation-analysis.sql",
+    "2026-08-14-financial-reconciliation-automation-execution.sql",
+  ];
+  let previousIndex = -1;
+  for (const migrationName of migrationNames) {
+    const migrationIndex = readme.indexOf(migrationName);
+    assert.ok(migrationIndex > previousIndex, `${migrationName} must be documented in migration order`);
+    previousIndex = migrationIndex;
+  }
+  assert.match(readme, /CRON_SECRET/);
+  assert.match(readme, /every minute/i);
+  assert.match(readme, /once[^\n]*daily[^\n]*Europe\/Lisbon|Europe\/Lisbon[^\n]*once[^\n]*daily/i);
+  assert.match(readme, /disabled by default/i);
+  assert.match(readme, /manual[^\n]*validat[^\n]*before[^\n]*scheduled|before[^\n]*scheduled[^\n]*manual[^\n]*validat/i);
+  assert.match(readme, /Settings[^\n]*last[^\n]*batch|last[^\n]*batch[^\n]*Settings/i);
 });
 
 test("automation public result recursively maps known fields and strips diagnostics", () => {

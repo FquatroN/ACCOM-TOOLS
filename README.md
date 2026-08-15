@@ -39,6 +39,31 @@ The migration creates the reconciliation, item, and audit tables, plus the
 atomic RPCs that enforce the eligibility floor (`2026-01-01`), record locks,
 completion rules, reopening history, and the supported source combinations.
 
+### Automatic financial reconciliation rollout
+
+After the base reconciliation migrations, apply the automatic reconciliation
+migrations in this order:
+
+1. `supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql`
+2. `supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql`
+3. `supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql`
+
+The managed rule and shared schedule are disabled by default. Keep them
+disabled while deploying, then validate representative matches, non-matches,
+threshold boundaries, and ambiguities through manual analysis and execution in
+a non-production environment. Complete manual validation before enabling scheduled execution.
+
+Vercel calls `/api/reconciliation-automation-cron` every minute as a heartbeat.
+The database—not the Vercel schedule—atomically claims at most one configured
+once-daily slot in `Europe/Lisbon`, including across retries and daylight-saving
+changes. Each heartbeat processes no more than 25 proposals and a later
+heartbeat safely resumes any remaining work.
+
+In Settings → Reconciliation → Automatic reconciliation, inspect the last batch result
+before and after scheduled enablement. Disabling the shared schedule or
+a managed rule prevents future scheduled work without changing completed
+reconciliations.
+
 ## 2) Configure app (`config.js`)
 
 Fill `config.js`:
@@ -63,9 +88,12 @@ In Vercel project settings -> Environment Variables, add:
 - `RESEND_API_KEY`
 - `EMAIL_FROM` (example: `notifications@yourdomain.com`)
 - `AUTOMATION_TIMEZONE` (optional, default: `Europe/Lisbon`)
+- `CRON_SECRET` (a long random secret used to protect scheduled endpoints)
 
 `SUPABASE_SERVICE_ROLE_KEY` is used only server-side by `/api/communications`.
 Automatic email delivery is executed by `/api/email-automation` via Vercel Cron.
+Automatic reconciliation heartbeats are authenticated with `CRON_SECRET` (or
+Vercel's signed cron header) and never expose the secret to browser code.
 The Reconciliation workbench calls the server-side `/api/reconciliation` route;
 it is available to users with the `financial-reconciliation` app feature.
 
