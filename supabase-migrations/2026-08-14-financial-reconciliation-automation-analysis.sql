@@ -1,3 +1,74 @@
+do $migration$
+declare
+  v_pgcrypto_schema text;
+  v_unaccent_schema text;
+  v_pg_trgm_schema text;
+begin
+  select n.nspname into v_pgcrypto_schema
+  from pg_catalog.pg_extension e
+  join pg_catalog.pg_namespace n on n.oid = e.extnamespace
+  where e.extname = 'pgcrypto';
+
+  select n.nspname into v_unaccent_schema
+  from pg_catalog.pg_extension e
+  join pg_catalog.pg_namespace n on n.oid = e.extnamespace
+  where e.extname = 'unaccent';
+
+  select n.nspname into v_pg_trgm_schema
+  from pg_catalog.pg_extension e
+  join pg_catalog.pg_namespace n on n.oid = e.extnamespace
+  where e.extname = 'pg_trgm';
+
+  if v_pgcrypto_schema is null or v_unaccent_schema is null or v_pg_trgm_schema is null then
+    raise exception 'Required reconciliation extensions pgcrypto, unaccent, and pg_trgm must be installed.';
+  end if;
+
+  execute format($definition$
+    create or replace function public.financial_reconciliation_extension_unaccent(p_value text)
+    returns text
+    language sql
+    immutable strict
+    set search_path = pg_catalog, pg_temp
+    as $function$
+      select %I.unaccent(p_value)
+    $function$
+  $definition$, v_unaccent_schema);
+
+  execute format($definition$
+    create or replace function public.financial_reconciliation_extension_similarity(p_left text, p_right text)
+    returns real
+    language sql
+    immutable strict
+    set search_path = pg_catalog, pg_temp
+    as $function$
+      select %I.similarity(p_left, p_right)
+    $function$
+  $definition$, v_pg_trgm_schema);
+
+  execute format($definition$
+    create or replace function public.financial_reconciliation_extension_word_similarity(p_left text, p_right text)
+    returns real
+    language sql
+    immutable strict
+    set search_path = pg_catalog, pg_temp
+    as $function$
+      select %I.word_similarity(p_left, p_right)
+    $function$
+  $definition$, v_pg_trgm_schema);
+
+  execute format($definition$
+    create or replace function public.financial_reconciliation_extension_sha256(p_value text)
+    returns text
+    language sql
+    immutable strict
+    set search_path = pg_catalog, pg_temp
+    as $function$
+      select pg_catalog.encode(%I.digest(p_value, 'sha256'::text), 'hex'::text)
+    $function$
+  $definition$, v_pgcrypto_schema);
+end
+$migration$;
+
 create or replace function public.financial_reconciliation_match_normalize(p_value text)
 returns text
 language sql
@@ -6,7 +77,7 @@ as $$
   with tokens as (
     select token, ordinal
     from regexp_split_to_table(
-      btrim(regexp_replace(extensions.unaccent(lower(p_value)), '[^[:alnum:]]+', ' ', 'g')),
+      btrim(regexp_replace(public.financial_reconciliation_extension_unaccent(lower(p_value)), '[^[:alnum:]]+', ' ', 'g')),
       '[[:space:]]+'
     ) with ordinality as values(token, ordinal)
   )
@@ -20,7 +91,7 @@ returns text
 language sql
 stable strict
 as $$
-  select regexp_replace(extensions.unaccent(lower(p_value)), '[^[:alnum:]]', '', 'g')
+  select regexp_replace(public.financial_reconciliation_extension_unaccent(lower(p_value)), '[^[:alnum:]]', '', 'g')
 $$;
 
 create or replace function public.financial_reconciliation_automatic_build_combinations(
@@ -94,7 +165,7 @@ as $$
   select
     items,
     calculated_difference_cents::numeric / 100,
-    encode(extensions.digest(signature_items::text, 'sha256'::text), 'hex') as signature
+    public.financial_reconciliation_extension_sha256(signature_items::text) as signature
   from qualifying
   where abs(calculated_difference_cents) <= tolerance_cents
   order by signature
@@ -162,9 +233,9 @@ as $$
         and q.source_id is not null
         and position(q.compact_document_number in public.financial_reconciliation_match_compact(q.description)) > 0, false) as document_number_matched,
       case when nullif(q.normalized_document_description, '') is null or nullif(q.normalized_bank_description, '') is null then 0::real
-        else extensions.similarity(normalized_document_description, normalized_bank_description) end as description_score,
+        else public.financial_reconciliation_extension_similarity(normalized_document_description, normalized_bank_description) end as description_score,
       case when nullif(q.normalized_supplier_name, '') is null or nullif(q.normalized_bank_description, '') is null then 0::real
-        else extensions.word_similarity(normalized_supplier_name, normalized_bank_description) end as supplier_score
+        else public.financial_reconciliation_extension_word_similarity(normalized_supplier_name, normalized_bank_description) end as supplier_score
     from qualified q
   ),
   identity_candidates as (
@@ -256,7 +327,7 @@ begin
           v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer, 'financial_documents',
           v_base.base_source_id, v_base.base_source_date, v_base.base_snapshot, v_base.candidates,
           (v_rule->>'differenceAllowed')::numeric, 'ambiguous', 'candidate_limit',
-          encode(extensions.digest('candidate_limit:' || v_base.base_source_id::text, 'sha256'::text), 'hex')
+          public.financial_reconciliation_extension_sha256('candidate_limit:' || v_base.base_source_id::text)
         ) on conflict do nothing;
         v_ambiguous := v_ambiguous + 1;
       else
@@ -292,7 +363,7 @@ begin
               v_base.base_snapshot, v_base.candidates, jsonb_build_object('import_cgd_extrato_ordem', v_operator),
               (v_rule->>'differenceAllowed')::numeric, 4
             )), (v_rule->>'differenceAllowed')::numeric, 'ambiguous', 'multiple_combinations',
-            encode(extensions.digest('multiple:' || v_base.base_source_id::text, 'sha256'::text), 'hex')
+            public.financial_reconciliation_extension_sha256('multiple:' || v_base.base_source_id::text)
           ) on conflict do nothing;
           v_ambiguous := v_ambiguous + 1;
         else
@@ -303,7 +374,7 @@ begin
             v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer, 'financial_documents',
             v_base.base_source_id, v_base.base_source_date, v_base.base_snapshot, v_base.candidates,
             (v_rule->>'differenceAllowed')::numeric, 'skipped', 'no_qualifying_combination',
-            encode(extensions.digest('skipped:' || v_base.base_source_id::text, 'sha256'::text), 'hex')
+            public.financial_reconciliation_extension_sha256('skipped:' || v_base.base_source_id::text)
           ) on conflict do nothing;
         end if;
       end if;
@@ -432,6 +503,10 @@ begin
   return jsonb_build_object('claimed', true, 'resumed', false, 'run', public.get_financial_reconciliation_automatic_run(v_run_id));
 end $$;
 
+revoke all on function public.financial_reconciliation_extension_unaccent(text) from public, anon, authenticated;
+revoke all on function public.financial_reconciliation_extension_similarity(text,text) from public, anon, authenticated;
+revoke all on function public.financial_reconciliation_extension_word_similarity(text,text) from public, anon, authenticated;
+revoke all on function public.financial_reconciliation_extension_sha256(text) from public, anon, authenticated;
 revoke all on function public.financial_reconciliation_match_normalize(text) from public, anon, authenticated;
 revoke all on function public.financial_reconciliation_match_compact(text) from public, anon, authenticated;
 revoke all on function public.financial_reconciliation_automatic_build_combinations(jsonb,jsonb,jsonb,numeric,integer) from public, anon, authenticated;
@@ -440,6 +515,10 @@ revoke all on function public.populate_financial_reconciliation_automatic_run(uu
 revoke all on function public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid) from public, anon, authenticated;
 revoke all on function public.claim_financial_reconciliation_automatic_schedule(timestamptz,text) from public, anon, authenticated;
 revoke all on function public.get_financial_reconciliation_automatic_run(uuid) from public, anon, authenticated;
+grant execute on function public.financial_reconciliation_extension_unaccent(text) to service_role;
+grant execute on function public.financial_reconciliation_extension_similarity(text,text) to service_role;
+grant execute on function public.financial_reconciliation_extension_word_similarity(text,text) to service_role;
+grant execute on function public.financial_reconciliation_extension_sha256(text) to service_role;
 grant execute on function public.financial_reconciliation_match_normalize(text) to service_role;
 grant execute on function public.financial_reconciliation_match_compact(text) to service_role;
 grant execute on function public.financial_reconciliation_automatic_build_combinations(jsonb,jsonb,jsonb,numeric,integer) to service_role;

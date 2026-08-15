@@ -1884,12 +1884,20 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
   }
 
   assert.match(analysisMigration, /language\s+sql\s+stable\s+strict/);
-  assert.match(analysisMigration, /extensions\.unaccent\(/);
-  assert.match(analysisMigration, /extensions\.similarity\(/);
-  assert.match(analysisMigration, /extensions\.word_similarity\(/);
-  assert.match(analysisMigration, /extensions\.digest\(signature_items::text, 'sha256'::text\)/);
-  assert.equal((analysisMigration.match(/extensions\.digest\(/g) || []).length, 4);
-  assert.doesNotMatch(analysisMigration, /(^|[^.[:alnum:]_])(digest|unaccent|similarity|word_similarity)\(/m);
+  for (const extension of ["pgcrypto", "unaccent", "pg_trgm"]) {
+    assert.match(analysisMigration, new RegExp(`e\\.extname = '${extension}'`));
+  }
+  assert.match(analysisMigration, /from pg_catalog\.pg_extension e[\s\S]*join pg_catalog\.pg_namespace n on n\.oid = e\.extnamespace/);
+  for (const helper of ["unaccent", "similarity", "word_similarity", "sha256"]) {
+    assert.match(analysisMigration, new RegExp(`create or replace function public\\.financial_reconciliation_extension_${helper}\\(`));
+    assert.match(analysisMigration, new RegExp(`public\\.financial_reconciliation_extension_${helper}\\(`));
+  }
+  assert.match(analysisMigration, /select %I\.unaccent\(p_value\)/);
+  assert.match(analysisMigration, /select %I\.similarity\(p_left, p_right\)/);
+  assert.match(analysisMigration, /select %I\.word_similarity\(p_left, p_right\)/);
+  assert.match(analysisMigration, /select pg_catalog\.encode\(%I\.digest\(p_value, 'sha256'::text\), 'hex'::text\)/);
+  assert.equal((analysisMigration.match(/public\.financial_reconciliation_extension_sha256\(/g) || []).length, 7);
+  assert.doesNotMatch(analysisMigration, /extensions\.(digest|unaccent|similarity|word_similarity)\(/);
   assert.match(analysisMigration, /regexp_split_to_table\([\s\S]*'\[\[:space:\]\]\+'/);
   assert.doesNotMatch(analysisMigration, /'\\\\s\+'/);
   assert.match(analysisMigration, /financial_reconciliation_match_compact[\s\S]*unaccent\(lower\(p_value\)\)[\s\S]*'\[\^\[:alnum:\]\]'/);
