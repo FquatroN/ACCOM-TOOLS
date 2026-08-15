@@ -18,7 +18,7 @@ insert into financial_reconciliations (
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-workspace-filter-lovs.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-workspace-filter-lovs.sql
-do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); old_doc_id uuid := '00000000-0000-0000-0000-000000000101'; same_date_low_id uuid := '00000000-0000-0000-0000-000000000102'; same_date_high_id uuid := '00000000-0000-0000-0000-000000000103'; new_doc_id uuid := '00000000-0000-0000-0000-000000000104'; candidate_ids uuid[]; r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean; history_rid uuid := gen_random_uuid(); history_row jsonb; history_source_ids text[]; history_card_item_id uuid := gen_random_uuid();
+do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); old_doc_id uuid := '00000000-0000-0000-0000-000000000101'; same_date_low_id uuid := '00000000-0000-0000-0000-000000000102'; same_date_high_id uuid := '00000000-0000-0000-0000-000000000103'; new_doc_id uuid := '00000000-0000-0000-0000-000000000104'; lov_locked_document_id uuid := gen_random_uuid(); lov_locked_fdm_id uuid := gen_random_uuid(); candidate_ids uuid[]; r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean; history_rid uuid := gen_random_uuid(); history_row jsonb; history_source_ids text[]; history_card_item_id uuid := gen_random_uuid();
 begin
   if not coalesce((
     select c.relrowsecurity
@@ -40,6 +40,18 @@ begin
      or has_function_privilege('authenticated'::name, 'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure, 'execute')
      or not has_function_privilege('service_role'::name, 'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure, 'execute') then
     raise exception 'Source-rule replacement RPC permissions are incorrect';
+  end if;
+  if not coalesce((
+    select p.prosecdef and 'search_path=public' = any(p.proconfig)
+    from pg_proc p
+    where p.oid = 'public.get_financial_reconciliation_workspace(uuid,text,jsonb,integer,integer)'::regprocedure
+  ), false) then
+    raise exception 'Workspace RPC security definer or search path is incorrect';
+  end if;
+  if has_function_privilege('anon'::name, 'public.get_financial_reconciliation_workspace(uuid,text,jsonb,integer,integer)'::regprocedure, 'execute')
+     or has_function_privilege('authenticated'::name, 'public.get_financial_reconciliation_workspace(uuid,text,jsonb,integer,integer)'::regprocedure, 'execute')
+     or not has_function_privilege('service_role'::name, 'public.get_financial_reconciliation_workspace(uuid,text,jsonb,integer,integer)'::regprocedure, 'execute') then
+    raise exception 'Workspace RPC permissions are not service-role-only';
   end if;
   if not exists (
     select 1
@@ -182,7 +194,13 @@ begin
     (gen_random_uuid(), '2026-03-02', 12, 'S', 'smoke', 'lov supplier-nif fixture',
      'Different Supplier', 'PT-LOV-SEARCH', 'LOV Visa', 'LOV Food'),
     (gen_random_uuid(), '2026-03-03', 13, 'S', 'smoke', 'lov blank fixture',
-     'Blank Supplier', 'PT-BLANK', '   ', '');
+     'Blank Supplier', 'PT-BLANK', '   ', ''),
+    (gen_random_uuid(), '2025-12-31', 14, 'S', 'smoke', 'lov out-of-date fixture',
+     'Outdated Supplier', 'PT-LOV-OUTDATED', 'LOV Outdated Payment', 'LOV Outdated Category'),
+    (gen_random_uuid(), '2026-03-04', 15, 'N', 'smoke', 'lov ineligible fixture',
+     'Ineligible Supplier', 'PT-LOV-INELIGIBLE', 'LOV Ineligible Payment', 'LOV Ineligible Category'),
+    (lov_locked_document_id, '2026-03-05', 16, 'S', 'smoke', 'lov locked fixture',
+     'Locked Supplier', 'PT-LOV-LOCKED', 'LOV Locked Payment', 'LOV Locked Category');
 
   insert into import_fdm_accounts(
     id, import_batch, account, date_time_raw, event_date,
@@ -194,6 +212,23 @@ begin
      'LOV Purchases', -12, true, 'lov fdm duplicate fixture'),
     (gen_random_uuid(), 'smoke', ' ', '2026-03-03', '2026-03-03',
      '', -13, true, 'lov fdm blank fixture');
+
+  insert into import_fdm_accounts(
+    id, import_batch, account, date_time_raw, event_date,
+    category, amount, invoice_flag, description
+  ) values
+    (gen_random_uuid(), 'smoke', 'LOV Outdated Account', '2025-12-31', '2025-12-31',
+     'LOV Outdated FDM Category', -14, true, 'lov fdm out-of-date fixture'),
+    (gen_random_uuid(), 'smoke', 'LOV Ineligible Account', '2026-03-04', '2026-03-04',
+     'LOV Ineligible FDM Category', -15, false, 'lov fdm ineligible fixture'),
+    (lov_locked_fdm_id, 'smoke', 'LOV Locked Account', '2026-03-05', '2026-03-05',
+     'LOV Locked FDM Category', -16, true, 'lov fdm locked fixture');
+
+  insert into financial_reconciliation_items(
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  ) values
+    (history_rid, 'financial_documents', lov_locked_document_id, 16, 'smoke'),
+    (history_rid, 'import_fdm_accounts', lov_locked_fdm_id, -16, 'smoke');
 
   r := public.get_financial_reconciliation_workspace(
     null, 'financial_documents',
@@ -221,6 +256,26 @@ begin
   if jsonb_array_length(r->'candidates') <> 1
      or r->'candidates'->0->>'supplier' <> 'LOV Supplier Name' then
     raise exception 'Supplier Search did not match Supplier Name.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'financial_documents',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-01","payment":"LOV Visa"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 1
+     or r->'candidates'->0->>'description' <> 'lov supplier-name fixture' then
+    raise exception 'Payment filter did not match trimmed stored data.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'financial_documents',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-01","category":"LOV Food"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 1
+     or r->'candidates'->0->>'description' <> 'lov supplier-name fixture' then
+    raise exception 'Financial Documents category filter did not match trimmed stored data.';
   end if;
 
   r := public.get_financial_reconciliation_workspace(
@@ -260,6 +315,30 @@ begin
      ) then
     raise exception 'FDM Account LOV is not trimmed, distinct, and nonblank.';
   end if;
+  if (r->'sourceConfig'->'filterOptions'->'account' @> '["LOV Outdated Account","LOV Ineligible Account","LOV Locked Account"]'::jsonb) is not true
+     or (r->'sourceConfig'->'filterOptions'->'category' @> '["LOV Outdated FDM Category","LOV Ineligible FDM Category","LOV Locked FDM Category"]'::jsonb) is not true then
+    raise exception 'FDM LOVs did not include ineligible, out-of-date, and locked values.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'import_fdm_accounts',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-01","account":"LOV Main Account"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 1
+     or r->'candidates'->0->>'description' <> 'lov fdm fixture' then
+    raise exception 'FDM Account filter did not match trimmed stored data.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'import_fdm_accounts',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-01","category":"LOV Purchases"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 1
+     or r->'candidates'->0->>'description' <> 'lov fdm fixture' then
+    raise exception 'FDM category filter did not match trimmed stored data.';
+  end if;
 
   r := public.get_financial_reconciliation_workspace(
     null, 'financial_documents', '{}'::jsonb, 1, 50
@@ -283,6 +362,10 @@ begin
     ) options
   ) then
     raise exception 'Financial Documents Category LOV ordering or values are invalid.';
+  end if;
+  if (r->'sourceConfig'->'filterOptions'->'payment' @> '["LOV Outdated Payment","LOV Ineligible Payment","LOV Locked Payment"]'::jsonb) is not true
+     or (r->'sourceConfig'->'filterOptions'->'category' @> '["LOV Outdated Category","LOV Ineligible Category","LOV Locked Category"]'::jsonb) is not true then
+    raise exception 'Financial Documents LOVs did not include ineligible, out-of-date, and locked values.';
   end if;
 
   r := get_financial_reconciliation_workspace(

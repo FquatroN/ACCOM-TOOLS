@@ -72,6 +72,14 @@ test("workspace filter LOV migration preserves the RPC while adding source metad
   assert.match(rpcSmoke, /Supplier Search did not match Supplier Name/);
   assert.match(rpcSmoke, /payment LOV is not trimmed, distinct, and nonblank/);
   assert.match(rpcSmoke, /FDM Account LOV is not trimmed, distinct, and nonblank/);
+  assert.match(rpcSmoke, /Payment filter did not match trimmed stored data/);
+  assert.match(rpcSmoke, /Financial Documents category filter did not match trimmed stored data/);
+  assert.match(rpcSmoke, /FDM Account filter did not match trimmed stored data/);
+  assert.match(rpcSmoke, /FDM category filter did not match trimmed stored data/);
+  assert.match(rpcSmoke, /Financial Documents LOVs did not include ineligible, out-of-date, and locked values/);
+  assert.match(rpcSmoke, /FDM LOVs did not include ineligible, out-of-date, and locked values/);
+  assert.match(rpcSmoke, /Workspace RPC security definer or search path is incorrect/);
+  assert.match(rpcSmoke, /Workspace RPC permissions are not service-role-only/);
 });
 
 test("history source-summary migration safely enriches the workspace function", () => {
