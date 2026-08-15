@@ -165,6 +165,18 @@ async function executeSelected(req, body) {
     }
   }
 
+  const refreshedRun = toAutomationPublicResult(await restQuery(
+    "rpc/get_financial_reconciliation_automatic_run",
+    { method: "POST", body: { p_run_id: input.runId } },
+  ));
+  const refreshedProposals = new Map((Array.isArray(refreshedRun?.proposals) ? refreshedRun.proposals : [])
+    .map((proposal) => [cleanText(proposal?.id).toLowerCase(), proposal]));
+  const hasUnresolvedSelection = input.proposalIds.some((proposalId) => {
+    const status = cleanText(refreshedProposals.get(proposalId)?.status).toLowerCase();
+    return !status || status === "proposed" || status === "executing";
+  });
+  if (hasUnresolvedSelection) return { run: refreshedRun, outcomes };
+
   const finalizedRun = await restQuery("rpc/finish_financial_reconciliation_automatic_run", {
     method: "POST",
     body: { p_run_id: input.runId },

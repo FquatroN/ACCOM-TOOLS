@@ -6880,7 +6880,33 @@ button[id^="close-settings"] {
 .financial-reconciliation-automation-result--failed { color: var(--danger); }
 .financial-reconciliation-automation-result--attempt-failed { color: var(--danger); }
 .financial-reconciliation-automation-result--ambiguous { color: #9a5d00; }
+.financial-reconciliation-automation-result--skipped { color: var(--muted); }
 .financial-reconciliation-automation-result--deselected { color: var(--muted); }
+
+.financial-reconciliation-automatic-audit {
+  margin-top: .45rem;
+  color: var(--text);
+  font-size: .76rem;
+}
+
+.financial-reconciliation-automatic-audit summary { cursor: pointer; }
+
+.financial-reconciliation-automatic-audit dl {
+  display: grid;
+  gap: .25rem;
+  margin: .45rem 0;
+}
+
+.financial-reconciliation-automatic-audit dl div {
+  display: grid;
+  grid-template-columns: minmax(8rem, .6fr) minmax(0, 1fr);
+  gap: .5rem;
+}
+
+.financial-reconciliation-automatic-audit dt { color: var(--muted); }
+.financial-reconciliation-automatic-audit dd { margin: 0; overflow-wrap: anywhere; }
+.financial-reconciliation-automatic-audit p { margin: .45rem 0 .2rem; }
+.financial-reconciliation-automatic-audit ul { margin: 0; padding-left: 1.1rem; }
 
 .financial-reconciliation-automation-run-summary {
   flex-basis: 100%;

@@ -56,8 +56,8 @@ const historySourceHelpers = new Function(
   (value) => String(value || "").trim(),
 );
 
-function renderCurrentSummary({ status, difference, items, origin, automaticTrigger }) {
-  const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"], origin, automaticTrigger }, items, audit: [] } };
+function renderCurrentSummary({ status, difference, items, origin, automaticTrigger, audit = [] }) {
+  const current = { workspace: { reconciliation: { id: "rec-1", status, difference_amount: difference, completion_type: "normal", base_source_type: "financial_documents", matching_source_types: ["import_cgd_extrato_ordem"], origin, automaticTrigger }, items, audit } };
   const els = {
     financialReconciliationCurrent: { innerHTML: "" },
     financialReconciliationNew: { hidden: true },
@@ -69,7 +69,7 @@ function renderCurrentSummary({ status, difference, items, origin, automaticTrig
     "financialReconciliationDifference", "clean", "financialReconciliationCompletionDraft",
     "financialReconciliationCompletionPresentation", "financialReconciliationItemDetails", "escape",
     "financialReconciliationSourceLabel", "formatMoney", "formatDateTimeShort",
-    "financialReconciliationStatusMarkup", "financialReconciliationSummaryMarkup", "els", "financialReconciliationOriginMarkup",
+    "financialReconciliationStatusMarkup", "financialReconciliationSummaryMarkup", "els", "financialReconciliationOriginMarkup", "financialReconciliationAutomaticAuditMarkup",
     `${appFunctionSource("renderFinancialReconciliationCurrent")}\nreturn renderFinancialReconciliationCurrent;`,
   )(
     () => current,
@@ -88,10 +88,58 @@ function renderCurrentSummary({ status, difference, items, origin, automaticTrig
     financialReconciliationSummaryMarkup,
     els,
     (value) => `<span class="origin">${value.origin === "automatic" ? "Automatic" : "User"}</span>`,
+    (entry) => entry.action === "automatic_complete" ? '<details data-automatic-audit-evidence></details>' : "",
   );
   render();
   return els.financialReconciliationCurrent.innerHTML;
 }
+
+test("reloaded automatic reconciliations display escaped structured audit evidence", () => {
+  const automaticAuditMarkup = new Function(
+    "clean",
+    "escape",
+    "formatMoney",
+    `${appFunctionSource("financialReconciliationAutomaticAuditMarkup")}
+     return financialReconciliationAutomaticAuditMarkup;`,
+  )(
+    (value) => String(value ?? "").trim(),
+    new Function(`${appFunctionSource("escape")}; return escape;`)(),
+    (value) => `${Number(value).toFixed(2)} â‚¬`,
+  );
+  const entry = {
+    action: "automatic_complete",
+    metadata: {
+      ruleSnapshot: { ruleKey: "rule-<unsafe>", ruleVersion: 3 },
+      configSnapshot: { differenceAllowed: 1.25 },
+      operatorSnapshot: { import_cgd_extrato_ordem: "-" },
+      identityEvidence: [{
+        documentNumber: { matched: true, normalized: "FT<script>" },
+        description: { matched: true, score: 0.75, threshold: 0.6 },
+      }],
+      trigger: "manual",
+      runId: "run-123",
+      calculatedDifference: 0,
+    },
+  };
+
+  const evidence = automaticAuditMarkup(entry);
+  assert.match(evidence, /Automatic evidence/);
+  assert.match(evidence, /rule-&lt;unsafe&gt;[\s\S]*version 3/);
+  assert.match(evidence, /manual[\s\S]*run-123[\s\S]*1\.25 â‚¬[\s\S]*0\.00 â‚¬/i);
+  assert.match(evidence, /CGD Bank Statement operator[\s\S]*-/);
+  assert.match(evidence, /Document number FT&lt;script&gt;[\s\S]*Description 0\.750 ≥ 0\.600/);
+  assert.doesNotMatch(evidence, /<script>/);
+
+  const currentMarkup = renderCurrentSummary({
+    status: "complete",
+    difference: 0,
+    items: [{ source_type: "financial_documents", amount_snapshot: 10 }],
+    origin: "automatic",
+    automaticTrigger: "manual",
+    audit: [entry],
+  });
+  assert.match(currentMarkup, /data-automatic-audit-evidence/);
+});
 const reconciliationSettingsDestinationHelpers = new Function("appFeatures", "lastMainView", `
 const state = { lastMainView, access: { appFeatures } };
 ${appFunctionSource("clean")}

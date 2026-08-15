@@ -881,6 +881,7 @@ test("all authoritative proposal reasons have safe auditable labels", () => {
      return financialReconciliationAutomationReasonLabel;`,
   )((value) => String(value ?? "").trim());
   const expected = {
+    no_qualifying_combination: "No qualifying destination combination",
     rule_snapshot_changed: "Rule configuration changed after analysis",
     operator_changed: "Signed operator changed after analysis",
     tolerance_changed: "Allowed tolerance changed after analysis",
@@ -1030,7 +1031,7 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
   assert.match(statuses.at(-1).message, /select at least one executable proposal/i);
 });
 
-test("completed, stale, failed, ambiguous, and deselected outcomes render as separate summaries", () => {
+test("completed, stale, failed, skipped, ambiguous, and deselected outcomes render as separate summaries", () => {
   const resultsMarkup = new Function(
     "clean",
     "escape",
@@ -1046,6 +1047,7 @@ test("completed, stale, failed, ambiguous, and deselected outcomes render as sep
     { id: WORKBENCH_PROPOSAL_2, status: "stale", reason: "source_snapshot_changed" },
     { id: WORKBENCH_PROPOSAL_3, status: "deselected", reason: "not_selected" },
     { id: "ambiguous-id", status: "ambiguous", reason: "multiple_combinations" },
+    { id: "skipped-id", status: "skipped", reason: "no_qualifying_combination" },
   ]);
   run.executionOutcomes = [
     { proposalId: WORKBENCH_PROPOSAL_1, status: "completed" },
@@ -1059,6 +1061,7 @@ test("completed, stale, failed, ambiguous, and deselected outcomes render as sep
   assert.match(markup, /financial-reconciliation-automation-result--stale[\s\S]*Stale[\s\S]*1/);
   assert.match(markup, /financial-reconciliation-automation-result--failed[\s\S]*Failed[\s\S]*0/);
   assert.match(markup, /financial-reconciliation-automation-result--ambiguous[\s\S]*Ambiguous[\s\S]*1/);
+  assert.match(markup, /financial-reconciliation-automation-result--skipped[\s\S]*Skipped[\s\S]*1/);
   assert.match(markup, /financial-reconciliation-automation-result--deselected[\s\S]*Skipped \/ deselected[\s\S]*1/);
   assert.match(markup, /financial-reconciliation-automation-result--attempt-failed[\s\S]*Execution attempt failures[\s\S]*1/);
 });
@@ -1077,6 +1080,7 @@ test("persisted completion remains authoritative when the execution response is 
     stale: 0,
     failed: 0,
     ambiguous: 0,
+    skipped: 0,
     deselected: 0,
     attemptFailures: 1,
   });
@@ -1096,6 +1100,7 @@ test("persisted failures are not double-counted as transport-uncertain attempts"
     stale: 0,
     failed: 1,
     ambiguous: 0,
+    skipped: 0,
     deselected: 0,
     attemptFailures: 0,
   });

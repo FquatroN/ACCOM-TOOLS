@@ -21,6 +21,7 @@ const TERMINAL_RUN_STATUSES = new Set(["completed", "partial", "failed"]);
 const PROPOSAL_STATUSES = new Set([
   "proposed",
   "ambiguous",
+  "skipped",
   "deselected",
   "executing",
   "completed",
@@ -30,6 +31,7 @@ const PROPOSAL_STATUSES = new Set([
 const COUNT_STATUSES = [
   "proposed",
   "ambiguous",
+  "skipped",
   "deselected",
   "executing",
   "completed",

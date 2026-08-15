@@ -105,7 +105,7 @@ create table if not exists public.financial_reconciliation_automatic_proposals (
   candidate_groups jsonb not null default '[]'::jsonb check (jsonb_typeof(candidate_groups) = 'array'),
   calculated_difference numeric(14,2) not null default 0,
   allowed_difference numeric(14,2) not null check (allowed_difference >= 0),
-  status text not null default 'proposed' check (status in ('proposed','ambiguous','deselected','executing','completed','stale','failed')),
+  status text not null default 'proposed',
   reason text not null default '',
   signature text not null,
   reconciliation_id uuid null references public.financial_reconciliations(id),
@@ -115,8 +115,34 @@ create table if not exists public.financial_reconciliation_automatic_proposals (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   foreign key (rule_key, rule_version) references public.financial_reconciliation_automatic_rule_definitions(rule_key, version),
+  constraint financial_reconciliation_automatic_proposals_status_check
+    check (status in ('proposed','ambiguous','skipped','deselected','executing','completed','stale','failed')),
   unique (run_id, rule_key, base_source_type, base_source_id, signature)
 );
+
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.financial_reconciliation_automatic_proposals'::regclass
+      and conname = 'financial_reconciliation_automatic_proposals_status_check'
+      and pg_get_constraintdef(oid) not like '%skipped%'
+  ) then
+    alter table public.financial_reconciliation_automatic_proposals
+      drop constraint financial_reconciliation_automatic_proposals_status_check;
+    alter table public.financial_reconciliation_automatic_proposals
+      add constraint financial_reconciliation_automatic_proposals_status_check
+      check (status in ('proposed','ambiguous','skipped','deselected','executing','completed','stale','failed'));
+  elsif not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.financial_reconciliation_automatic_proposals'::regclass
+      and conname = 'financial_reconciliation_automatic_proposals_status_check'
+  ) then
+    alter table public.financial_reconciliation_automatic_proposals
+      add constraint financial_reconciliation_automatic_proposals_status_check
+      check (status in ('proposed','ambiguous','skipped','deselected','executing','completed','stale','failed'));
+  end if;
+end $$;
 
 alter table public.financial_reconciliation_automatic_proposals
   add column if not exists base_snapshot jsonb not null default '{}'::jsonb;

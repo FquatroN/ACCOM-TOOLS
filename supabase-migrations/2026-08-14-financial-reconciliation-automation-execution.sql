@@ -85,7 +85,7 @@ begin
       'reconciliationId', v_proposal.reconciliation_id
     );
   end if;
-  if v_proposal.status in ('ambiguous', 'deselected', 'failed') then
+  if v_proposal.status in ('ambiguous', 'skipped', 'deselected', 'failed') then
     raise exception 'Automation proposal with status % cannot be executed.', v_proposal.status;
   end if;
   if v_proposal.status <> 'proposed' then
@@ -528,6 +528,7 @@ begin
     'bases', count(distinct base_source_id),
     'proposed', count(*) filter (where status = 'proposed'),
     'ambiguous', count(*) filter (where status = 'ambiguous'),
+    'skipped', count(*) filter (where status = 'skipped'),
     'deselected', count(*) filter (where status = 'deselected'),
     'executing', count(*) filter (where status = 'executing'),
     'completed', count(*) filter (where status = 'completed'),

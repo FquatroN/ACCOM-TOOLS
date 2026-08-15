@@ -408,9 +408,11 @@ test("first scheduled claim populates analysis and executes proposals in stable 
   const proposalA = uuidFor(11);
   const proposalB = uuidFor(12);
   const proposalC = uuidFor(13);
+  const proposalSkipped = uuidFor(14);
   const baseA = uuidFor(101);
   const baseB = uuidFor(102);
   const baseC = uuidFor(103);
+  const baseSkipped = uuidFor(104);
   const pendingRun = scheduledRun({
     status: "analyzing",
     analysisCompletedAt: null,
@@ -425,6 +427,7 @@ test("first scheduled claim populates analysis and executes proposals in stable 
       { id: proposalA, ruleKey: lowPriorityRule, baseSourceDate: "2026-08-01", baseSourceId: baseA, status: "proposed" },
       { id: proposalB, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-03", baseSourceId: baseB, status: "proposed" },
       { id: proposalC, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-02", baseSourceId: baseC, status: "proposed" },
+      { id: proposalSkipped, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-04", baseSourceId: baseSkipped, status: "skipped", reason: "no_qualifying_combination" },
     ],
   });
   const completedRun = scheduledRun({
@@ -434,6 +437,7 @@ test("first scheduled claim populates analysis and executes proposals in stable 
       { ...analyzedRun.proposals[0], status: "completed" },
       { ...analyzedRun.proposals[1], status: "stale", reason: "source_snapshot_changed" },
       { ...analyzedRun.proposals[2], status: "completed" },
+      analyzedRun.proposals[3],
     ],
   });
   const finalizedRun = {
@@ -501,7 +505,7 @@ test("first scheduled claim populates analysis and executes proposals in stable 
     runId: RUN_ID,
     status: "partial",
     counts: {
-      bases: 3,
+      bases: 4,
       proposed: 0,
       ambiguous: 0,
       deselected: 0,
@@ -509,6 +513,7 @@ test("first scheduled claim populates analysis and executes proposals in stable 
       completed: 2,
       stale: 1,
       failed: 0,
+      skipped: 1,
     },
     attemptedCount: 3,
     hasMore: false,
@@ -850,6 +855,7 @@ test("scheduled heartbeat caps sequential proposal attempts at 25 and leaves the
     bases: 27,
     proposed: 2,
     ambiguous: 0,
+    skipped: 0,
     deselected: 0,
     executing: 0,
     completed: 25,
@@ -1433,6 +1439,7 @@ test("analyze_batch authorizes settings access and analyzes every enabled batch 
 test("execute_selected runs proposal RPCs sequentially, retains partial failures, and finalizes after the loop", async () => {
   const authorizations = [];
   const calls = [];
+  let runReads = 0;
   let activeExecutions = 0;
   let maximumActiveExecutions = 0;
   const response = responseRecorder();
@@ -1447,6 +1454,20 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
       if (resource === "rpc/get_financial_reconciliation_automatic_run") {
+        runReads += 1;
+        if (runReads > 1) {
+          return {
+            runId: RUN_ID,
+            trigger: "manual",
+            actor: "user@example.com",
+            finishedAt: null,
+            proposals: [
+              { id: PROPOSAL_ID, status: "completed" },
+              { id: PROPOSAL_ID_2, status: "failed", reason: "execution_failed" },
+              { id: PROPOSAL_ID_3, status: "stale", reason: "source_snapshot_changed" },
+            ],
+          };
+        }
         return {
           runId: RUN_ID,
           trigger: "manual",
@@ -1503,6 +1524,10 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
       options: { method: "POST", body: { p_proposal_id: PROPOSAL_ID_3, p_actor: "user@example.com" } },
     },
     {
+      resource: "rpc/get_financial_reconciliation_automatic_run",
+      options: { method: "POST", body: { p_run_id: RUN_ID } },
+    },
+    {
       resource: "rpc/finish_financial_reconciliation_automatic_run",
       options: { method: "POST", body: { p_run_id: RUN_ID } },
     },
@@ -1517,6 +1542,46 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
     ],
   });
   assert.doesNotMatch(JSON.stringify(response.body), /secret database diagnostic/);
+});
+
+test("execute_selected leaves a transport-uncertain selected proposal resumable", async () => {
+  const calls = [];
+  let runReads = 0;
+  const response = responseRecorder();
+  const unresolvedRun = {
+    runId: RUN_ID,
+    trigger: "manual",
+    actor: "user@example.com",
+    status: "ready",
+    finishedAt: null,
+    proposals: [{ id: PROPOSAL_ID, status: "proposed" }],
+  };
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      if (resource === "rpc/get_financial_reconciliation_automatic_run") {
+        runReads += 1;
+        return unresolvedRun;
+      }
+      if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+        throw new Error("transport outcome unknown");
+      }
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID] },
+    }, response);
+  });
+
+  assert.equal(runReads, 2, "authoritative state is reloaded after the uncertain attempt");
+  assert.equal(calls.some(({ resource }) => resource === "rpc/finish_financial_reconciliation_automatic_run"), false);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    run: unresolvedRun,
+    outcomes: [{ proposalId: PROPOSAL_ID, status: "failed", reason: "execution_failed" }],
+  });
 });
 
 test("execute_selected rejects mixed, scheduled, finished, or foreign-actor runs before mutation", async () => {
@@ -1773,7 +1838,7 @@ test("automation schema migration pins the managed catalog and execution provena
   assert.match(schemaMigration, /unique \(actor, client_request_id\)/);
   assert.match(schemaMigration, /create unique index if not exists financial_reconciliation_automatic_runs_scheduled_slot_uidx[\s\S]*where scheduled_slot is not null;/);
   assert.match(schemaMigration, /status text not null default 'analyzing' check \(status in \('analyzing','ready','running','completed','partial','failed'\)\)/);
-  assert.match(schemaMigration, /status text not null default 'proposed' check \(status in \('proposed','ambiguous','deselected','executing','completed','stale','failed'\)\)/);
+  assert.match(schemaMigration, /status text not null default 'proposed',[\s\S]*financial_reconciliation_automatic_proposals_status_check[\s\S]*status in \('proposed','ambiguous','skipped','deselected','executing','completed','stale','failed'\)/);
   assert.match(schemaMigration, /unique \(run_id, rule_key, base_source_type, base_source_id, signature\)/);
   assert.match(schemaMigration, /check \(origin in \('user','automatic'\)\)/);
   assert.match(schemaMigration, /automatic_trigger text null check \(automatic_trigger in \('manual','scheduled'\)\)/);
@@ -1792,6 +1857,8 @@ test("automation schema migration pins the managed catalog and execution provena
     assert.doesNotMatch(schemaMigration, new RegExp(`grant [^;]+ on table public\\.${table} to service_role;`));
   }
   assert.match(schemaMigration, /unique \(priority\) deferrable initially deferred/);
+  assert.match(schemaMigration, /status in \('proposed','ambiguous','skipped','deselected','executing','completed','stale','failed'\)/);
+  assert.match(schemaMigration, /financial_reconciliation_automatic_proposals_status_check[\s\S]*skipped/);
 });
 
 test("automation analysis migration fixes deterministic matching, ambiguity, and RPC security contracts", () => {
@@ -1820,6 +1887,8 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
   assert.match(analysisMigration, /unaccent\(/);
   assert.match(analysisMigration, /regexp_split_to_table\([\s\S]*'\[\[:space:\]\]\+'/);
   assert.doesNotMatch(analysisMigration, /'\\\\s\+'/);
+  assert.match(analysisMigration, /financial_reconciliation_match_compact[\s\S]*unaccent\(lower\(p_value\)\)[\s\S]*'\[\^\[:alnum:\]\]'/);
+  assert.doesNotMatch(analysisMigration, /financial_reconciliation_match_compact[\s\S]{0,240}financial_reconciliation_match_normalize\(p_value\)/);
   assert.match(analysisMigration, /similarity\(normalized_document_description, normalized_bank_description\)/);
   assert.match(analysisMigration, /word_similarity\(normalized_supplier_name, normalized_bank_description\)/);
   assert.match(analysisMigration, /description_score >= 0\.60/);
@@ -1830,6 +1899,8 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
   assert.match(analysisMigration, /abs\(calculated_difference_cents\) <= tolerance_cents/);
   assert.match(analysisMigration, /candidate_limit/);
   assert.match(analysisMigration, /cross_base_overlap/);
+  assert.match(analysisMigration, /'skipped', 'no_qualifying_combination'/);
+  assert.match(analysisMigration, /'skipped', count\(\*\) filter \(where status = 'skipped'\)/);
   assert.match(analysisMigration, /jsonb_array_elements\(p\.candidate_groups\)/);
   assert.match(analysisMigration, /counts = \(select jsonb_build_object\([\s\S]*from public\.financial_reconciliation_automatic_proposals/);
   assert.match(analysisMigration, /Europe\/Lisbon/);
@@ -1874,7 +1945,7 @@ test("automation execution migration revalidates and completes each proposal ato
   assert.match(executionMigration, /(?:from|join) public\.import_cgd_extrato_ordem[\s\S]*for update/);
   assert.match(executionMigration, /for share of definition, config, source_rule/);
   assert.match(executionMigration, /if v_proposal\.status = 'completed'[\s\S]*v_proposal\.reconciliation_id/);
-  assert.match(executionMigration, /status in \('ambiguous',\s*'deselected',\s*'failed'\)/);
+  assert.match(executionMigration, /status in \('ambiguous',\s*'skipped',\s*'deselected',\s*'failed'\)/);
   assert.match(executionMigration, /financial_reconciliation_automatic_rule_candidates\(/);
   assert.match(executionMigration, /financial_reconciliation_automatic_build_combinations\(/);
   assert.match(executionMigration, /v_combination\.signature\s+is distinct from\s+v_proposal\.signature/);
@@ -1918,6 +1989,7 @@ test("automation execution migration revalidates and completes each proposal ato
   assert.match(executionMigration, /'completed', count\(\*\) filter \(where status = 'completed'\)/);
   assert.match(executionMigration, /'stale', count\(\*\) filter \(where status = 'stale'\)/);
   assert.match(executionMigration, /'failed', count\(\*\) filter \(where status = 'failed'\)/);
+  assert.match(executionMigration, /'skipped', count\(\*\) filter \(where status = 'skipped'\)/);
   assert.match(executionMigration, /status = case[\s\S]*'partial'[\s\S]*'failed'[\s\S]*'completed'/);
   assert.match(executionMigration, /finished_at = now\(\)/);
 
@@ -1952,8 +2024,8 @@ test("automatic proposals persist immutable base snapshots and expose an RPC-onl
   assert.match(schemaMigration, /create trigger financial_reconciliation_automatic_proposal_snapshot_immutable/);
 
   assert.match(analysisMigration, /'baseSnapshot', p\.base_snapshot/);
-  assert.equal((analysisMigration.match(/base_snapshot,\s*candidate_groups/g) || []).length, 2,
-    "ambiguous proposal paths must snapshot their base record");
+  assert.equal((analysisMigration.match(/base_snapshot,\s*candidate_groups/g) || []).length, 3,
+    "ambiguous and skipped proposal paths must snapshot their base record");
   assert.match(analysisMigration, /base_snapshot,\s*items,\s*evidence,\s*candidate_groups/);
   assert.equal((analysisMigration.match(/v_base\.base_snapshot/g) || []).length >= 6, true,
     "every proposal path and combination calculation must use the authoritative base snapshot");

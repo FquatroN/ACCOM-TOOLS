@@ -21961,6 +21961,7 @@ function financialReconciliationAutomationRulesMarkup(rules, pendingAction) {
 
 function financialReconciliationAutomationReasonLabel(reason) {
   const labels = {
+    no_qualifying_combination: "No qualifying destination combination",
     multiple_combinations: "Multiple qualifying combinations",
     candidate_limit: "Too many qualifying candidates",
     cross_base_overlap: "A destination record overlaps another proposal",
@@ -22049,7 +22050,7 @@ function financialReconciliationAutomationProposalMarkup(proposal, run, rules, s
 
 function financialReconciliationAutomationOutcomeCounts(run) {
   const proposals = Array.isArray(run?.proposals) ? run.proposals : [];
-  const counts = { completed: 0, stale: 0, failed: 0, ambiguous: 0, deselected: 0, attemptFailures: 0 };
+  const counts = { completed: 0, stale: 0, failed: 0, ambiguous: 0, skipped: 0, deselected: 0, attemptFailures: 0 };
   for (const proposal of proposals) {
     const status = clean(proposal?.status).toLowerCase();
     if (Object.prototype.hasOwnProperty.call(counts, status)) counts[status] += 1;
@@ -22063,7 +22064,7 @@ function financialReconciliationAutomationOutcomeCounts(run) {
 
 function financialReconciliationAutomationResultsMarkup(run) {
   const counts = financialReconciliationAutomationOutcomeCounts(run);
-  const labels = { completed: "Completed", stale: "Stale", failed: "Failed", ambiguous: "Ambiguous", deselected: "Skipped / deselected", attemptFailures: "Execution attempt failures" };
+  const labels = { completed: "Completed", stale: "Stale", failed: "Failed", ambiguous: "Ambiguous", skipped: "Skipped", deselected: "Skipped / deselected", attemptFailures: "Execution attempt failures" };
   const runSummary = run && typeof run === "object" ? `<span class="financial-reconciliation-automation-run-summary">Run ${escape(clean(run.runId) || "-")} &middot; ${escape(clean(run.status) || "unknown")} &middot; ${escape(clean(run.trigger) || "unknown")}</span>` : "";
   const outcomes = Object.entries(labels).map(([key, label]) => {
     const className = key === "attemptFailures" ? "attempt-failed" : key;
@@ -22330,6 +22331,51 @@ function financialReconciliationSummaryMarkup(status, itemCount, difference, ori
   return `<div class="financial-reconciliation-summary">${originMarkup ? `<span class="financial-reconciliation-summary-origin">${statusMarkup}${originMarkup}</span>` : statusMarkup}<strong class="financial-reconciliation-record-count">#records: ${escape(Number(itemCount) || 0)}</strong><strong class="financial-reconciliation-difference${numericDifference === 0 ? "" : " financial-reconciliation-forced-difference"}">Dif: ${escape(formatMoney(numericDifference))}</strong></div>`;
 }
 
+function financialReconciliationAutomaticAuditMarkup(entry) {
+  const metadata = entry?.metadata && typeof entry.metadata === "object" && !Array.isArray(entry.metadata)
+    ? entry.metadata
+    : null;
+  if (clean(entry?.action) !== "automatic_complete" || !metadata) return "";
+
+  const rule = metadata.ruleSnapshot && typeof metadata.ruleSnapshot === "object" ? metadata.ruleSnapshot : {};
+  const config = metadata.configSnapshot && typeof metadata.configSnapshot === "object" ? metadata.configSnapshot : {};
+  const operators = metadata.operatorSnapshot && typeof metadata.operatorSnapshot === "object" ? metadata.operatorSnapshot : {};
+  const evidence = Array.isArray(metadata.identityEvidence) ? metadata.identityEvidence : [];
+  const money = (value) => Number.isFinite(Number(value)) ? formatMoney(Number(value)) : "-";
+  const score = (value) => Number.isFinite(Number(value)) ? Number(value).toFixed(3) : "-";
+  const evidenceMarkup = evidence.map((item, index) => {
+    const values = [];
+    if (item?.documentNumber?.matched === true) {
+      values.push(`Document number ${escape(clean(item.documentNumber.normalized) || "matched")}`);
+    }
+    if (item?.description?.matched === true) {
+      values.push(`Description ${escape(score(item.description.score))} ≥ ${escape(score(item.description.threshold))}`);
+    }
+    if (item?.supplier?.matched === true) {
+      values.push(`Supplier ${escape(score(item.supplier.score))} ≥ ${escape(score(item.supplier.threshold))}`);
+    }
+    return `<li>Destination ${escape(index + 1)}: ${values.length ? values.join(" &middot; ") : "No matched identity signal recorded"}</li>`;
+  }).join("") || "<li>No identity evidence recorded.</li>";
+  const version = Number.isInteger(Number(rule.ruleVersion)) ? Number(rule.ruleVersion) : "-";
+
+  return `<details class="financial-reconciliation-automatic-audit" data-automatic-audit-evidence>
+    <summary>Automatic evidence</summary>
+    <dl>
+      <div><dt>Rule</dt><dd>${escape(clean(rule.ruleKey) || "-")} &middot; version ${escape(version)}</dd></div>
+      <div><dt>Trigger</dt><dd>${escape(clean(metadata.trigger) || "-")}</dd></div>
+      <div><dt>Run</dt><dd>${escape(clean(metadata.runId) || "-")}</dd></div>
+      <div><dt>Proposal</dt><dd>${escape(clean(metadata.proposalId) || "-")}</dd></div>
+      <div><dt>Tolerance</dt><dd>${escape(money(metadata.tolerance ?? config.differenceAllowed))}</dd></div>
+      <div><dt>Calculated difference</dt><dd>${escape(money(metadata.calculatedDifference))}</dd></div>
+      <div><dt>Maximum date difference</dt><dd>${escape(Number.isInteger(Number(config.maxDifferenceDays)) ? Number(config.maxDifferenceDays) : "-")} days</dd></div>
+      <div><dt>Priority</dt><dd>${escape(Number.isInteger(Number(config.priority)) ? Number(config.priority) : "-")}</dd></div>
+      <div><dt>CGD Bank Statement operator</dt><dd>${escape(clean(operators.import_cgd_extrato_ordem) || "-")}</dd></div>
+      <div><dt>Proposal signature</dt><dd>${escape(clean(metadata.proposalSignature) || "-")}</dd></div>
+    </dl>
+    <p>Identity evidence</p><ul>${evidenceMarkup}</ul>
+  </details>`;
+}
+
 function renderFinancialReconciliationCurrent() {
   const workspace = financialReconciliationState().workspace || normalizeFinancialReconciliationWorkspace({});
   const reconciliation = financialReconciliationActiveRecord();
@@ -22352,7 +22398,7 @@ function renderFinancialReconciliationCurrent() {
   }).join("") || "<li>No locked records.</li>";
   const audit = workspace.audit.slice(-6).map((entry) => {
     const comment = clean(entry.comment);
-    return `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}${comment ? ` · ${escape(comment)}` : ""}</span></li>`;
+    return `<li><strong>${escape(clean(entry.action).replace(/_/g, " "))}</strong><span>${escape(clean(entry.actor) || "System")} · ${escape(formatDateTimeShort(entry.created_at) || "-")}${comment ? ` · ${escape(comment)}` : ""}</span>${financialReconciliationAutomaticAuditMarkup(entry)}</li>`;
   }).join("") || "<li>No audit entries yet.</li>";
   const completionControls = complete ? `<p class="field-hint">Completed ${escape(reconciliation.completion_type || "normally")}${reconciliation.forced_completion_comment ? ` · ${escape(reconciliation.forced_completion_comment)}` : ""}</p>` : `<div class="financial-reconciliation-completion">
     <label>Completion comment <span class="field-hint">${completion.required ? "Comment is required because the difference is not zero" : "Comment is optional because the difference is zero"}</span>

@@ -20,7 +20,7 @@ returns text
 language sql
 stable strict
 as $$
-  select regexp_replace(public.financial_reconciliation_match_normalize(p_value), '[^[:alnum:]]', '', 'g')
+  select regexp_replace(unaccent(lower(p_value)), '[^[:alnum:]]', '', 'g')
 $$;
 
 create or replace function public.financial_reconciliation_automatic_build_combinations(
@@ -147,19 +147,20 @@ as $$
       d.normalized_document_description,
       d.normalized_supplier_name
     from bases d
-    join public.import_cgd_extrato_ordem b
+    left join public.import_cgd_extrato_ordem b
       on b.data between d.document_date - p_max_difference_days and d.document_date + p_max_difference_days
      and b.data >= date '2026-01-01'
      and b.montante is not null
-    where not exists (
-      select 1 from public.financial_reconciliation_items i
-      where i.source_type = 'import_cgd_extrato_ordem' and i.source_id = b.id
-    )
+     and not exists (
+       select 1 from public.financial_reconciliation_items i
+       where i.source_type = 'import_cgd_extrato_ordem' and i.source_id = b.id
+     )
   ),
   scored as (
     select q.*,
-      (char_length(q.compact_document_number) >= 4
-        and position(q.compact_document_number in public.financial_reconciliation_match_compact(q.description)) > 0) as document_number_matched,
+      coalesce(char_length(q.compact_document_number) >= 4
+        and q.source_id is not null
+        and position(q.compact_document_number in public.financial_reconciliation_match_compact(q.description)) > 0, false) as document_number_matched,
       case when nullif(q.normalized_document_description, '') is null or nullif(q.normalized_bank_description, '') is null then 0::real
         else similarity(normalized_document_description, normalized_bank_description) end as description_score,
       case when nullif(q.normalized_supplier_name, '') is null or nullif(q.normalized_bank_description, '') is null then 0::real
@@ -294,6 +295,16 @@ begin
             encode(digest('multiple:' || v_base.base_source_id::text, 'sha256'), 'hex')
           ) on conflict do nothing;
           v_ambiguous := v_ambiguous + 1;
+        else
+          insert into public.financial_reconciliation_automatic_proposals (
+            run_id, rule_key, rule_version, base_source_type, base_source_id, base_source_date,
+            base_snapshot, candidate_groups, allowed_difference, status, reason, signature
+          ) values (
+            v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer, 'financial_documents',
+            v_base.base_source_id, v_base.base_source_date, v_base.base_snapshot, v_base.candidates,
+            (v_rule->>'differenceAllowed')::numeric, 'skipped', 'no_qualifying_combination',
+            encode(digest('skipped:' || v_base.base_source_id::text, 'sha256'), 'hex')
+          ) on conflict do nothing;
         end if;
       end if;
     end loop;
@@ -338,7 +349,8 @@ begin
       counts = (select jsonb_build_object(
         'bases', count(distinct base_source_id),
         'proposed', count(*) filter (where status = 'proposed'),
-        'ambiguous', count(*) filter (where status = 'ambiguous')
+        'ambiguous', count(*) filter (where status = 'ambiguous'),
+        'skipped', count(*) filter (where status = 'skipped')
       ) from public.financial_reconciliation_automatic_proposals where run_id = v_run.id)
   where id = v_run.id;
   return public.get_financial_reconciliation_automatic_run(v_run.id);

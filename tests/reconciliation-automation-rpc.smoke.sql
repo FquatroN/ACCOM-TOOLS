@@ -414,7 +414,8 @@ declare
   v_supplier_below_score real;
 begin
   if public.financial_reconciliation_match_normalize(' Fatura Nº 12, Árvore! ') <> 'fatura 12 arvore'
-    or public.financial_reconciliation_match_compact('FT-2026/001234') <> 'ft2026001234' then
+    or public.financial_reconciliation_match_compact('FT-2026/001234') <> 'ft2026001234'
+    or public.financial_reconciliation_match_compact('AB-12') <> 'ab12' then
     raise exception 'Deterministic normalization did not preserve significant text and numeric tokens.';
   end if;
   if public.financial_reconciliation_match_normalize('a de 12') <> '12' then
@@ -433,6 +434,16 @@ begin
     'financial_documents_cgd_bank_statement', 1, 0.00, 7
   ) where base_source_id = '00000000-0000-0000-0000-000000000d01';
   if v_candidate_count <> 1 then raise exception 'Inclusive seven-day date boundary did not exclude the eighth day.'; end if;
+  insert into public.financial_documents (id, document_date, doc_number, description, supplier_name, amount, fat)
+  values ('00000000-0000-0000-0000-000000000d0a', date '2026-03-20', 'FT-1234', '', '', 25.00, 'S');
+  insert into public.import_cgd_extrato_ordem (id, import_batch, row_key, data, descritivo, montante)
+  values ('00000000-0000-0000-0000-000000000b0a', 'smoke-analysis', 'smoke-short-prefix', date '2026-03-20', 'Unrelated settlement 1234', -25.00);
+  select candidate_count into strict v_candidate_count
+  from public.financial_reconciliation_automatic_rule_candidates('financial_documents_cgd_bank_statement', 1, 0.00, 7)
+  where base_source_id = '00000000-0000-0000-0000-000000000d0a';
+  if v_candidate_count <> 0 then
+    raise exception 'Document-number matching discarded a short alphabetic prefix.';
+  end if;
   insert into public.financial_documents (id, document_date, doc_number, description, supplier_name, amount, fat) values
     ('00000000-0000-0000-0000-000000000d03', date '2026-05-01', '', 'abcdefg', '', 10.00, 'S'),
     ('00000000-0000-0000-0000-000000000d04', date '2026-06-01', '', 'abcdefg', '', 10.00, 'S'),
@@ -514,10 +525,20 @@ begin
     -- Cross-base overlap did not mark every affected proposal ambiguous
     raise exception 'Cross-base overlap did not mark every affected proposal ambiguous.';
   end if;
+  if not exists (
+    select 1 from public.financial_reconciliation_automatic_proposals
+    where run_id = v_overlap_run
+      and base_source_id = '00000000-0000-0000-0000-000000000d04'
+      and status = 'skipped'
+      and reason = 'no_qualifying_combination'
+  ) then
+    raise exception 'A base without a qualifying combination was not persisted as skipped.';
+  end if;
   select jsonb_build_object(
     'bases', count(distinct base_source_id),
     'proposed', count(*) filter (where status = 'proposed'),
-    'ambiguous', count(*) filter (where status = 'ambiguous')
+    'ambiguous', count(*) filter (where status = 'ambiguous'),
+    'skipped', count(*) filter (where status = 'skipped')
   ) into v_expected_counts from public.financial_reconciliation_automatic_proposals where run_id = v_overlap_run;
   if v_overlap_result->'counts' <> v_expected_counts then
     raise exception 'Persisted proposal counters were not recomputed after overlap ambiguity.';
