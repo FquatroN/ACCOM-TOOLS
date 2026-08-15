@@ -32,6 +32,12 @@ const ANALYSIS_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-14-financial-reconciliation-automation-analysis.sql",
 );
+const ANALYSIS_PERFORMANCE_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-15-financial-reconciliation-automation-analysis-performance.sql",
+);
 const EXECUTION_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -1932,6 +1938,33 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
   assert.match(analysisMigration, /grant execute on function public\.financial_reconciliation_match_compact\(text\) to service_role;/);
   assert.match(analysisMigration, /grant execute on function public\.get_financial_reconciliation_automatic_run\(uuid\) to service_role;/);
   assert.doesNotMatch(analysisMigration, /grant execute on function public\.[^;]+ to (?:anon|authenticated);/);
+});
+
+test("automation performance migration materializes matching work without changing rule semantics", () => {
+  assert.equal(
+    fs.existsSync(ANALYSIS_PERFORMANCE_MIGRATION_PATH),
+    true,
+    "automation analysis performance migration must exist",
+  );
+  const migration = fs.readFileSync(ANALYSIS_PERFORMANCE_MIGRATION_PATH, "utf8");
+
+  assert.match(migration, /create index[^;]+financial_documents[^;]+\(document_date\)/i);
+  assert.match(migration, /create index[^;]+import_cgd_extrato_ordem[^;]+\(data\)/i);
+  assert.match(migration, /create or replace function public\.financial_reconciliation_automatic_rule_candidates\(/);
+  for (const stage of ["bases", "bank_rows", "qualified", "scored"]) {
+    assert.match(migration, new RegExp(`${stage}\\s+as\\s+materialized`, "i"));
+  }
+  assert.match(migration, /b\.data between d\.document_date - p_max_difference_days and d\.document_date \+ p_max_difference_days/);
+  assert.match(migration, /d\.document_date >= date '2026-01-01'/);
+  assert.match(migration, /b\.data >= date '2026-01-01'/);
+  assert.match(migration, /description_score >= 0\.60/);
+  assert.match(migration, /supplier_score >= 0\.70/);
+  assert.match(migration, /order by base_date, base_id/);
+  assert.match(migration, /security definer set search_path = public, pg_temp/);
+  assert.match(migration, /revoke all on function public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\) from public, anon, authenticated;/);
+  assert.match(migration, /grant execute on function public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\) to service_role;/);
+  assert.match(migration, /notify pgrst, 'reload schema';/);
+  assert.doesNotMatch(migration, /statement_timeout/i);
 });
 
 test("automation execution migration revalidates and completes each proposal atomically", () => {
