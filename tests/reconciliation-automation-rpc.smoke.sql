@@ -4,6 +4,7 @@ begin;
 
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
+\ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 
 -- definition/config preservation
@@ -29,7 +30,42 @@ where id = true;
 
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
+\ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
+
+-- optimized analysis definition and privileges
+do $$
+declare
+  v_candidate_definition text;
+begin
+  select pg_get_functiondef('public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)'::regprocedure)
+  into strict v_candidate_definition;
+
+  if v_candidate_definition !~* 'bases\s+as\s+materialized'
+    or v_candidate_definition !~* 'bank_rows\s+as\s+materialized'
+    or v_candidate_definition !~* 'qualified\s+as\s+materialized'
+    or v_candidate_definition !~* 'scored\s+as\s+materialized' then
+    raise exception 'Optimized automatic candidate stages were not installed.';
+  end if;
+
+  if has_function_privilege(
+      'anon',
+      'public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)',
+      'EXECUTE'
+    )
+    or has_function_privilege(
+      'authenticated',
+      'public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)',
+      'EXECUTE'
+    )
+    or not has_function_privilege(
+      'service_role',
+      'public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)',
+      'EXECUTE'
+    ) then
+    raise exception 'Optimized automatic candidate privileges are invalid.';
+  end if;
+end $$;
 
 do $$
 declare

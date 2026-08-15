@@ -2139,7 +2139,22 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
   assert.match(smokeSql, /^begin;/m);
   assert.match(smokeSql, /\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-schema\.sql/g);
   assert.equal((smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-schema\.sql/g) || []).length, 2);
+  assert.match(
+    smokeSql,
+    /2026-08-14-financial-reconciliation-automation-analysis\.sql[\s\S]*2026-08-15-financial-reconciliation-automation-analysis-performance\.sql/,
+  );
+  assert.equal(
+    (smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-15-financial-reconciliation-automation-analysis-performance\.sql/g) || []).length,
+    2,
+  );
   assert.equal((smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-execution\.sql/g) || []).length, 2);
+  assert.match(
+    smokeSql,
+    /pg_get_functiondef\('public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\)'::regprocedure\)/,
+  );
+  for (const stage of ["bases", "bank_rows", "qualified", "scored"]) {
+    assert.match(smokeSql, new RegExp(`${stage}\\\\s\\+as\\\\s\\+materialized`, "i"));
+  }
   for (const contract of [
     "definition/config preservation",
     "RLS and privileges",
