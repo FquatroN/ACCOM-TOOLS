@@ -17,6 +17,15 @@ const SAFE_RUN_STATUSES = new Set([
   "partial",
   "failed",
 ]);
+const PROPOSAL_STATUSES = new Set([
+  "proposed",
+  "ambiguous",
+  "deselected",
+  "executing",
+  "completed",
+  "stale",
+  "failed",
+]);
 const COUNT_STATUSES = [
   "proposed",
   "ambiguous",
@@ -31,15 +40,64 @@ function text(value) {
   return typeof value === "string" ? value : "";
 }
 
-function requireScheduledRun(value) {
+function headerValue(headers, name) {
+  if (!headers || typeof headers !== "object") return "";
+  const matchedKey = Object.keys(headers).find((key) => key.toLowerCase() === name);
+  return matchedKey === undefined ? "" : text(headers[matchedKey]);
+}
+
+function hasCronBearer(req, cronSecret) {
+  return typeof cronSecret === "string"
+    && cronSecret !== ""
+    && headerValue(req?.headers, "authorization") === `Bearer ${cronSecret}`;
+}
+
+function compareText(left, right) {
+  const leftText = text(left);
+  const rightText = text(right);
+  return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+}
+
+function requireScheduledRun(value, expectedRunId = "") {
   const run = toAutomationPublicResult(value);
   if (!run || typeof run !== "object" || Array.isArray(run)
     || !UUID_PATTERN.test(text(run.runId))
+    || (expectedRunId && run.runId !== expectedRunId)
     || run.trigger !== "scheduled"
     || run.scope !== "batch"
+    || run.actor !== SCHEDULE_ACTOR
     || !Array.isArray(run.definitions)
     || !Array.isArray(run.proposals)) {
     throw new Error("Scheduled reconciliation run response is invalid.");
+  }
+
+  const ruleKeys = new Set();
+  const priorities = new Set();
+  for (const definition of run.definitions) {
+    const ruleKey = text(definition?.ruleKey);
+    const priority = Number(definition?.priority);
+    if (!ruleKey || !Number.isSafeInteger(priority) || priority < 1
+      || ruleKeys.has(ruleKey) || priorities.has(priority)) {
+      throw new Error("Scheduled reconciliation rule snapshot is invalid.");
+    }
+    ruleKeys.add(ruleKey);
+    priorities.add(priority);
+  }
+  if (ruleKeys.size === 0) throw new Error("Scheduled reconciliation rule snapshot is empty.");
+
+  const proposalIds = new Set();
+  for (const proposal of run.proposals) {
+    if (!proposal || typeof proposal !== "object" || Array.isArray(proposal)
+      || !UUID_PATTERN.test(text(proposal.id))
+      || proposal.runId !== run.runId
+      || !ruleKeys.has(proposal.ruleKey)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(text(proposal.baseSourceDate))
+      || !UUID_PATTERN.test(text(proposal.baseSourceId))
+      || !PROPOSAL_STATUSES.has(proposal.status)
+      || proposalIds.has(proposal.id)) {
+      throw new Error("Scheduled reconciliation proposal response is invalid.");
+    }
+    proposalIds.add(proposal.id);
   }
   return run;
 }
@@ -59,10 +117,10 @@ function stablePendingProposals(run) {
       const leftPriority = priorities.get(left.ruleKey) ?? Number.MAX_SAFE_INTEGER;
       const rightPriority = priorities.get(right.ruleKey) ?? Number.MAX_SAFE_INTEGER;
       return leftPriority - rightPriority
-        || text(left.ruleKey).localeCompare(text(right.ruleKey))
-        || text(left.baseSourceDate).localeCompare(text(right.baseSourceDate))
-        || text(left.baseSourceId).localeCompare(text(right.baseSourceId))
-        || text(left.id).localeCompare(text(right.id));
+        || compareText(left.baseSourceDate, right.baseSourceDate)
+        || compareText(left.baseSourceId, right.baseSourceId)
+        || compareText(left.id, right.id)
+        || compareText(left.ruleKey, right.ruleKey);
     });
 }
 
@@ -94,12 +152,13 @@ function publicRunResponse(claim, run, attemptedCount, hasMore) {
 }
 
 module.exports = async function handler(req, res) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!isCronRequest(req, cronSecret) || !hasCronBearer(req, cronSecret)) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
   if (req.method !== "GET" && req.method !== "POST") {
     res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ error: "Method not allowed." });
-  }
-  if (!isCronRequest(req, process.env.CRON_SECRET)) {
-    return res.status(401).json({ error: "Unauthorized." });
   }
 
   try {
@@ -123,6 +182,7 @@ module.exports = async function handler(req, res) {
     }
 
     let run = requireScheduledRun(claim.run);
+    const claimedRunId = run.runId;
     if (run.finishedAt) {
       return res.status(200).json(publicRunResponse(claim, run, 0, false));
     }
@@ -130,7 +190,7 @@ module.exports = async function handler(req, res) {
       run = requireScheduledRun(await restQuery(
         "rpc/populate_financial_reconciliation_automatic_run",
         { method: "POST", body: { p_run_id: run.runId } },
-      ));
+      ), claimedRunId);
     }
 
     const selected = stablePendingProposals(run).slice(0, MAX_PROPOSALS_PER_HEARTBEAT);
@@ -149,14 +209,14 @@ module.exports = async function handler(req, res) {
       run = requireScheduledRun(await restQuery(
         "rpc/get_financial_reconciliation_automatic_run",
         { method: "POST", body: { p_run_id: run.runId } },
-      ));
+      ), claimedRunId);
     }
     let hasMore = hasMoreWork(run);
     if (!hasMore && !run.finishedAt) {
       run = requireScheduledRun(await restQuery(
         "rpc/finish_financial_reconciliation_automatic_run",
         { method: "POST", body: { p_run_id: run.runId } },
-      ));
+      ), claimedRunId);
       hasMore = hasMoreWork(run);
     }
 

@@ -92,8 +92,9 @@ In Vercel project settings -> Environment Variables, add:
 
 `SUPABASE_SERVICE_ROLE_KEY` is used only server-side by `/api/communications`.
 Automatic email delivery is executed by `/api/email-automation` via Vercel Cron.
-Automatic reconciliation heartbeats are authenticated with `CRON_SECRET` (or
-Vercel's signed cron header) and never expose the secret to browser code.
+Vercel sends `CRON_SECRET` as `Authorization: Bearer <CRON_SECRET>` for each
+automatic reconciliation heartbeat. The endpoint requires that exact value and
+never exposes the secret to browser code.
 The Reconciliation workbench calls the server-side `/api/reconciliation` route;
 it is available to users with the `financial-reconciliation` app feature.
 

@@ -128,7 +128,7 @@ function uuidFor(value) {
 }
 
 function scheduledRun(overrides = {}) {
-  return {
+  const run = {
     runId: RUN_ID,
     trigger: "scheduled",
     scope: "batch",
@@ -140,6 +140,8 @@ function scheduledRun(overrides = {}) {
     proposals: [],
     ...overrides,
   };
+  run.proposals = run.proposals.map((proposal) => ({ runId: run.runId, ...proposal }));
+  return run;
 }
 
 function mockedSupabase(overrides = {}) {
@@ -328,6 +330,25 @@ test("scheduled heartbeat accepts only protected GET and POST requests before an
       assert.equal(rpcCalled, false, method);
     }
 
+    for (const request of [
+      { method: "GET", headers: { "x-vercel-cron": "1" } },
+      { method: "DELETE", headers: {} },
+    ]) {
+      let rpcCalled = false;
+      const response = responseRecorder();
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async () => {
+          rpcCalled = true;
+          return {};
+        },
+      }), async (handler) => {
+        await handler(request, response);
+      });
+      assert.equal(response.statusCode, 401, `${request.method} must authenticate first`);
+      assert.deepEqual(response.body, { error: "Unauthorized." });
+      assert.equal(rpcCalled, false);
+    }
+
     let methodRpcCalled = false;
     const methodResponse = responseRecorder();
     await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
@@ -336,7 +357,7 @@ test("scheduled heartbeat accepts only protected GET and POST requests before an
         return {};
       },
     }), async (handler) => {
-      await handler({ method: "DELETE", headers: { "x-vercel-cron": "1" } }, methodResponse);
+      await handler({ method: "DELETE", headers: { authorization: `Bearer ${CRON_SECRET}` } }, methodResponse);
     });
     assert.equal(methodResponse.statusCode, 405);
     assert.equal(methodResponse.headers.Allow, "GET, POST");
@@ -361,7 +382,7 @@ test("scheduled heartbeat returns safe database reasons when disabled or not due
           return { claimed: false, reason, diagnostic: "hidden schedule state" };
         },
       }), async (handler) => {
-        await handler({ method: "GET", headers: { "x-vercel-cron": "1" } }, response);
+        await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
       });
     });
 
@@ -491,6 +512,90 @@ test("first scheduled claim populates analysis and executes proposals in stable 
   assert.doesNotMatch(JSON.stringify(response.body), /hidden|diagnostic|error_detail|internal_error/);
 });
 
+test("scheduled heartbeat rejects foreign-run or unknown-rule proposals before execution", async () => {
+  const cases = [
+    ["foreign run", {
+      id: uuidFor(20),
+      runId: uuidFor(900),
+      ruleKey: AUTOMATIC_RULE_KEY,
+      baseSourceDate: "2026-08-01",
+      baseSourceId: uuidFor(120),
+      status: "proposed",
+    }],
+    ["unknown rule", {
+      id: uuidFor(21),
+      runId: RUN_ID,
+      ruleKey: "unknown_rule",
+      baseSourceDate: "2026-08-01",
+      baseSourceId: uuidFor(121),
+      status: "proposed",
+    }],
+  ];
+
+  for (const [name, proposal] of cases) {
+    let executionCalled = false;
+    const response = responseRecorder();
+    const run = scheduledRun({ proposals: [proposal] });
+    await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async (resource) => {
+          if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+            return { claimed: true, resumed: true, run };
+          }
+          if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") executionCalled = true;
+          return run;
+        },
+      }), async (handler) => {
+        await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+      });
+    });
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+    assert.equal(executionCalled, false, name);
+  }
+});
+
+test("scheduled heartbeat preserves the claimed run identity across every follow-up RPC", async () => {
+  const otherRun = scheduledRun({
+    runId: uuidFor(901),
+    status: "completed",
+    finishedAt: "2026-08-15T02:00:10.000Z",
+  });
+  const cases = [
+    ["populate", scheduledRun({ status: "analyzing", analysisCompletedAt: null }), "rpc/populate_financial_reconciliation_automatic_run"],
+    ["refresh", scheduledRun({ proposals: [{
+      id: uuidFor(22),
+      ruleKey: AUTOMATIC_RULE_KEY,
+      baseSourceDate: "2026-08-01",
+      baseSourceId: uuidFor(122),
+      status: "proposed",
+    }] }), "rpc/get_financial_reconciliation_automatic_run"],
+    ["finalize", scheduledRun(), "rpc/finish_financial_reconciliation_automatic_run"],
+  ];
+
+  for (const [name, claimedRun, driftingRpc] of cases) {
+    const response = responseRecorder();
+    await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async (resource, options) => {
+          if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+            return { claimed: true, resumed: true, run: claimedRun };
+          }
+          if (resource === driftingRpc) return otherRun;
+          if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+            return { proposalId: options.body.p_proposal_id, status: "completed" };
+          }
+          throw new Error(`Unexpected RPC ${resource}`);
+        },
+      }), async (handler) => {
+        await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+      });
+    });
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+  }
+});
+
 test("scheduled heartbeat caps sequential proposal attempts at 25 and leaves the run resumable", async () => {
   const proposals = Array.from({ length: 27 }, (_, index) => ({
     id: uuidFor(200 + index),
@@ -539,7 +644,7 @@ test("scheduled heartbeat caps sequential proposal attempts at 25 and leaves the
         throw new Error(`Unexpected RPC ${resource}`);
       },
     }), async (handler) => {
-      await handler({ method: "GET", headers: { "x-vercel-cron": "1" } }, response);
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
     });
   });
 
@@ -629,11 +734,11 @@ test("scheduled heartbeat continues after an isolated failure and finalizes only
     },
   }), async (handler) => {
     await withCronEnvironment("2026-08-15T02:01:00.000Z", async () => {
-      await handler({ method: "POST", headers: { "x-vercel-cron": "1" } }, firstResponse);
+      await handler({ method: "POST", headers: { authorization: `Bearer ${CRON_SECRET}` } }, firstResponse);
     });
     heartbeat += 1;
     await withCronEnvironment("2026-08-15T02:02:00.000Z", async () => {
-      await handler({ method: "POST", headers: { "x-vercel-cron": "1" } }, secondResponse);
+      await handler({ method: "POST", headers: { authorization: `Bearer ${CRON_SECRET}` } }, secondResponse);
     });
   });
 
@@ -680,10 +785,10 @@ test("scheduled heartbeat delegates Lisbon DST slot identity to the database cla
     },
   }), async (handler) => {
     await withCronEnvironment("2026-03-29T00:30:00.000Z", async () => {
-      await handler({ method: "GET", headers: { "x-vercel-cron": "1" } }, firstResponse);
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, firstResponse);
     });
     await withCronEnvironment("2026-03-29T01:30:00.000Z", async () => {
-      await handler({ method: "POST", headers: { "x-vercel-cron": "1" } }, secondResponse);
+      await handler({ method: "POST", headers: { authorization: `Bearer ${CRON_SECRET}` } }, secondResponse);
     });
   });
 
@@ -722,7 +827,7 @@ test("scheduled heartbeat never exposes unexpected database diagnostics", async 
         throw error;
       },
     }), async (handler) => {
-      await handler({ method: "GET", headers: { "x-vercel-cron": "1" } }, response);
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
     });
   });
   assert.equal(response.statusCode, 500);
@@ -751,6 +856,8 @@ test("deployment config and README describe the protected reconciliation heartbe
     previousIndex = migrationIndex;
   }
   assert.match(readme, /CRON_SECRET/);
+  assert.match(readme, /Authorization[^\n]*Bearer|Bearer[^\n]*Authorization/i);
+  assert.doesNotMatch(readme, /signed cron header|x-vercel-cron/i);
   assert.match(readme, /every minute/i);
   assert.match(readme, /once[^\n]*daily[^\n]*Europe\/Lisbon|Europe\/Lisbon[^\n]*once[^\n]*daily/i);
   assert.match(readme, /disabled by default/i);
