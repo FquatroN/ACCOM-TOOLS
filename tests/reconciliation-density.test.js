@@ -971,6 +971,43 @@ test("manual reconciliation selects do not schedule a duplicate delayed reload",
   assert.equal(scheduled, 1);
 });
 
+test("manual reconciliation renders declared LOVs as selects in the dynamic filter row", () => {
+  const current = {
+    workspace: {
+      sourceConfig: {
+        filterFields: ["payment", "category", "supplier"],
+        filterOptions: { payment: ["Visa"], category: [] },
+      },
+    },
+    filters: {},
+  };
+  const els = { financialReconciliationDynamicFilters: { innerHTML: "" } };
+  const renderFinancialReconciliationFilters = new Function(
+    "financialReconciliationState",
+    "els",
+    "document",
+    `${appFunctionSource("clean")}
+     ${appFunctionSource("escape")}
+     ${appFunctionSource("currentFinancialReconciliationFilters")}
+     ${appFunctionSource("financialReconciliationFilterOptions")}
+     ${appFunctionSource("financialReconciliationFilterFieldMarkup")}
+     ${appFunctionSource("renderFinancialReconciliationFilters")}
+     return renderFinancialReconciliationFilters;`,
+  )(
+    () => current,
+    els,
+    { querySelectorAll: () => [] },
+  );
+
+  renderFinancialReconciliationFilters();
+
+  const markup = els.financialReconciliationDynamicFilters.innerHTML;
+  assert.match(markup, /financial-reconciliation-filter-payment">Payment<select data-financial-reconciliation-filter="payment"><option value="">All payments<\/option><option value="Visa">Visa<\/option><\/select>/);
+  assert.match(markup, /financial-reconciliation-filter-category">Category<select data-financial-reconciliation-filter="category"><option value="">All categories<\/option><\/select>/);
+  assert.match(markup, /financial-reconciliation-filter-supplier">Supplier Search<input type="search"/);
+  assert.doesNotMatch(markup, /financial-reconciliation-filter-supplier">Supplier Search<select/);
+});
+
 test("reconciliation item details order date supplier and description", () => {
   assert.equal(
     financialReconciliationItemDetails({ source_date: "2026-08-10T09:30:00Z", supplier: "Acme Supplies", description: "August invoice" }),
