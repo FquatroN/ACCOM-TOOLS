@@ -24,6 +24,14 @@ function appFunctionSource(name) {
   throw new Error(`Could not extract ${name} from app-main.js`);
 }
 
+function appConstantSource(name) {
+  const start = appMain.indexOf(`const ${name} = `);
+  assert.notEqual(start, -1, `${name} should be defined in app-main.js`);
+  const end = appMain.indexOf("function ", start);
+  assert.notEqual(end, -1, `${name} should end before a function declaration`);
+  return appMain.slice(start, end);
+}
+
 const financialReconciliationItemDetails = new Function(`${appFunctionSource("clean")}\n${appFunctionSource("formatDateOnly")}\n${appFunctionSource("financialReconciliationItemDetails")}\nreturn financialReconciliationItemDetails;`)();
 const financialReconciliationSummaryMarkup = new Function(
   "financialReconciliationStatusMarkup",
@@ -824,6 +832,143 @@ test("origin presentation is backward compatible and distinguishes automatic tri
 
 test("reconciliation item details omit empty fields", () => {
   assert.equal(financialReconciliationItemDetails({ source_date: "", supplier: " ", description: "" }), "");
+});
+
+test("manual reconciliation renders source LOVs and escapes every option", () => {
+  const financialReconciliationFilterFieldMarkup = new Function(
+    "clean",
+    "escape",
+    `${appFunctionSource("financialReconciliationFilterFieldMarkup")}\nreturn financialReconciliationFilterFieldMarkup;`,
+  )(
+    (value) => String(value ?? "").trim(),
+    (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"),
+  );
+  const markup = financialReconciliationFilterFieldMarkup(
+    "payment",
+    "Visa",
+    ["Banco", "Visa", '<script data-x="1">'],
+  );
+  assert.match(markup, /^<label class="financial-reconciliation-filter-payment">Payment<select/);
+  assert.match(markup, /<option value="">All payments<\/option>/);
+  assert.match(markup, /<option value="Visa" selected>Visa<\/option>/);
+  assert.match(markup, /&lt;script data-x=&quot;1&quot;&gt;/);
+  assert.doesNotMatch(markup, /<script/);
+
+  for (const [field, allLabel] of [
+    ["payment", "All payments"],
+    ["category", "All categories"],
+    ["account", "All accounts"],
+  ]) {
+    assert.match(
+      financialReconciliationFilterFieldMarkup(field, "", []),
+      new RegExp(`<option value="">${allLabel}<\\/option>`),
+    );
+  }
+});
+
+test("manual reconciliation keeps supplier as a labeled search input without source options", () => {
+  const financialReconciliationFilterFieldMarkup = new Function(
+    "clean",
+    "escape",
+    `${appFunctionSource("financialReconciliationFilterFieldMarkup")}\nreturn financialReconciliationFilterFieldMarkup;`,
+  )(
+    (value) => String(value ?? "").trim(),
+    (value) => String(value),
+  );
+  const markup = financialReconciliationFilterFieldMarkup("supplier", "Acme");
+  assert.match(markup, /^<label class="financial-reconciliation-filter-supplier">Supplier Search<input type="search"/);
+  assert.doesNotMatch(markup, /<select/);
+});
+
+test("manual reconciliation normalizes source filter options without resorting them", () => {
+  const financialReconciliationFilterOptions = new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationFilterOptions")}\nreturn financialReconciliationFilterOptions;`,
+  )((value) => String(value ?? "").trim());
+
+  assert.deepEqual(financialReconciliationFilterOptions({
+    sourceConfig: {
+      filterOptions: {
+        payment: [" Visa ", "", "Visa", null, "Banco"],
+        category: "not-an-array",
+      },
+    },
+  }), { payment: ["Visa", "Banco"] });
+  assert.deepEqual(financialReconciliationFilterOptions({ sourceConfig: {} }), {});
+});
+
+test("manual reconciliation request filters omit stale Financial Documents accounts and retain FDM fields", () => {
+  const state = {
+    workspace: { sourceConfig: {} },
+    filters: {
+      dateFrom: "2026-01-01",
+      dateTo: "",
+      amountMin: "",
+      amountMax: "",
+      description: "",
+      supplier: "",
+      payment: "Visa",
+      account: "stale-account",
+      category: "Food",
+    },
+  };
+  const requestFilters = new Function(
+    "financialReconciliationState",
+    "clean",
+    "currentFinancialReconciliationFilters",
+    `${appConstantSource("FINANCIAL_RECONCILIATION_FILTER_FIELDS")}
+     ${appFunctionSource("financialReconciliationRequestFilters")}
+     return financialReconciliationRequestFilters;`,
+  )(
+    () => state,
+    (value) => String(value ?? "").trim(),
+    () => state.filters,
+  );
+
+  assert.deepEqual(requestFilters("financial_documents"), {
+    dateFrom: "2026-01-01",
+    dateTo: "",
+    amountMin: "",
+    amountMax: "",
+    description: "",
+    supplier: "",
+    payment: "Visa",
+    category: "Food",
+  });
+  assert.deepEqual(requestFilters("import_fdm_accounts"), {
+    dateFrom: "2026-01-01",
+    dateTo: "",
+    amountMin: "",
+    amountMax: "",
+    description: "",
+    account: "stale-account",
+    category: "Food",
+  });
+});
+
+test("manual reconciliation selects do not schedule a duplicate delayed reload", () => {
+  let scheduled = 0;
+  const onFinancialReconciliationFilterInput = new Function(
+    "window",
+    "clean",
+    "onFinancialReconciliationFilterChange",
+    `let financialReconciliationFilterTimer = 0;\n${appFunctionSource("onFinancialReconciliationFilterInput")}\nreturn onFinancialReconciliationFilterInput;`,
+  )(
+    {
+      clearTimeout: () => {},
+      setTimeout: () => {
+        scheduled += 1;
+        return scheduled;
+      },
+    },
+    (value) => String(value ?? "").trim(),
+    () => {},
+  );
+
+  onFinancialReconciliationFilterInput({ target: { tagName: "SELECT" } });
+  assert.equal(scheduled, 0);
+  onFinancialReconciliationFilterInput({ target: { tagName: "INPUT" } });
+  assert.equal(scheduled, 1);
 });
 
 test("reconciliation item details order date supplier and description", () => {

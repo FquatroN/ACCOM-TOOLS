@@ -21256,7 +21256,7 @@ const FINANCIAL_RECONCILIATION_SOURCES = Object.freeze({
 });
 
 const FINANCIAL_RECONCILIATION_FILTER_FIELDS = Object.freeze({
-  financial_documents: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "supplier", "payment", "account", "category"],
+  financial_documents: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "supplier", "payment", "category"],
   import_fdm_accounts: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "account", "category"],
   import_cgd_cartao_credito: ["dateFrom", "dateTo", "amountMin", "amountMax", "description"],
   import_cgd_extrato_ordem: ["dateFrom", "dateTo", "amountMin", "amountMax", "description"],
@@ -21885,6 +21885,23 @@ function normalizeFinancialReconciliationWorkspace(result) {
   };
 }
 
+function financialReconciliationFilterOptions(workspace) {
+  const raw = workspace?.sourceConfig?.filterOptions;
+  if (!raw || Array.isArray(raw) || typeof raw !== "object") return {};
+  return Object.fromEntries(Object.entries(raw).flatMap(([field, values]) => {
+    if (!Array.isArray(values)) return [];
+    const seen = new Set();
+    const normalized = values.reduce((result, value) => {
+      const option = clean(value);
+      if (!option || seen.has(option)) return result;
+      seen.add(option);
+      result.push(option);
+      return result;
+    }, []);
+    return [[field, normalized]];
+  }));
+}
+
 function setFinancialReconciliationStatus(message = "", tone = "") {
   if (!els.financialReconciliationStatus) return;
   els.financialReconciliationStatus.textContent = message;
@@ -22301,6 +22318,35 @@ function renderFinancialReconciliationSourceControls() {
   }
 }
 
+function financialReconciliationFilterFieldMarkup(field, value, optionValues = null) {
+  const labels = {
+    dateFrom: "Date from", dateTo: "Date to", amountMin: "Amount from",
+    amountMax: "Amount to", description: "Description", supplier: "Supplier Search",
+    payment: "Payment", account: "Account", category: "Category",
+  };
+  const label = labels[field] || field;
+  const normalizedValue = clean(value);
+  if (Array.isArray(optionValues)) {
+    const allLabels = { payment: "All payments", account: "All accounts", category: "All categories" };
+    const options = [
+      `<option value="">${escape(allLabels[field] || "All")}</option>`,
+      ...optionValues.map((option) => {
+        const selected = option === normalizedValue ? " selected" : "";
+        return `<option value="${escape(option)}"${selected}>${escape(option)}</option>`;
+      }),
+    ];
+    return `<label class="financial-reconciliation-filter-${escape(field)}">${escape(label)}<select data-financial-reconciliation-filter="${escape(field)}">${options.join("")}</select></label>`;
+  }
+  const isDate = field === "dateFrom" || field === "dateTo";
+  const isAmount = field === "amountMin" || field === "amountMax";
+  const type = isDate ? "date" : isAmount ? "number" : "search";
+  const min = isDate ? ' min="2026-01-01"' : "";
+  const step = isAmount ? ' step="0.01"' : "";
+  const placeholder = field === "description" ? ' placeholder="Search description"' : "";
+  const renderedValue = field === "dateFrom" ? (normalizedValue || "2026-01-01") : normalizedValue;
+  return `<label class="financial-reconciliation-filter-${escape(field)}">${escape(label)}<input type="${type}" data-financial-reconciliation-filter="${escape(field)}" value="${escape(renderedValue)}"${min}${step}${placeholder} /></label>`;
+}
+
 function renderFinancialReconciliationFilters() {
   const current = financialReconciliationState();
   const workspace = current.workspace || normalizeFinancialReconciliationWorkspace({});
@@ -22308,16 +22354,14 @@ function renderFinancialReconciliationFilters() {
   const filterFields = Array.isArray(workspace.sourceConfig?.filterFields)
     ? workspace.sourceConfig.filterFields
     : (Array.isArray(workspace.filterFields) ? workspace.filterFields : ["dateFrom", "dateTo", "amountMin", "amountMax", "description"]);
-  const labels = { dateFrom: "Date from", dateTo: "Date to", amountMin: "Amount from", amountMax: "Amount to", description: "Description", supplier: "Supplier", payment: "Payment", account: "Account", category: "Category" };
+  const filterOptions = financialReconciliationFilterOptions(workspace);
   const fieldMarkup = filterFields.map((field) => {
-    const value = clean(filters[field]);
-    const isDate = field === "dateFrom" || field === "dateTo";
-    const isAmount = field === "amountMin" || field === "amountMax";
-    const type = isDate ? "date" : isAmount ? "number" : (field === "description" ? "search" : "search");
-    const min = isDate ? ' min="2026-01-01"' : "";
-    const step = isAmount ? ' step="0.01"' : "";
-    const placeholder = field === "description" ? ' placeholder="Search description"' : "";
-    return `<label class="financial-reconciliation-filter-${escape(field)}">${escape(labels[field] || field)}<input type="${type}" data-financial-reconciliation-filter="${escape(field)}" value="${escape(field === "dateFrom" ? (value || "2026-01-01") : value)}"${min}${step}${placeholder} /></label>`;
+    const hasOptions = Object.prototype.hasOwnProperty.call(filterOptions, field);
+    return financialReconciliationFilterFieldMarkup(
+      field,
+      filters[field],
+      hasOptions ? filterOptions[field] : null,
+    );
   }).join("");
   if (els.financialReconciliationDynamicFilters) els.financialReconciliationDynamicFilters.innerHTML = fieldMarkup;
 }
@@ -22557,7 +22601,8 @@ function onFinancialReconciliationFilterChange() {
   loadFinancialReconciliationWorkspace({ silent: true });
 }
 
-function onFinancialReconciliationFilterInput() {
+function onFinancialReconciliationFilterInput(event) {
+  if (clean(event?.target?.tagName).toLowerCase() === "select") return;
   window.clearTimeout(financialReconciliationFilterTimer);
   financialReconciliationFilterTimer = window.setTimeout(onFinancialReconciliationFilterChange, 250);
 }
