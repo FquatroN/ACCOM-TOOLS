@@ -5,6 +5,7 @@ begin;
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql
+\ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 
 -- definition/config preservation
@@ -31,6 +32,7 @@ where id = true;
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql
+\ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 
 -- optimized analysis definition and privileges
@@ -42,10 +44,14 @@ begin
   into strict v_candidate_definition;
 
   if v_candidate_definition !~* 'bases\s+as\s+materialized'
-    or v_candidate_definition !~* 'bank_rows\s+as\s+materialized'
     or v_candidate_definition !~* 'qualified\s+as\s+materialized'
-    or v_candidate_definition !~* 'scored\s+as\s+materialized' then
+    or v_candidate_definition !~* 'scored\s+as\s+materialized'
+    or v_candidate_definition !~* 'left join lateral\s+\([\s\S]+from public\.import_cgd_extrato_ordem bank' then
     raise exception 'Optimized automatic candidate stages were not installed.';
+  end if;
+
+  if v_candidate_definition ~* 'bank_rows\s+as\s+materialized' then
+    raise exception 'Bank candidate rows must remain index-driven.';
   end if;
 
   if has_function_privilege(

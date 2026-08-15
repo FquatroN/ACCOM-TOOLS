@@ -38,6 +38,12 @@ const ANALYSIS_PERFORMANCE_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-15-financial-reconciliation-automation-analysis-performance.sql",
 );
+const ANALYSIS_INDEX_LOOKUP_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql",
+);
 const EXECUTION_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -1967,6 +1973,26 @@ test("automation performance migration materializes matching work without changi
   assert.doesNotMatch(migration, /statement_timeout/i);
 });
 
+test("automation candidate lookup keeps the bank date index available for every base record", () => {
+  assert.equal(
+    fs.existsSync(ANALYSIS_INDEX_LOOKUP_MIGRATION_PATH),
+    true,
+    "automation analysis index-lookup migration must exist",
+  );
+  const migration = fs.readFileSync(ANALYSIS_INDEX_LOOKUP_MIGRATION_PATH, "utf8");
+
+  assert.match(migration, /create or replace function public\.financial_reconciliation_automatic_rule_candidates\(/);
+  assert.match(migration, /left join lateral \([\s\S]+from public\.import_cgd_extrato_ordem bank/);
+  assert.match(migration, /bank\.data between d\.document_date - p_max_difference_days and d\.document_date \+ p_max_difference_days/);
+  assert.match(migration, /not exists \([\s\S]+i\.source_type = 'import_cgd_extrato_ordem'[\s\S]+i\.source_id = bank\.id/);
+  assert.doesNotMatch(migration, /bank_rows\s+as\s+materialized/i);
+  assert.match(migration, /description_score >= 0\.60/);
+  assert.match(migration, /supplier_score >= 0\.70/);
+  assert.match(migration, /revoke all on function public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\) from public, anon, authenticated;/);
+  assert.match(migration, /grant execute on function public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\) to service_role;/);
+  assert.doesNotMatch(migration, /statement_timeout/i);
+});
+
 test("automation execution migration revalidates and completes each proposal atomically", () => {
   assert.equal(fs.existsSync(EXECUTION_MIGRATION_PATH), true, "automation execution migration must exist");
   const executionMigration = fs.readFileSync(EXECUTION_MIGRATION_PATH, "utf8");
@@ -2147,14 +2173,23 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     (smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-15-financial-reconciliation-automation-analysis-performance\.sql/g) || []).length,
     2,
   );
+  assert.equal(
+    (smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-15-financial-reconciliation-automation-candidate-index-lookup\.sql/g) || []).length,
+    2,
+  );
   assert.equal((smokeSql.match(/\\ir \.\.\/supabase-migrations\/2026-08-14-financial-reconciliation-automation-execution\.sql/g) || []).length, 2);
   assert.match(
     smokeSql,
     /pg_get_functiondef\('public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\)'::regprocedure\)/,
   );
-  for (const stage of ["bases", "bank_rows", "qualified", "scored"]) {
+  for (const stage of ["bases", "qualified", "scored"]) {
     assert.match(smokeSql, new RegExp(`${stage}\\\\s\\+as\\\\s\\+materialized`, "i"));
   }
+  assert.match(smokeSql, /left join lateral\\s\+\\\(\[\\s\\S\]\+from public\\\.import_cgd_extrato_ordem bank/);
+  assert.match(
+    smokeSql,
+    /if v_candidate_definition ~\* 'bank_rows\\s\+as\\s\+materialized' then[\s\S]+raise exception 'Bank candidate rows must remain index-driven\.'/i,
+  );
   for (const contract of [
     "definition/config preservation",
     "RLS and privileges",
