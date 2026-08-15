@@ -567,8 +567,9 @@ end $$;
 -- cross-base overlap
 -- candidate_limit
 -- Lisbon DST slot claim
+-- cross-midnight scheduled resume
 do $$
-declare v_first jsonb; v_second jsonb; v_candidate_count integer; v_limit_run uuid; v_limit_result jsonb;
+declare v_first jsonb; v_second jsonb; v_next_day jsonb; v_candidate_count integer; v_limit_run uuid; v_limit_result jsonb;
 begin
   insert into public.financial_documents (id, document_date, doc_number, description, supplier_name, amount, fat)
   values ('00000000-0000-0000-0000-000000000d02', date '2026-04-01', 'FT-2026/009999', 'Limit fixture', 'Supplier', 100.00, 'S');
@@ -600,9 +601,16 @@ begin
   where rule_key = 'financial_documents_cgd_bank_statement';
   select public.claim_financial_reconciliation_automatic_schedule('2026-03-29 00:30:00+00', 'smoke:schedule') into v_first;
   select public.claim_financial_reconciliation_automatic_schedule('2026-03-29 01:30:00+00', 'smoke:schedule') into v_second;
+  select public.claim_financial_reconciliation_automatic_schedule('2026-03-30 00:30:00+00', 'smoke:schedule') into v_next_day;
   if not (v_first->>'claimed')::boolean or not (v_second->>'claimed')::boolean
     or v_first#>>'{run,runId}' <> v_second#>>'{run,runId}' then
     raise exception 'Lisbon DST slot claim did not produce exactly one scheduled run.';
+  end if;
+  if not (v_next_day->>'claimed')::boolean
+    or not (v_next_day->>'resumed')::boolean
+    or v_first#>>'{run,runId}' <> v_next_day#>>'{run,runId}'
+    or (select count(*) from public.financial_reconciliation_automatic_runs where trigger = 'scheduled') <> 1 then
+    raise exception 'Unfinished scheduled run was not resumed across Lisbon dates.';
   end if;
 end $$;
 

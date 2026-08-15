@@ -40,6 +40,20 @@ function text(value) {
   return typeof value === "string" ? value : "";
 }
 
+function isPlainRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasOwnFields(value, fields) {
+  return fields.every((field) => Object.hasOwn(value, field));
+}
+
+function isTimestamp(value) {
+  return typeof value === "string" && value !== "" && Number.isFinite(Date.parse(value));
+}
+
 function headerValue(headers, name) {
   if (!headers || typeof headers !== "object") return "";
   const matchedKey = Object.keys(headers).find((key) => key.toLowerCase() === name);
@@ -60,12 +74,26 @@ function compareText(left, right) {
 
 function requireScheduledRun(value, expectedRunId = "") {
   const run = toAutomationPublicResult(value);
-  if (!run || typeof run !== "object" || Array.isArray(run)
+  if (!isPlainRecord(run)
+    || !hasOwnFields(run, [
+      "runId",
+      "trigger",
+      "scope",
+      "status",
+      "actor",
+      "analysisCompletedAt",
+      "finishedAt",
+      "definitions",
+      "proposals",
+    ])
     || !UUID_PATTERN.test(text(run.runId))
     || (expectedRunId && run.runId !== expectedRunId)
     || run.trigger !== "scheduled"
     || run.scope !== "batch"
     || run.actor !== SCHEDULE_ACTOR
+    || !SAFE_RUN_STATUSES.has(run.status)
+    || (run.analysisCompletedAt !== null && !isTimestamp(run.analysisCompletedAt))
+    || (run.finishedAt !== null && !isTimestamp(run.finishedAt))
     || !Array.isArray(run.definitions)
     || !Array.isArray(run.proposals)) {
     throw new Error("Scheduled reconciliation run response is invalid.");
@@ -76,7 +104,9 @@ function requireScheduledRun(value, expectedRunId = "") {
   for (const definition of run.definitions) {
     const ruleKey = text(definition?.ruleKey);
     const priority = Number(definition?.priority);
-    if (!ruleKey || !Number.isSafeInteger(priority) || priority < 1
+    if (!isPlainRecord(definition)
+      || !hasOwnFields(definition, ["ruleKey", "priority"])
+      || !ruleKey || !Number.isSafeInteger(priority) || priority < 1
       || ruleKeys.has(ruleKey) || priorities.has(priority)) {
       throw new Error("Scheduled reconciliation rule snapshot is invalid.");
     }
@@ -87,7 +117,8 @@ function requireScheduledRun(value, expectedRunId = "") {
 
   const proposalIds = new Set();
   for (const proposal of run.proposals) {
-    if (!proposal || typeof proposal !== "object" || Array.isArray(proposal)
+    if (!isPlainRecord(proposal)
+      || !hasOwnFields(proposal, ["id", "runId", "ruleKey", "baseSourceDate", "baseSourceId", "status"])
       || !UUID_PATTERN.test(text(proposal.id))
       || proposal.runId !== run.runId
       || !ruleKeys.has(proposal.ruleKey)
@@ -98,6 +129,15 @@ function requireScheduledRun(value, expectedRunId = "") {
       throw new Error("Scheduled reconciliation proposal response is invalid.");
     }
     proposalIds.add(proposal.id);
+  }
+
+  const analysisComplete = run.analysisCompletedAt !== null;
+  const finished = run.finishedAt !== null;
+  if ((run.status === "analyzing" && (analysisComplete || finished || run.proposals.length > 0))
+    || ((run.status === "ready" || run.status === "running") && (!analysisComplete || finished))
+    || ((run.status === "completed" || run.status === "partial" || run.status === "failed")
+      && (!analysisComplete || !finished || hasMoreWork(run)))) {
+    throw new Error("Scheduled reconciliation run lifecycle is invalid.");
   }
   return run;
 }
@@ -169,16 +209,24 @@ module.exports = async function handler(req, res) {
         body: { p_now: new Date().toISOString(), p_actor: SCHEDULE_ACTOR },
       },
     ));
-    if (!claim || typeof claim !== "object" || Array.isArray(claim) || typeof claim.claimed !== "boolean") {
+    if (!isPlainRecord(claim)
+      || !Object.hasOwn(claim, "claimed")
+      || typeof claim.claimed !== "boolean") {
       throw new Error("Scheduled reconciliation claim response is invalid.");
     }
     if (!claim.claimed) {
+      if (!Object.hasOwn(claim, "reason")) {
+        throw new Error("Scheduled reconciliation claim reason is invalid.");
+      }
       return res.status(200).json({
         ok: true,
         claimed: false,
         reason: SAFE_UNCLAIMED_REASONS.has(claim.reason) ? claim.reason : "not_claimed",
         hasMore: false,
       });
+    }
+    if (!hasOwnFields(claim, ["resumed", "run"]) || typeof claim.resumed !== "boolean") {
+      throw new Error("Scheduled reconciliation claimed response is invalid.");
     }
 
     let run = requireScheduledRun(claim.run);

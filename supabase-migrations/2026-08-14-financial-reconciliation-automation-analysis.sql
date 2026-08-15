@@ -394,10 +394,11 @@ begin
   select * into strict v_schedule from public.financial_reconciliation_automatic_schedule where id = true for update;
   v_local := p_now at time zone 'Europe/Lisbon'; v_slot := to_char(v_local::date, 'YYYY-MM-DD');
   if not v_schedule.enabled then return jsonb_build_object('claimed', false, 'reason', 'schedule_disabled'); end if;
-  if v_local::time < v_schedule.time_of_day then return jsonb_build_object('claimed', false, 'reason', 'before_scheduled_time'); end if;
   select id into v_run_id from public.financial_reconciliation_automatic_runs
-  where trigger = 'scheduled' and scheduled_slot = v_slot and finished_at is null order by started_at for update;
+  where trigger = 'scheduled' and finished_at is null
+  order by scheduled_slot, started_at for update;
   if found then return jsonb_build_object('claimed', true, 'resumed', true, 'run', public.get_financial_reconciliation_automatic_run(v_run_id)); end if;
+  if v_local::time < v_schedule.time_of_day then return jsonb_build_object('claimed', false, 'reason', 'before_scheduled_time'); end if;
   select coalesce(jsonb_agg(jsonb_build_object(
     'ruleKey', c.rule_key, 'ruleVersion', c.rule_version, 'displayName', d.display_name, 'priority', c.priority,
     'differenceAllowed', c.difference_allowed, 'maxDifferenceDays', c.max_difference_days,

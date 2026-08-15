@@ -596,6 +596,107 @@ test("scheduled heartbeat preserves the claimed run identity across every follow
   }
 });
 
+test("scheduled heartbeat rejects inconsistent run lifecycle state before mutation", async () => {
+  const cases = [
+    ["unknown status", scheduledRun({ status: "unknown" })],
+    ["invalid analysis timestamp", scheduledRun({ analysisCompletedAt: "not-a-timestamp" })],
+    ["finished run with pending work", scheduledRun({
+      status: "completed",
+      finishedAt: "2026-08-15T02:00:10.000Z",
+      proposals: [{
+        id: uuidFor(23),
+        ruleKey: AUTOMATIC_RULE_KEY,
+        baseSourceDate: "2026-08-01",
+        baseSourceId: uuidFor(123),
+        status: "proposed",
+      }],
+    })],
+  ];
+
+  for (const [name, run] of cases) {
+    let mutationCalled = false;
+    const response = responseRecorder();
+    await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async (resource) => {
+          if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+            return { claimed: true, resumed: true, run };
+          }
+          mutationCalled = true;
+          return run;
+        },
+      }), async (handler) => {
+        await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+      });
+    });
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+    assert.equal(mutationCalled, false, name);
+  }
+});
+
+test("scheduled heartbeat rejects prototype-backed run fields from an RPC response", async () => {
+  const inheritedRunFields = {
+    runId: RUN_ID,
+    trigger: "scheduled",
+    scope: "batch",
+    status: "completed",
+    actor: SCHEDULE_ACTOR,
+    analysisCompletedAt: "2026-08-15T02:00:01.000Z",
+    finishedAt: "2026-08-15T02:00:10.000Z",
+  };
+  const poisonedRun = Object.assign(Object.create(inheritedRunFields), {
+    definitions: [{ ruleKey: AUTOMATIC_RULE_KEY, priority: 1 }],
+    proposals: [],
+  });
+  let followUpCalled = false;
+  const response = responseRecorder();
+
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource) => {
+        if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+          return { claimed: true, resumed: true, run: poisonedRun };
+        }
+        followUpCalled = true;
+        return {};
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
+  assert.equal(followUpCalled, false);
+});
+
+test("scheduled heartbeat rejects prototype-backed claim fields from an RPC response", async () => {
+  const finishedRun = scheduledRun({
+    status: "completed",
+    finishedAt: "2026-08-15T02:00:10.000Z",
+  });
+  const poisonedClaim = Object.create({ claimed: true, resumed: true, run: finishedRun });
+  let followUpCalled = false;
+  const response = responseRecorder();
+
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource) => {
+        if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") return poisonedClaim;
+        followUpCalled = true;
+        return {};
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
+  assert.equal(followUpCalled, false);
+});
+
 test("scheduled heartbeat caps sequential proposal attempts at 25 and leaves the run resumable", async () => {
   const proposals = Array.from({ length: 27 }, (_, index) => ({
     id: uuidFor(200 + index),
@@ -1643,6 +1744,13 @@ test("automation analysis migration fixes deterministic matching, ambiguity, and
   assert.match(analysisMigration, /jsonb_array_elements\(p\.candidate_groups\)/);
   assert.match(analysisMigration, /counts = \(select jsonb_build_object\([\s\S]*from public\.financial_reconciliation_automatic_proposals/);
   assert.match(analysisMigration, /Europe\/Lisbon/);
+  assert.match(analysisMigration, /where trigger = 'scheduled' and finished_at is null\s+order by scheduled_slot, started_at for update;/);
+  assert.doesNotMatch(analysisMigration, /where trigger = 'scheduled' and scheduled_slot = v_slot and finished_at is null/);
+  assert.ok(
+    analysisMigration.indexOf("where trigger = 'scheduled' and finished_at is null")
+      < analysisMigration.indexOf("if v_local::time < v_schedule.time_of_day"),
+    "unfinished scheduled runs must resume before a new local-time slot is considered",
+  );
   assert.match(analysisMigration, /security definer set search_path = public, pg_temp/g);
   assert.match(analysisMigration, /revoke all on function public\.populate_financial_reconciliation_automatic_run\(uuid\) from public, anon, authenticated;/);
   assert.match(analysisMigration, /revoke all on function public\.financial_reconciliation_match_normalize\(text\) from public, anon, authenticated;/);
@@ -1849,6 +1957,7 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
     "cross-base overlap",
     "candidate_limit",
     "Lisbon DST slot claim",
+    "cross-midnight scheduled resume",
     "Description threshold below fixture was accepted",
     "Supplier threshold below fixture was accepted",
     "Blank identity fixture produced a candidate",
