@@ -243,6 +243,10 @@ begin
      or (r->'sourceConfig'->'filterOptions'->'payment') @> '[""]'::jsonb then
     raise exception 'Financial Documents payment LOV is not trimmed, distinct, and nonblank.';
   end if;
+  if (r->'sourceConfig'->'filterOptions'->'payment' @> '["LOV Outdated Payment","LOV Ineligible Payment","LOV Locked Payment"]'::jsonb) is not true
+     or (r->'sourceConfig'->'filterOptions'->'category' @> '["LOV Outdated Category","LOV Ineligible Category","LOV Locked Category"]'::jsonb) is not true then
+    raise exception 'Financial Documents filtered LOVs did not include ineligible, out-of-date, and locked values.';
+  end if;
   if jsonb_array_length(r->'candidates') <> 1
      or r->'candidates'->0->>'supplier_nif' <> 'PT-LOV-SEARCH' then
     raise exception 'Supplier Search did not match Supplier NIF.';
