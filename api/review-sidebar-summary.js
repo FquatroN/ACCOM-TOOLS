@@ -57,25 +57,47 @@ module.exports = async function handler(req, res) {
     const current = lisbonMonthParts();
     const previous = shiftMonth(current.year, current.month, -1);
     const next = shiftMonth(current.year, current.month, 1);
+    const last3Months = shiftMonth(current.year, current.month, -2);
+    const last6Months = shiftMonth(current.year, current.month, -5);
     const previousStart = isoMonthStart(previous.year, previous.month);
     const currentStart = isoMonthStart(current.year, current.month);
     const nextStart = isoMonthStart(next.year, next.month);
+    const last3MonthsStart = isoMonthStart(last3Months.year, last3Months.month);
+    const last6MonthsStart = isoMonthStart(last6Months.year, last6Months.month);
 
-    const path = `reviews?select=review_date,rating_normalized_100,properties(name)&review_date=gte.${encodeURIComponent(previousStart)}&review_date=lt.${encodeURIComponent(nextStart)}&rating_normalized_100=not.is.null&order=review_date.desc`;
-    const rows = await restQuery(path, { method: "GET" });
+    const basePath = `reviews?select=review_date,rating_normalized_100,source,properties(name)&review_date=gte.${encodeURIComponent(last6MonthsStart)}&review_date=lt.${encodeURIComponent(nextStart)}&rating_normalized_100=not.is.null&order=review_date.desc`;
+    const rows = [];
+    const pageSize = 1000;
+    for (let offset = 0; ; offset += pageSize) {
+      const page = await restQuery(`${basePath}&limit=${pageSize}&offset=${offset}`, { method: "GET" });
+      const pageRows = Array.isArray(page) ? page : [];
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) break;
+    }
 
     const buckets = {
       hostel: { current: [], previous: [] },
       cruz: { current: [], previous: [] },
     };
+    const sourceBuckets = new Map();
 
-    (Array.isArray(rows) ? rows : []).forEach((row) => {
+    rows.forEach((row) => {
       const key = propertyBucket(row?.properties?.name);
       const reviewDate = cleanText(row?.review_date);
       const rating = Number(row?.rating_normalized_100);
-      if (!key || !reviewDate || !Number.isFinite(rating)) return;
-      if (reviewDate >= currentStart && reviewDate < nextStart) buckets[key].current.push(rating);
-      else if (reviewDate >= previousStart && reviewDate < currentStart) buckets[key].previous.push(rating);
+      if (!reviewDate || !Number.isFinite(rating)) return;
+
+      if (key) {
+        if (reviewDate >= currentStart && reviewDate < nextStart) buckets[key].current.push(rating);
+        else if (reviewDate >= previousStart && reviewDate < currentStart) buckets[key].previous.push(rating);
+      }
+
+      const source = cleanText(row?.source).toLowerCase();
+      if (!source) return;
+      const sourceBucket = sourceBuckets.get(source) || { last3Months: [], last6Months: [] };
+      if (reviewDate >= last3MonthsStart && reviewDate < nextStart) sourceBucket.last3Months.push(rating);
+      if (reviewDate >= last6MonthsStart && reviewDate < nextStart) sourceBucket.last6Months.push(rating);
+      sourceBuckets.set(source, sourceBucket);
     });
 
     res.status(200).json({
@@ -106,6 +128,15 @@ module.exports = async function handler(req, res) {
             previousCount: buckets.hostel.previous.length + buckets.cruz.previous.length,
           },
         },
+        sources: Array.from(sourceBuckets.entries())
+          .map(([source, bucket]) => ({
+            source,
+            last3MonthsAverage: average(bucket.last3Months),
+            last6MonthsAverage: average(bucket.last6Months),
+            last3MonthsCount: bucket.last3Months.length,
+            last6MonthsCount: bucket.last6Months.length,
+          }))
+          .sort((a, b) => a.source.localeCompare(b.source)),
       },
     });
   } catch (error) {

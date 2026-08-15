@@ -200,6 +200,28 @@ body {
   padding-top: 0.46rem;
 }
 
+.sidebar-summary-source-section {
+  border-top: 1px solid var(--line);
+  margin-top: 0.65rem;
+  padding-top: 0.6rem;
+}
+
+.sidebar-summary-source-title {
+  margin-bottom: 0.34rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.sidebar-summary-source-icon {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.sidebar-summary-source-row {
+  padding: 0.28rem 0;
+}
+
 .sidebar-summary-empty {
   margin: 0;
   font-size: 0.75rem;

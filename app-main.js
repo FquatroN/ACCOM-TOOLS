@@ -30442,6 +30442,28 @@ function renderSidebarReviewSummary() {
   const hostel = summary.properties?.hostel || {};
   const cruz = summary.properties?.cruz || {};
   const overall = summary.properties?.overall || {};
+  const sources = Array.isArray(summary.sources) ? summary.sources : [];
+  const sourceRows = sources
+    .sort((a, b) => reviewSourceLabel(a.source).localeCompare(reviewSourceLabel(b.source)))
+    .map((source) => `
+      <div class="sidebar-summary-grid-row sidebar-summary-source-row">
+        <span class="sidebar-summary-source-icon">${reviewSourceIconHtml(source.source)}</span>
+        ${renderSidebarReviewSummaryValue(source.last3MonthsAverage)}
+        ${renderSidebarReviewSummaryValue(source.last6MonthsAverage)}
+      </div>`)
+    .join("");
+  const sourceSummaryMarkup = sourceRows ? `
+    <div class="sidebar-summary-source-section">
+      <div class="sidebar-summary-source-title">Source averages</div>
+      <div class="sidebar-summary-grid sidebar-summary-source-grid">
+        <div class="sidebar-summary-grid-head">
+          <span class="sidebar-summary-head-label">Source</span>
+          <span class="sidebar-summary-head-value">3 months</span>
+          <span class="sidebar-summary-head-value">6 months</span>
+        </div>
+        ${sourceRows}
+      </div>
+    </div>` : "";
   els.sidebarReviewSummaryBody.innerHTML = `
     <div class="sidebar-summary-grid">
       <div class="sidebar-summary-grid-head">
@@ -30464,7 +30486,8 @@ function renderSidebarReviewSummary() {
         ${renderSidebarReviewSummaryValue(overall.currentAverage)}
         ${renderSidebarReviewSummaryValue(overall.previousAverage)}
       </div>
-    </div>`;
+    </div>
+    ${sourceSummaryMarkup}`;
 }
 
 async function loadSidebarReviewSummary({ silent = false } = {}) {
