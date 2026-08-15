@@ -252,6 +252,17 @@ test("reconciliation separates manual and automatic work into accessible tabs wi
   assert.ok(manualPanel >= 0 && automaticPanel > manualPanel && history > automaticPanel);
   assert.match(html.slice(manualPanel, automaticPanel), /id="financial-reconciliation-status"[\s\S]*id="financial-reconciliation-filters"[\s\S]*id="financial-reconciliation-current"/);
   assert.match(html.slice(automaticPanel, history), /id="financial-reconciliation-workbench-automation-rules"[\s\S]*id="financial-reconciliation-workbench-automation-proposals"/);
+  assert.equal((html.match(/id="financial-reconciliation-history-rows"/g) || []).length, 1);
+  assert.ok(html.indexOf('id="financial-reconciliation-history-rows"') > html.indexOf('id="financial-reconciliation-automatic-panel"'));
+});
+
+test("reconciliation application tabs remain visible and usable on narrow screens", () => {
+  assert.match(css, /\.financial-reconciliation-view-tabs\s*\{[\s\S]*flex-wrap:\s*wrap;[\s\S]*margin-bottom:\s*1rem;/);
+  assert.match(css, /\.financial-reconciliation-view-tabs\s*>\s*button:focus-visible\s*\{[\s\S]*outline:/);
+  assert.match(css, /\.financial-reconciliation-manual-panel:not\(\[hidden\]\),[\s\S]*\.financial-reconciliation-automatic-panel:not\(\[hidden\]\)\s*\{[\s\S]*display:\s*grid;/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-view-tabs\s*>\s*button\s*\{[\s\S]*flex:\s*1 1 12rem;/);
+  assert.match(html, /id="financial-reconciliation-manual-panel"[^>]*class="[^"]*financial-reconciliation-manual-panel/);
+  assert.match(html, /id="financial-reconciliation-automatic-panel"[^>]*class="[^"]*financial-reconciliation-automatic-panel/);
 });
 
 function reconciliationTabClassList() {
