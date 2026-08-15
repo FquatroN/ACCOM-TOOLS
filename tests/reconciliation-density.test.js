@@ -317,12 +317,19 @@ test("reconciliation tab controller defaults to Manual and supports arrow activa
   assert.equal(els.financialReconciliationManualPanel.hidden, false);
   assert.equal(els.financialReconciliationAutomaticPanel.hidden, true);
   assert.equal(els.financialReconciliationManualTab["aria-selected"], "true");
+  assert.equal(els.financialReconciliationAutomaticTab["aria-selected"], "false");
+  assert.equal(els.financialReconciliationManualTab.tabindex, "0");
+  assert.equal(els.financialReconciliationAutomaticTab.tabindex, "-1");
 
   await controller.setFinancialReconciliationTab("automatic", { focus: true });
   assert.equal(current.activeTab, "automatic");
   assert.equal(current.filters.description, "retained");
   assert.equal(current.automation.run.runId, "retained-run");
   assert.equal(els.financialReconciliationAutomaticPanel.hidden, false);
+  assert.equal(els.financialReconciliationManualTab["aria-selected"], "false");
+  assert.equal(els.financialReconciliationAutomaticTab["aria-selected"], "true");
+  assert.equal(els.financialReconciliationManualTab.tabindex, "-1");
+  assert.equal(els.financialReconciliationAutomaticTab.tabindex, "0");
   assert.equal(els.financialReconciliationAutomaticTab.focused, true);
 
   controller.onFinancialReconciliationTabKeydown({ key: "ArrowLeft", preventDefault() { calls.push("prevent"); } });
