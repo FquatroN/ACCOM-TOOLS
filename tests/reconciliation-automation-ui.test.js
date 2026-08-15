@@ -8,8 +8,9 @@ const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const appMain = fs.readFileSync(path.join(root, "app-main.js"), "utf8");
 
 function appFunctionSource(name) {
-  const start = appMain.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `${name} should be defined in app-main.js`);
+  const functionStart = appMain.indexOf(`function ${name}(`);
+  assert.notEqual(functionStart, -1, `${name} should be defined in app-main.js`);
+  const start = appMain.slice(Math.max(0, functionStart - 6), functionStart) === "async " ? functionStart - 6 : functionStart;
   const bodyStart = appMain.indexOf("{", appMain.indexOf(")", start));
   let depth = 0;
   for (let index = bodyStart; index < appMain.length; index += 1) {
@@ -399,7 +400,18 @@ test("automation inputs change only the local draft until one atomic Save", asyn
   assert.deepEqual(statuses, [{ message: "Automatic reconciliation configuration saved.", isError: undefined }]);
 });
 
-test("Run batch now stores analysis, navigates to Reconciliation, renders, and never executes", async () => {
+test("Reconciliation entry defaults to Manual and accepts only an explicit Automatic handoff", () => {
+  const entryTab = new Function(
+    `${appFunctionSource("clean")}\n${appFunctionSource("financialReconciliationEntryTab")}\nreturn financialReconciliationEntryTab;`,
+  )();
+  assert.equal(entryTab(), "manual");
+  assert.equal(entryTab({}), "manual");
+  assert.equal(entryTab({ financialReconciliationTab: "manual" }), "manual");
+  assert.equal(entryTab({ financialReconciliationTab: "automatic" }), "automatic");
+  assert.equal(entryTab({ financialReconciliationTab: "AUTOMATIC" }), "manual");
+});
+
+test("Run batch now stores analysis, navigates to Reconciliation Automatic, and never executes", async () => {
   const requests = [];
   const sequence = [];
   const run = { runId: "00000000-0000-0000-0000-000000000001", proposals: [{ id: "proposal-1", status: "proposed" }] };
@@ -428,7 +440,7 @@ test("Run batch now stores analysis, navigates to Reconciliation, renders, and n
     },
     { randomUUID: () => "00000000-0000-0000-0000-000000000099" },
     () => current,
-    async (view) => sequence.push(`view:${view}`),
+    async (view, options) => sequence.push(`view:${view}:${options?.financialReconciliationTab || "manual"}`),
     () => sequence.push(`render:${current.automation.run?.runId || "missing"}`),
     () => {},
     () => {},
@@ -445,9 +457,10 @@ test("Run batch now stores analysis, navigates to Reconciliation, renders, and n
       body: { action: "analyze_batch", clientRequestId: "00000000-0000-0000-0000-000000000099" },
     },
   }]);
-  assert.equal(current.automation.run, run);
   assert.equal(current.automation.rules, existingRules);
-  assert.deepEqual(sequence, ["api", "view:financial-reconciliation", `render:${run.runId}`]);
+  assert.deepEqual(sequence, ["api", "view:financial-reconciliation:automatic"]);
+  assert.equal(current.automation.run, run);
+  assert.deepEqual([...current.automation.selectedProposalIds], ["proposal-1"]);
   assert.doesNotMatch(JSON.stringify(requests), /execute_selected|proposalIds/);
 });
 
@@ -662,9 +675,11 @@ test("manual rule loader uses the app-authorized catalog without schedule admini
   assert.equal(Object.hasOwn(current.automation, "schedule"), false);
 });
 
-test("failed manual catalog reload clears stale Analyze rules", async () => {
+test("failed manual catalog reload clears stale Analyze rules without clearing the retained run or selection", async () => {
+  const retainedRun = { runId: "retained-run" };
+  const retainedSelections = new Set(["retained-proposal"]);
   const current = {
-    automation: { rules: workbenchRules(), run: null, selectedProposalIds: new Set(), pendingAction: "", loaded: false },
+    automation: { rules: workbenchRules(), run: retainedRun, selectedProposalIds: retainedSelections, pendingAction: "", loaded: false },
   };
   const loadRules = new Function(
     "financialReconciliationState",
@@ -688,6 +703,47 @@ test("failed manual catalog reload clears stale Analyze rules", async () => {
 
   assert.deepEqual(current.automation.rules, []);
   assert.equal(current.automation.loaded, false);
+  assert.strictEqual(current.automation.run, retainedRun);
+  assert.strictEqual(current.automation.selectedProposalIds, retainedSelections);
+});
+
+function compileEnsureFinancialReconciliationData({ current, loadWorkspace, loadRules, render }) {
+  return new Function(
+    "financialReconciliationState",
+    "loadFinancialReconciliationWorkspace",
+    "loadFinancialReconciliationAutomationRules",
+    "renderFinancialReconciliation",
+    `${appFunctionSource("ensureFinancialReconciliationData")}
+     return ensureFinancialReconciliationData;`,
+  )(
+    () => current,
+    loadWorkspace,
+    loadRules,
+    render,
+  );
+}
+
+test("Reconciliation loads Manual first and lazily loads Automatic rules once", async () => {
+  const calls = [];
+  const current = { loaded: false, activeTab: "manual", automation: { loaded: false } };
+  const ensure = compileEnsureFinancialReconciliationData({
+    current,
+    loadWorkspace: async () => { calls.push("workspace"); current.loaded = true; },
+    loadRules: async () => { calls.push("rules"); current.automation.loaded = true; },
+    render: () => calls.push("render"),
+  });
+
+  await ensure();
+  assert.deepEqual(calls, ["workspace", "render"]);
+
+  calls.length = 0;
+  current.activeTab = "automatic";
+  await ensure();
+  assert.deepEqual(calls, ["rules", "render"]);
+
+  calls.length = 0;
+  await ensure();
+  assert.deepEqual(calls, ["render"]);
 });
 
 test("Analyze sends one rule and a fresh UUID, clears old selection, and selects only proposals", async () => {

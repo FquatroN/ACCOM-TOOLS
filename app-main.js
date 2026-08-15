@@ -3605,11 +3605,14 @@ function syncAppRoute() {
   } catch {}
 }
 
-async function setView(view) {
+async function setView(view, options = {}) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
   if (view === "financial-docs" && !canAppFinancialDocs()) return showToast("No financial documents access.", "error");
   if (view === "import-data" && !canAppImportData()) return showToast("No import data access.", "error");
   if (view === "financial-reconciliation" && !canAppFinancialReconciliation()) return showToast("No reconciliation access.", "error");
+  if (view === "financial-reconciliation") {
+    state.financialReconciliation.activeTab = financialReconciliationEntryTab(options);
+  }
   if (view === "guests-bi" && !canUseGuestsBi()) return showToast("No Guests BI access.", "error");
   if (view === "bookings-bi" && !canUseBookingsBi()) return showToast("No Bookings BI access.", "error");
   if (view === "financial-bi" && !canUseFinancialBi()) return showToast("No Financial BI access.", "error");
@@ -3703,6 +3706,9 @@ async function setView(view) {
   renderSettingsSection();
   render();
   await ensureCurrentViewData();
+  if (view === "financial-reconciliation" && financialReconciliationEntryTab(options) === "automatic") {
+    els.financialReconciliationAutomaticTab?.focus();
+  }
 }
 
 async function ensureCurrentViewData() {
@@ -21777,8 +21783,7 @@ async function runReconciliationAutomationBatchNow() {
       .filter(Boolean));
     current.automation.pendingAction = "";
     current.automation.loaded = false;
-    await setView("financial-reconciliation");
-    renderFinancialReconciliation();
+    await setView("financial-reconciliation", { financialReconciliationTab: "automatic" });
   } catch (error) {
     setReconciliationAutomationSettingsStatus(`Batch analysis failed: ${error.message}`, true);
   } finally {
@@ -21793,6 +21798,10 @@ function financialReconciliationState() {
 
 function normalizeFinancialReconciliationTab(tab) {
   return clean(tab) === "automatic" ? "automatic" : "manual";
+}
+
+function financialReconciliationEntryTab(options = {}) {
+  return options && options.financialReconciliationTab === "automatic" ? "automatic" : "manual";
 }
 
 function renderFinancialReconciliationTabs() {
@@ -21956,8 +21965,11 @@ async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
 }
 
 async function ensureFinancialReconciliationData() {
-  if (!financialReconciliationState().loaded) await loadFinancialReconciliationWorkspace({ silent: true });
-  if (!financialReconciliationState().automation.loaded) await loadFinancialReconciliationAutomationRules();
+  const current = financialReconciliationState();
+  if (!current.loaded) await loadFinancialReconciliationWorkspace({ silent: true });
+  if (current.activeTab === "automatic" && !current.automation.loaded) {
+    await loadFinancialReconciliationAutomationRules();
+  }
   renderFinancialReconciliation();
 }
 
