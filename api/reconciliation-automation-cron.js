@@ -17,6 +17,7 @@ const SAFE_RUN_STATUSES = new Set([
   "partial",
   "failed",
 ]);
+const TERMINAL_RUN_STATUSES = new Set(["completed", "partial", "failed"]);
 const PROPOSAL_STATUSES = new Set([
   "proposed",
   "ambiguous",
@@ -51,7 +52,9 @@ function hasOwnFields(value, fields) {
 }
 
 function isTimestamp(value) {
-  return typeof value === "string" && value !== "" && Number.isFinite(Date.parse(value));
+  return typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    && Number.isFinite(Date.parse(value));
 }
 
 function headerValue(headers, name) {
@@ -164,6 +167,22 @@ function stablePendingProposals(run) {
     });
 }
 
+function requireAnalyzedRun(value, expectedRunId) {
+  const run = requireScheduledRun(value, expectedRunId);
+  if (run.analysisCompletedAt === null) {
+    throw new Error("Scheduled reconciliation analysis did not complete.");
+  }
+  return run;
+}
+
+function requireFinishedRun(value, expectedRunId) {
+  const run = requireAnalyzedRun(value, expectedRunId);
+  if (run.finishedAt === null || !TERMINAL_RUN_STATUSES.has(run.status)) {
+    throw new Error("Scheduled reconciliation finalization did not complete.");
+  }
+  return run;
+}
+
 function hasMoreWork(run) {
   return run.proposals.some((proposal) => proposal?.status === "proposed" || proposal?.status === "executing");
 }
@@ -235,7 +254,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(publicRunResponse(claim, run, 0, false));
     }
     if (!run.analysisCompletedAt) {
-      run = requireScheduledRun(await restQuery(
+      run = requireAnalyzedRun(await restQuery(
         "rpc/populate_financial_reconciliation_automatic_run",
         { method: "POST", body: { p_run_id: run.runId } },
       ), claimedRunId);
@@ -254,14 +273,14 @@ module.exports = async function handler(req, res) {
     }
 
     if (selected.length > 0) {
-      run = requireScheduledRun(await restQuery(
+      run = requireAnalyzedRun(await restQuery(
         "rpc/get_financial_reconciliation_automatic_run",
         { method: "POST", body: { p_run_id: run.runId } },
       ), claimedRunId);
     }
     let hasMore = hasMoreWork(run);
     if (!hasMore && !run.finishedAt) {
-      run = requireScheduledRun(await restQuery(
+      run = requireFinishedRun(await restQuery(
         "rpc/finish_financial_reconciliation_automatic_run",
         { method: "POST", body: { p_run_id: run.runId } },
       ), claimedRunId);

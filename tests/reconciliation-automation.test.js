@@ -127,6 +127,10 @@ function uuidFor(value) {
   return `00000000-0000-0000-0000-${String(value).padStart(12, "0")}`;
 }
 
+function compareCodeUnits(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function scheduledRun(overrides = {}) {
   const run = {
     runId: RUN_ID,
@@ -600,6 +604,7 @@ test("scheduled heartbeat rejects inconsistent run lifecycle state before mutati
   const cases = [
     ["unknown status", scheduledRun({ status: "unknown" })],
     ["invalid analysis timestamp", scheduledRun({ analysisCompletedAt: "not-a-timestamp" })],
+    ["non-contract analysis timestamp", scheduledRun({ analysisCompletedAt: "1" })],
     ["finished run with pending work", scheduledRun({
       status: "completed",
       finishedAt: "2026-08-15T02:00:10.000Z",
@@ -632,6 +637,85 @@ test("scheduled heartbeat rejects inconsistent run lifecycle state before mutati
     assert.equal(response.statusCode, 500, name);
     assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
     assert.equal(mutationCalled, false, name);
+  }
+});
+
+test("scheduled heartbeat enforces populate, refresh, and finalize phase postconditions", async () => {
+  const proposal = {
+    id: uuidFor(24),
+    ruleKey: AUTOMATIC_RULE_KEY,
+    baseSourceDate: "2026-08-01",
+    baseSourceId: uuidFor(124),
+    status: "proposed",
+  };
+  const analyzingRun = scheduledRun({
+    status: "analyzing",
+    analysisCompletedAt: null,
+  });
+  const terminalRun = scheduledRun({
+    status: "completed",
+    finishedAt: "2026-08-15T02:00:10.000Z",
+  });
+  const cases = [
+    {
+      name: "populate remains analyzing",
+      claimedRun: analyzingRun,
+      responses: {
+        "rpc/populate_financial_reconciliation_automatic_run": analyzingRun,
+        "rpc/finish_financial_reconciliation_automatic_run": terminalRun,
+      },
+      expectedCalls: [
+        "rpc/claim_financial_reconciliation_automatic_schedule",
+        "rpc/populate_financial_reconciliation_automatic_run",
+      ],
+    },
+    {
+      name: "refresh loses analysis completion",
+      claimedRun: scheduledRun({ proposals: [proposal] }),
+      responses: {
+        "rpc/execute_financial_reconciliation_automatic_proposal": { proposalId: proposal.id, status: "completed" },
+        "rpc/get_financial_reconciliation_automatic_run": analyzingRun,
+        "rpc/finish_financial_reconciliation_automatic_run": terminalRun,
+      },
+      expectedCalls: [
+        "rpc/claim_financial_reconciliation_automatic_schedule",
+        "rpc/execute_financial_reconciliation_automatic_proposal",
+        "rpc/get_financial_reconciliation_automatic_run",
+      ],
+    },
+    {
+      name: "finalize remains unfinished",
+      claimedRun: scheduledRun(),
+      responses: {
+        "rpc/finish_financial_reconciliation_automatic_run": scheduledRun(),
+      },
+      expectedCalls: [
+        "rpc/claim_financial_reconciliation_automatic_schedule",
+        "rpc/finish_financial_reconciliation_automatic_run",
+      ],
+    },
+  ];
+
+  for (const { name, claimedRun, responses, expectedCalls } of cases) {
+    const calls = [];
+    const response = responseRecorder();
+    await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async (resource) => {
+          calls.push(resource);
+          if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+            return { claimed: true, resumed: true, run: claimedRun };
+          }
+          if (Object.hasOwn(responses, resource)) return responses[resource];
+          throw new Error(`Unexpected RPC ${resource}`);
+        },
+      }), async (handler) => {
+        await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+      });
+    });
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+    assert.deepEqual(calls, expectedCalls, name);
   }
 });
 
@@ -702,11 +786,16 @@ test("scheduled heartbeat caps sequential proposal attempts at 25 and leaves the
     id: uuidFor(200 + index),
     ruleKey: AUTOMATIC_RULE_KEY,
     baseSourceDate: "2026-08-10",
-    baseSourceId: uuidFor(300 + index),
+    baseSourceId: index === 0
+      ? "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+      : index === 1
+        ? "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        : uuidFor(300 + index),
     status: "proposed",
   })).reverse();
   const expectedIds = [...proposals]
-    .sort((left, right) => left.baseSourceId.localeCompare(right.baseSourceId) || left.id.localeCompare(right.id))
+    .sort((left, right) => compareCodeUnits(left.baseSourceId, right.baseSourceId)
+      || compareCodeUnits(left.id, right.id))
     .slice(0, 25)
     .map((proposal) => proposal.id);
   const completedIds = new Set();
