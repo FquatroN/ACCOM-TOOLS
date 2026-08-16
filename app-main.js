@@ -30473,6 +30473,11 @@ function renderSidebarReviewSummaryValue(value) {
   return `<span class="sidebar-summary-value${dangerClass}">${escape(formatted)}</span>`;
 }
 
+function renderSidebarReviewSummaryAverage(value, count) {
+  const numericCount = Math.max(0, Number.parseInt(count, 10) || 0);
+  return `${renderSidebarReviewSummaryValue(value)}<small class="sidebar-summary-review-count">(${escape(String(numericCount))})</small>`;
+}
+
 function renderSidebarReviewSummary() {
   if (!els.sidebarReviewSummaryCard || !els.sidebarReviewSummaryBody || !els.sidebarReviewSummaryStatus) return;
   if (!canApp("communications")) {
@@ -30498,8 +30503,8 @@ function renderSidebarReviewSummary() {
     .map((source) => `
       <div class="sidebar-summary-grid-row sidebar-summary-source-row">
         <span class="sidebar-summary-source-icon">${reviewSourceIconHtml(source.source)}</span>
-        ${renderSidebarReviewSummaryValue(source.last2MonthsAverage)}
-        ${renderSidebarReviewSummaryValue(source.last6MonthsAverage)}
+        <span class="sidebar-summary-source-average">${renderSidebarReviewSummaryAverage(source.last2MonthsAverage, source.last2MonthsCount)}</span>
+        <span class="sidebar-summary-source-average">${renderSidebarReviewSummaryAverage(source.last6MonthsAverage, source.last6MonthsCount)}</span>
       </div>`)
     .join("");
   const sourceSummaryMarkup = sourceRows ? `

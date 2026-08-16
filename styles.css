@@ -222,6 +222,21 @@ body {
   padding: 0.28rem 0;
 }
 
+.sidebar-summary-source-average {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.sidebar-summary-review-count {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
 .sidebar-summary-empty {
   margin: 0;
   font-size: 0.75rem;
