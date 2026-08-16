@@ -3088,8 +3088,12 @@ test("credit-card rollout pins migration order, RPC ACLs, reapply, and fixed pro
     /managed Credit Card source rule must remain enabled with operator \+\./i,
   );
   assert.match(
+    migration,
+    /managed Bank Statement source rule must remain enabled with operator \+\./i,
+  );
+  assert.match(
     smokeSql,
-    /managed Credit Card source rule rejects operator changes and deletion/i,
+    /managed automatic source rules reject operator changes and deletion/i,
   );
   for (const signature of [
     "financial_reconciliation_finalize_automatic_analysis\\(uuid\\)",

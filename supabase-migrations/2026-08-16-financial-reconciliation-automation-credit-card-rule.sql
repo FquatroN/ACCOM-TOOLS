@@ -50,6 +50,16 @@ begin
   ) then
     raise exception 'Managed automatic reconciliation credit-card source rule must use operator +.';
   end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_source_rules source_rule
+    where source_rule.base_source_type = 'financial_documents'
+      and source_rule.matching_source_type = 'import_cgd_extrato_ordem'
+      and source_rule.operator = '+'
+  ) then
+    raise exception 'Managed automatic reconciliation Bank Statement source rule must use operator +.';
+  end if;
 end
 $migration$;
 
@@ -115,6 +125,17 @@ begin
       and rule.operator = '+'
   ) <> 1 then
     raise exception 'The managed Credit Card source rule must remain enabled with operator +.';
+  end if;
+  if (
+    select count(*)
+    from jsonb_to_recordset(p_rules) as rule(
+      base_source_type text, matching_source_type text, operator text
+    )
+    where rule.base_source_type = 'financial_documents'
+      and rule.matching_source_type = 'import_cgd_extrato_ordem'
+      and rule.operator = '+'
+  ) <> 1 then
+    raise exception 'The managed Bank Statement source rule must remain enabled with operator +.';
   end if;
 
   lock table public.financial_reconciliation_source_rules in share row exclusive mode;

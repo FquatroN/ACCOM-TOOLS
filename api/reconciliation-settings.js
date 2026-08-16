@@ -13,15 +13,20 @@ const toRow = (rule) => ({
   operator: rule.operator,
 });
 
-const requireManagedCreditCardSourceRule = (rules) => {
-  const valid = rules.some((rule) =>
-    rule.baseSourceType === "financial_documents"
-      && rule.matchingSourceType === "import_cgd_cartao_credito"
-      && rule.operator === "+");
-  if (!valid) {
-    const error = new Error("The managed Credit Card source rule must remain enabled with operator +.");
-    error.statusCode = 400;
-    throw error;
+const requireManagedAutomaticSourceRules = (rules) => {
+  for (const managedRule of [
+    { matchingSourceType: "import_cgd_extrato_ordem", displayName: "Bank Statement" },
+    { matchingSourceType: "import_cgd_cartao_credito", displayName: "Credit Card" },
+  ]) {
+    const valid = rules.some((rule) =>
+      rule.baseSourceType === "financial_documents"
+        && rule.matchingSourceType === managedRule.matchingSourceType
+        && rule.operator === "+");
+    if (!valid) {
+      const error = new Error(`The managed ${managedRule.displayName} source rule must remain enabled with operator +.`);
+      error.statusCode = 400;
+      throw error;
+    }
   }
 };
 
@@ -37,7 +42,7 @@ module.exports = async function handler(req, res) {
 
     if (req.method === "PUT") {
       const input = normalizeReconciliationRules((await parseBody(req))?.rules);
-      requireManagedCreditCardSourceRule(input);
+      requireManagedAutomaticSourceRules(input);
       await restQuery("rpc/replace_financial_reconciliation_source_rules", {
         method: "POST",
         body: { p_rules: input.map(toRow) },

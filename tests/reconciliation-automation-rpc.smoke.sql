@@ -1375,7 +1375,7 @@ begin
   end if;
 end $$;
 
--- managed Credit Card source rule rejects operator changes and deletion
+-- managed automatic source rules reject operator changes and deletion
 do $$
 declare
   v_rules jsonb;
@@ -1424,6 +1424,43 @@ begin
   end;
   if not v_rejected then
     raise exception 'Managed Credit Card source-rule deletion was accepted.';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.replace_financial_reconciliation_source_rules((
+      select jsonb_agg(case
+        when rule->>'base_source_type' = 'financial_documents'
+         and rule->>'matching_source_type' = 'import_cgd_extrato_ordem'
+          then jsonb_set(rule, '{operator}', '"-"'::jsonb)
+        else rule
+      end)
+      from jsonb_array_elements(v_rules) rule
+    ));
+  exception when others then
+    v_rejected := sqlerrm =
+      'The managed Bank Statement source rule must remain enabled with operator +.';
+  end;
+  if not v_rejected then
+    raise exception 'Managed Bank Statement source-rule operator change was accepted.';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.replace_financial_reconciliation_source_rules((
+      select coalesce(jsonb_agg(rule), '[]'::jsonb)
+      from jsonb_array_elements(v_rules) rule
+      where not (
+        rule->>'base_source_type' = 'financial_documents'
+        and rule->>'matching_source_type' = 'import_cgd_extrato_ordem'
+      )
+    ));
+  exception when others then
+    v_rejected := sqlerrm =
+      'The managed Bank Statement source rule must remain enabled with operator +.';
+  end;
+  if not v_rejected then
+    raise exception 'Managed Bank Statement source-rule deletion was accepted.';
   end if;
 end $$;
 
