@@ -26,6 +26,7 @@ const { mapRpcError } = require("../api/_reconciliation");
 const RUN_ID = "00000000-0000-0000-0000-000000000001";
 const PROPOSAL_ID = "00000000-0000-0000-0000-000000000002";
 const REQUEST_ID = "00000000-0000-0000-0000-000000000003";
+const BATCH_ID = "00000000-0000-0000-0000-000000000006";
 const SCHEMA_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -165,9 +166,13 @@ function scheduledRun(overrides = {}) {
   const run = {
     runId: RUN_ID,
     trigger: "scheduled",
-    scope: "batch",
+    scope: "rule",
     status: "ready",
     actor: SCHEDULE_ACTOR,
+    batchId: BATCH_ID,
+    batchRuleKey: AUTOMATIC_RULE_KEY,
+    batchRulePosition: 1,
+    batchRuleCount: 2,
     analysisCursorDate: null,
     analysisCursorId: null,
     analysisProcessed: 1,
@@ -183,6 +188,18 @@ function scheduledRun(overrides = {}) {
   };
   run.proposals = run.proposals.map((proposal) => ({ runId: run.runId, ...proposal }));
   return run;
+}
+
+function scheduledClaim(run, overrides = {}) {
+  return {
+    claimed: true,
+    resumed: true,
+    batchId: run.batchId,
+    batchRulePosition: run.batchRulePosition,
+    batchRuleCount: run.batchRuleCount,
+    run,
+    ...overrides,
+  };
 }
 
 function mockedSupabase(overrides = {}) {
@@ -530,23 +547,24 @@ test("scheduled heartbeat accepts only protected GET and POST requests before an
   });
 });
 
-test("scheduled heartbeat returns safe database reasons when disabled or not due", async () => {
+test("scheduled heartbeat returns safe database reasons when disabled, not due, or complete", async () => {
   const cases = [
-    ["schedule_disabled", "2026-08-15T01:00:00.000Z"],
-    ["before_scheduled_time", "2026-08-15T01:59:00.000Z"],
-    ["no_enabled_rules", "2026-08-15T02:00:00.000Z"],
-    ["unsupported_rule_set", "2026-08-15T02:00:00.000Z"],
-    ["slot_failed", "2026-08-15T02:00:00.000Z"],
+    ["schedule_disabled", "2026-08-15T01:00:00.000Z", {}],
+    ["before_scheduled_time", "2026-08-15T01:59:00.000Z", {}],
+    ["no_enabled_rules", "2026-08-15T02:00:00.000Z", {}],
+    ["unsupported_rule_set", "2026-08-15T02:00:00.000Z", {}],
+    ["slot_failed", "2026-08-15T02:00:00.000Z", {}],
+    ["batch_complete", "2026-08-15T02:00:00.000Z", { batch_id: BATCH_ID }],
   ];
 
-  for (const [reason, nowIso] of cases) {
+  for (const [reason, nowIso, claimFields] of cases) {
     const calls = [];
     const response = responseRecorder();
     await withCronEnvironment(nowIso, async () => {
       await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
         restQuery: async (resource, options) => {
           calls.push({ resource, options });
-          return { claimed: false, reason, diagnostic: "hidden schedule state" };
+          return { claimed: false, reason, ...claimFields, diagnostic: "hidden schedule state" };
         },
       }), async (handler) => {
         await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
@@ -561,7 +579,13 @@ test("scheduled heartbeat returns safe database reasons when disabled or not due
       },
     }], reason);
     assert.equal(response.statusCode, 200, reason);
-    assert.deepEqual(response.body, { ok: true, claimed: false, reason, hasMore: false }, reason);
+    assert.deepEqual(response.body, {
+      ok: true,
+      claimed: false,
+      reason,
+      ...(reason === "batch_complete" ? { batchId: BATCH_ID } : {}),
+      hasMore: false,
+    }, reason);
     assert.doesNotMatch(JSON.stringify(response.body), /hidden schedule state/);
   }
 });
@@ -614,6 +638,49 @@ test("scheduled heartbeat advances one unfinished analysis page before claiming 
   });
 });
 
+test("scheduled heartbeat returns parent and rule progress when continuing a scheduled child", async () => {
+  const progressRun = scheduledRun({
+    status: "analyzing",
+    analysisCursorDate: "2026-01-31",
+    analysisCursorId: uuidFor(32),
+    analysisProcessed: 25,
+    analysisTotal: 100,
+    analysisComplete: false,
+    analysisCompletedAt: null,
+  });
+  const response = responseRecorder();
+
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      exposeOldestAnalysis: true,
+      restQuery: async (resource) => {
+        if (resource === "rpc/continue_financial_reconciliation_automatic_oldest_analysis") {
+          return { continued: true, run: progressRun };
+        }
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "POST", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    ok: true,
+    claimed: false,
+    continuedAnalysis: true,
+    batchId: BATCH_ID,
+    ruleKey: AUTOMATIC_RULE_KEY,
+    rulePosition: 1,
+    ruleCount: 2,
+    runId: RUN_ID,
+    status: "analyzing",
+    analysisProcessed: 25,
+    analysisTotal: 100,
+    hasMore: true,
+  });
+});
+
 test("scheduled heartbeat reports a persisted continuation failure without retrying or returning 500", async () => {
   const failedRun = scheduledRun({
     status: "failed",
@@ -646,6 +713,10 @@ test("scheduled heartbeat reports a persisted continuation failure without retry
     ok: true,
     claimed: false,
     continuedAnalysis: true,
+    batchId: BATCH_ID,
+    ruleKey: AUTOMATIC_RULE_KEY,
+    rulePosition: 1,
+    ruleCount: 2,
     runId: failedRun.runId,
     status: "failed",
     analysisProcessed: failedRun.analysisProcessed,
@@ -680,7 +751,7 @@ test("first scheduled analysis page can fail terminally without returning 500 or
       restQuery: async (resource) => {
         calls.push(resource);
         if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-          return { claimed: true, resumed: false, run: claimedRun };
+          return scheduledClaim(claimedRun, { resumed: false });
         }
         if (resource === "rpc/continue_financial_reconciliation_automatic_analysis") return failedRun;
         throw new Error(`Unexpected RPC ${resource}`);
@@ -699,8 +770,7 @@ test("first scheduled analysis page can fail terminally without returning 500 or
   ]);
 });
 
-test("first scheduled claim populates analysis and executes proposals in stable priority and base order", async () => {
-  const lowPriorityRule = "future_low_priority_rule";
+test("first scheduled child populates analysis and executes proposals in stable base order", async () => {
   const proposalA = uuidFor(11);
   const proposalB = uuidFor(12);
   const proposalC = uuidFor(13);
@@ -713,15 +783,11 @@ test("first scheduled claim populates analysis and executes proposals in stable 
     status: "analyzing",
     analysisComplete: false,
     analysisCompletedAt: null,
-    definitions: [
-      { ruleKey: lowPriorityRule, priority: 2 },
-      { ruleKey: AUTOMATIC_RULE_KEY, priority: 1 },
-    ],
   });
   const analyzedRun = scheduledRun({
     definitions: pendingRun.definitions,
     proposals: [
-      { id: proposalA, ruleKey: lowPriorityRule, baseSourceDate: "2026-08-01", baseSourceId: baseA, status: "proposed" },
+      { id: proposalA, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-01", baseSourceId: baseA, status: "proposed" },
       { id: proposalB, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-03", baseSourceId: baseB, status: "proposed" },
       { id: proposalC, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-02", baseSourceId: baseC, status: "proposed" },
       { id: proposalSkipped, ruleKey: AUTOMATIC_RULE_KEY, baseSourceDate: "2026-08-04", baseSourceId: baseSkipped, status: "skipped", reason: "no_qualifying_combination" },
@@ -751,7 +817,7 @@ test("first scheduled claim populates analysis and executes proposals in stable 
       restQuery: async (resource, options) => {
         calls.push({ resource, options });
         if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-          return { claimed: true, resumed: false, run: pendingRun, internal_error: "hidden claim detail" };
+          return scheduledClaim(pendingRun, { resumed: false, internal_error: "hidden claim detail" });
         }
         if (resource === "rpc/continue_financial_reconciliation_automatic_analysis") return analyzedRun;
         if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
@@ -781,7 +847,7 @@ test("first scheduled claim populates analysis and executes proposals in stable 
       resource: "rpc/continue_financial_reconciliation_automatic_analysis",
       options: { method: "POST", body: { p_run_id: RUN_ID, p_actor: SCHEDULE_ACTOR } },
     },
-    ...[proposalC, proposalB, proposalA].map((proposalId) => ({
+    ...[proposalA, proposalC, proposalB].map((proposalId) => ({
       resource: "rpc/execute_financial_reconciliation_automatic_proposal",
       options: { method: "POST", body: { p_proposal_id: proposalId, p_actor: SCHEDULE_ACTOR } },
     })),
@@ -799,6 +865,10 @@ test("first scheduled claim populates analysis and executes proposals in stable 
     ok: true,
     claimed: true,
     resumed: false,
+    batchId: BATCH_ID,
+    ruleKey: AUTOMATIC_RULE_KEY,
+    rulePosition: 1,
+    ruleCount: 2,
     runId: RUN_ID,
     status: "partial",
     counts: {
@@ -816,6 +886,182 @@ test("first scheduled claim populates analysis and executes proposals in stable 
     hasMore: false,
   });
   assert.doesNotMatch(JSON.stringify(response.body), /hidden|diagnostic|error_detail|internal_error/);
+});
+
+test("terminal scheduled child stops the request and the next heartbeat claims the next rule", async () => {
+  const firstRun = scheduledRun();
+  const firstFinishedRun = scheduledRun({
+    status: "completed",
+    finishedAt: "2026-08-15T02:00:01.000Z",
+  });
+  const secondRun = scheduledRun({
+    runId: uuidFor(702),
+    batchRuleKey: CREDIT_CARD_RULE_KEY,
+    batchRulePosition: 2,
+    definitions: [{ ruleKey: CREDIT_CARD_RULE_KEY, priority: 2 }],
+    status: "completed",
+    finishedAt: "2026-08-15T02:01:01.000Z",
+  });
+  const calls = [];
+  let heartbeat = 0;
+  const firstResponse = responseRecorder();
+  const secondResponse = responseRecorder();
+
+  await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource) => {
+      calls.push({ heartbeat, resource });
+      if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+        return heartbeat === 0
+          ? scheduledClaim(firstRun, { resumed: false })
+          : scheduledClaim(secondRun, { resumed: false });
+      }
+      if (resource === "rpc/finish_financial_reconciliation_automatic_run") return firstFinishedRun;
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => {
+    await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, firstResponse);
+    });
+    heartbeat += 1;
+    await withCronEnvironment("2026-08-15T02:01:00.000Z", async () => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, secondResponse);
+    });
+  });
+
+  assert.deepEqual(calls, [
+    { heartbeat: 0, resource: "rpc/claim_financial_reconciliation_automatic_schedule" },
+    { heartbeat: 0, resource: "rpc/finish_financial_reconciliation_automatic_run" },
+    { heartbeat: 1, resource: "rpc/claim_financial_reconciliation_automatic_schedule" },
+  ]);
+  assert.equal(firstResponse.statusCode, 200);
+  assert.deepEqual({
+    batchId: firstResponse.body.batchId,
+    ruleKey: firstResponse.body.ruleKey,
+    rulePosition: firstResponse.body.rulePosition,
+    ruleCount: firstResponse.body.ruleCount,
+    hasMore: firstResponse.body.hasMore,
+  }, {
+    batchId: BATCH_ID,
+    ruleKey: AUTOMATIC_RULE_KEY,
+    rulePosition: 1,
+    ruleCount: 2,
+    hasMore: false,
+  });
+  assert.equal(secondResponse.statusCode, 200);
+  assert.deepEqual({
+    batchId: secondResponse.body.batchId,
+    ruleKey: secondResponse.body.ruleKey,
+    rulePosition: secondResponse.body.rulePosition,
+    ruleCount: secondResponse.body.ruleCount,
+    hasMore: secondResponse.body.hasMore,
+  }, {
+    batchId: BATCH_ID,
+    ruleKey: CREDIT_CARD_RULE_KEY,
+    rulePosition: 2,
+    ruleCount: 2,
+    hasMore: false,
+  });
+});
+
+test("failed scheduled child returns 200 and the next heartbeat can claim the next rule", async () => {
+  const failedRun = scheduledRun({
+    status: "failed",
+    analysisComplete: false,
+    analysisCompletedAt: null,
+    analysisErrorCode: "analysis_continuation_failed",
+    analysisErrorAt: "2026-08-15T02:00:01.000Z",
+    finishedAt: "2026-08-15T02:00:01.000Z",
+  });
+  const nextRun = scheduledRun({
+    runId: uuidFor(703),
+    batchRuleKey: CREDIT_CARD_RULE_KEY,
+    batchRulePosition: 2,
+    definitions: [{ ruleKey: CREDIT_CARD_RULE_KEY, priority: 2 }],
+    status: "completed",
+    finishedAt: "2026-08-15T02:01:01.000Z",
+  });
+  let heartbeat = 0;
+  let claimCount = 0;
+  const firstResponse = responseRecorder();
+  const secondResponse = responseRecorder();
+
+  await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource) => {
+      if (resource !== "rpc/claim_financial_reconciliation_automatic_schedule") {
+        throw new Error(`Unexpected RPC ${resource}`);
+      }
+      claimCount += 1;
+      return heartbeat === 0 ? scheduledClaim(failedRun) : scheduledClaim(nextRun, { resumed: false });
+    },
+  }), async (handler) => {
+    await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, firstResponse);
+    });
+    heartbeat += 1;
+    await withCronEnvironment("2026-08-15T02:01:00.000Z", async () => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, secondResponse);
+    });
+  });
+
+  assert.equal(claimCount, 2);
+  assert.equal(firstResponse.statusCode, 200);
+  assert.equal(firstResponse.body.status, "failed");
+  assert.equal(firstResponse.body.rulePosition, 1);
+  assert.equal(firstResponse.body.hasMore, false);
+  assert.equal(secondResponse.statusCode, 200);
+  assert.equal(secondResponse.body.ruleKey, CREDIT_CARD_RULE_KEY);
+  assert.equal(secondResponse.body.rulePosition, 2);
+});
+
+test("scheduled heartbeat fails closed on malformed parent or one-rule child metadata", async () => {
+  const proposal = {
+    id: uuidFor(704),
+    ruleKey: AUTOMATIC_RULE_KEY,
+    baseSourceDate: "2026-08-01",
+    baseSourceId: uuidFor(705),
+    status: "proposed",
+  };
+  const validRun = scheduledRun({ proposals: [proposal] });
+  const cases = [
+    ["legacy batch scope", scheduledRun({ scope: "batch", proposals: [proposal] }), {}],
+    ["invalid batch id", scheduledRun({ batchId: "not-a-uuid", proposals: [proposal] }), {}],
+    ["invalid batch position", scheduledRun({ batchRulePosition: 0, proposals: [proposal] }), {}],
+    ["position exceeds count", scheduledRun({ batchRulePosition: 3, proposals: [proposal] }), {}],
+    ["batch rule differs from definition", scheduledRun({ batchRuleKey: CREDIT_CARD_RULE_KEY, proposals: [proposal] }), {}],
+    ["more than one definition", scheduledRun({
+      definitions: [
+        { ruleKey: AUTOMATIC_RULE_KEY, priority: 1 },
+        { ruleKey: CREDIT_CARD_RULE_KEY, priority: 2 },
+      ],
+      proposals: [proposal],
+    }), {}],
+    ["claim batch differs from run", validRun, { batchId: uuidFor(706) }],
+    ["claim position differs from run", validRun, { batchRulePosition: 2 }],
+    ["claim count differs from run", validRun, { batchRuleCount: 3 }],
+  ];
+
+  for (const [name, run, claimOverrides] of cases) {
+    let executionCalled = false;
+    const response = responseRecorder();
+    await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async (resource) => {
+          if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+            return scheduledClaim(run, claimOverrides);
+          }
+          if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+            executionCalled = true;
+          }
+          return run;
+        },
+      }), async (handler) => {
+        await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+      });
+    });
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+    assert.equal(executionCalled, false, name);
+  }
 });
 
 test("scheduled heartbeat rejects foreign-run or unknown-rule proposals before execution", async () => {
@@ -846,7 +1092,7 @@ test("scheduled heartbeat rejects foreign-run or unknown-rule proposals before e
       await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
         restQuery: async (resource) => {
           if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-            return { claimed: true, resumed: true, run };
+            return scheduledClaim(run);
           }
           if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") executionCalled = true;
           return run;
@@ -885,7 +1131,7 @@ test("scheduled heartbeat preserves the claimed run identity across every follow
       await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
         restQuery: async (resource, options) => {
           if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-            return { claimed: true, resumed: true, run: claimedRun };
+            return scheduledClaim(claimedRun);
           }
           if (resource === driftingRpc) return otherRun;
           if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
@@ -927,7 +1173,7 @@ test("scheduled heartbeat rejects inconsistent run lifecycle state before mutati
       await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
         restQuery: async (resource) => {
           if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-            return { claimed: true, resumed: true, run };
+            return scheduledClaim(run);
           }
           mutationCalled = true;
           return run;
@@ -991,7 +1237,7 @@ test("scheduled heartbeat enforces refresh and finalize phase postconditions", a
         restQuery: async (resource) => {
           calls.push(resource);
           if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-            return { claimed: true, resumed: true, run: claimedRun };
+            return scheduledClaim(claimedRun);
           }
           if (Object.hasOwn(responses, resource)) return responses[resource];
           throw new Error(`Unexpected RPC ${resource}`);
@@ -1010,9 +1256,13 @@ test("scheduled heartbeat rejects prototype-backed run fields from an RPC respon
   const inheritedRunFields = {
     runId: RUN_ID,
     trigger: "scheduled",
-    scope: "batch",
+    scope: "rule",
     status: "completed",
     actor: SCHEDULE_ACTOR,
+    batchId: BATCH_ID,
+    batchRuleKey: AUTOMATIC_RULE_KEY,
+    batchRulePosition: 1,
+    batchRuleCount: 2,
     analysisCompletedAt: "2026-08-15T02:00:01.000Z",
     finishedAt: "2026-08-15T02:00:10.000Z",
   };
@@ -1027,7 +1277,7 @@ test("scheduled heartbeat rejects prototype-backed run fields from an RPC respon
     await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
       restQuery: async (resource) => {
         if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-          return { claimed: true, resumed: true, run: poisonedRun };
+          return scheduledClaim(poisonedRun);
         }
         followUpCalled = true;
         return {};
@@ -1047,7 +1297,7 @@ test("scheduled heartbeat rejects prototype-backed claim fields from an RPC resp
     status: "completed",
     finishedAt: "2026-08-15T02:00:10.000Z",
   });
-  const poisonedClaim = Object.create({ claimed: true, resumed: true, run: finishedRun });
+  const poisonedClaim = Object.create(scheduledClaim(finishedRun));
   let followUpCalled = false;
   const response = responseRecorder();
 
@@ -1096,7 +1346,8 @@ test("scheduled heartbeat caps sequential proposal attempts at 25 and leaves the
       restQuery: async (resource, options) => {
         calls.push({ resource, options });
         if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-          return { claimed: true, resumed: true, run: scheduledRun({ proposals }) };
+          const run = scheduledRun({ proposals });
+          return scheduledClaim(run);
         }
         if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
           activeExecutions += 1;
@@ -1180,7 +1431,8 @@ test("scheduled heartbeat continues after an isolated failure and finalizes only
         },
       ];
       if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
-        return { claimed: true, resumed: true, run: scheduledRun({ proposals: currentProposals }) };
+        const run = scheduledRun({ proposals: currentProposals });
+        return scheduledClaim(run);
       }
       if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
         if (options.body.p_proposal_id === firstProposal) {
@@ -1259,7 +1511,7 @@ test("scheduled heartbeat delegates Lisbon DST slot identity to the database cla
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
       claimCount += 1;
-      return { claimed: true, resumed: claimCount > 1, run: finishedRun };
+      return scheduledClaim(finishedRun, { resumed: claimCount > 1 });
     },
   }), async (handler) => {
     await withCronEnvironment("2026-03-29T00:30:00.000Z", async () => {
@@ -1471,7 +1723,15 @@ test("automation settings GET authorizes and calls only the settings RPC", async
       calls.push({ resource, options });
       return {
         schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
-        rules: [{ rule_key: AUTOMATIC_RULE_KEY, rule_version: 2, diagnostic: "hidden" }],
+        rules: [
+          { rule_key: AUTOMATIC_RULE_KEY, rule_version: 2, diagnostic: "hidden" },
+          { rule_key: CREDIT_CARD_RULE_KEY, rule_version: 1 },
+        ],
+        last_scheduled_batch: {
+          id: BATCH_ID,
+          status: "partial",
+          error_detail: "hidden batch detail",
+        },
       };
     },
   }), async (handler) => {
@@ -1486,8 +1746,32 @@ test("automation settings GET authorizes and calls only the settings RPC", async
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, {
     schedule: { enabled: true, timeOfDay: "02:15", timeZone: AUTOMATIC_TIME_ZONE },
-    rules: [{ ruleKey: AUTOMATIC_RULE_KEY, ruleVersion: 2 }],
+    rules: [
+      { ruleKey: AUTOMATIC_RULE_KEY, ruleVersion: 2 },
+      { ruleKey: CREDIT_CARD_RULE_KEY, ruleVersion: 1 },
+    ],
+    lastScheduledBatch: { id: BATCH_ID, status: "partial" },
   });
+});
+
+test("automation settings has no action that creates an analysis run", async () => {
+  let rpcCalled = false;
+  const response = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => {
+      rpcCalled = true;
+      return {};
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: { action: "analyze_rule", ruleKeys: [CREDIT_CARD_RULE_KEY] },
+    }, response);
+  });
+
+  assert.equal(response.statusCode, 405);
+  assert.equal(response.headers.Allow, "GET, PUT");
+  assert.equal(rpcCalled, false);
 });
 
 test("automation settings PUT normalizes the complete payload and actor into one replacement RPC", async () => {
@@ -1590,16 +1874,27 @@ test("manual automation GET exposes only the app-authorized enabled manual rule 
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
       return {
-        rules: [{
-          rule_key: AUTOMATIC_RULE_KEY,
-          rule_version: 2,
-          display_name: "Financial Documents to CGD Bank Statement",
-          enabled: true,
-          allow_manual_execution: true,
-          difference_allowed: "1.00",
-          max_difference_days: 7,
-          diagnostic: "hidden",
-        }],
+        rules: [
+          {
+            rule_key: AUTOMATIC_RULE_KEY,
+            rule_version: 2,
+            display_name: "Financial Documents to CGD Bank Statement",
+            enabled: true,
+            allow_manual_execution: true,
+            difference_allowed: "1.00",
+            max_difference_days: 7,
+            diagnostic: "hidden",
+          },
+          {
+            rule_key: CREDIT_CARD_RULE_KEY,
+            rule_version: 1,
+            display_name: "Financial Documents to CGD Credit Card",
+            enabled: true,
+            allow_manual_execution: true,
+            difference_allowed: "0.00",
+            max_difference_days: 10,
+          },
+        ],
       };
     },
   }), async (handler) => {
@@ -1613,15 +1908,26 @@ test("manual automation GET exposes only the app-authorized enabled manual rule 
   }]);
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, {
-    rules: [{
-      ruleKey: AUTOMATIC_RULE_KEY,
-      ruleVersion: 2,
-      displayName: "Financial Documents to CGD Bank Statement",
-      enabled: true,
-      allowManualExecution: true,
-      differenceAllowed: "1.00",
-      maxDifferenceDays: 7,
-    }],
+    rules: [
+      {
+        ruleKey: AUTOMATIC_RULE_KEY,
+        ruleVersion: 2,
+        displayName: "Financial Documents to CGD Bank Statement",
+        enabled: true,
+        allowManualExecution: true,
+        differenceAllowed: "1.00",
+        maxDifferenceDays: 7,
+      },
+      {
+        ruleKey: CREDIT_CARD_RULE_KEY,
+        ruleVersion: 1,
+        displayName: "Financial Documents to CGD Credit Card",
+        enabled: true,
+        allowManualExecution: true,
+        differenceAllowed: "0.00",
+        maxDifferenceDays: 10,
+      },
+    ],
   });
   assert.equal(Object.hasOwn(response.body, "schedule"), false);
 });
@@ -1724,9 +2030,14 @@ test("analyze_rule authorizes app access and sends exactly one selected Credit C
 });
 
 test("analyze_batch returns 400 before any RPC", async () => {
+  let authorizationCalled = false;
   let rpcCalled = false;
   const response = responseRecorder();
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    requireFeature: async () => {
+      authorizationCalled = true;
+      return {};
+    },
     restQuery: async () => {
       rpcCalled = true;
       return {};
@@ -1736,6 +2047,7 @@ test("analyze_batch returns 400 before any RPC", async () => {
   });
 
   assert.equal(response.statusCode, 400);
+  assert.equal(authorizationCalled, false);
   assert.equal(rpcCalled, false);
   assert.match(response.body.error, /automation action/i);
 });

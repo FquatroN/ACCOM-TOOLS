@@ -77,7 +77,12 @@ async function analyzeRule(req, body) {
   if (input.action !== "analyze_rule" || input.ruleKeys.length !== 1) {
     throw inputError("Analyze rule requires exactly one manually enabled rule.");
   }
-  return createAnalysis(input, actorFor(auth), "manual_rule");
+  const [selectedRuleKey] = input.ruleKeys;
+  return createAnalysis({
+    action: "analyze_rule",
+    ruleKeys: [selectedRuleKey],
+    clientRequestId: input.clientRequestId,
+  }, actorFor(auth), "manual_rule");
 }
 
 async function continueAnalysis(req, body) {

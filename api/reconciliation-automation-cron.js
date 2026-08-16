@@ -1,5 +1,9 @@
 const { restQuery } = require("./_supabase");
-const { isCronRequest, toAutomationPublicResult } = require("./_reconciliation-automation");
+const {
+  AUTOMATIC_RULE_VERSIONS,
+  isCronRequest,
+  toAutomationPublicResult,
+} = require("./_reconciliation-automation");
 
 const SCHEDULE_ACTOR = "system:reconciliation";
 const MAX_PROPOSALS_PER_HEARTBEAT = 25;
@@ -10,6 +14,7 @@ const SAFE_UNCLAIMED_REASONS = new Set([
   "no_enabled_rules",
   "unsupported_rule_set",
   "slot_failed",
+  "batch_complete",
 ]);
 const SAFE_RUN_STATUSES = new Set([
   "analyzing",
@@ -79,7 +84,7 @@ function compareText(left, right) {
   return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
 }
 
-function requireScheduledRun(value, expectedRunId = "") {
+function requireScheduledRun(value, expectedRun = null) {
   const run = toAutomationPublicResult(value);
   if (!isPlainRecord(run)
     || !hasOwnFields(run, [
@@ -88,6 +93,10 @@ function requireScheduledRun(value, expectedRunId = "") {
       "scope",
       "status",
       "actor",
+      "batchId",
+      "batchRuleKey",
+      "batchRulePosition",
+      "batchRuleCount",
       "analysisCursorDate",
       "analysisCursorId",
       "analysisProcessed",
@@ -101,10 +110,12 @@ function requireScheduledRun(value, expectedRunId = "") {
       "proposals",
     ])
     || !UUID_PATTERN.test(text(run.runId))
-    || (expectedRunId && run.runId !== expectedRunId)
     || run.trigger !== "scheduled"
-    || run.scope !== "batch"
+    || run.scope !== "rule"
     || run.actor !== SCHEDULE_ACTOR
+    || !UUID_PATTERN.test(text(run.batchId))
+    || !Number.isSafeInteger(run.batchRulePosition) || run.batchRulePosition < 1
+    || !Number.isSafeInteger(run.batchRuleCount) || run.batchRulePosition > run.batchRuleCount
     || !SAFE_RUN_STATUSES.has(run.status)
     || (run.analysisCursorDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(text(run.analysisCursorDate)))
     || (run.analysisCursorId !== null && !UUID_PATTERN.test(text(run.analysisCursorId)))
@@ -122,21 +133,27 @@ function requireScheduledRun(value, expectedRunId = "") {
     throw new Error("Scheduled reconciliation run response is invalid.");
   }
 
-  const ruleKeys = new Set();
-  const priorities = new Set();
-  for (const definition of run.definitions) {
-    const ruleKey = text(definition?.ruleKey);
-    const priority = Number(definition?.priority);
-    if (!isPlainRecord(definition)
-      || !hasOwnFields(definition, ["ruleKey", "priority"])
-      || !ruleKey || !Number.isSafeInteger(priority) || priority < 1
-      || ruleKeys.has(ruleKey) || priorities.has(priority)) {
-      throw new Error("Scheduled reconciliation rule snapshot is invalid.");
-    }
-    ruleKeys.add(ruleKey);
-    priorities.add(priority);
+  if (expectedRun && (run.runId !== expectedRun.runId
+    || run.batchId !== expectedRun.batchId
+    || run.batchRuleKey !== expectedRun.batchRuleKey
+    || run.batchRulePosition !== expectedRun.batchRulePosition
+    || run.batchRuleCount !== expectedRun.batchRuleCount)) {
+    throw new Error("Scheduled reconciliation run identity changed.");
   }
-  if (ruleKeys.size === 0) throw new Error("Scheduled reconciliation rule snapshot is empty.");
+
+  if (run.definitions.length !== 1) {
+    throw new Error("Scheduled reconciliation run must contain one rule snapshot.");
+  }
+  const definition = run.definitions[0];
+  const ruleKey = text(definition?.ruleKey);
+  const priority = Number(definition?.priority);
+  if (!isPlainRecord(definition)
+    || !hasOwnFields(definition, ["ruleKey", "priority"])
+    || !Object.hasOwn(AUTOMATIC_RULE_VERSIONS, ruleKey)
+    || !Number.isSafeInteger(priority) || priority < 1
+    || run.batchRuleKey !== ruleKey) {
+    throw new Error("Scheduled reconciliation rule snapshot is invalid.");
+  }
 
   const proposalIds = new Set();
   for (const proposal of run.proposals) {
@@ -144,7 +161,7 @@ function requireScheduledRun(value, expectedRunId = "") {
       || !hasOwnFields(proposal, ["id", "runId", "ruleKey", "baseSourceDate", "baseSourceId", "status"])
       || !UUID_PATTERN.test(text(proposal.id))
       || proposal.runId !== run.runId
-      || !ruleKeys.has(proposal.ruleKey)
+      || proposal.ruleKey !== ruleKey
       || !/^\d{4}-\d{2}-\d{2}$/.test(text(proposal.baseSourceDate))
       || !UUID_PATTERN.test(text(proposal.baseSourceId))
       || !PROPOSAL_STATUSES.has(proposal.status)
@@ -175,6 +192,48 @@ function requireScheduledRun(value, expectedRunId = "") {
     throw new Error("Scheduled reconciliation run lifecycle is invalid.");
   }
   return run;
+}
+
+function requireScheduleClaim(value) {
+  const claim = toAutomationPublicResult(value);
+  if (!isPlainRecord(claim)
+    || !Object.hasOwn(claim, "claimed")
+    || typeof claim.claimed !== "boolean") {
+    throw new Error("Scheduled reconciliation claim response is invalid.");
+  }
+  if (!claim.claimed) {
+    if (!Object.hasOwn(claim, "reason") || !SAFE_UNCLAIMED_REASONS.has(claim.reason)) {
+      throw new Error("Scheduled reconciliation claim reason is invalid.");
+    }
+    if (claim.reason === "batch_complete"
+      && (!Object.hasOwn(claim, "batchId") || !UUID_PATTERN.test(text(claim.batchId)))) {
+      throw new Error("Scheduled reconciliation completed batch response is invalid.");
+    }
+    return claim;
+  }
+
+  if (!hasOwnFields(claim, [
+    "resumed",
+    "batchId",
+    "batchRulePosition",
+    "batchRuleCount",
+    "run",
+  ])
+    || typeof claim.resumed !== "boolean"
+    || !UUID_PATTERN.test(text(claim.batchId))
+    || !Number.isSafeInteger(claim.batchRulePosition) || claim.batchRulePosition < 1
+    || !Number.isSafeInteger(claim.batchRuleCount)
+    || claim.batchRulePosition > claim.batchRuleCount) {
+    throw new Error("Scheduled reconciliation claimed response is invalid.");
+  }
+
+  const run = requireScheduledRun(claim.run);
+  if (claim.batchId !== run.batchId
+    || claim.batchRulePosition !== run.batchRulePosition
+    || claim.batchRuleCount !== run.batchRuleCount) {
+    throw new Error("Scheduled reconciliation claim does not match its child run.");
+  }
+  return { ...claim, run };
 }
 
 function requireContinuedAnalysisRun(value) {
@@ -225,16 +284,16 @@ function stablePendingProposals(run) {
     });
 }
 
-function requireAnalyzedRun(value, expectedRunId) {
-  const run = requireScheduledRun(value, expectedRunId);
+function requireAnalyzedRun(value, expectedRun) {
+  const run = requireScheduledRun(value, expectedRun);
   if (run.analysisCompletedAt === null) {
     throw new Error("Scheduled reconciliation analysis did not complete.");
   }
   return run;
 }
 
-function requireFinishedRun(value, expectedRunId) {
-  const run = requireAnalyzedRun(value, expectedRunId);
+function requireFinishedRun(value, expectedRun) {
+  const run = requireAnalyzedRun(value, expectedRun);
   if (run.finishedAt === null || !TERMINAL_RUN_STATUSES.has(run.status)) {
     throw new Error("Scheduled reconciliation finalization did not complete.");
   }
@@ -260,6 +319,10 @@ function publicRunResponse(claim, run, attemptedCount, hasMore) {
     ok: true,
     claimed: true,
     resumed: claim.resumed === true,
+    batchId: run.batchId,
+    ruleKey: run.definitions[0].ruleKey,
+    rulePosition: run.batchRulePosition,
+    ruleCount: run.batchRuleCount,
     runId: run.runId,
     status: SAFE_RUN_STATUSES.has(run.status) ? run.status : "running",
     counts: publicCounts(run),
@@ -289,11 +352,19 @@ module.exports = async function handler(req, res) {
       throw new Error("Scheduled reconciliation continuation response is invalid.");
     }
     if (continued.continued) {
-      const run = requireContinuedAnalysisRun(continued.run);
+      let run = requireContinuedAnalysisRun(continued.run);
+      const scheduled = run.trigger === "scheduled";
+      if (scheduled) run = requireScheduledRun(run);
       return res.status(200).json({
         ok: true,
         claimed: false,
         continuedAnalysis: true,
+        ...(scheduled ? {
+          batchId: run.batchId,
+          ruleKey: run.definitions[0].ruleKey,
+          rulePosition: run.batchRulePosition,
+          ruleCount: run.batchRuleCount,
+        } : {}),
         runId: run.runId,
         status: run.status,
         analysisProcessed: run.analysisProcessed,
@@ -302,35 +373,31 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const claim = toAutomationPublicResult(await restQuery(
+    const claim = requireScheduleClaim(await restQuery(
       "rpc/claim_financial_reconciliation_automatic_schedule",
       {
         method: "POST",
         body: { p_now: new Date().toISOString(), p_actor: SCHEDULE_ACTOR },
       },
     ));
-    if (!isPlainRecord(claim)
-      || !Object.hasOwn(claim, "claimed")
-      || typeof claim.claimed !== "boolean") {
-      throw new Error("Scheduled reconciliation claim response is invalid.");
-    }
     if (!claim.claimed) {
-      if (!Object.hasOwn(claim, "reason")) {
-        throw new Error("Scheduled reconciliation claim reason is invalid.");
-      }
       return res.status(200).json({
         ok: true,
         claimed: false,
-        reason: SAFE_UNCLAIMED_REASONS.has(claim.reason) ? claim.reason : "not_claimed",
+        reason: claim.reason,
+        ...(claim.reason === "batch_complete" ? { batchId: claim.batchId } : {}),
         hasMore: false,
       });
     }
-    if (!hasOwnFields(claim, ["resumed", "run"]) || typeof claim.resumed !== "boolean") {
-      throw new Error("Scheduled reconciliation claimed response is invalid.");
-    }
 
-    let run = requireScheduledRun(claim.run);
-    const claimedRunId = run.runId;
+    let run = claim.run;
+    const claimedRun = {
+      runId: run.runId,
+      batchId: run.batchId,
+      batchRuleKey: run.batchRuleKey,
+      batchRulePosition: run.batchRulePosition,
+      batchRuleCount: run.batchRuleCount,
+    };
     if (run.finishedAt) {
       return res.status(200).json(publicRunResponse(claim, run, 0, false));
     }
@@ -338,7 +405,7 @@ module.exports = async function handler(req, res) {
       run = requireScheduledRun(await restQuery(
         "rpc/continue_financial_reconciliation_automatic_analysis",
         { method: "POST", body: { p_run_id: run.runId, p_actor: SCHEDULE_ACTOR } },
-      ), claimedRunId);
+      ), claimedRun);
       if (!run.analysisCompletedAt) {
         return res.status(200).json(publicRunResponse(claim, run, 0, run.status === "analyzing"));
       }
@@ -360,14 +427,14 @@ module.exports = async function handler(req, res) {
       run = requireAnalyzedRun(await restQuery(
         "rpc/get_financial_reconciliation_automatic_run",
         { method: "POST", body: { p_run_id: run.runId } },
-      ), claimedRunId);
+      ), claimedRun);
     }
     let hasMore = hasMoreWork(run);
     if (!hasMore && !run.finishedAt) {
       run = requireFinishedRun(await restQuery(
         "rpc/finish_financial_reconciliation_automatic_run",
         { method: "POST", body: { p_run_id: run.runId } },
-      ), claimedRunId);
+      ), claimedRun);
       hasMore = hasMoreWork(run);
     }
 
