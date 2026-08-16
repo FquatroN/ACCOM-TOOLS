@@ -14970,11 +14970,16 @@ function buildGuestsBlacklistPayload(draft) {
 function validateGuestDraftClient(draft) {
   if (!clean(draft?.name)) return "Guest name is required.";
   if (!clean(draft?.birthDate)) return "Birth date is required.";
-  if (!normalizeGuestDateClient(draft?.birthDate)) return "Birth date must be a valid date.";
+  const birthDate = normalizeGuestDateClient(draft?.birthDate);
+  const checkIn = normalizeGuestDateClient(draft?.checkIn);
+  const checkOut = normalizeGuestDateClient(draft?.checkOut);
+  if (!birthDate) return "Birth date must be a valid date.";
+  if (birthDate > lisbonTodayIsoClient()) return "Birth date cannot be after today.";
+  if (checkIn && birthDate > checkIn) return "Birth date cannot be after check-in date.";
   if (!clean(draft?.docNumber)) return "Document number is required.";
-  if (clean(draft?.checkIn) && !normalizeGuestDateClient(draft?.checkIn)) return "Check-in must be a valid date.";
-  if (clean(draft?.checkOut) && !normalizeGuestDateClient(draft?.checkOut)) return "Check-out must be a valid date.";
-  if (normalizeGuestDateClient(draft?.checkIn) && normalizeGuestDateClient(draft?.checkOut) && normalizeGuestDateClient(draft?.checkOut) < normalizeGuestDateClient(draft?.checkIn)) return "Check-out must be after or equal to check-in.";
+  if (clean(draft?.checkIn) && !checkIn) return "Check-in must be a valid date.";
+  if (clean(draft?.checkOut) && !checkOut) return "Check-out must be a valid date.";
+  if (checkIn && checkOut && checkOut < checkIn) return "Check-out must be after or equal to check-in.";
   return "";
 }
 

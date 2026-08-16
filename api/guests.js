@@ -381,9 +381,26 @@ function validateGuestSave(existingRows, record, { excludeId = "" } = {}) {
   }
 }
 
+function validateGuestBirthDateForSave(record) {
+  const birthDate = cleanId(record?.birthDate);
+  const checkIn = cleanId(record?.checkIn);
+  const today = lisbonTodayIso();
+  if (birthDate && today && birthDate > today) {
+    const error = new Error("Birth date cannot be after today.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (birthDate && checkIn && birthDate > checkIn) {
+    const error = new Error("Birth date cannot be after check-in date.");
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
 function mergeLegacyRows(existingRows, input, id = "") {
   const existing = existingRows.find((item) => cleanId(item.id) === cleanId(id)) || {};
   const nextRecord = sanitizeGuestRecord({ ...existing, ...input, id: id || input?.id || existing.id }, existing);
+  validateGuestBirthDateForSave(nextRecord);
   validateGuestSave(existingRows, nextRecord, { excludeId: id || nextRecord.id });
   const nextRows = [...existingRows];
   const index = id ? nextRows.findIndex((item) => cleanId(item.id) === cleanId(id)) : -1;
@@ -437,6 +454,7 @@ module.exports = async function handler(req, res) {
         return;
       }
       const nextRecord = sanitizeGuestRecord(body);
+      validateGuestBirthDateForSave(nextRecord);
       const duplicate = await findDuplicateGuestTableRow(nextRecord);
       if (duplicate) validateGuestSave([duplicate], nextRecord);
       await createGuestTableRow({
@@ -504,6 +522,7 @@ module.exports = async function handler(req, res) {
         return;
       }
       const nextRecord = sanitizeGuestRecord({ ...existing, ...body, id }, existing);
+      validateGuestBirthDateForSave(nextRecord);
       const duplicate = await findDuplicateGuestTableRow(nextRecord, id);
       if (duplicate) validateGuestSave([duplicate], nextRecord, { excludeId: id });
       await updateGuestTableRow(id, nextRecord, existing);
