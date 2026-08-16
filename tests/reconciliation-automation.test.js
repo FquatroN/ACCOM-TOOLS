@@ -2398,6 +2398,90 @@ test("credit-card automation migration preserves Banco v2 and installs an explic
   }
 });
 
+test("credit-card automation analyzes one immutable managed rule with resumable terminal lifecycle", () => {
+  const sql = fs.readFileSync(CREDIT_CARD_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const functionSource = (functionName) => {
+    const match = sql.match(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "i",
+    ));
+    assert.ok(match, `${functionName} replacement must exist in the credit-card migration`);
+    return match[0];
+  };
+
+  const createSource = functionSource("create_financial_reconciliation_automatic_analysis");
+  assert.equal(
+    mapRpcError(new Error("Automatic analysis conflict: an unfinished manual run already exists for this actor.")).statusCode,
+    409,
+    "the one-open-run error must map to a safe conflict response",
+  );
+  assert.match(createSource,
+    /if p_mode <> 'manual_rule' or cardinality\(p_rule_keys\) <> 1 then[\s\S]*Manual automatic analysis requires exactly one selected rule\./i);
+  assert.doesNotMatch(createSource, /manual_batch|payment\s*=\s*'Banco'/i);
+  assert.match(createSource, /jsonb_array_elements_text\(\s*definition\.destination_source_types\s*\)/i);
+  assert.match(createSource, /'destinationSourceType', destination\.source_type/i);
+  assert.match(createSource, /source_rule\.matching_source_type\s*=\s*destination\.source_type/i);
+  assert.match(createSource, /financial_reconciliation_automatic_base_count\(/i);
+  assert.match(createSource, /pg_advisory_xact_lock[\s\S]*p_actor/i);
+  assert.match(createSource, /finished_at is null[\s\S]*Automatic analysis conflict:[^']*unfinished manual run already exists/i);
+  assert.ok(
+    createSource.indexOf("run.trigger = 'manual' and run.finished_at is null")
+      < createSource.indexOf("run.client_request_id = p_client_request_id"),
+    "the current unfinished run must win over an older idempotency key",
+  );
+
+  assert.match(sql,
+    /row_number\(\)\s+over\s*\(\s*partition by actor\s+order by started_at desc, created_at desc, id desc\s*\)[\s\S]*status = 'failed'/i);
+  assert.match(sql,
+    /create unique index if not exists financial_reconciliation_automatic_runs_open_manual_actor_uidx[\s\S]*where trigger = 'manual' and finished_at is null/i);
+
+  const continueSource = functionSource("continue_financial_reconciliation_automatic_analysis");
+  assert.match(continueSource, /jsonb_array_length\(v_run\.definition_config_snapshot\) <> 1/i);
+  assert.match(continueSource, /financial_reconciliation_automatic_rule_contract\(/i);
+  assert.match(continueSource, /v_max_candidates[^;]*v_contract->>'maxCandidates'/i);
+  assert.match(continueSource, /v_max_destination_records[^;]*v_contract->>'maxDestinationRecords'/i);
+  assert.match(continueSource, /coalesce\(v_rule->>'operator', ''\) not in \('\+', '-'\)/i);
+  assert.match(continueSource, /coalesce\(v_max_candidates, 0\) < 1/i);
+  assert.match(continueSource, /coalesce\(v_max_destination_records, 0\) < 1/i);
+  assert.match(continueSource,
+    /jsonb_build_object\(v_destination_source_type, v_rule->>'operator'\)[\s\S]*v_max_destination_records/i);
+  assert.doesNotMatch(continueSource, /payment\s*=\s*'Banco'|import_cgd_extrato_ordem', v_operator|candidate_count > 12|numeric, 4\s*\)/i);
+  assert.match(continueSource, /financial_reconciliation_automatic_base_count\(/i);
+  assert.match(continueSource, /financial_reconciliation_automatic_candidate_page\([\s\S]*25/i);
+
+  const finalizeSource = functionSource("financial_reconciliation_finalize_automatic_analysis");
+  assert.match(finalizeSource,
+    /status = case when exists \([\s\S]*status = 'proposed'[\s\S]*then 'ready' else 'completed' end/i);
+  assert.match(finalizeSource,
+    /finished_at = case when exists \([\s\S]*status = 'proposed'[\s\S]*then null else now\(\) end/i);
+  assert.ok(finalizeSource.indexOf("cross_base_overlap") < finalizeSource.indexOf("counts ="),
+    "overlap resolution must run before persisted proposal counts are recalculated");
+
+  const activeSource = functionSource("get_financial_reconciliation_automatic_active_run");
+  assert.match(activeSource, /actor = p_actor[\s\S]*trigger = 'manual'[\s\S]*finished_at is null/i);
+  assert.doesNotMatch(activeSource, /status in \('analyzing', 'ready'\)/i);
+  const oldestSource = functionSource("continue_financial_reconciliation_automatic_oldest_analysis");
+  assert.match(oldestSource, /p_worker is distinct from 'system:reconciliation'/i);
+  assert.match(oldestSource,
+    /jsonb_typeof\(v_snapshot\) = 'array'[\s\S]*jsonb_array_length\(v_snapshot\) = 1/i);
+  assert.match(oldestSource,
+    /financial_reconciliation_automatic_rule_contract\([\s\S]*is not null[\s\S]*financial_reconciliation_automatic_base_count\(/i);
+  assert.match(oldestSource, /financial_reconciliation_automatic_base_count\(/i);
+
+  for (const contract of [
+    "one-rule manual creation validation and immutable snapshots",
+    "one open manual run per actor",
+    "credit-card 25-base resumable lifecycle and retry idempotency",
+    "credit-card one-to-four exact combinations and five-card skip",
+    "credit-card ambiguity and candidate limit",
+    "zero-executable analysis terminates without visible executable rows",
+    "Banco paging and counts remain unchanged",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
+});
+
 test("release documentation and SQL smokes pin the complete 90-day migration order", () => {
   const migrationNames = [
     "2026-08-14-financial-reconciliation-automation-schema.sql",

@@ -2171,6 +2171,402 @@ begin
   end if;
 end $$;
 
+-- one-rule manual creation validation and immutable snapshots
+do $$
+declare
+  v_before bigint;
+  v_after bigint;
+  v_run jsonb;
+  v_snapshot jsonb;
+begin
+  update public.financial_documents
+  set payment = case payment when 'Visa' then 'smoke:hidden-visa' when 'Banco' then 'smoke:hidden-banco' else payment end
+  where payment in ('Visa', 'Banco');
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true, allow_manual_execution = true, include_in_scheduled_batch = false,
+      difference_allowed = 0, max_difference_days = 10
+  where rule_key in (
+    'financial_documents_cgd_bank_statement',
+    'financial_documents_cgd_credit_card'
+  );
+
+  select count(*) into v_before
+  from public.financial_reconciliation_automatic_runs
+  where actor like 'smoke:one-rule-validation%';
+
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['financial_documents_cgd_credit_card'], 'manual_batch',
+      'smoke:one-rule-validation-mode', '53000000-0000-0000-0000-000000000001'
+    );
+    raise exception 'Expected manual_batch rejection.';
+  exception when others then
+    if sqlerrm not like 'Manual automatic analysis requires exactly one selected rule.%' then raise; end if;
+  end;
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['financial_documents_cgd_bank_statement', 'financial_documents_cgd_credit_card'], 'manual_rule',
+      'smoke:one-rule-validation-two', '53000000-0000-0000-0000-000000000002'
+    );
+    raise exception 'Expected two-rule rejection.';
+  exception when others then
+    if sqlerrm not like 'Manual automatic analysis requires exactly one selected rule.%' then raise; end if;
+  end;
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['smoke_unknown_rule'], 'manual_rule',
+      'smoke:one-rule-validation-unknown', '53000000-0000-0000-0000-000000000003'
+    );
+    raise exception 'Expected unknown-rule rejection.';
+  exception when others then
+    if sqlerrm not like 'Automatic rule is not enabled for manual analysis.%' then raise; end if;
+  end;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = false, allow_manual_execution = true
+  where rule_key = 'financial_documents_cgd_credit_card';
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['financial_documents_cgd_credit_card'], 'manual_rule',
+      'smoke:one-rule-validation-disabled', '53000000-0000-0000-0000-000000000004'
+    );
+    raise exception 'Expected disabled-rule rejection.';
+  exception when others then
+    if sqlerrm not like 'Automatic rule is not enabled for manual analysis.%' then raise; end if;
+  end;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true, allow_manual_execution = false
+  where rule_key = 'financial_documents_cgd_credit_card';
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['financial_documents_cgd_credit_card'], 'manual_rule',
+      'smoke:one-rule-validation-not-manual', '53000000-0000-0000-0000-000000000005'
+    );
+    raise exception 'Expected manual-disabled rule rejection.';
+  exception when others then
+    if sqlerrm not like 'Automatic rule is not enabled for manual analysis.%' then raise; end if;
+  end;
+
+  select count(*) into v_after
+  from public.financial_reconciliation_automatic_runs
+  where actor like 'smoke:one-rule-validation%';
+  if v_after <> v_before then
+    raise exception 'Invalid one-rule requests inserted an automatic run.';
+  end if;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true, allow_manual_execution = true
+  where rule_key = 'financial_documents_cgd_credit_card';
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_credit_card'], 'manual_rule',
+    'smoke:one-rule-credit-snapshot', '53000000-0000-0000-0000-000000000006'
+  );
+  v_snapshot := v_run->'definitions';
+  if jsonb_array_length(v_snapshot) <> 1
+    or v_snapshot->0->>'ruleKey' <> 'financial_documents_cgd_credit_card'
+    or v_snapshot->0->>'destinationSourceType' <> 'import_cgd_cartao_credito'
+    or v_snapshot->0->>'operator' <> '+'
+    or v_run->>'status' <> 'completed' then
+    raise exception 'Credit-card manual run did not snapshot exactly one immutable directional definition.';
+  end if;
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_bank_statement'], 'manual_rule',
+    'smoke:one-rule-bank-snapshot', '53000000-0000-0000-0000-000000000007'
+  );
+  v_snapshot := v_run->'definitions';
+  if jsonb_array_length(v_snapshot) <> 1
+    or v_snapshot->0->>'ruleKey' <> 'financial_documents_cgd_bank_statement'
+    or v_snapshot->0->>'destinationSourceType' <> 'import_cgd_extrato_ordem'
+    or v_snapshot->0->>'operator' <> '+'
+    or v_run->>'status' <> 'completed' then
+    raise exception 'Banco manual run did not snapshot exactly one immutable directional definition.';
+  end if;
+end $$;
+
+-- credit-card 25-base resumable lifecycle and retry idempotency
+-- credit-card one-to-four exact combinations and five-card skip
+-- credit-card ambiguity and candidate limit
+do $$
+declare
+  v_run jsonb;
+  v_retry jsonb;
+  v_run_id uuid;
+  v_proposal_count integer;
+  v_cursor uuid;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('51000000-0000-0000-0000-000000000001', date '2090-01-01', 'CC-ONE-001', '', '', 'Visa', 100, 'S'),
+    ('51000000-0000-0000-0000-000000000002', date '2090-01-01', 'CC-TWO-002', '', '', 'Visa', 100, 'S'),
+    ('51000000-0000-0000-0000-000000000003', date '2090-01-01', 'CC-THREE-003', '', '', 'Visa', 100, 'S'),
+    ('51000000-0000-0000-0000-000000000004', date '2090-01-01', 'CC-FOUR-004', '', '', 'Visa', 100, 'S'),
+    ('51000000-0000-0000-0000-000000000005', date '2090-01-01', 'CC-FIVE-005', '', '', 'Visa', 50, 'S'),
+    ('51000000-0000-0000-0000-000000000006', date '2090-01-01', 'CC-MULTI-006', '', '', 'Visa', 20, 'S'),
+    ('51000000-0000-0000-0000-000000000007', date '2090-01-01', 'CC-LIMIT-007', '', '', 'Visa', 130, 'S'),
+    ('51000000-0000-0000-0000-000000000008', date '2090-01-01', 'CC-NONE-008', '', '', 'Visa', 80, 'S');
+
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  )
+  select
+    ('51000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+    date '2090-01-01', 'CC-FILL-' || lpad(series::text, 3, '0'), '', '', 'Visa', 100 + series, 'S'
+  from generate_series(9, 28) series;
+
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values
+    ('52000000-0000-0000-0000-000000000001', 'smoke-one-rule', 'cc-one-1', date '2090-01-01', 'CCONE001', 100),
+    ('52000000-0000-0000-0000-000000000002', 'smoke-one-rule', 'cc-two-1', date '2090-01-01', 'CCTWO002', 40),
+    ('52000000-0000-0000-0000-000000000003', 'smoke-one-rule', 'cc-two-2', date '2090-01-01', 'CCTWO002', 60),
+    ('52000000-0000-0000-0000-000000000004', 'smoke-one-rule', 'cc-three-1', date '2090-01-01', 'CCTHREE003', 20),
+    ('52000000-0000-0000-0000-000000000005', 'smoke-one-rule', 'cc-three-2', date '2090-01-01', 'CCTHREE003', 30),
+    ('52000000-0000-0000-0000-000000000006', 'smoke-one-rule', 'cc-three-3', date '2090-01-01', 'CCTHREE003', 50),
+    ('52000000-0000-0000-0000-000000000007', 'smoke-one-rule', 'cc-four-1', date '2090-01-01', 'CCFOUR004', 10),
+    ('52000000-0000-0000-0000-000000000008', 'smoke-one-rule', 'cc-four-2', date '2090-01-01', 'CCFOUR004', 20),
+    ('52000000-0000-0000-0000-000000000009', 'smoke-one-rule', 'cc-four-3', date '2090-01-01', 'CCFOUR004', 30),
+    ('52000000-0000-0000-0000-000000000010', 'smoke-one-rule', 'cc-four-4', date '2090-01-01', 'CCFOUR004', 40),
+    ('52000000-0000-0000-0000-000000000011', 'smoke-one-rule', 'cc-five-1', date '2090-01-01', 'CCFIVE005', 10),
+    ('52000000-0000-0000-0000-000000000012', 'smoke-one-rule', 'cc-five-2', date '2090-01-01', 'CCFIVE005', 10),
+    ('52000000-0000-0000-0000-000000000013', 'smoke-one-rule', 'cc-five-3', date '2090-01-01', 'CCFIVE005', 10),
+    ('52000000-0000-0000-0000-000000000014', 'smoke-one-rule', 'cc-five-4', date '2090-01-01', 'CCFIVE005', 10),
+    ('52000000-0000-0000-0000-000000000015', 'smoke-one-rule', 'cc-five-5', date '2090-01-01', 'CCFIVE005', 10),
+    ('52000000-0000-0000-0000-000000000016', 'smoke-one-rule', 'cc-multi-1', date '2090-01-01', 'CCMULTI006', 20),
+    ('52000000-0000-0000-0000-000000000017', 'smoke-one-rule', 'cc-multi-2', date '2090-01-01', 'CCMULTI006', 10),
+    ('52000000-0000-0000-0000-000000000018', 'smoke-one-rule', 'cc-multi-3', date '2090-01-01', 'CCMULTI006', 10);
+
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  )
+  select
+    ('52000000-0000-0000-0000-' || lpad((100 + series)::text, 12, '0'))::uuid,
+    'smoke-one-rule', 'cc-limit-' || series, date '2090-01-01', 'CCLIMIT007', 10
+  from generate_series(1, 13) series;
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_credit_card'], 'manual_rule',
+    'smoke:credit-card-lifecycle', '53000000-0000-0000-0000-000000000010'
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  if v_run->>'status' <> 'analyzing'
+    or (v_run->>'analysisProcessed')::integer <> 25
+    or (v_run->>'analysisTotal')::integer <> 28
+    or v_run->>'analysisCursorId' <> '51000000-0000-0000-0000-000000000025'
+    or (select count(*) from public.financial_reconciliation_automatic_proposals where run_id = v_run_id) <> 25 then
+    raise exception 'Credit-card first analysis page was not the ordered 25-base page.';
+  end if;
+  v_cursor := (v_run->>'analysisCursorId')::uuid;
+
+  v_run := public.continue_financial_reconciliation_automatic_analysis(
+    v_run_id, 'smoke:credit-card-lifecycle'
+  );
+  if v_run->>'status' <> 'ready'
+    or (v_run->>'analysisProcessed')::integer <> 28
+    or v_run->>'analysisCursorId' <> '51000000-0000-0000-0000-000000000028'
+    or (v_run->'counts'->>'bases')::integer <> 28
+    or (v_run->'counts'->>'proposed')::integer <> 4
+    or (v_run->'counts'->>'ambiguous')::integer <> 2
+    or (v_run->'counts'->>'skipped')::integer <> 22
+    or v_run->>'finishedAt' is not null then
+    raise exception 'Credit-card final analysis state or persisted counts are invalid.';
+  end if;
+  if v_cursor = (v_run->>'analysisCursorId')::uuid then
+    raise exception 'Credit-card continuation did not advance the cursor exactly to the remaining page.';
+  end if;
+
+  select count(*) into v_proposal_count
+  from public.financial_reconciliation_automatic_proposals
+  where run_id = v_run_id;
+  v_retry := public.continue_financial_reconciliation_automatic_analysis(
+    v_run_id, 'smoke:credit-card-lifecycle'
+  );
+  if (select count(*) from public.financial_reconciliation_automatic_proposals where run_id = v_run_id) <> v_proposal_count
+    or v_retry->>'analysisCursorId' <> v_run->>'analysisCursorId'
+    or (v_retry->>'analysisProcessed')::integer <> 28 then
+    raise exception 'Credit-card continuation retry duplicated proposals or advanced the cursor.';
+  end if;
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.base_source_id between '51000000-0000-0000-0000-000000000001'::uuid
+                                      and '51000000-0000-0000-0000-000000000004'::uuid
+      and (proposal.status <> 'proposed'
+        or jsonb_array_length(proposal.items) <> substring(proposal.base_source_id::text from 36 for 1)::integer)
+  ) or (select count(*) from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = v_run_id and proposal.status = 'proposed') <> 4 then
+    raise exception 'Credit-card one-to-four exact-zero combinations were not proposed.';
+  end if;
+  if not exists (
+    select 1 from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.base_source_id = '51000000-0000-0000-0000-000000000005'
+      and proposal.status = 'skipped'
+      and proposal.reason = 'no_qualifying_combination'
+      and jsonb_array_length(proposal.candidate_groups) = 5
+  ) then
+    raise exception 'A solution requiring five credit-card rows was not skipped.';
+  end if;
+  if not exists (
+    select 1 from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.base_source_id = '51000000-0000-0000-0000-000000000006'
+      and proposal.status = 'ambiguous' and proposal.reason = 'multiple_combinations'
+      and jsonb_array_length(proposal.candidate_groups) = 2
+  ) then
+    raise exception 'Two valid credit-card combinations did not become ambiguous.';
+  end if;
+  if not exists (
+    select 1 from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.base_source_id = '51000000-0000-0000-0000-000000000007'
+      and proposal.status = 'ambiguous' and proposal.reason = 'candidate_limit'
+      and jsonb_array_length(proposal.candidate_groups) = 13
+  ) then
+    raise exception 'Thirteen credit-card identity candidates did not hit the managed candidate limit.';
+  end if;
+
+  if public.get_financial_reconciliation_automatic_active_run('smoke:credit-card-lifecycle')->>'runId'
+      <> v_run_id::text then
+    raise exception 'Ready credit-card run was not retained as the actor active run.';
+  end if;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, client_request_id, status,
+    definition_config_snapshot, analysis_completed_at, finished_at
+  )
+  select
+    'manual', 'rule', run.actor, '53000000-0000-0000-0000-000000000012', 'completed',
+    run.definition_config_snapshot, now(), now()
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = v_run_id;
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['financial_documents_cgd_credit_card'], 'manual_rule',
+      'smoke:credit-card-lifecycle', '53000000-0000-0000-0000-000000000012'
+    );
+    raise exception 'Expected the current open run to win over an older idempotency key.';
+  exception when others then
+    if sqlerrm not like 'Automatic analysis conflict: an unfinished manual run already exists for this actor.%' then raise; end if;
+  end;
+
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['financial_documents_cgd_credit_card'], 'manual_rule',
+      'smoke:credit-card-lifecycle', '53000000-0000-0000-0000-000000000011'
+    );
+    raise exception 'Expected one-open-manual-run conflict.';
+  exception when others then
+    if sqlerrm not like 'Automatic analysis conflict: an unfinished manual run already exists for this actor.%' then raise; end if;
+  end;
+  if (select count(*) from public.financial_reconciliation_automatic_runs
+      where actor = 'smoke:credit-card-lifecycle' and finished_at is null) <> 1 then
+    raise exception 'Conflicting manual creation inserted or changed the current open run.';
+  end if;
+end $$;
+
+-- one open manual run per actor
+do $$
+begin
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'financial_reconciliation_automatic_runs_open_manual_actor_uidx'
+  ) then
+    raise exception 'The one-open-manual-run actor index was not installed.';
+  end if;
+end $$;
+
+-- zero-executable analysis terminates without visible executable rows
+do $$
+declare
+  v_run jsonb;
+  v_run_id uuid;
+begin
+  update public.financial_documents set payment = 'smoke:analyzed-visa' where payment = 'Visa';
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values (
+    '51000000-0000-0000-0000-000000000029', date '2091-01-01',
+    'CC-ZERO-029', '', '', 'Visa', 29, 'S'
+  );
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_credit_card'], 'manual_rule',
+    'smoke:zero-executable', '53000000-0000-0000-0000-000000000020'
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  if v_run->>'status' <> 'completed'
+    or v_run->>'finishedAt' is null
+    or (v_run->'counts'->>'bases')::integer <> 1
+    or (v_run->'counts'->>'skipped')::integer <> 1
+    or (v_run->'counts'->>'proposed')::integer <> 0
+    or public.get_financial_reconciliation_automatic_active_run('smoke:zero-executable') is not null then
+    raise exception 'Zero-executable analysis did not finish terminally and release the active selector.';
+  end if;
+  if (select count(*) from public.financial_reconciliation_automatic_proposals
+      where run_id = v_run_id and status = 'proposed') <> 0
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals
+      where run_id = v_run_id and status = 'skipped'
+        and reason = 'no_qualifying_combination'
+        and items = '[]'::jsonb
+    ) then
+    raise exception 'Skipped audit evidence leaked a visible executable proposal row contract.';
+  end if;
+end $$;
+
+-- Banco paging and counts remain unchanged
+do $$
+declare
+  v_count bigint;
+  v_first_ids uuid[];
+  v_second_ids uuid[];
+  v_candidate_rows integer;
+begin
+  update public.financial_documents set payment = 'smoke:analyzed-banco' where payment = 'Banco';
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  )
+  select
+    ('54000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+    date '2092-01-01', 'BANK-PAGE-' || lpad(series::text, 3, '0'), '', '', 'Banco', 200 + series, 'S'
+  from generate_series(1, 26) series;
+
+  select public.financial_reconciliation_automatic_base_count(
+    'financial_documents_cgd_bank_statement', 2
+  ) into v_count;
+  select array_agg(page.id order by page.document_date, page.id)
+  into v_first_ids
+  from public.financial_reconciliation_automatic_base_page(
+    'financial_documents_cgd_bank_statement', 2, null, null, 25
+  ) page;
+  select array_agg(page.id order by page.document_date, page.id)
+  into v_second_ids
+  from public.financial_reconciliation_automatic_base_page(
+    'financial_documents_cgd_bank_statement', 2, date '2092-01-01',
+    '54000000-0000-0000-0000-000000000025', 25
+  ) page;
+  select count(*) into v_candidate_rows
+  from public.financial_reconciliation_automatic_candidate_page(
+    'financial_documents_cgd_bank_statement', 2, 0, 10, null, null, 25
+  );
+
+  if v_count <> 26
+    or cardinality(v_first_ids) <> 25
+    or v_first_ids[1] <> '54000000-0000-0000-0000-000000000001'
+    or v_first_ids[25] <> '54000000-0000-0000-0000-000000000025'
+    or v_second_ids <> array['54000000-0000-0000-0000-000000000026'::uuid]
+    or v_candidate_rows <> 25 then
+    raise exception 'Banco base count or ordered 25-row paging behavior changed.';
+  end if;
+end $$;
+
 do $$
 declare
   v_candidate_definition text;

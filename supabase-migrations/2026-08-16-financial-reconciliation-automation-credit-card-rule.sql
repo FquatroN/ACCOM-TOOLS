@@ -769,6 +769,507 @@ begin
 end
 $$;
 
+with ranked_open_manual_runs as (
+  select
+    run.id,
+    row_number() over (
+      partition by actor
+      order by started_at desc, created_at desc, id desc
+    ) as actor_run_rank
+  from public.financial_reconciliation_automatic_runs run
+  where run.trigger = 'manual' and run.finished_at is null
+)
+update public.financial_reconciliation_automatic_runs run
+set status = 'failed',
+    error_summary = 'A newer unfinished manual automatic analysis superseded this run.',
+    analysis_error_code = 'superseded_open_manual_run',
+    analysis_error_at = now(),
+    finished_at = now(),
+    updated_at = now()
+from ranked_open_manual_runs ranked
+where run.id = ranked.id and ranked.actor_run_rank > 1;
+
+create unique index if not exists financial_reconciliation_automatic_runs_open_manual_actor_uidx
+  on public.financial_reconciliation_automatic_runs (actor)
+  where trigger = 'manual' and finished_at is null;
+
+create or replace function public.financial_reconciliation_finalize_automatic_analysis(p_run_id uuid)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+begin
+  with source_usage as (
+    select
+      item->>'sourceType' as source_type,
+      item->>'sourceId' as source_id,
+      count(distinct proposal.base_source_id) as base_count
+    from public.financial_reconciliation_automatic_proposals proposal
+    join lateral (
+      select item.value as item
+      from jsonb_array_elements(proposal.items) item(value)
+      union all
+      select item.value as item
+      from jsonb_array_elements(proposal.candidate_groups) candidate_group(value)
+      join lateral jsonb_array_elements(
+        case
+          when jsonb_typeof(candidate_group.value) = 'array' then candidate_group.value
+          else jsonb_build_array(candidate_group.value)
+        end
+      ) item(value) on true
+    ) source_item on true
+    where proposal.run_id = p_run_id and proposal.status in ('proposed', 'ambiguous')
+    group by item->>'sourceType', item->>'sourceId'
+  ), overlapping as (
+    select distinct proposal.id
+    from public.financial_reconciliation_automatic_proposals proposal
+    join lateral (
+      select item.value as item
+      from jsonb_array_elements(proposal.items) item(value)
+      union all
+      select item.value as item
+      from jsonb_array_elements(proposal.candidate_groups) candidate_group(value)
+      join lateral jsonb_array_elements(
+        case
+          when jsonb_typeof(candidate_group.value) = 'array' then candidate_group.value
+          else jsonb_build_array(candidate_group.value)
+        end
+      ) item(value) on true
+    ) source_item on true
+    join source_usage usage
+      on usage.source_type = item->>'sourceType'
+     and usage.source_id = item->>'sourceId'
+    where proposal.run_id = p_run_id
+      and proposal.status in ('proposed', 'ambiguous')
+      and usage.base_count > 1
+  )
+  update public.financial_reconciliation_automatic_proposals proposal
+  set status = 'ambiguous', reason = 'cross_base_overlap', updated_at = now()
+  where proposal.id in (select id from overlapping);
+
+  update public.financial_reconciliation_automatic_runs run
+  set status = case when exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id and proposal.status = 'proposed'
+      ) then 'ready' else 'completed' end,
+      finished_at = case when exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id and proposal.status = 'proposed'
+      ) then null else now() end,
+      analysis_completed_at = now(),
+      updated_at = now(),
+      analysis_error_code = null,
+      analysis_error_at = null,
+      counts = (
+        select jsonb_build_object(
+          'bases', count(distinct proposal.base_source_id),
+          'proposed', count(*) filter (where proposal.status = 'proposed'),
+          'ambiguous', count(*) filter (where proposal.status = 'ambiguous'),
+          'skipped', count(*) filter (where proposal.status = 'skipped')
+        )
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id
+      )
+  where run.id = p_run_id and run.analysis_completed_at is null;
+
+  return public.get_financial_reconciliation_automatic_run(p_run_id);
+end
+$$;
+
+create or replace function public.continue_financial_reconciliation_automatic_analysis(
+  p_run_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_rule jsonb;
+  v_contract jsonb;
+  v_base record;
+  v_combination record;
+  v_combination_count integer;
+  v_page_count integer := 0;
+  v_total bigint;
+  v_last_date date;
+  v_last_id uuid;
+  v_destination_source_type text;
+  v_max_candidates integer;
+  v_max_destination_records integer;
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs
+  where id = p_run_id
+  for update;
+  if not found then raise exception 'Automatic analysis run was not found.'; end if;
+  if v_run.actor <> p_actor then raise exception 'Automatic analysis run belongs to another actor.'; end if;
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+  if v_run.status <> 'analyzing' then
+    raise exception 'Automatic analysis run is not resumable.';
+  end if;
+
+  begin
+    if jsonb_array_length(v_run.definition_config_snapshot) <> 1 then
+      raise exception 'Resumable automatic analysis requires exactly one snapshotted rule.';
+    end if;
+
+    select value into strict v_rule
+    from jsonb_array_elements(v_run.definition_config_snapshot) value;
+
+    v_contract := public.financial_reconciliation_automatic_rule_contract(
+      v_rule->>'ruleKey',
+      (v_rule->>'ruleVersion')::integer
+    );
+    if v_contract is null then
+      raise exception 'Automatic reconciliation rule is unsupported.';
+    end if;
+
+    v_destination_source_type := coalesce(
+      nullif(v_rule->>'destinationSourceType', ''),
+      v_contract->>'destinationSourceType'
+    );
+    v_max_candidates := (v_contract->>'maxCandidates')::integer;
+    v_max_destination_records := (v_contract->>'maxDestinationRecords')::integer;
+    if v_destination_source_type is null
+      or v_destination_source_type <> v_contract->>'destinationSourceType'
+      or coalesce(v_rule->>'operator', '') not in ('+', '-')
+      or coalesce(v_max_candidates, 0) < 1
+      or coalesce(v_max_destination_records, 0) < 1 then
+      raise exception 'Automatic rule snapshot contract is invalid.';
+    end if;
+
+    if v_run.analysis_total = 0 then
+      select public.financial_reconciliation_automatic_base_count(
+        v_rule->>'ruleKey',
+        (v_rule->>'ruleVersion')::integer
+      ) into v_total;
+      update public.financial_reconciliation_automatic_runs
+      set analysis_total = v_total, updated_at = now()
+      where id = v_run.id;
+      v_run.analysis_total := v_total;
+    end if;
+
+    for v_base in
+      select *
+      from public.financial_reconciliation_automatic_candidate_page(
+        v_rule->>'ruleKey',
+        (v_rule->>'ruleVersion')::integer,
+        (v_rule->>'differenceAllowed')::numeric,
+        (v_rule->>'maxDifferenceDays')::integer,
+        v_run.analysis_cursor_date,
+        v_run.analysis_cursor_id,
+        25
+      )
+    loop
+      v_page_count := v_page_count + 1;
+      v_last_date := v_base.base_source_date;
+      v_last_id := v_base.base_source_id;
+
+      if v_base.candidate_count > v_max_candidates then
+        insert into public.financial_reconciliation_automatic_proposals (
+          run_id, rule_key, rule_version, base_source_type,
+          base_source_id, base_source_date, base_snapshot, candidate_groups,
+          allowed_difference, status, reason, signature
+        ) values (
+          v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer,
+          'financial_documents', v_base.base_source_id, v_base.base_source_date,
+          v_base.base_snapshot, v_base.candidates,
+          (v_rule->>'differenceAllowed')::numeric,
+          'ambiguous', 'candidate_limit',
+          public.financial_reconciliation_extension_sha256(
+            'candidate_limit:' || v_base.base_source_id::text
+          )
+        ) on conflict do nothing;
+      else
+        select count(*) into v_combination_count
+        from public.financial_reconciliation_automatic_build_combinations(
+          v_base.base_snapshot,
+          v_base.candidates,
+          jsonb_build_object(v_destination_source_type, v_rule->>'operator'),
+          (v_rule->>'differenceAllowed')::numeric,
+          v_max_destination_records
+        );
+
+        if v_combination_count = 1 then
+          select * into strict v_combination
+          from public.financial_reconciliation_automatic_build_combinations(
+            v_base.base_snapshot,
+            v_base.candidates,
+            jsonb_build_object(v_destination_source_type, v_rule->>'operator'),
+            (v_rule->>'differenceAllowed')::numeric,
+            v_max_destination_records
+          );
+          insert into public.financial_reconciliation_automatic_proposals (
+            run_id, rule_key, rule_version, base_source_type,
+            base_source_id, base_source_date, base_snapshot, items, evidence,
+            candidate_groups, calculated_difference, allowed_difference,
+            status, signature
+          ) values (
+            v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer,
+            'financial_documents', v_base.base_source_id, v_base.base_source_date,
+            v_base.base_snapshot, v_combination.items,
+            (select coalesce(jsonb_agg(value->'evidence'), '[]'::jsonb)
+             from jsonb_array_elements(v_combination.items) value),
+            jsonb_build_array(v_combination.items),
+            v_combination.calculated_difference,
+            (v_rule->>'differenceAllowed')::numeric,
+            'proposed', v_combination.signature
+          ) on conflict do nothing;
+        elsif v_combination_count > 1 then
+          insert into public.financial_reconciliation_automatic_proposals (
+            run_id, rule_key, rule_version, base_source_type,
+            base_source_id, base_source_date, base_snapshot, candidate_groups,
+            allowed_difference, status, reason, signature
+          ) values (
+            v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer,
+            'financial_documents', v_base.base_source_id, v_base.base_source_date,
+            v_base.base_snapshot,
+            (select coalesce(jsonb_agg(items order by signature), '[]'::jsonb)
+             from public.financial_reconciliation_automatic_build_combinations(
+               v_base.base_snapshot,
+               v_base.candidates,
+               jsonb_build_object(v_destination_source_type, v_rule->>'operator'),
+               (v_rule->>'differenceAllowed')::numeric,
+               v_max_destination_records
+             )),
+            (v_rule->>'differenceAllowed')::numeric,
+            'ambiguous', 'multiple_combinations',
+            public.financial_reconciliation_extension_sha256(
+              'multiple:' || v_base.base_source_id::text
+            )
+          ) on conflict do nothing;
+        else
+          insert into public.financial_reconciliation_automatic_proposals (
+            run_id, rule_key, rule_version, base_source_type,
+            base_source_id, base_source_date, base_snapshot, candidate_groups,
+            allowed_difference, status, reason, signature
+          ) values (
+            v_run.id, v_rule->>'ruleKey', (v_rule->>'ruleVersion')::integer,
+            'financial_documents', v_base.base_source_id, v_base.base_source_date,
+            v_base.base_snapshot, v_base.candidates,
+            (v_rule->>'differenceAllowed')::numeric,
+            'skipped', 'no_qualifying_combination',
+            public.financial_reconciliation_extension_sha256(
+              'skipped:' || v_base.base_source_id::text
+            )
+          ) on conflict do nothing;
+        end if;
+      end if;
+    end loop;
+
+    if v_page_count > 0 then
+      update public.financial_reconciliation_automatic_runs
+      set analysis_cursor_date = v_last_date,
+          analysis_cursor_id = v_last_id,
+          analysis_processed = analysis_processed + v_page_count,
+          analysis_total = greatest(analysis_total, analysis_processed + v_page_count),
+          updated_at = now(),
+          analysis_error_code = null,
+          analysis_error_at = null
+      where id = v_run.id;
+    end if;
+
+    if v_page_count < 25 then
+      return public.financial_reconciliation_finalize_automatic_analysis(v_run.id);
+    end if;
+    return public.financial_reconciliation_automatic_progress_or_run(v_run.id);
+  exception when others then
+    update public.financial_reconciliation_automatic_runs
+    set status = 'failed',
+        error_summary = 'Automatic analysis could not be completed.',
+        analysis_error_code = 'analysis_continuation_failed',
+        analysis_error_at = now(),
+        finished_at = coalesce(finished_at, now()),
+        updated_at = now()
+    where id = p_run_id;
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end;
+end
+$$;
+
+create or replace function public.create_financial_reconciliation_automatic_analysis(
+  p_rule_keys text[],
+  p_mode text,
+  p_actor text,
+  p_client_request_id uuid
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_snapshot jsonb;
+  v_run_id uuid;
+  v_current_run_id uuid;
+  v_current_request_id uuid;
+  v_total bigint;
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then raise exception 'Actor is required.'; end if;
+  if p_client_request_id is null then raise exception 'Client request ID is required.'; end if;
+  if p_mode is null or p_rule_keys is null then
+    raise exception 'Manual automatic analysis requires exactly one selected rule.';
+  end if;
+  if p_mode <> 'manual_rule' or cardinality(p_rule_keys) <> 1 then
+    raise exception 'Manual automatic analysis requires exactly one selected rule.';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended('financial_reconciliation_automatic_manual:' || p_actor, 0)
+  );
+
+  select run.id, run.client_request_id into v_current_run_id, v_current_request_id
+  from public.financial_reconciliation_automatic_runs run
+  where run.actor = p_actor and run.trigger = 'manual' and run.finished_at is null
+  for update;
+  if v_current_run_id is not null then
+    if v_current_request_id = p_client_request_id then
+      return public.continue_financial_reconciliation_automatic_analysis(v_current_run_id, p_actor);
+    end if;
+    raise exception 'Automatic analysis conflict: an unfinished manual run already exists for this actor.';
+  end if;
+
+  select run.id into v_run_id
+  from public.financial_reconciliation_automatic_runs run
+  where run.actor = p_actor and run.client_request_id = p_client_request_id;
+  if v_run_id is not null then
+    return public.continue_financial_reconciliation_automatic_analysis(v_run_id, p_actor);
+  end if;
+
+  lock table public.financial_reconciliation_source_rules in share row exclusive mode;
+  lock table public.financial_reconciliation_automatic_rule_configs in share row exclusive mode;
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'ruleKey', config.rule_key,
+    'ruleVersion', config.rule_version,
+    'displayName', definition.display_name,
+    'priority', config.priority,
+    'differenceAllowed', config.difference_allowed,
+    'maxDifferenceDays', config.max_difference_days,
+    'destinationSourceType', destination.source_type,
+    'definition', definition.definition,
+    'operator', source_rule.operator
+  )), '[]'::jsonb)
+  into v_snapshot
+  from public.financial_reconciliation_automatic_rule_configs config
+  join public.financial_reconciliation_automatic_rule_definitions definition
+    on definition.rule_key = config.rule_key
+   and definition.version = config.rule_version
+  cross join lateral jsonb_array_elements_text(
+    definition.destination_source_types
+  ) destination(source_type)
+  join public.financial_reconciliation_source_rules source_rule
+    on source_rule.base_source_type = definition.base_source_type
+   and source_rule.matching_source_type = destination.source_type
+  where config.rule_key = p_rule_keys[1]
+    and config.enabled
+    and config.allow_manual_execution
+    and config.max_difference_days between 0 and 90;
+
+  if jsonb_array_length(v_snapshot) <> 1 then
+    raise exception 'Automatic rule is not enabled for manual analysis.';
+  end if;
+
+  select public.financial_reconciliation_automatic_base_count(
+    v_snapshot->0->>'ruleKey',
+    (v_snapshot->0->>'ruleVersion')::integer
+  ) into v_total;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, client_request_id, definition_config_snapshot,
+    analysis_processed, analysis_total
+  ) values (
+    'manual', 'rule', p_actor, p_client_request_id, v_snapshot, 0, v_total
+  ) returning id into v_run_id;
+
+  return public.continue_financial_reconciliation_automatic_analysis(v_run_id, p_actor);
+end
+$$;
+
+create or replace function public.get_financial_reconciliation_automatic_active_run(p_actor text)
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare v_run_id uuid;
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then raise exception 'Actor is required.'; end if;
+  select run.id into v_run_id
+  from public.financial_reconciliation_automatic_runs run
+  where run.actor = p_actor
+    and run.trigger = 'manual'
+    and run.finished_at is null
+  order by run.started_at desc, run.id desc
+  limit 1;
+  if v_run_id is null then return null; end if;
+  return public.financial_reconciliation_automatic_progress_or_run(v_run_id);
+end
+$$;
+
+create or replace function public.continue_financial_reconciliation_automatic_oldest_analysis(p_worker text)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run_id uuid;
+  v_actor text;
+  v_snapshot jsonb;
+  v_rule jsonb;
+  v_total bigint;
+begin
+  if p_worker is distinct from 'system:reconciliation' then
+    raise exception 'Automatic reconciliation worker identity is invalid.';
+  end if;
+
+  select run.id, run.actor, run.definition_config_snapshot
+  into v_run_id, v_actor, v_snapshot
+  from public.financial_reconciliation_automatic_runs run
+  where run.status = 'analyzing' and run.analysis_completed_at is null
+  order by run.started_at, run.id
+  for update skip locked
+  limit 1;
+  if v_run_id is null then return jsonb_build_object('continued', false); end if;
+
+  if jsonb_typeof(v_snapshot) = 'array' then
+    if jsonb_array_length(v_snapshot) = 1 then
+      v_rule := v_snapshot->0;
+      begin
+        if public.financial_reconciliation_automatic_rule_contract(
+          v_rule->>'ruleKey',
+          (v_rule->>'ruleVersion')::integer
+        ) is not null then
+          select public.financial_reconciliation_automatic_base_count(
+            v_rule->>'ruleKey',
+            (v_rule->>'ruleVersion')::integer
+          ) into v_total;
+          update public.financial_reconciliation_automatic_runs
+          set analysis_total = greatest(analysis_total, v_total), updated_at = now()
+          where id = v_run_id;
+        end if;
+      exception when others then
+        null;
+      end;
+    end if;
+  end if;
+
+  perform public.continue_financial_reconciliation_automatic_analysis(v_run_id, v_actor);
+  return jsonb_build_object(
+    'continued', true,
+    'run', public.financial_reconciliation_automatic_progress_or_run(v_run_id)
+  );
+end
+$$;
+
 alter table public.financial_reconciliation_cgd_credit_card_match_search enable row level security;
 revoke all on table public.financial_reconciliation_cgd_credit_card_match_search
   from public, anon, authenticated, service_role;
@@ -795,6 +1296,16 @@ revoke all on function public.financial_reconciliation_automatic_single_base_can
   from public, anon, authenticated, service_role;
 revoke all on function public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)
   from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_finalize_automatic_analysis(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_financial_reconciliation_automatic_active_run(text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.continue_financial_reconciliation_automatic_oldest_analysis(text)
+  from public, anon, authenticated, service_role;
 
 grant execute on function public.financial_reconciliation_automatic_rule_contract(text,integer)
   to service_role;
@@ -813,6 +1324,14 @@ grant execute on function public.financial_reconciliation_automatic_candidate_pa
 grant execute on function public.financial_reconciliation_automatic_single_base_candidates(text,integer,numeric,integer,uuid)
   to service_role;
 grant execute on function public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)
+  to service_role;
+grant execute on function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
+  to service_role;
+grant execute on function public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid)
+  to service_role;
+grant execute on function public.get_financial_reconciliation_automatic_active_run(text)
+  to service_role;
+grant execute on function public.continue_financial_reconciliation_automatic_oldest_analysis(text)
   to service_role;
 
 notify pgrst, 'reload schema';
