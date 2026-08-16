@@ -22135,6 +22135,21 @@ function financialReconciliationAutomationProposalMarkup(proposal, run, rules, s
   </article>`;
 }
 
+function financialReconciliationAutomationVisibleProposals(run) {
+  const proposals = Array.isArray(run?.proposals) ? run.proposals : [];
+  const finished = Boolean(clean(run?.finishedAt));
+  const visibleStatuses = finished
+    ? new Set(["completed", "stale", "failed"])
+    : new Set(["proposed", "ambiguous"]);
+  return proposals.filter((proposal) => visibleStatuses.has(clean(proposal?.status).toLowerCase()));
+}
+
+function financialReconciliationAutomationEmptyMessage(run) {
+  return clean(run?.finishedAt)
+    ? "No selected execution outcomes to show."
+    : "No proposed or ambiguous matches to review.";
+}
+
 function financialReconciliationAutomationOutcomeCounts(run) {
   const proposals = Array.isArray(run?.proposals) ? run.proposals : [];
   const counts = { completed: 0, stale: 0, failed: 0, ambiguous: 0, skipped: 0, deselected: 0, attemptFailures: 0 };
@@ -22164,13 +22179,20 @@ function renderFinancialReconciliationAutomation(focusProposalId = "") {
   const automation = financialReconciliationState().automation;
   const pending = clean(automation.pendingAction);
   const proposals = Array.isArray(automation.run?.proposals) ? automation.run.proposals : [];
-  const executable = proposals.filter((proposal) => clean(proposal?.status) === "proposed");
+  const visibleProposals = financialReconciliationAutomationVisibleProposals(automation.run);
+  const executable = proposals.filter((proposal) => clean(proposal?.status).toLowerCase() === "proposed");
   const selectedCount = executable.filter((proposal) => automation.selectedProposalIds.has(clean(proposal.id))).length;
   if (els.financialReconciliationWorkbenchAutomationRules) els.financialReconciliationWorkbenchAutomationRules.innerHTML = financialReconciliationAutomationRulesMarkup(automation.loaded ? automation.rules : [], pending);
   if (els.financialReconciliationWorkbenchAutomationProposals) {
-    els.financialReconciliationWorkbenchAutomationProposals.innerHTML = proposals.length
-      ? proposals.map((proposal) => financialReconciliationAutomationProposalMarkup(proposal, automation.run, automation.rules, automation.selectedProposalIds, Boolean(pending))).join("")
-      : '<p class="empty">Analyze a rule to create auditable proposals.</p>';
+    els.financialReconciliationWorkbenchAutomationProposals.innerHTML = visibleProposals.length
+      ? visibleProposals.map((proposal) => financialReconciliationAutomationProposalMarkup(
+        proposal,
+        automation.run,
+        automation.rules,
+        automation.selectedProposalIds,
+        Boolean(pending),
+      )).join("")
+      : `<p class="empty">${escape(financialReconciliationAutomationEmptyMessage(automation.run))}</p>`;
     const focusId = clean(focusProposalId);
     if (focusId) {
       const nextInput = Array.from(els.financialReconciliationWorkbenchAutomationProposals.querySelectorAll("[data-financial-reconciliation-automation-proposal-id]"))

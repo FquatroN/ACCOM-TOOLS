@@ -594,6 +594,128 @@ function workbenchRun(proposals) {
   };
 }
 
+function compileVisibleAutomationProposals() {
+  return new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationAutomationVisibleProposals")}
+     return financialReconciliationAutomationVisibleProposals;`,
+  )((value) => String(value ?? "").trim());
+}
+
+function compileAutomationOutcomeCounts() {
+  return new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationAutomationOutcomeCounts")}
+     return financialReconciliationAutomationOutcomeCounts;`,
+  )((value) => String(value ?? "").trim());
+}
+
+function renderAutomationWorkbench(run, selectedProposalIds = new Set()) {
+  const state = { automation: { rules: [], run, selectedProposalIds, pendingAction: "", loaded: true } };
+  const proposalContainer = { innerHTML: "", querySelectorAll: () => [] };
+  const els = {
+    financialReconciliationWorkbenchAutomationRules: { innerHTML: "" },
+    financialReconciliationWorkbenchAutomationProposals: proposalContainer,
+    financialReconciliationWorkbenchAutomationResults: { innerHTML: "" },
+    financialReconciliationWorkbenchAutomationSelectAll: { disabled: false },
+    financialReconciliationWorkbenchAutomationClearAll: { disabled: false },
+    financialReconciliationWorkbenchAutomationExecute: { disabled: false, textContent: "" },
+  };
+  const render = new Function(
+    "financialReconciliationState",
+    "clean",
+    "els",
+    "financialReconciliationAutomationRulesMarkup",
+    "financialReconciliationAutomationProposalMarkup",
+    "financialReconciliationAutomationResultsMarkup",
+    "escape",
+    `${appFunctionSource("financialReconciliationAutomationVisibleProposals")}
+     ${appFunctionSource("financialReconciliationAutomationEmptyMessage")}
+     ${appFunctionSource("renderFinancialReconciliationAutomation")}
+     return renderFinancialReconciliationAutomation;`,
+  )(
+    () => state,
+    (value) => String(value ?? "").trim(),
+    els,
+    () => "",
+    (proposal) => `<article data-proposal-id="${proposal.id}">${proposal.id}</article>`,
+    () => "",
+    (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]),
+  );
+  render();
+  return { els, state };
+}
+
+test("active automation runs show proposed and ambiguous rows only", () => {
+  const visible = compileVisibleAutomationProposals();
+  const proposals = [
+    { id: "checked", status: "proposed" },
+    { id: "unchecked", status: "proposed" },
+    { id: "ambiguous", status: "ambiguous" },
+    { id: "skipped", status: "skipped" },
+    { id: "completed", status: "completed" },
+  ];
+  const run = Object.freeze({ finishedAt: null, proposals: Object.freeze(proposals) });
+
+  assert.deepEqual(visible(run).map((proposal) => proposal.id), ["checked", "unchecked", "ambiguous"]);
+  assert.equal(run.proposals, proposals);
+});
+
+test("finished automation runs show selected persisted outcomes only", () => {
+  const visible = compileVisibleAutomationProposals();
+  const run = {
+    finishedAt: "2026-08-16T10:00:00.000Z",
+    proposals: [
+      { id: "completed", status: "completed" },
+      { id: "stale", status: "stale" },
+      { id: "failed", status: "failed" },
+      { id: "ambiguous", status: "ambiguous" },
+      { id: "skipped", status: "skipped" },
+      { id: "deselected", status: "deselected" },
+    ],
+  };
+
+  assert.deepEqual(visible(run).map((proposal) => proposal.id), ["completed", "stale", "failed"]);
+});
+
+test("active proposal rendering retains unchecked proposals and counts hidden outcomes", () => {
+  const run = workbenchRun([
+    { id: "checked", status: "proposed" },
+    { id: "unchecked", status: "proposed" },
+    { id: "ambiguous", status: "ambiguous" },
+    { id: "skipped", status: "skipped" },
+  ]);
+  const { els } = renderAutomationWorkbench(run, new Set(["checked"]));
+
+  assert.match(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /checked/);
+  assert.match(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /unchecked/);
+  assert.deepEqual(compileAutomationOutcomeCounts()(run), {
+    completed: 0, stale: 0, failed: 0, ambiguous: 1, skipped: 1, deselected: 0, attemptFailures: 0,
+  });
+});
+
+test("finished proposal rendering shows execution outcomes and counts hidden rows", () => {
+  const run = workbenchRun([
+    { id: "completed", status: "completed" },
+    { id: "stale", status: "stale" },
+    { id: "failed", status: "failed" },
+    { id: "ambiguous", status: "ambiguous" },
+    { id: "skipped", status: "skipped" },
+    { id: "deselected", status: "deselected" },
+  ]);
+  run.finishedAt = "2026-08-16T10:00:00.000Z";
+  const { els } = renderAutomationWorkbench(run);
+  const markup = els.financialReconciliationWorkbenchAutomationProposals.innerHTML;
+
+  assert.match(markup, /completed/);
+  assert.match(markup, /stale/);
+  assert.match(markup, /failed/);
+  assert.doesNotMatch(markup, /ambiguous|skipped|deselected/);
+  assert.deepEqual(compileAutomationOutcomeCounts()(run), {
+    completed: 1, stale: 1, failed: 1, ambiguous: 1, skipped: 1, deselected: 1, attemptFailures: 0,
+  });
+});
+
 function compileWorkbenchProposalMarkup() {
   return new Function(
     "clean",
