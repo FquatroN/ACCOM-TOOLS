@@ -1316,6 +1316,8 @@ const state = {
       selectedProposalIds: new Set(),
       pendingAction: "",
       loaded: false,
+      continuationToken: 0,
+      continuationRetry: false,
     },
   },
   guestsBiRows: [],
@@ -2643,6 +2645,7 @@ function bindEvents() {
   els.financialReconciliationCurrent?.addEventListener("input", onFinancialReconciliationCurrentInput);
   els.financialReconciliationHistoryRows?.addEventListener("click", onFinancialReconciliationHistoryClick);
   els.financialReconciliationWorkbenchAutomationRules?.addEventListener("click", onFinancialReconciliationAutomationRulesClick);
+  els.financialReconciliationWorkbenchAutomationProposals?.addEventListener("click", onFinancialReconciliationAutomationProposalsClick);
   els.financialReconciliationWorkbenchAutomationProposals?.addEventListener("change", onFinancialReconciliationAutomationProposalsChange);
   els.financialReconciliationWorkbenchAutomationSelectAll?.addEventListener("click", () => setFinancialReconciliationAutomationSelection("all"));
   els.financialReconciliationWorkbenchAutomationClearAll?.addEventListener("click", () => setFinancialReconciliationAutomationSelection("clear"));
@@ -22019,7 +22022,11 @@ async function loadFinancialReconciliationAutomationRules() {
     const result = await api("/api/reconciliation-automation?view=rules");
     automation.rules = Array.isArray(result?.rules) ? clone(result.rules) : [];
     automation.loaded = true;
+    automation.pendingAction = "";
     setFinancialReconciliationAutomationStatus(automation.rules.length ? "Automatic rules loaded." : "No automatic rules are available for manual analysis.");
+    if (financialReconciliationState().activeTab === "automatic") {
+      await restoreFinancialReconciliationAutomationAnalysis();
+    }
   } catch (error) {
     automation.rules = [];
     automation.loaded = false;
@@ -22028,6 +22035,105 @@ async function loadFinancialReconciliationAutomationRules() {
     automation.pendingAction = "";
     renderFinancialReconciliationAutomation();
   }
+}
+
+function financialReconciliationAutomationIsAnalyzing(run) {
+  return Boolean(run && clean(run.status) === "analyzing" && !clean(run.analysisCompletedAt));
+}
+
+function financialReconciliationAutomationProgressLabel(run) {
+  const processed = Math.max(0, Number(run?.analysisProcessed) || 0);
+  const total = Math.max(processed, Number(run?.analysisTotal) || 0);
+  return `Analyzing ${processed} of ${total} records...`;
+}
+
+function finalizeFinancialReconciliationAutomationAnalysis() {
+  const automation = financialReconciliationState().automation;
+  automation.pendingAction = "";
+  automation.continuationRetry = false;
+  if (clean(automation.run?.status) === "failed") {
+    automation.selectedProposalIds = new Set();
+    setFinancialReconciliationAutomationStatus("Automatic analysis failed. Retry Analyze to start a new run.", "error");
+    renderFinancialReconciliationAutomation();
+    return;
+  }
+  automation.selectedProposalIds = new Set((Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
+    .filter((proposal) => clean(proposal?.status) === "proposed")
+    .map((proposal) => clean(proposal.id)).filter(Boolean));
+  setFinancialReconciliationAutomationStatus(`Analysis ready: ${automation.selectedProposalIds.size} executable proposal${automation.selectedProposalIds.size === 1 ? "" : "s"}.`, "success");
+  renderFinancialReconciliationAutomation();
+  showToast("Automatic reconciliation analysis is ready.", "success");
+}
+
+async function continueFinancialReconciliationAutomationAnalysis(token) {
+  const automation = financialReconciliationState().automation;
+  const expectedToken = Number(token);
+  while (automation.continuationToken === expectedToken
+    && financialReconciliationAutomationIsAnalyzing(automation.run)) {
+    const runId = clean(automation.run?.runId);
+    if (!runId) return;
+    automation.pendingAction = "continue";
+    automation.continuationRetry = false;
+    setFinancialReconciliationAutomationStatus(financialReconciliationAutomationProgressLabel(automation.run));
+    renderFinancialReconciliationAutomation();
+    try {
+      const nextRun = await api("/api/reconciliation-automation", {
+        method: "POST",
+        body: { action: "continue_analysis", runId },
+      });
+      if (automation.continuationToken !== expectedToken || clean(nextRun?.runId) !== runId) return;
+      automation.run = nextRun;
+    } catch (error) {
+      try {
+        const persisted = await api("/api/reconciliation-automation?view=active_run");
+        if (automation.continuationToken === expectedToken && clean(persisted?.runId) === runId) {
+          automation.run = persisted;
+        }
+      } catch {
+        // The retry control preserves the last confirmed progress when reload is also uncertain.
+      }
+      if (automation.continuationToken !== expectedToken) return;
+      if (!financialReconciliationAutomationIsAnalyzing(automation.run)) {
+        finalizeFinancialReconciliationAutomationAnalysis();
+        return;
+      }
+      automation.pendingAction = "";
+      automation.continuationRetry = true;
+      setFinancialReconciliationAutomationStatus(`Analysis paused after a connection error: ${error.message}`, "error");
+      renderFinancialReconciliationAutomation();
+      return;
+    }
+  }
+  if (automation.continuationToken === expectedToken) {
+    finalizeFinancialReconciliationAutomationAnalysis();
+  }
+}
+
+async function restoreFinancialReconciliationAutomationAnalysis() {
+  const automation = financialReconciliationState().automation;
+  if (automation.pendingAction) return;
+  try {
+    const activeRun = await api("/api/reconciliation-automation?view=active_run");
+    if (!financialReconciliationAutomationIsAnalyzing(activeRun)) return;
+    automation.run = activeRun;
+    automation.selectedProposalIds = new Set();
+    automation.continuationRetry = false;
+    automation.continuationToken += 1;
+    renderFinancialReconciliationAutomation();
+    await continueFinancialReconciliationAutomationAnalysis(automation.continuationToken);
+  } catch (error) {
+    automation.continuationRetry = Boolean(financialReconciliationAutomationIsAnalyzing(automation.run));
+    setFinancialReconciliationAutomationStatus(`Could not restore automatic analysis: ${error.message}`, "error");
+    renderFinancialReconciliationAutomation();
+  }
+}
+
+function retryFinancialReconciliationAutomationAnalysis() {
+  const automation = financialReconciliationState().automation;
+  if (!automation.continuationRetry || automation.pendingAction || !financialReconciliationAutomationIsAnalyzing(automation.run)) return;
+  automation.continuationRetry = false;
+  automation.continuationToken += 1;
+  void continueFinancialReconciliationAutomationAnalysis(automation.continuationToken);
 }
 
 function financialReconciliationAutomationRulesMarkup(rules, pendingAction) {
@@ -22152,6 +22258,7 @@ function financialReconciliationAutomationProposalMarkup(proposal, run, rules, s
 }
 
 function financialReconciliationAutomationVisibleProposals(run) {
+  if (financialReconciliationAutomationIsAnalyzing(run)) return [];
   const proposals = Array.isArray(run?.proposals) ? run.proposals : [];
   const finished = Boolean(clean(run?.finishedAt));
   const visibleStatuses = finished
@@ -22161,6 +22268,9 @@ function financialReconciliationAutomationVisibleProposals(run) {
 }
 
 function financialReconciliationAutomationEmptyMessage(run) {
+  if (financialReconciliationAutomationIsAnalyzing(run)) {
+    return financialReconciliationAutomationProgressLabel(run);
+  }
   return clean(run?.finishedAt)
     ? "No selected execution outcomes to show."
     : "No proposed or ambiguous matches to review.";
@@ -22194,9 +22304,10 @@ function financialReconciliationAutomationResultsMarkup(run) {
 function renderFinancialReconciliationAutomation(focusProposalId = "") {
   const automation = financialReconciliationState().automation;
   const pending = clean(automation.pendingAction);
+  const analyzing = financialReconciliationAutomationIsAnalyzing(automation.run);
   const proposals = Array.isArray(automation.run?.proposals) ? automation.run.proposals : [];
   const visibleProposals = financialReconciliationAutomationVisibleProposals(automation.run);
-  const executable = proposals.filter((proposal) => clean(proposal?.status).toLowerCase() === "proposed");
+  const executable = analyzing ? [] : proposals.filter((proposal) => clean(proposal?.status).toLowerCase() === "proposed");
   const selectedCount = executable.filter((proposal) => automation.selectedProposalIds.has(clean(proposal.id))).length;
   if (els.financialReconciliationWorkbenchAutomationRules) els.financialReconciliationWorkbenchAutomationRules.innerHTML = financialReconciliationAutomationRulesMarkup(automation.loaded ? automation.rules : [], pending);
   if (els.financialReconciliationWorkbenchAutomationProposals) {
@@ -22208,7 +22319,7 @@ function renderFinancialReconciliationAutomation(focusProposalId = "") {
         automation.selectedProposalIds,
         Boolean(pending),
       )).join("")
-      : `<p class="empty">${escape(financialReconciliationAutomationEmptyMessage(automation.run))}</p>`;
+      : `<p class="empty">${escape(financialReconciliationAutomationEmptyMessage(automation.run))}${automation.continuationRetry ? ' <button type="button" class="ghost" data-financial-reconciliation-automation-retry>Retry analysis</button>' : ""}</p>`;
     const focusId = clean(focusProposalId);
     if (focusId) {
       const nextInput = Array.from(els.financialReconciliationWorkbenchAutomationProposals.querySelectorAll("[data-financial-reconciliation-automation-proposal-id]"))
@@ -22217,10 +22328,10 @@ function renderFinancialReconciliationAutomation(focusProposalId = "") {
     }
   }
   if (els.financialReconciliationWorkbenchAutomationResults) els.financialReconciliationWorkbenchAutomationResults.innerHTML = financialReconciliationAutomationResultsMarkup(automation.run);
-  if (els.financialReconciliationWorkbenchAutomationSelectAll) els.financialReconciliationWorkbenchAutomationSelectAll.disabled = Boolean(pending) || !executable.length;
-  if (els.financialReconciliationWorkbenchAutomationClearAll) els.financialReconciliationWorkbenchAutomationClearAll.disabled = Boolean(pending) || !selectedCount;
+  if (els.financialReconciliationWorkbenchAutomationSelectAll) els.financialReconciliationWorkbenchAutomationSelectAll.disabled = analyzing || Boolean(pending) || !executable.length;
+  if (els.financialReconciliationWorkbenchAutomationClearAll) els.financialReconciliationWorkbenchAutomationClearAll.disabled = analyzing || Boolean(pending) || !selectedCount;
   if (els.financialReconciliationWorkbenchAutomationExecute) {
-    els.financialReconciliationWorkbenchAutomationExecute.disabled = Boolean(pending) || !selectedCount;
+    els.financialReconciliationWorkbenchAutomationExecute.disabled = analyzing || Boolean(pending) || !selectedCount;
     els.financialReconciliationWorkbenchAutomationExecute.textContent = pending === "execute" ? "Executing…" : `Execute selected (${selectedCount})`;
   }
 }
@@ -22232,6 +22343,10 @@ async function analyzeFinancialReconciliationAutomationRule(ruleKey) {
   const rule = automation.rules.find((entry) => clean(entry?.ruleKey) === key && entry?.enabled === true && entry?.allowManualExecution === true);
   if (!rule || automation.pendingAction) return;
   const previousSelectedProposalIds = automation.selectedProposalIds;
+  const previousRun = automation.run;
+  automation.continuationToken += 1;
+  const continuationToken = automation.continuationToken;
+  automation.continuationRetry = false;
   automation.selectedProposalIds = new Set();
   automation.pendingAction = `analyze:${key}`;
   setFinancialReconciliationAutomationStatus(`Analyzing ${clean(rule.displayName) || key}…`);
@@ -22242,12 +22357,18 @@ async function analyzeFinancialReconciliationAutomationRule(ruleKey) {
       body: { action: "analyze_rule", ruleKeys: [key], clientRequestId: crypto.randomUUID() },
     });
     automation.run = run;
-    automation.selectedProposalIds = new Set((Array.isArray(run?.proposals) ? run.proposals : [])
-      .filter((proposal) => clean(proposal?.status) === "proposed")
-      .map((proposal) => clean(proposal.id)).filter(Boolean));
-    setFinancialReconciliationAutomationStatus(`Analysis ready: ${automation.selectedProposalIds.size} executable proposal${automation.selectedProposalIds.size === 1 ? "" : "s"}.`, "success");
-    showToast("Automatic reconciliation analysis is ready.", "success");
+    automation.pendingAction = "";
+    if (run && clean(run.status) === "analyzing" && !clean(run.analysisCompletedAt)) {
+      await continueFinancialReconciliationAutomationAnalysis(continuationToken);
+    } else {
+      automation.selectedProposalIds = new Set((Array.isArray(run?.proposals) ? run.proposals : [])
+        .filter((proposal) => clean(proposal?.status) === "proposed")
+        .map((proposal) => clean(proposal.id)).filter(Boolean));
+      setFinancialReconciliationAutomationStatus(`Analysis ready: ${automation.selectedProposalIds.size} executable proposal${automation.selectedProposalIds.size === 1 ? "" : "s"}.`, "success");
+      showToast("Automatic reconciliation analysis is ready.", "success");
+    }
   } catch (error) {
+    automation.run = previousRun;
     automation.selectedProposalIds = previousSelectedProposalIds;
     setFinancialReconciliationAutomationStatus(`Analysis failed: ${error.message}`, "error");
     showToast(error.message, "error");
@@ -22327,6 +22448,11 @@ function onFinancialReconciliationAutomationRulesClick(event) {
   const button = event.target.closest("[data-financial-reconciliation-automation-analyze]");
   if (!button) return;
   analyzeFinancialReconciliationAutomationRule(button.dataset.financialReconciliationAutomationRuleKey);
+}
+
+function onFinancialReconciliationAutomationProposalsClick(event) {
+  const button = event.target.closest("[data-financial-reconciliation-automation-retry]");
+  if (button) retryFinancialReconciliationAutomationAnalysis();
 }
 
 function onFinancialReconciliationAutomationProposalsChange(event) {

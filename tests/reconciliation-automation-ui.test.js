@@ -582,6 +582,9 @@ function workbenchRun(proposals) {
     trigger: "manual",
     scope: "rule",
     status: "ready",
+    analysisCompletedAt: "2026-08-16T09:00:00.000Z",
+    analysisProcessed: 1,
+    analysisTotal: 1,
     definitions: [{
       ruleKey: "manual-enabled",
       ruleVersion: 3,
@@ -597,7 +600,8 @@ function workbenchRun(proposals) {
 function compileVisibleAutomationProposals() {
   return new Function(
     "clean",
-    `${appFunctionSource("financialReconciliationAutomationVisibleProposals")}
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("financialReconciliationAutomationVisibleProposals")}
      return financialReconciliationAutomationVisibleProposals;`,
   )((value) => String(value ?? "").trim());
 }
@@ -610,8 +614,8 @@ function compileAutomationOutcomeCounts() {
   )((value) => String(value ?? "").trim());
 }
 
-function renderAutomationWorkbench(run, selectedProposalIds = new Set()) {
-  const state = { automation: { rules: [], run, selectedProposalIds, pendingAction: "", loaded: true } };
+function renderAutomationWorkbench(run, selectedProposalIds = new Set(), { continuationRetry = false } = {}) {
+  const state = { automation: { rules: [], run, selectedProposalIds, pendingAction: "", loaded: true, continuationRetry } };
   const proposalContainer = { innerHTML: "", querySelectorAll: () => [] };
   const els = {
     financialReconciliationWorkbenchAutomationRules: { innerHTML: "" },
@@ -629,7 +633,9 @@ function renderAutomationWorkbench(run, selectedProposalIds = new Set()) {
     "financialReconciliationAutomationProposalMarkup",
     "financialReconciliationAutomationResultsMarkup",
     "escape",
-    `${appFunctionSource("financialReconciliationAutomationVisibleProposals")}
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("financialReconciliationAutomationProgressLabel")}
+     ${appFunctionSource("financialReconciliationAutomationVisibleProposals")}
      ${appFunctionSource("financialReconciliationAutomationEmptyMessage")}
      ${appFunctionSource("renderFinancialReconciliationAutomation")}
      return renderFinancialReconciliationAutomation;`,
@@ -645,6 +651,191 @@ function renderAutomationWorkbench(run, selectedProposalIds = new Set()) {
   render();
   return { els, state };
 }
+
+test("analysis progress renders processed and total records while review controls stay disabled", () => {
+  const progressLabel = new Function(
+    `${appFunctionSource("financialReconciliationAutomationProgressLabel")}
+     return financialReconciliationAutomationProgressLabel;`,
+  )();
+  const run = {
+    ...workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "proposed" }]),
+    status: "analyzing",
+    analysisCompletedAt: null,
+    analysisProcessed: 25,
+    analysisTotal: 876,
+  };
+  const { els } = renderAutomationWorkbench(run, new Set([WORKBENCH_PROPOSAL_1]));
+
+  assert.match(progressLabel(run), /Analyzing 25 of 876 records/i);
+  assert.match(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /Analyzing 25 of 876 records/i);
+  assert.equal(els.financialReconciliationWorkbenchAutomationSelectAll.disabled, true);
+  assert.equal(els.financialReconciliationWorkbenchAutomationClearAll.disabled, true);
+  assert.equal(els.financialReconciliationWorkbenchAutomationExecute.disabled, true);
+});
+
+test("serial continuation replaces progress and selects proposals only after analysis completes", async () => {
+  const current = {
+    automation: {
+      run: {
+        runId: WORKBENCH_RUN_ID,
+        status: "analyzing",
+        analysisCompletedAt: null,
+        analysisProcessed: 0,
+        analysisTotal: 50,
+        proposals: [],
+      },
+      selectedProposalIds: new Set(),
+      pendingAction: "",
+      continuationToken: 1,
+      continuationRetry: false,
+    },
+  };
+  const calls = [];
+  const responses = [
+    { ...current.automation.run, analysisProcessed: 25 },
+    workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "proposed" }]),
+  ];
+  const statuses = [];
+  const continueAnalysis = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "showToast",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("financialReconciliationAutomationProgressLabel")}
+     ${appFunctionSource("finalizeFinancialReconciliationAutomationAnalysis")}
+     ${appFunctionSource("continueFinancialReconciliationAutomationAnalysis").replace(/^function /, "async function ")}
+     return continueFinancialReconciliationAutomationAnalysis;`,
+  )(
+    () => current,
+    async (url, options) => { calls.push({ url, options }); return responses.shift(); },
+    (value) => String(value ?? "").trim(),
+    () => {},
+    (message, tone) => statuses.push({ message, tone }),
+    () => {},
+  );
+
+  await continueAnalysis(1);
+
+  assert.deepEqual(calls, [1, 2].map(() => ({
+    url: "/api/reconciliation-automation",
+    options: { method: "POST", body: { action: "continue_analysis", runId: WORKBENCH_RUN_ID } },
+  })));
+  assert.deepEqual([...current.automation.selectedProposalIds], [WORKBENCH_PROPOSAL_1]);
+  assert.equal(current.automation.pendingAction, "");
+  assert.equal(current.automation.continuationRetry, false);
+  assert.match(statuses.at(-1).message, /Analysis ready: 1 executable proposal/i);
+});
+
+test("automatic tab restores an unfinished actor run before continuing it", async () => {
+  const current = {
+    automation: {
+      run: null,
+      selectedProposalIds: new Set(["old"]),
+      pendingAction: "",
+      continuationToken: 0,
+      continuationRetry: true,
+    },
+  };
+  const activeRun = {
+    runId: WORKBENCH_RUN_ID,
+    status: "analyzing",
+    analysisCompletedAt: null,
+    analysisProcessed: 25,
+    analysisTotal: 75,
+    proposals: [],
+  };
+  const calls = [];
+  const continuedTokens = [];
+  const restore = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "continueFinancialReconciliationAutomationAnalysis",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("restoreFinancialReconciliationAutomationAnalysis").replace(/^function /, "async function ")}
+     return restoreFinancialReconciliationAutomationAnalysis;`,
+  )(
+    () => current,
+    async (url) => { calls.push(url); return activeRun; },
+    (value) => String(value ?? "").trim(),
+    () => {},
+    () => {},
+    async (token) => { continuedTokens.push(token); },
+  );
+
+  await restore();
+
+  assert.deepEqual(calls, ["/api/reconciliation-automation?view=active_run"]);
+  assert.strictEqual(current.automation.run, activeRun);
+  assert.deepEqual([...current.automation.selectedProposalIds], []);
+  assert.equal(current.automation.continuationRetry, false);
+  assert.deepEqual(continuedTokens, [1]);
+});
+
+test("uncertain continuation reloads persisted progress and exposes one retry action", async () => {
+  const persistedRun = {
+    runId: WORKBENCH_RUN_ID,
+    status: "analyzing",
+    analysisCompletedAt: null,
+    analysisProcessed: 25,
+    analysisTotal: 75,
+    proposals: [],
+  };
+  const current = {
+    automation: {
+      run: { ...persistedRun, analysisProcessed: 0 },
+      selectedProposalIds: new Set(),
+      pendingAction: "",
+      continuationToken: 2,
+      continuationRetry: false,
+    },
+  };
+  const calls = [];
+  const statuses = [];
+  const continueAnalysis = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "showToast",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("financialReconciliationAutomationProgressLabel")}
+     ${appFunctionSource("finalizeFinancialReconciliationAutomationAnalysis")}
+     ${appFunctionSource("continueFinancialReconciliationAutomationAnalysis").replace(/^function /, "async function ")}
+     return continueFinancialReconciliationAutomationAnalysis;`,
+  )(
+    () => current,
+    async (url) => {
+      calls.push(url);
+      if (url.endsWith("view=active_run")) return persistedRun;
+      throw new Error("connection lost");
+    },
+    (value) => String(value ?? "").trim(),
+    () => {},
+    (message, tone) => statuses.push({ message, tone }),
+    () => {},
+  );
+
+  await continueAnalysis(2);
+
+  assert.deepEqual(calls, [
+    "/api/reconciliation-automation",
+    "/api/reconciliation-automation?view=active_run",
+  ]);
+  assert.strictEqual(current.automation.run, persistedRun);
+  assert.equal(current.automation.pendingAction, "");
+  assert.equal(current.automation.continuationRetry, true);
+  assert.match(statuses.at(-1).message, /Analysis paused after a connection error/i);
+  const { els } = renderAutomationWorkbench(current.automation.run, new Set(), { continuationRetry: true });
+  assert.equal((els.financialReconciliationWorkbenchAutomationProposals.innerHTML.match(/data-financial-reconciliation-automation-retry/g) || []).length, 1);
+  assert.match(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /Analyzing 25 of 75 records/i);
+});
 
 test("active automation runs show proposed and ambiguous rows only", () => {
   const visible = compileVisibleAutomationProposals();
