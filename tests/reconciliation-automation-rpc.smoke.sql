@@ -2567,6 +2567,561 @@ begin
   end if;
 end $$;
 
+-- automatic destination lock helper privileges and dispatch
+do $$
+declare
+  v_definition text;
+begin
+  select pg_get_functiondef(
+    'public.financial_reconciliation_automatic_lock_destination_items(text,jsonb)'::regprocedure
+  ) into strict v_definition;
+
+  if v_definition !~* 'security definer'
+    or v_definition !~* 'if p_source_type = ''import_cgd_extrato_ordem'''
+    or v_definition !~* 'elsif p_source_type = ''import_cgd_cartao_credito'''
+    or v_definition ~* '\mexecute\M' then
+    raise exception 'Automatic destination locking is not explicit and fixed-search-path.';
+  end if;
+  if not (
+    select procedure.prosecdef
+      and coalesce(procedure.proconfig, '{}'::text[]) @> array['search_path=public, pg_temp']
+    from pg_proc procedure
+    where procedure.oid =
+      'public.financial_reconciliation_automatic_lock_destination_items(text,jsonb)'::regprocedure
+  ) then
+    raise exception 'Automatic destination locking did not retain its fixed search path.';
+  end if;
+  if has_function_privilege(
+      'anon',
+      'public.financial_reconciliation_automatic_lock_destination_items(text,jsonb)',
+      'EXECUTE'
+    )
+    or has_function_privilege(
+      'authenticated',
+      'public.financial_reconciliation_automatic_lock_destination_items(text,jsonb)',
+      'EXECUTE'
+    )
+    or has_function_privilege(
+      'service_role',
+      'public.financial_reconciliation_automatic_lock_destination_items(text,jsonb)',
+      'EXECUTE'
+    ) then
+    raise exception 'The internal automatic destination lock helper is publicly executable.';
+  end if;
+  begin
+    perform public.financial_reconciliation_automatic_lock_destination_items(
+      'smoke_unsupported_source', '[]'::jsonb
+    );
+    raise exception 'Expected unsupported automatic destination source rejection.';
+  exception when others then
+    if sqlerrm <> 'Automatic reconciliation destination source is unsupported.' then raise; end if;
+  end;
+end $$;
+
+create or replace function pg_temp.make_task4_proposal(
+  p_rule_key text,
+  p_base_source_id uuid,
+  p_actor text,
+  p_client_request_id uuid
+)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_run jsonb;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_guard integer := 0;
+begin
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true,
+      allow_manual_execution = true,
+      include_in_scheduled_batch = false,
+      difference_allowed = 0,
+      max_difference_days = 10
+  where rule_key = p_rule_key;
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array[p_rule_key], 'manual_rule', p_actor, p_client_request_id
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  while not coalesce((v_run->>'analysisComplete')::boolean, false) loop
+    v_guard := v_guard + 1;
+    if v_guard > 100 then
+      raise exception 'Task 4 proposal analysis did not finish.';
+    end if;
+    v_run := public.continue_financial_reconciliation_automatic_analysis(v_run_id, p_actor);
+  end loop;
+  if v_run->>'status' <> 'ready' then
+    raise exception 'Task 4 proposal analysis was not executable.';
+  end if;
+  select proposal.id into strict v_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_run_id
+    and proposal.base_source_id = p_base_source_id
+    and proposal.status = 'proposed';
+  return jsonb_build_object('runId', v_run_id, 'proposalId', v_proposal_id);
+end $$;
+
+-- credit-card automatic execution and audit evidence
+-- credit-card repeated execution is idempotent
+do $$
+declare
+  v_document_id uuid := '61000000-0000-0000-0000-000000000001';
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_reconciliation_id uuid;
+  v_result jsonb;
+  v_repeated jsonb;
+  v_base_snapshot jsonb;
+  v_destination_snapshots jsonb;
+  v_evidence jsonb;
+  v_signature text;
+  v_item_count integer;
+  v_audit_count integer;
+begin
+  update public.financial_documents
+  set payment = 'smoke:before-task4-visa'
+  where payment = 'Visa';
+  update public.financial_reconciliation_source_rules
+  set operator = '+'
+  where base_source_type = 'financial_documents'
+    and matching_source_type = 'import_cgd_cartao_credito';
+
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values (
+    v_document_id, date '2093-01-10', 'CC-T4-EXEC-001',
+    'Task 4 Visa execution', 'Task 4 Supplier', 'Visa', 100, 'S'
+  );
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values
+    ('62000000-0000-0000-0000-000000000001', 'smoke-task4', 'task4-exec-1', date '2093-01-10', 'CCT4EXEC001 part one', 10),
+    ('62000000-0000-0000-0000-000000000002', 'smoke-task4', 'task4-exec-2', date '2093-01-10', 'CCT4EXEC001 part two', 20),
+    ('62000000-0000-0000-0000-000000000003', 'smoke-task4', 'task4-exec-3', date '2093-01-10', 'CCT4EXEC001 part three', 30),
+    ('62000000-0000-0000-0000-000000000004', 'smoke-task4', 'task4-exec-4', date '2093-01-10', 'CCT4EXEC001 part four', 40);
+
+  v_result := pg_temp.make_task4_proposal(
+    'financial_documents_cgd_credit_card', v_document_id,
+    'smoke:task4-execute', '63000000-0000-0000-0000-000000000001'
+  );
+  v_run_id := (v_result->>'runId')::uuid;
+  v_proposal_id := (v_result->>'proposalId')::uuid;
+  select base_snapshot, items, evidence, signature
+  into strict v_base_snapshot, v_destination_snapshots, v_evidence, v_signature
+  from public.financial_reconciliation_automatic_proposals
+  where id = v_proposal_id;
+  if jsonb_array_length(v_destination_snapshots) <> 4 then
+    raise exception 'Task 4 fixture did not produce the maximum four-card proposal.';
+  end if;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, 'smoke:task4-execute'
+  );
+  v_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+  if v_result is distinct from jsonb_build_object(
+      'proposalId', v_proposal_id,
+      'runId', v_run_id,
+      'status', 'completed',
+      'reconciliationId', v_reconciliation_id
+    )
+    or v_reconciliation_id is null then
+    raise exception 'Credit-card execution changed the public completion outcome shape.';
+  end if;
+  if not exists (
+    select 1
+    from public.financial_reconciliations reconciliation
+    where reconciliation.id = v_reconciliation_id
+      and reconciliation.status = 'complete'
+      and reconciliation.completion_type = 'normal'
+      and reconciliation.difference_amount = 0
+      and reconciliation.origin = 'automatic'
+      and reconciliation.automatic_trigger = 'manual'
+      and reconciliation.automatic_rule_key = 'financial_documents_cgd_credit_card'
+      and reconciliation.automatic_rule_version = 1
+      and reconciliation.automatic_run_id = v_run_id
+      and reconciliation.automatic_proposal_id = v_proposal_id
+      and reconciliation.matching_source_rules @> jsonb_build_array(jsonb_build_object(
+        'sourceType', 'import_cgd_cartao_credito', 'operator', '+'
+      ))
+  ) then
+    raise exception 'Credit-card reconciliation provenance, zero difference, or directional rule was not retained.';
+  end if;
+  if (select count(*) from public.financial_reconciliation_items
+      where reconciliation_id = v_reconciliation_id) <> 5
+    or (select count(*) from public.financial_reconciliation_items
+        where reconciliation_id = v_reconciliation_id
+          and source_type = 'financial_documents'
+          and source_id = v_document_id) <> 1
+    or (select count(*) from public.financial_reconciliation_items
+        where reconciliation_id = v_reconciliation_id
+          and source_type = 'import_cgd_cartao_credito') <> 4 then
+    raise exception 'Credit-card execution did not lock one document and one through four card items.';
+  end if;
+  if not exists (
+    select 1
+    from public.financial_reconciliation_audit audit
+    where audit.reconciliation_id = v_reconciliation_id
+      and audit.action = 'automatic_complete'
+      and audit.metadata @> jsonb_build_object(
+        'ruleSnapshot', jsonb_build_object(
+          'ruleKey', 'financial_documents_cgd_credit_card',
+          'ruleVersion', 1,
+          'definition', (
+            select definition.definition
+            from public.financial_reconciliation_automatic_rule_definitions definition
+            where definition.rule_key = 'financial_documents_cgd_credit_card'
+              and definition.version = 1
+          )
+        ),
+        'configSnapshot', jsonb_build_object(
+          'differenceAllowed', 0,
+          'maxDifferenceDays', 10,
+          'priority', 2
+        ),
+        'operatorSnapshot', jsonb_build_object('import_cgd_cartao_credito', '+'),
+        'baseSnapshot', v_base_snapshot,
+        'destinationSnapshots', v_destination_snapshots,
+        'identityEvidence', v_evidence,
+        'proposalSignature', v_signature,
+        'trigger', 'manual',
+        'runId', v_run_id,
+        'proposalId', v_proposal_id,
+        'tolerance', 0,
+        'calculatedDifference', 0
+      )
+  ) then
+    raise exception 'Credit-card automatic audit evidence was incomplete or changed.';
+  end if;
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.id = v_proposal_id
+      and proposal.status = 'completed'
+      and proposal.reconciliation_id = v_reconciliation_id
+      and proposal.base_snapshot = v_base_snapshot
+      and proposal.items = v_destination_snapshots
+      and proposal.evidence = v_evidence
+      and proposal.signature = v_signature
+      and proposal.calculated_difference = 0
+  ) then
+    raise exception 'Completed credit-card proposal lost immutable source snapshots or evidence.';
+  end if;
+
+  select count(*) into v_item_count
+  from public.financial_reconciliation_items
+  where reconciliation_id = v_reconciliation_id;
+  select count(*) into v_audit_count
+  from public.financial_reconciliation_audit
+  where reconciliation_id = v_reconciliation_id;
+  v_repeated := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, 'smoke:task4-execute'
+  );
+  if v_repeated is distinct from v_result
+    or (select count(*) from public.financial_reconciliations
+        where automatic_proposal_id = v_proposal_id) <> 1
+    or (select count(*) from public.financial_reconciliation_items
+        where reconciliation_id = v_reconciliation_id) <> v_item_count
+    or (select count(*) from public.financial_reconciliation_audit
+        where reconciliation_id = v_reconciliation_id) <> v_audit_count then
+    raise exception 'Repeated credit-card execution was not idempotent.';
+  end if;
+end $$;
+
+-- credit-card execution stale source and proposal paths
+do $$
+declare
+  v_kinds text[] := array[
+    'payment', 'card_data', 'card_value', 'card_description',
+    'selected_ids', 'rule_version', 'definition', 'operator',
+    'tolerance', 'evidence', 'locked', 'deleted'
+  ];
+  v_kind text;
+  v_index integer := 0;
+  v_document_id uuid;
+  v_card_id uuid;
+  v_request_id uuid;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_lock_id uuid;
+  v_original_definition jsonb;
+  v_result jsonb;
+begin
+  update public.financial_documents
+  set payment = 'smoke:before-task4-stale'
+  where payment = 'Visa';
+  select definition into strict v_original_definition
+  from public.financial_reconciliation_automatic_rule_definitions
+  where rule_key = 'financial_documents_cgd_credit_card' and version = 1;
+
+  foreach v_kind in array v_kinds loop
+    v_index := v_index + 1;
+    v_document_id := ('64000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_card_id := ('65000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_request_id := ('66000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, payment, amount, fat
+    ) values (
+      v_document_id, date '2093-02-01', 'CCT4STALE' || lpad(v_index::text, 3, '0'),
+      '', '', 'Visa', 50, 'S'
+    );
+    insert into public.import_cgd_cartao_credito (
+      id, import_batch, row_key, data, descricao, debito
+    ) values (
+      v_card_id, 'smoke-task4-stale', 'task4-stale-' || v_index,
+      date '2093-02-01', 'CCT4STALE' || lpad(v_index::text, 3, '0'), 50
+    );
+    v_result := pg_temp.make_task4_proposal(
+      'financial_documents_cgd_credit_card', v_document_id,
+      'smoke:task4-stale-' || v_kind, v_request_id
+    );
+    v_run_id := (v_result->>'runId')::uuid;
+    v_proposal_id := (v_result->>'proposalId')::uuid;
+    v_lock_id := null;
+
+    if v_kind = 'payment' then
+      update public.financial_documents set payment = 'VISA' where id = v_document_id;
+    elsif v_kind = 'card_data' then
+      update public.import_cgd_cartao_credito set data = date '2093-03-01' where id = v_card_id;
+    elsif v_kind = 'card_value' then
+      update public.import_cgd_cartao_credito set debito = 51 where id = v_card_id;
+    elsif v_kind = 'card_description' then
+      update public.import_cgd_cartao_credito set descricao = 'Identity removed' where id = v_card_id;
+    elsif v_kind = 'selected_ids' then
+      update public.financial_reconciliation_automatic_proposals
+      set items = jsonb_set(
+        items, '{0,sourceId}', to_jsonb('65000000-0000-0000-0000-999999999999'::text)
+      )
+      where id = v_proposal_id;
+    elsif v_kind = 'rule_version' then
+      update public.financial_reconciliation_automatic_runs
+      set definition_config_snapshot = jsonb_set(
+        definition_config_snapshot, '{0,ruleVersion}', '2'::jsonb
+      )
+      where id = v_run_id;
+    elsif v_kind = 'definition' then
+      update public.financial_reconciliation_automatic_rule_definitions
+      set definition = definition || '{"task4Drift":true}'::jsonb
+      where rule_key = 'financial_documents_cgd_credit_card' and version = 1;
+    elsif v_kind = 'operator' then
+      update public.financial_reconciliation_source_rules
+      set operator = '-'
+      where base_source_type = 'financial_documents'
+        and matching_source_type = 'import_cgd_cartao_credito';
+    elsif v_kind = 'tolerance' then
+      update public.financial_reconciliation_automatic_proposals
+      set allowed_difference = 1
+      where id = v_proposal_id;
+    elsif v_kind = 'evidence' then
+      update public.financial_reconciliation_automatic_proposals
+      set evidence = evidence || jsonb_build_array(jsonb_build_object('task4Tampered', true))
+      where id = v_proposal_id;
+    elsif v_kind = 'locked' then
+      v_result := public.financial_reconciliation_action(
+        'start', 'smoke:task4-lock', null,
+        'import_cgd_cartao_credito', v_card_id, null
+      );
+      v_lock_id := (v_result#>>'{reconciliation,id}')::uuid;
+    elsif v_kind = 'deleted' then
+      delete from public.import_cgd_cartao_credito where id = v_card_id;
+    end if;
+
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_proposal_id, 'smoke:task4-stale-' || v_kind
+    );
+    if v_result->>'status' <> 'stale'
+      or not exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = v_proposal_id
+          and proposal.status = 'stale'
+          and proposal.reconciliation_id is null
+      )
+      or exists (
+        select 1
+        from public.financial_reconciliations reconciliation
+        where reconciliation.automatic_proposal_id = v_proposal_id
+      ) then
+      raise exception 'Task 4 stale path % created an automatic reconciliation.', v_kind;
+    end if;
+
+    if v_kind = 'definition' then
+      update public.financial_reconciliation_automatic_rule_definitions
+      set definition = v_original_definition
+      where rule_key = 'financial_documents_cgd_credit_card' and version = 1;
+    elsif v_kind = 'operator' then
+      update public.financial_reconciliation_source_rules
+      set operator = '+'
+      where base_source_type = 'financial_documents'
+        and matching_source_type = 'import_cgd_cartao_credito';
+    elsif v_kind = 'locked' then
+      perform public.financial_reconciliation_action(
+        'delete', 'smoke:task4-lock', v_lock_id, null, null, null
+      );
+    end if;
+  end loop;
+end $$;
+
+-- automatic execution rejects unfinished and non-executable proposals
+do $$
+declare
+  v_status text;
+  v_index integer := 0;
+  v_document_id uuid;
+  v_card_id uuid;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_fixture jsonb;
+begin
+  update public.financial_documents
+  set payment = 'smoke:before-task4-status'
+  where payment = 'Visa';
+
+  foreach v_status in array array['analyzing', 'ambiguous', 'skipped', 'deselected'] loop
+    v_index := v_index + 1;
+    v_document_id := ('67000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_card_id := ('68000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, payment, amount, fat
+    ) values (
+      v_document_id, date '2093-04-01', 'CCT4STATUS' || lpad(v_index::text, 3, '0'),
+      '', '', 'Visa', 25, 'S'
+    );
+    insert into public.import_cgd_cartao_credito (
+      id, import_batch, row_key, data, descricao, debito
+    ) values (
+      v_card_id, 'smoke-task4-status', 'task4-status-' || v_index,
+      date '2093-04-01', 'CCT4STATUS' || lpad(v_index::text, 3, '0'), 25
+    );
+    v_fixture := pg_temp.make_task4_proposal(
+      'financial_documents_cgd_credit_card', v_document_id,
+      'smoke:task4-status-' || v_status,
+      ('69000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+    );
+    v_run_id := (v_fixture->>'runId')::uuid;
+    v_proposal_id := (v_fixture->>'proposalId')::uuid;
+    if v_status = 'analyzing' then
+      update public.financial_reconciliation_automatic_runs
+      set status = 'analyzing', analysis_completed_at = null
+      where id = v_run_id;
+    else
+      update public.financial_reconciliation_automatic_proposals
+      set status = v_status
+      where id = v_proposal_id;
+    end if;
+
+    begin
+      perform public.execute_financial_reconciliation_automatic_proposal(
+        v_proposal_id, 'smoke:task4-status-' || v_status
+      );
+      raise exception 'Expected Task 4 non-executable status rejection for %.', v_status;
+    exception when others then
+      if v_status = 'analyzing'
+        and sqlerrm not like 'Automatic analysis must finish before proposals can be executed.%' then
+        raise;
+      elsif v_status <> 'analyzing'
+        and sqlerrm not like 'Automation proposal with status % cannot be executed.%' then
+        raise;
+      end if;
+    end;
+    if exists (
+      select 1
+      from public.financial_reconciliations reconciliation
+      where reconciliation.automatic_proposal_id = v_proposal_id
+    ) then
+      raise exception 'Non-executable Task 4 proposal % created a reconciliation.', v_status;
+    end if;
+  end loop;
+end $$;
+
+-- Banco v2 execution evidence remains unchanged
+do $$
+declare
+  v_document_id uuid := '6a000000-0000-0000-0000-000000000001';
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_reconciliation_id uuid;
+  v_fixture jsonb;
+  v_result jsonb;
+begin
+  update public.financial_documents
+  set payment = 'smoke:before-task4-banco'
+  where payment = 'Banco';
+  update public.financial_reconciliation_source_rules
+  set operator = '+'
+  where base_source_type = 'financial_documents'
+    and matching_source_type = 'import_cgd_extrato_ordem';
+
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values (
+    v_document_id, date '2093-05-01', 'BANK-T4-001',
+    'Banco Task 4 regression', 'Banco Supplier', 'Banco', 77, 'S'
+  );
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    '6b000000-0000-0000-0000-000000000001', 'smoke-task4-banco',
+    'task4-banco-1', date '2093-05-01', 'Payment BANKT4001', -77
+  );
+  v_fixture := pg_temp.make_task4_proposal(
+    'financial_documents_cgd_bank_statement', v_document_id,
+    'smoke:task4-banco', '6c000000-0000-0000-0000-000000000001'
+  );
+  v_run_id := (v_fixture->>'runId')::uuid;
+  v_proposal_id := (v_fixture->>'proposalId')::uuid;
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, 'smoke:task4-banco'
+  );
+  v_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+
+  if v_result->>'status' <> 'completed'
+    or not exists (
+      select 1
+      from public.financial_reconciliations reconciliation
+      where reconciliation.id = v_reconciliation_id
+        and reconciliation.difference_amount = 0
+        and reconciliation.automatic_rule_key = 'financial_documents_cgd_bank_statement'
+        and reconciliation.automatic_rule_version = 2
+        and reconciliation.matching_source_rules @> jsonb_build_array(jsonb_build_object(
+          'sourceType', 'import_cgd_extrato_ordem', 'operator', '+'
+        ))
+    )
+    or not exists (
+      select 1
+      from public.financial_reconciliation_audit audit
+      where audit.reconciliation_id = v_reconciliation_id
+        and audit.action = 'automatic_complete'
+        and audit.metadata @> jsonb_build_object(
+          'operatorSnapshot', jsonb_build_object('import_cgd_extrato_ordem', '+'),
+          'trigger', 'manual',
+          'runId', v_run_id,
+          'proposalId', v_proposal_id
+        )
+        and audit.metadata ?& array[
+          'ruleSnapshot', 'configSnapshot', 'operatorSnapshot',
+          'baseSnapshot', 'destinationSnapshots', 'identityEvidence',
+          'proposalSignature', 'trigger', 'runId', 'proposalId',
+          'tolerance', 'calculatedDifference'
+        ]
+    ) then
+    raise exception 'Banco v2 execution or historical evidence changed under adapter dispatch.';
+  end if;
+  if not exists (
+    select 1
+    from public.financial_reconciliation_audit audit
+    where audit.actor = 'smoke:automatic-nonzero'
+      and audit.action = 'automatic_complete'
+      and audit.metadata->'operatorSnapshot' = jsonb_build_object(
+        'import_cgd_extrato_ordem', '+'
+      )
+  ) then
+    raise exception 'Historical Banco automatic audit evidence was rewritten.';
+  end if;
+end $$;
+
 do $$
 declare
   v_candidate_definition text;

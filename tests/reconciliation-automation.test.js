@@ -2482,6 +2482,105 @@ test("credit-card automation analyzes one immutable managed rule with resumable 
   }
 });
 
+test("automatic proposal execution dispatches explicit managed adapters and retains audit evidence", () => {
+  const sql = fs.readFileSync(CREDIT_CARD_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const functionSource = (functionName) => {
+    const match = sql.match(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "i",
+    ));
+    assert.ok(match, `${functionName} replacement must exist in the credit-card migration`);
+    return match[0];
+  };
+
+  const lockSource = functionSource("financial_reconciliation_automatic_lock_destination_items");
+  assert.match(lockSource,
+    /if p_source_type = 'import_cgd_extrato_ordem' then[\s\S]*join public\.import_cgd_extrato_ordem[\s\S]*elsif p_source_type = 'import_cgd_cartao_credito' then[\s\S]*join public\.import_cgd_cartao_credito/i);
+  assert.match(lockSource, /order by bank\.data, bank\.id[\s\S]*for update of bank/i);
+  assert.match(lockSource, /order by card\.data, card\.id[\s\S]*for update of card/i);
+  assert.match(lockSource, /Automatic reconciliation destination source is unsupported\./i);
+  assert.match(lockSource, /get diagnostics v_count = row_count[\s\S]*return v_count/i);
+  assert.doesNotMatch(lockSource, /\bexecute\b|\bformat\s*\(/i,
+    "destination locking must not use dynamic SQL");
+
+  const executeSource = functionSource("execute_financial_reconciliation_automatic_proposal");
+  assert.match(executeSource,
+    /v_contract := public\.financial_reconciliation_automatic_rule_contract\(\s*v_proposal\.rule_key,\s*v_proposal\.rule_version\s*\)/i);
+  assert.match(executeSource, /v_destination_source_type := v_contract->>'destinationSourceType'/i);
+  assert.match(executeSource,
+    /v_proposal\.base_source_type <> 'financial_documents'[\s\S]*jsonb_array_length\(v_run\.definition_config_snapshot\) <> 1/i);
+  assert.match(executeSource,
+    /jsonb_typeof\(v_rule_snapshot->'definition'\) is distinct from 'object'/i,
+    "a missing immutable definition must fail closed under SQL NULL semantics");
+  assert.match(executeSource,
+    /value->>'sourceType' is distinct from v_destination_source_type/i);
+  assert.match(executeSource,
+    /jsonb_array_length\(v_proposal\.items\)[\s\S]*v_max_destination_records/i);
+  assert.match(executeSource,
+    /financial_reconciliation_automatic_lock_destination_items\(\s*v_destination_source_type,\s*v_proposal\.items\s*\)/i);
+  assert.match(executeSource,
+    /financial_reconciliation_automatic_single_base_candidates\([\s\S]*v_proposal\.base_source_id/i);
+  assert.match(executeSource,
+    /financial_reconciliation_automatic_build_combinations\([\s\S]*jsonb_build_object\(v_destination_source_type, v_rule_snapshot->>'operator'\)[\s\S]*v_max_destination_records/i);
+  assert.match(executeSource, /v_combination\.signature is distinct from v_proposal\.signature/i);
+  assert.match(executeSource, /v_combination\.items is distinct from v_proposal\.items/i);
+  assert.match(executeSource, /v_current_evidence is distinct from v_proposal\.evidence/i);
+  assert.match(executeSource,
+    /v_combination\.calculated_difference is distinct from v_proposal\.calculated_difference/i);
+  assert.match(executeSource,
+    /jsonb_build_object\(\s*'sourceType', v_destination_source_type,\s*'operator', v_rule_snapshot->>'operator'\s*\)/i);
+  assert.match(executeSource,
+    /Automatically completed by rule ['|\s]*\|\|\s*v_rule_snapshot->>'displayName'[\s\S]*v_proposal\.rule_version::text/i);
+  assert.match(executeSource,
+    /'operatorSnapshot', jsonb_build_object\(\s*v_destination_source_type, v_rule_snapshot->>'operator'\s*\)/i);
+  for (const metadataKey of [
+    "ruleSnapshot",
+    "configSnapshot",
+    "operatorSnapshot",
+    "baseSnapshot",
+    "destinationSnapshots",
+    "identityEvidence",
+    "proposalSignature",
+    "trigger",
+    "runId",
+    "proposalId",
+    "tolerance",
+    "calculatedDifference",
+  ]) {
+    assert.match(executeSource, new RegExp(`'${metadataKey}'`));
+  }
+  for (const action of ["start", "add_item", "complete", "force_complete"]) {
+    assert.match(executeSource,
+      new RegExp(`financial_reconciliation_action\\(\\s*'${action}'`, "i"));
+  }
+  assert.match(executeSource,
+    /begin[\s\S]*set status = 'executing'[\s\S]*exception when others then[\s\S]*set status = 'failed'/i);
+  assert.match(executeSource,
+    /if v_run\.analysis_completed_at is null or v_run\.status = 'analyzing' then[\s\S]*Automatic analysis must finish before proposals can be executed/i);
+  assert.match(executeSource,
+    /status in \('ambiguous',\s*'skipped',\s*'deselected',\s*'failed'\)/i);
+  assert.doesNotMatch(executeSource,
+    /financial_documents_cgd_bank_statement|financial_documents_cgd_credit_card|import_cgd_extrato_ordem|import_cgd_cartao_credito|Financial Documents to CGD Bank Statement/i,
+    "execution must derive rule and destination details from the allowlisted contract and immutable snapshot");
+
+  assert.match(sql,
+    /revoke all on function public\.financial_reconciliation_automatic_lock_destination_items\(text,jsonb\)[\s\S]*from public, anon, authenticated, service_role/i);
+  assert.match(sql,
+    /revoke all on function public\.execute_financial_reconciliation_automatic_proposal\(uuid,text\)[\s\S]*grant execute on function public\.execute_financial_reconciliation_automatic_proposal\(uuid,text\)[\s\S]*to service_role/i);
+
+  for (const contract of [
+    "automatic destination lock helper privileges and dispatch",
+    "credit-card automatic execution and audit evidence",
+    "credit-card repeated execution is idempotent",
+    "credit-card execution stale source and proposal paths",
+    "automatic execution rejects unfinished and non-executable proposals",
+    "Banco v2 execution evidence remains unchanged",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
+});
+
 test("release documentation and SQL smokes pin the complete 90-day migration order", () => {
   const migrationNames = [
     "2026-08-14-financial-reconciliation-automation-schema.sql",
