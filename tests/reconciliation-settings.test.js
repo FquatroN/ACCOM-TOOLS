@@ -62,36 +62,94 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
     await handler({
       method: "PUT",
       body: {
-        rules: [{
-          baseSourceType: "financial_documents",
-          matchingSourceType: "import_cgd_extrato_ordem",
-          operator: "-",
-        }],
+        rules: [
+          {
+            baseSourceType: "financial_documents",
+            matchingSourceType: "import_cgd_extrato_ordem",
+            operator: "-",
+          },
+          {
+            baseSourceType: "financial_documents",
+            matchingSourceType: "import_cgd_cartao_credito",
+            operator: "+",
+          },
+        ],
       },
     }, response);
   });
 
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, {
-    rules: [{
-      baseSourceType: "financial_documents",
-      matchingSourceType: "import_cgd_extrato_ordem",
-      operator: "-",
-    }],
+    rules: [
+      {
+        baseSourceType: "financial_documents",
+        matchingSourceType: "import_cgd_extrato_ordem",
+        operator: "-",
+      },
+      {
+        baseSourceType: "financial_documents",
+        matchingSourceType: "import_cgd_cartao_credito",
+        operator: "+",
+      },
+    ],
   });
   assert.deepEqual(calls, [{
     resource: "rpc/replace_financial_reconciliation_source_rules",
     options: {
       method: "POST",
       body: {
-        p_rules: [{
-          base_source_type: "financial_documents",
-          matching_source_type: "import_cgd_extrato_ordem",
-          operator: "-",
-        }],
+        p_rules: [
+          {
+            base_source_type: "financial_documents",
+            matching_source_type: "import_cgd_extrato_ordem",
+            operator: "-",
+          },
+          {
+            base_source_type: "financial_documents",
+            matching_source_type: "import_cgd_cartao_credito",
+            operator: "+",
+          },
+        ],
       },
     },
   }]);
+});
+
+test("PUT rejects changing or removing the managed Credit Card source rule before RPC", async () => {
+  const invalidRules = [
+    [{
+      baseSourceType: "financial_documents",
+      matchingSourceType: "import_cgd_cartao_credito",
+      operator: "-",
+    }],
+    [{
+      baseSourceType: "financial_documents",
+      matchingSourceType: "import_cgd_extrato_ordem",
+      operator: "+",
+    }],
+  ];
+
+  for (const rules of invalidRules) {
+    const calls = [];
+    const response = responseRecorder();
+    await withSettingsHandler({
+      parseBody: async (request) => request.body,
+      requireFeature: async () => ({}),
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        return null;
+      },
+      sendError: (res, error) => res.status(error.statusCode || 500).json({ error: error.message }),
+    }, async (handler) => {
+      await handler({ method: "PUT", body: { rules } }, response);
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.body, {
+      error: "The managed Credit Card source rule must remain enabled with operator +.",
+    });
+    assert.deepEqual(calls, []);
+  }
 });
 
 test("migration restricts source rules to the service role and defines an atomic validating RPC", () => {

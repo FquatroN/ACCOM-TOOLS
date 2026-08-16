@@ -1375,6 +1375,58 @@ begin
   end if;
 end $$;
 
+-- managed Credit Card source rule rejects operator changes and deletion
+do $$
+declare
+  v_rules jsonb;
+  v_rejected boolean;
+begin
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'base_source_type', base_source_type,
+    'matching_source_type', matching_source_type,
+    'operator', operator
+  ) order by base_source_type, matching_source_type), '[]'::jsonb)
+  into v_rules
+  from public.financial_reconciliation_source_rules;
+
+  v_rejected := false;
+  begin
+    perform public.replace_financial_reconciliation_source_rules((
+      select jsonb_agg(case
+        when rule->>'base_source_type' = 'financial_documents'
+         and rule->>'matching_source_type' = 'import_cgd_cartao_credito'
+          then jsonb_set(rule, '{operator}', '"-"'::jsonb)
+        else rule
+      end)
+      from jsonb_array_elements(v_rules) rule
+    ));
+  exception when others then
+    v_rejected := sqlerrm =
+      'The managed Credit Card source rule must remain enabled with operator +.';
+  end;
+  if not v_rejected then
+    raise exception 'Managed Credit Card source-rule operator change was accepted.';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.replace_financial_reconciliation_source_rules((
+      select coalesce(jsonb_agg(rule), '[]'::jsonb)
+      from jsonb_array_elements(v_rules) rule
+      where not (
+        rule->>'base_source_type' = 'financial_documents'
+        and rule->>'matching_source_type' = 'import_cgd_cartao_credito'
+      )
+    ));
+  exception when others then
+    v_rejected := sqlerrm =
+      'The managed Credit Card source rule must remain enabled with operator +.';
+  end;
+  if not v_rejected then
+    raise exception 'Managed Credit Card source-rule deletion was accepted.';
+  end if;
+end $$;
+
 insert into public.import_cgd_cartao_credito (
   id, import_batch, row_key, data, data_valor, descricao, debito
 ) values (
@@ -3221,7 +3273,8 @@ begin
     'public.claim_financial_reconciliation_automatic_schedule(timestamptz,text)',
     'public.get_financial_reconciliation_automatic_run(uuid)',
     'public.financial_reconciliation_automatic_progress_or_run(uuid)',
-    'public.get_financial_reconciliation_automation_settings()'
+    'public.get_financial_reconciliation_automation_settings()',
+    'public.replace_financial_reconciliation_source_rules(jsonb)'
   ] loop
     if not (
       select procedure.prosecdef

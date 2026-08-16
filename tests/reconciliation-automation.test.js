@@ -3069,6 +3069,7 @@ test("credit-card rollout pins migration order, RPC ACLs, reapply, and fixed pro
     "get_financial_reconciliation_automatic_run\\(uuid\\)",
     "financial_reconciliation_automatic_progress_or_run\\(uuid\\)",
     "get_financial_reconciliation_automation_settings\\(\\)",
+    "replace_financial_reconciliation_source_rules\\(jsonb\\)",
   ];
   for (const signature of serviceRoleRpcSignatures) {
     assert.match(
@@ -3082,6 +3083,14 @@ test("credit-card rollout pins migration order, RPC ACLs, reapply, and fixed pro
       `${signature} service-role grant`,
     );
   }
+  assert.match(
+    migration,
+    /managed Credit Card source rule must remain enabled with operator \+\./i,
+  );
+  assert.match(
+    smokeSql,
+    /managed Credit Card source rule rejects operator changes and deletion/i,
+  );
   for (const signature of [
     "financial_reconciliation_finalize_automatic_analysis\\(uuid\\)",
     "financial_reconciliation_automatic_lock_destination_items\\(text,jsonb\\)",
