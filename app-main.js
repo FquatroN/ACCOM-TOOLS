@@ -21981,10 +21981,14 @@ async function loadFinancialReconciliationAutomationRules() {
     const runStatus = clean(automation.run?.status).toLowerCase();
     const openRun = Boolean(automation.run && !clean(automation.run?.finishedAt) && ["analyzing", "ready", "running"].includes(runStatus));
     const runRuleKey = openRun ? clean(automation.run?.definitions?.[0]?.ruleKey) : "";
-    const selectedRuleKey = runRuleKey || clean(automation.selectedRuleKey);
-    automation.selectedRuleKey = eligible.some((rule) => clean(rule?.ruleKey) === selectedRuleKey)
-      ? selectedRuleKey
-      : clean(eligible[0]?.ruleKey);
+    if (runRuleKey) {
+      automation.selectedRuleKey = runRuleKey;
+    } else {
+      const selectedRuleKey = clean(automation.selectedRuleKey);
+      automation.selectedRuleKey = eligible.some((rule) => clean(rule?.ruleKey) === selectedRuleKey)
+        ? selectedRuleKey
+        : clean(eligible[0]?.ruleKey);
+    }
     automation.loaded = true;
     automation.pendingAction = "";
     setFinancialReconciliationAutomationStatus(automation.rules.length ? "Automatic rules loaded." : "No automatic rules are available for manual analysis.");
@@ -22081,6 +22085,8 @@ async function continueFinancialReconciliationAutomationAnalysis(token) {
 async function restoreFinancialReconciliationAutomationAnalysis() {
   const automation = financialReconciliationState().automation;
   if (automation.pendingAction) return;
+  automation.pendingAction = "restore";
+  renderFinancialReconciliationAutomation();
   try {
     const activeRun = await api("/api/reconciliation-automation?view=active_run");
     if (!activeRun) return;
@@ -22089,6 +22095,7 @@ async function restoreFinancialReconciliationAutomationAnalysis() {
     automation.selectedProposalIds = new Set();
     automation.continuationRetry = false;
     automation.continuationToken += 1;
+    automation.pendingAction = "";
     renderFinancialReconciliationAutomation();
     if (financialReconciliationAutomationIsAnalyzing(activeRun)) {
       await continueFinancialReconciliationAutomationAnalysis(automation.continuationToken);
@@ -22098,7 +22105,11 @@ async function restoreFinancialReconciliationAutomationAnalysis() {
   } catch (error) {
     automation.continuationRetry = true;
     setFinancialReconciliationAutomationStatus(`Could not restore automatic analysis: ${error.message}`, "error");
-    renderFinancialReconciliationAutomation();
+  } finally {
+    if (automation.pendingAction === "restore") {
+      automation.pendingAction = "";
+      renderFinancialReconciliationAutomation();
+    }
   }
 }
 
@@ -22289,9 +22300,12 @@ function renderFinancialReconciliationAutomation(focusProposalId = "") {
   const eligibleRules = (Array.isArray(automation.rules) ? automation.rules : [])
     .filter((rule) => rule?.enabled === true && rule?.allowManualExecution === true);
   const openRun = financialReconciliationAutomationOpenRun(automation.run);
-  const openRuleKey = openRun ? clean(automation.run?.definitions?.[0]?.ruleKey) : "";
+  const openDefinition = openRun && automation.run?.definitions?.[0] && typeof automation.run.definitions[0] === "object"
+    ? automation.run.definitions[0]
+    : {};
+  const openRuleKey = clean(openDefinition.ruleKey);
   if (openRuleKey) automation.selectedRuleKey = openRuleKey;
-  if (!eligibleRules.some((rule) => clean(rule?.ruleKey) === clean(automation.selectedRuleKey))) {
+  if (!openRun && !eligibleRules.some((rule) => clean(rule?.ruleKey) === clean(automation.selectedRuleKey))) {
     const ordered = eligibleRules.slice().sort((left, right) => {
       const leftPriority = Number.isFinite(Number(left?.priority)) ? Number(left.priority) : Number.MAX_SAFE_INTEGER;
       const rightPriority = Number.isFinite(Number(right?.priority)) ? Number(right.priority) : Number.MAX_SAFE_INTEGER;
@@ -22305,7 +22319,10 @@ function renderFinancialReconciliationAutomation(focusProposalId = "") {
   const executable = analyzing ? [] : proposals.filter((proposal) => clean(proposal?.status).toLowerCase() === "proposed");
   const selectedCount = executable.filter((proposal) => automation.selectedProposalIds.has(clean(proposal.id))).length;
   if (els.financialReconciliationWorkbenchAutomationRule) {
-    els.financialReconciliationWorkbenchAutomationRule.innerHTML = financialReconciliationAutomationRuleOptions(automation.loaded ? automation.rules : [], automation.selectedRuleKey);
+    const openRuleEligible = eligibleRules.some((rule) => clean(rule?.ruleKey) === openRuleKey);
+    els.financialReconciliationWorkbenchAutomationRule.innerHTML = openRun && openRuleKey && !openRuleEligible
+      ? `<option value="${escape(openRuleKey)}" selected>${escape(clean(openDefinition.displayName) || openRuleKey)} (active run)</option>`
+      : financialReconciliationAutomationRuleOptions(automation.loaded ? automation.rules : [], automation.selectedRuleKey);
     els.financialReconciliationWorkbenchAutomationRule.value = clean(automation.selectedRuleKey);
     els.financialReconciliationWorkbenchAutomationRule.disabled = openRun || Boolean(pending) || !eligibleRules.length;
   }

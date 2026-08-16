@@ -828,6 +828,59 @@ test("failed initial restore exposes a retry that retries the active-run lookup"
   assert.equal((els.financialReconciliationWorkbenchAutomationProposals.innerHTML.match(/data-financial-reconciliation-automation-retry/g) || []).length, 1);
 });
 
+test("active-run restoration retry locks Analyze until the authoritative lookup settles", async () => {
+  const current = {
+    automation: {
+      rules: workbenchRules(),
+      run: null,
+      selectedRuleKey: "manual-enabled",
+      selectedProposalIds: new Set(),
+      pendingAction: "",
+      loaded: true,
+      continuationToken: 0,
+      continuationRetry: true,
+    },
+  };
+  let resolveLookup;
+  const lookup = new Promise((resolve) => { resolveLookup = resolve; });
+  const renders = [];
+  const retry = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "continueFinancialReconciliationAutomationAnalysis",
+    "finalizeFinancialReconciliationAutomationAnalysis",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("restoreFinancialReconciliationAutomationAnalysis").replace(/^function /, "async function ")}
+     ${appFunctionSource("retryFinancialReconciliationAutomationAnalysis")}
+     return retryFinancialReconciliationAutomationAnalysis;`,
+  )(
+    () => current,
+    async () => lookup,
+    (value) => String(value ?? "").trim(),
+    () => renders.push(current.automation.pendingAction),
+    () => {},
+    async () => {},
+    () => {},
+  );
+
+  retry();
+
+  assert.equal(current.automation.continuationRetry, false);
+  assert.equal(current.automation.pendingAction, "restore");
+  const pending = renderAutomationWorkbench(null, new Set(), { pendingAction: current.automation.pendingAction });
+  assert.equal(pending.els.financialReconciliationWorkbenchAutomationRule.disabled, true);
+  assert.equal(pending.els.financialReconciliationWorkbenchAutomationAnalyze.disabled, true);
+  assert.deepEqual(renders, ["restore"]);
+
+  resolveLookup(null);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(current.automation.pendingAction, "");
+  assert.deepEqual(renders, ["restore", ""]);
+});
+
 test("analysis completion timestamp is the authoritative review boundary", () => {
   const isAnalyzing = new Function(
     "clean",
@@ -1084,6 +1137,33 @@ test("workbench selector locks only for unfinished analyzing, ready, or running 
   assert.equal(terminal.els.financialReconciliationWorkbenchAutomationAnalyze.disabled, false);
 });
 
+test("workbench keeps an unavailable active-run rule visible instead of silently selecting another rule", () => {
+  const activeRun = {
+    ...workbenchRun([]),
+    status: "ready",
+    finishedAt: null,
+    definitions: [{
+      ruleKey: "disabled-after-analysis",
+      ruleVersion: 1,
+      displayName: "Disabled Credit Card rule",
+    }],
+  };
+
+  const { els, state } = renderAutomationWorkbench(activeRun, new Set(), {
+    selectedRuleKey: "manual-enabled",
+  });
+
+  assert.equal(state.automation.selectedRuleKey, "disabled-after-analysis");
+  assert.equal(els.financialReconciliationWorkbenchAutomationRule.value, "disabled-after-analysis");
+  assert.equal(els.financialReconciliationWorkbenchAutomationRule.disabled, true);
+  assert.equal(els.financialReconciliationWorkbenchAutomationAnalyze.disabled, true);
+  assert.match(
+    els.financialReconciliationWorkbenchAutomationRule.innerHTML,
+    /value="disabled-after-analysis" selected>Disabled Credit Card rule \(active run\)<\/option>/,
+  );
+  assert.doesNotMatch(els.financialReconciliationWorkbenchAutomationRule.innerHTML, /Manual enabled/);
+});
+
 test("manual rule loader uses the app-authorized catalog without schedule administration", async () => {
   const current = {
     automation: { rules: [], run: null, selectedRuleKey: "manual-enabled", selectedProposalIds: new Set(), pendingAction: "", loaded: false },
@@ -1153,6 +1233,16 @@ test("authoritative rule reload keeps a valid selection and defaults only an inv
   current.automation.selectedRuleKey = "second";
   await loadRules();
   assert.equal(current.automation.selectedRuleKey, "second");
+
+  current.automation.loaded = false;
+  current.automation.run = {
+    ...workbenchRun([]),
+    status: "ready",
+    finishedAt: null,
+    definitions: [{ ruleKey: "disabled-after-analysis", ruleVersion: 1 }],
+  };
+  await loadRules();
+  assert.equal(current.automation.selectedRuleKey, "disabled-after-analysis");
 });
 
 test("failed manual catalog reload clears stale Analyze rules without clearing the retained run or selection", async () => {
