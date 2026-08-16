@@ -86,6 +86,13 @@ function requireScheduledRun(value, expectedRunId = "") {
       "scope",
       "status",
       "actor",
+      "analysisCursorDate",
+      "analysisCursorId",
+      "analysisProcessed",
+      "analysisTotal",
+      "analysisErrorCode",
+      "analysisErrorAt",
+      "analysisComplete",
       "analysisCompletedAt",
       "finishedAt",
       "definitions",
@@ -97,6 +104,15 @@ function requireScheduledRun(value, expectedRunId = "") {
     || run.scope !== "batch"
     || run.actor !== SCHEDULE_ACTOR
     || !SAFE_RUN_STATUSES.has(run.status)
+    || (run.analysisCursorDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(text(run.analysisCursorDate)))
+    || (run.analysisCursorId !== null && !UUID_PATTERN.test(text(run.analysisCursorId)))
+    || ((run.analysisCursorDate === null) !== (run.analysisCursorId === null))
+    || !Number.isSafeInteger(run.analysisProcessed) || run.analysisProcessed < 0
+    || !Number.isSafeInteger(run.analysisTotal) || run.analysisTotal < 0
+    || run.analysisProcessed > run.analysisTotal
+    || (run.analysisErrorCode !== null && typeof run.analysisErrorCode !== "string")
+    || (run.analysisErrorAt !== null && !isTimestamp(run.analysisErrorAt))
+    || typeof run.analysisComplete !== "boolean"
     || (run.analysisCompletedAt !== null && !isTimestamp(run.analysisCompletedAt))
     || (run.finishedAt !== null && !isTimestamp(run.finishedAt))
     || !Array.isArray(run.definitions)
@@ -137,12 +153,41 @@ function requireScheduledRun(value, expectedRunId = "") {
   }
 
   const analysisComplete = run.analysisCompletedAt !== null;
+  if (run.analysisComplete !== analysisComplete) {
+    throw new Error("Scheduled reconciliation analysis progress is inconsistent.");
+  }
   const finished = run.finishedAt !== null;
   if ((run.status === "analyzing" && (analysisComplete || finished || run.proposals.length > 0))
     || ((run.status === "ready" || run.status === "running") && (!analysisComplete || finished))
     || ((run.status === "completed" || run.status === "partial" || run.status === "failed")
       && (!analysisComplete || !finished || hasMoreWork(run)))) {
     throw new Error("Scheduled reconciliation run lifecycle is invalid.");
+  }
+  return run;
+}
+
+function requireContinuedAnalysisRun(value) {
+  const run = toAutomationPublicResult(value);
+  if (!isPlainRecord(run)
+    || !hasOwnFields(run, [
+      "runId", "status", "analysisCursorDate", "analysisCursorId",
+      "analysisProcessed", "analysisTotal", "analysisErrorCode", "analysisErrorAt",
+      "analysisComplete", "analysisCompletedAt",
+    ])
+    || !UUID_PATTERN.test(text(run.runId))
+    || !SAFE_RUN_STATUSES.has(run.status)
+    || (run.analysisCursorDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(text(run.analysisCursorDate)))
+    || (run.analysisCursorId !== null && !UUID_PATTERN.test(text(run.analysisCursorId)))
+    || ((run.analysisCursorDate === null) !== (run.analysisCursorId === null))
+    || !Number.isSafeInteger(run.analysisProcessed) || run.analysisProcessed < 0
+    || !Number.isSafeInteger(run.analysisTotal) || run.analysisTotal < 0
+    || run.analysisProcessed > run.analysisTotal
+    || (run.analysisErrorCode !== null && typeof run.analysisErrorCode !== "string")
+    || (run.analysisErrorAt !== null && !isTimestamp(run.analysisErrorAt))
+    || typeof run.analysisComplete !== "boolean"
+    || (run.analysisCompletedAt !== null && !isTimestamp(run.analysisCompletedAt))
+    || run.analysisComplete !== (run.analysisCompletedAt !== null)) {
+    throw new Error("Continued reconciliation analysis response is invalid.");
   }
   return run;
 }
@@ -223,6 +268,29 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const continued = toAutomationPublicResult(await restQuery(
+      "rpc/continue_financial_reconciliation_automatic_oldest_analysis",
+      { method: "POST", body: { p_worker: SCHEDULE_ACTOR } },
+    ));
+    if (!isPlainRecord(continued)
+      || !Object.hasOwn(continued, "continued")
+      || typeof continued.continued !== "boolean") {
+      throw new Error("Scheduled reconciliation continuation response is invalid.");
+    }
+    if (continued.continued) {
+      const run = requireContinuedAnalysisRun(continued.run);
+      return res.status(200).json({
+        ok: true,
+        claimed: false,
+        continuedAnalysis: true,
+        runId: run.runId,
+        status: run.status,
+        analysisProcessed: run.analysisProcessed,
+        analysisTotal: run.analysisTotal,
+        hasMore: !run.analysisComplete,
+      });
+    }
+
     const claim = toAutomationPublicResult(await restQuery(
       "rpc/claim_financial_reconciliation_automatic_schedule",
       {
@@ -256,10 +324,13 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(publicRunResponse(claim, run, 0, false));
     }
     if (!run.analysisCompletedAt) {
-      run = requireAnalyzedRun(await restQuery(
-        "rpc/populate_financial_reconciliation_automatic_run",
-        { method: "POST", body: { p_run_id: run.runId } },
+      run = requireScheduledRun(await restQuery(
+        "rpc/continue_financial_reconciliation_automatic_analysis",
+        { method: "POST", body: { p_run_id: run.runId, p_actor: SCHEDULE_ACTOR } },
       ), claimedRunId);
+      if (!run.analysisCompletedAt) {
+        return res.status(200).json(publicRunResponse(claim, run, 0, true));
+      }
     }
 
     const selected = stablePendingProposals(run).slice(0, MAX_PROPOSALS_PER_HEARTBEAT);

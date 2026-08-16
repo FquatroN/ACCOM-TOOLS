@@ -3,6 +3,7 @@ const { mapRpcError } = require("./_reconciliation");
 const {
   normalizeAnalyzePayload,
   normalizeAutomationAction,
+  normalizeContinueAnalysisPayload,
   normalizeExecutePayload,
   toAutomationPublicResult,
 } = require("./_reconciliation-automation");
@@ -108,6 +109,16 @@ async function analyzeBatch(req, body) {
   return createAnalysis(input, actorFor(auth), "manual_batch");
 }
 
+async function continueAnalysis(req, body) {
+  const auth = await requireManagedFeature(req, "app");
+  const input = normalizeContinueAnalysisPayload(body);
+  const result = await restQuery("rpc/continue_financial_reconciliation_automatic_analysis", {
+    method: "POST",
+    body: { p_run_id: input.runId, p_actor: actorFor(auth) },
+  });
+  return toAutomationPublicResult(result);
+}
+
 async function executeSelected(req, body) {
   const auth = await requireManagedFeature(req, "app");
   const normalizedInput = normalizeExecutePayload(body);
@@ -187,17 +198,21 @@ async function executeSelected(req, body) {
 module.exports = async function handler(req, res) {
   try {
     if (req.method === "GET") {
-      await requireManagedFeature(req, "app");
+      const auth = await requireManagedFeature(req, "app");
       const view = cleanText(req.query?.view);
       if (view) {
-        if (view !== "rules" || cleanText(req.query?.run_id)) {
+        if (!new Set(["rules", "active_run"]).has(view) || cleanText(req.query?.run_id)) {
           throw inputError("Automation view is invalid.");
         }
-        const rules = await restQuery("rpc/get_financial_reconciliation_automatic_manual_rules", {
+        const resource = view === "rules"
+          ? "rpc/get_financial_reconciliation_automatic_manual_rules"
+          : "rpc/get_financial_reconciliation_automatic_active_run";
+        const body = view === "rules" ? {} : { p_actor: actorFor(auth) };
+        const result = await restQuery(resource, {
           method: "POST",
-          body: {},
+          body,
         });
-        return res.status(200).json(toAutomationPublicResult(rules));
+        return res.status(200).json(toAutomationPublicResult(result));
       }
       const runId = normalizeRunId(req.query?.run_id);
       const run = await restQuery("rpc/get_financial_reconciliation_automatic_run", {
@@ -214,7 +229,9 @@ module.exports = async function handler(req, res) {
         ? await analyzeRule(req, body)
         : action === "analyze_batch"
           ? await analyzeBatch(req, body)
-          : await executeSelected(req, body);
+          : action === "continue_analysis"
+            ? await continueAnalysis(req, body)
+            : await executeSelected(req, body);
       return res.status(200).json(result);
     }
 

@@ -157,6 +157,13 @@ function scheduledRun(overrides = {}) {
     scope: "batch",
     status: "ready",
     actor: SCHEDULE_ACTOR,
+    analysisCursorDate: null,
+    analysisCursorId: null,
+    analysisProcessed: 1,
+    analysisTotal: 1,
+    analysisErrorCode: null,
+    analysisErrorAt: null,
+    analysisComplete: true,
     analysisCompletedAt: "2026-08-15T02:00:01.000Z",
     finishedAt: null,
     definitions: [{ ruleKey: AUTOMATIC_RULE_KEY, priority: 1 }],
@@ -168,6 +175,8 @@ function scheduledRun(overrides = {}) {
 }
 
 function mockedSupabase(overrides = {}) {
+  const { exposeOldestAnalysis = false, restQuery: restQueryOverride, ...otherOverrides } = overrides;
+  const fallbackRestQuery = restQueryOverride || (async () => ({}));
   return {
     cleanText: (value) => String(value ?? "").trim(),
     parseBody: async (request) => request.body || {},
@@ -175,9 +184,15 @@ function mockedSupabase(overrides = {}) {
       user: { email: "user@example.com", id: "user-1" },
       access: { profile: { id: "profile-1" } },
     }),
-    restQuery: async () => ({}),
+    restQuery: async (resource, options) => {
+      if (resource === "rpc/continue_financial_reconciliation_automatic_oldest_analysis"
+        && !exposeOldestAnalysis) {
+        return { continued: false };
+      }
+      return fallbackRestQuery(resource, options);
+    },
     sendError: (response, error) => response.status(error.statusCode || 500).json({ error: error.message }),
-    ...overrides,
+    ...otherOverrides,
   };
 }
 
@@ -473,6 +488,54 @@ test("scheduled heartbeat returns safe database reasons when disabled or not due
   }
 });
 
+test("scheduled heartbeat advances one unfinished analysis page before claiming or executing", async () => {
+  const calls = [];
+  const response = responseRecorder();
+  const progressRun = scheduledRun({
+    trigger: "manual",
+    scope: "rule",
+    actor: "user@example.com",
+    status: "analyzing",
+    analysisCursorDate: "2026-01-31",
+    analysisCursorId: uuidFor(31),
+    analysisProcessed: 25,
+    analysisTotal: 100,
+    analysisComplete: false,
+    analysisCompletedAt: null,
+  });
+
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      exposeOldestAnalysis: true,
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        if (resource === "rpc/continue_financial_reconciliation_automatic_oldest_analysis") {
+          return { continued: true, run: progressRun, diagnostic: "hidden" };
+        }
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "POST", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.deepEqual(calls, [{
+    resource: "rpc/continue_financial_reconciliation_automatic_oldest_analysis",
+    options: { method: "POST", body: { p_worker: SCHEDULE_ACTOR } },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    ok: true,
+    claimed: false,
+    continuedAnalysis: true,
+    runId: RUN_ID,
+    status: "analyzing",
+    analysisProcessed: 25,
+    analysisTotal: 100,
+    hasMore: true,
+  });
+});
+
 test("first scheduled claim populates analysis and executes proposals in stable priority and base order", async () => {
   const lowPriorityRule = "future_low_priority_rule";
   const proposalA = uuidFor(11);
@@ -485,6 +548,7 @@ test("first scheduled claim populates analysis and executes proposals in stable 
   const baseSkipped = uuidFor(104);
   const pendingRun = scheduledRun({
     status: "analyzing",
+    analysisComplete: false,
     analysisCompletedAt: null,
     definitions: [
       { ruleKey: lowPriorityRule, priority: 2 },
@@ -526,7 +590,7 @@ test("first scheduled claim populates analysis and executes proposals in stable 
         if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
           return { claimed: true, resumed: false, run: pendingRun, internal_error: "hidden claim detail" };
         }
-        if (resource === "rpc/populate_financial_reconciliation_automatic_run") return analyzedRun;
+        if (resource === "rpc/continue_financial_reconciliation_automatic_analysis") return analyzedRun;
         if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
           const proposalId = options.body.p_proposal_id;
           return proposalId === proposalB
@@ -551,8 +615,8 @@ test("first scheduled claim populates analysis and executes proposals in stable 
       },
     },
     {
-      resource: "rpc/populate_financial_reconciliation_automatic_run",
-      options: { method: "POST", body: { p_run_id: RUN_ID } },
+      resource: "rpc/continue_financial_reconciliation_automatic_analysis",
+      options: { method: "POST", body: { p_run_id: RUN_ID, p_actor: SCHEDULE_ACTOR } },
     },
     ...[proposalC, proposalB, proposalA].map((proposalId) => ({
       resource: "rpc/execute_financial_reconciliation_automatic_proposal",
@@ -641,7 +705,7 @@ test("scheduled heartbeat preserves the claimed run identity across every follow
     finishedAt: "2026-08-15T02:00:10.000Z",
   });
   const cases = [
-    ["populate", scheduledRun({ status: "analyzing", analysisCompletedAt: null }), "rpc/populate_financial_reconciliation_automatic_run"],
+    ["continue", scheduledRun({ status: "analyzing", analysisComplete: false, analysisCompletedAt: null }), "rpc/continue_financial_reconciliation_automatic_analysis"],
     ["refresh", scheduledRun({ proposals: [{
       id: uuidFor(22),
       ruleKey: AUTOMATIC_RULE_KEY,
@@ -715,7 +779,7 @@ test("scheduled heartbeat rejects inconsistent run lifecycle state before mutati
   }
 });
 
-test("scheduled heartbeat enforces populate, refresh, and finalize phase postconditions", async () => {
+test("scheduled heartbeat enforces refresh and finalize phase postconditions", async () => {
   const proposal = {
     id: uuidFor(24),
     ruleKey: AUTOMATIC_RULE_KEY,
@@ -723,27 +787,12 @@ test("scheduled heartbeat enforces populate, refresh, and finalize phase postcon
     baseSourceId: uuidFor(124),
     status: "proposed",
   };
-  const analyzingRun = scheduledRun({
-    status: "analyzing",
-    analysisCompletedAt: null,
-  });
+  const analyzingRun = scheduledRun({ status: "analyzing", analysisComplete: false, analysisCompletedAt: null });
   const terminalRun = scheduledRun({
     status: "completed",
     finishedAt: "2026-08-15T02:00:10.000Z",
   });
   const cases = [
-    {
-      name: "populate remains analyzing",
-      claimedRun: analyzingRun,
-      responses: {
-        "rpc/populate_financial_reconciliation_automatic_run": analyzingRun,
-        "rpc/finish_financial_reconciliation_automatic_run": terminalRun,
-      },
-      expectedCalls: [
-        "rpc/claim_financial_reconciliation_automatic_schedule",
-        "rpc/populate_financial_reconciliation_automatic_run",
-      ],
-    },
     {
       name: "refresh loses analysis completion",
       claimedRun: scheduledRun({ proposals: [proposal] }),
@@ -1412,6 +1461,63 @@ test("manual automation GET exposes only the app-authorized enabled manual rule 
     }],
   });
   assert.equal(Object.hasOwn(response.body, "schedule"), false);
+});
+
+test("manual active-run lookup and continuation bind the authenticated actor", async () => {
+  const calls = [];
+  const auth = {
+    user: { email: "admin@example.com", id: "admin-1" },
+    access: { profile: { id: "profile-1" } },
+  };
+  const supabase = mockedSupabase({
+    requireFeature: async () => auth,
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return { run_id: RUN_ID, status: "analyzing", analysis_processed: 25, analysis_total: 100 };
+    },
+  });
+
+  const activeResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, supabase, async (handler) => {
+    await handler({ method: "GET", query: { view: "active_run" } }, activeResponse);
+  });
+  const continueResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, supabase, async (handler) => {
+    await handler({ method: "POST", body: { action: "continue_analysis", runId: RUN_ID } }, continueResponse);
+  });
+
+  assert.deepEqual(calls, [
+    {
+      resource: "rpc/get_financial_reconciliation_automatic_active_run",
+      options: { method: "POST", body: { p_actor: "admin@example.com" } },
+    },
+    {
+      resource: "rpc/continue_financial_reconciliation_automatic_analysis",
+      options: { method: "POST", body: { p_run_id: RUN_ID, p_actor: "admin@example.com" } },
+    },
+  ]);
+  for (const response of [activeResponse, continueResponse]) {
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, {
+      runId: RUN_ID,
+      status: "analyzing",
+      analysisProcessed: 25,
+      analysisTotal: 100,
+    });
+  }
+
+  let invalidRpcCalled = false;
+  const invalidResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => { invalidRpcCalled = true; return {}; },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: { action: "continue_analysis", runId: RUN_ID, pageSize: 50 },
+    }, invalidResponse);
+  });
+  assert.equal(invalidResponse.statusCode, 400);
+  assert.equal(invalidRpcCalled, false);
 });
 
 test("analyze_rule authorizes app access and sends exactly one manually enabled rule", async () => {
