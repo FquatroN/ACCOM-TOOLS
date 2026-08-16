@@ -7,12 +7,17 @@ const {
   AUTOMATIC_RULE_KEY,
   AUTOMATIC_RULE_VERSION,
   AUTOMATIC_TIME_ZONE,
+  BANK_STATEMENT_RULE_KEY,
+  BANK_STATEMENT_RULE_VERSION,
+  CREDIT_CARD_RULE_KEY,
+  CREDIT_CARD_RULE_VERSION,
   isCronRequest,
   normalizeAnalyzePayload,
   normalizeAutomationAction,
   normalizeAutomationSettingsPayload,
   normalizeContinueAnalysisPayload,
   normalizeExecutePayload,
+  normalizeRuleVersion,
   toAutomationPublicResult,
   toAutomationSettingsRpcPayload,
 } = require("../api/_reconciliation-automation");
@@ -213,6 +218,71 @@ function managedSettings(overrides = {}) {
   };
 }
 
+const creditCardRule = {
+  ruleKey: CREDIT_CARD_RULE_KEY,
+  ruleVersion: CREDIT_CARD_RULE_VERSION,
+  enabled: false,
+  allowManualExecution: false,
+  includeInScheduledBatch: false,
+  differenceAllowed: "0.00",
+  maxDifferenceDays: 10,
+  priority: 2,
+};
+
+test("managed settings accept the two explicit rule/version pairs", () => {
+  const input = managedSettings({
+    rules: [managedSettings().rules[0], creditCardRule],
+  });
+  assert.deepEqual(
+    normalizeAutomationSettingsPayload(input).rules.map(({ ruleKey, ruleVersion }) => ({ ruleKey, ruleVersion })),
+    [
+      { ruleKey: BANK_STATEMENT_RULE_KEY, ruleVersion: 2 },
+      { ruleKey: CREDIT_CARD_RULE_KEY, ruleVersion: 1 },
+    ],
+  );
+  assert.throws(() => normalizeAutomationSettingsPayload({
+    ...input,
+    rules: [{ ...creditCardRule, ruleVersion: 2 }],
+  }), /rule version/i);
+});
+
+test("rule-version validation rejects an unknown key even with an undefined version", () => {
+  assert.throws(
+    () => normalizeRuleVersion(undefined, "not-a-managed-rule"),
+    /rule key/i,
+  );
+});
+
+test("manual analysis accepts exactly one allowlisted rule and has no batch action", () => {
+  assert.deepEqual(normalizeAnalyzePayload({
+    action: "analyze_rule",
+    ruleKeys: [CREDIT_CARD_RULE_KEY],
+    clientRequestId: REQUEST_ID,
+  }).ruleKeys, [CREDIT_CARD_RULE_KEY]);
+  assert.throws(() => normalizeAnalyzePayload({
+    action: "analyze_rule",
+    ruleKeys: [BANK_STATEMENT_RULE_KEY, CREDIT_CARD_RULE_KEY],
+    clientRequestId: REQUEST_ID,
+  }), /exactly one/i);
+  assert.throws(() => normalizeAutomationAction("analyze_batch"), /automation action/i);
+});
+
+test("batch lifecycle keys map without leaking diagnostic keys", () => {
+  assert.deepEqual(toAutomationPublicResult({
+    batch_id: RUN_ID,
+    batch_rule_key: CREDIT_CARD_RULE_KEY,
+    batch_rule_position: 2,
+    batch_rule_count: 3,
+    last_scheduled_batch: { error_detail: "hidden", status: "partial" },
+  }), {
+    batchId: RUN_ID,
+    batchRuleKey: CREDIT_CARD_RULE_KEY,
+    batchRulePosition: 2,
+    batchRuleCount: 3,
+    lastScheduledBatch: { status: "partial" },
+  });
+});
+
 test("automation settings accept only editable managed-rule fields", () => {
   assert.deepEqual(normalizeAutomationSettingsPayload(managedSettings()), {
     schedule: { enabled: true, timeOfDay: "02:15", timeZone: "Europe/Lisbon" },
@@ -291,9 +361,9 @@ test("automatic reconciliation caps managed date windows at 90 days", () => {
 
 test("automation actions are restricted to their public contract", () => {
   assert.equal(normalizeAutomationAction("analyze_rule"), "analyze_rule");
-  assert.equal(normalizeAutomationAction("analyze_batch"), "analyze_batch");
   assert.equal(normalizeAutomationAction("continue_analysis"), "continue_analysis");
   assert.equal(normalizeAutomationAction("execute_selected"), "execute_selected");
+  assert.throws(() => normalizeAutomationAction("analyze_batch"), /automation action/i);
   assert.throws(() => normalizeAutomationAction("start"), /automation action/i);
   assert.throws(() => normalizeAutomationAction(1), /automation action/i);
 });
@@ -372,7 +442,7 @@ test("execution requires valid unique run and proposal UUIDs", () => {
     { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID, PROPOSAL_ID] },
     { action: "execute_selected", runId: RUN_ID, proposalIds: ["invalid"] },
   ]) {
-    assert.throws(() => normalizeExecutePayload(payload), /execution action|run id|proposal id/i);
+    assert.throws(() => normalizeExecutePayload(payload), /automation action|execution action|run id|proposal id/i);
   }
 });
 
@@ -1607,7 +1677,7 @@ test("manual active-run lookup and continuation bind the authenticated actor", a
   assert.equal(invalidRpcCalled, false);
 });
 
-test("analyze_rule authorizes app access and sends exactly one manually enabled rule", async () => {
+test("analyze_rule authorizes app access and sends exactly one selected Credit Card rule", async () => {
   const authorizations = [];
   const calls = [];
   const response = responseRecorder();
@@ -1626,7 +1696,7 @@ test("analyze_rule authorizes app access and sends exactly one manually enabled 
   }), async (handler) => {
     await handler({
       method: "POST",
-      body: { action: "analyze_rule", ruleKeys: [AUTOMATIC_RULE_KEY], clientRequestId: REQUEST_ID },
+      body: { action: "analyze_rule", ruleKeys: [CREDIT_CARD_RULE_KEY], clientRequestId: REQUEST_ID },
     }, response);
   });
 
@@ -1636,7 +1706,7 @@ test("analyze_rule authorizes app access and sends exactly one manually enabled 
     options: {
       method: "POST",
       body: {
-        p_rule_keys: [AUTOMATIC_RULE_KEY],
+        p_rule_keys: [CREDIT_CARD_RULE_KEY],
         p_mode: "manual_rule",
         p_actor: "user@example.com",
         p_client_request_id: REQUEST_ID,
@@ -1647,56 +1717,21 @@ test("analyze_rule authorizes app access and sends exactly one manually enabled 
   assert.deepEqual(response.body, { runId: RUN_ID, status: "ready" });
 });
 
-test("analyze_batch authorizes settings access and analyzes every enabled batch rule without execution", async () => {
-  const authorizations = [];
-  const calls = [];
+test("analyze_batch returns 400 before any RPC", async () => {
+  let rpcCalled = false;
   const response = responseRecorder();
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
-    requireFeature: async (_request, area, feature) => {
-      authorizations.push({ area, feature });
-      return {
-        user: { email: "admin@example.com", id: "admin-1" },
-        access: { profile: { id: "admin-profile" } },
-      };
-    },
-    restQuery: async (resource, options) => {
-      calls.push({ resource, options });
-      if (resource === "rpc/get_financial_reconciliation_automation_settings") {
-        return {
-          rules: [{
-            rule_key: AUTOMATIC_RULE_KEY,
-            enabled: true,
-            include_in_scheduled_batch: true,
-          }],
-        };
-      }
-      return { run_id: RUN_ID, scope: "batch", status: "ready" };
+    restQuery: async () => {
+      rpcCalled = true;
+      return {};
     },
   }), async (handler) => {
     await handler({ method: "POST", body: { action: "analyze_batch", clientRequestId: REQUEST_ID } }, response);
   });
 
-  assert.deepEqual(authorizations, [{ area: "settings", feature: "financial-reconciliation" }]);
-  assert.deepEqual(calls, [
-    {
-      resource: "rpc/get_financial_reconciliation_automation_settings",
-      options: { method: "POST", body: {} },
-    },
-    {
-      resource: "rpc/create_financial_reconciliation_automatic_analysis",
-      options: {
-        method: "POST",
-        body: {
-          p_rule_keys: [AUTOMATIC_RULE_KEY],
-          p_mode: "manual_batch",
-          p_actor: "admin@example.com",
-          p_client_request_id: REQUEST_ID,
-        },
-      },
-    },
-  ]);
-  assert.equal(calls.some(({ resource }) => resource.includes("execute_financial")), false);
-  assert.deepEqual(response.body, { runId: RUN_ID, scope: "batch", status: "ready" });
+  assert.equal(response.statusCode, 400);
+  assert.equal(rpcCalled, false);
+  assert.match(response.body.error, /automation action/i);
 });
 
 test("execute_selected runs proposal RPCs sequentially, retains partial failures, and finalizes after the loop", async () => {
@@ -1948,7 +1983,6 @@ test("execute_selected returns authoritative persisted outcomes when a finished 
 test("automation endpoints reject fallback access before any RPC", async () => {
   for (const [handlerPath, request] of [
     [SETTINGS_HANDLER_PATH, { method: "GET" }],
-    [MANUAL_HANDLER_PATH, { method: "POST", body: { action: "analyze_batch", clientRequestId: REQUEST_ID } }],
     [MANUAL_HANDLER_PATH, { method: "GET", query: { run_id: RUN_ID } }],
     [MANUAL_HANDLER_PATH, {
       method: "POST",

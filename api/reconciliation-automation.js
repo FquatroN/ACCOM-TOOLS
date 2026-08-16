@@ -58,17 +58,6 @@ function requireClientRequestId(input) {
   return input;
 }
 
-function requireBatchFields(body) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw inputError("Analyze payload must be an object.");
-  }
-  for (const key of Object.keys(body)) {
-    if (key !== "action" && key !== "clientRequestId") {
-      throw inputError("Analyze batch payload contains an unsupported field.");
-    }
-  }
-}
-
 async function createAnalysis(input, actor, mode) {
   const result = await restQuery("rpc/create_financial_reconciliation_automatic_analysis", {
     method: "POST",
@@ -89,24 +78,6 @@ async function analyzeRule(req, body) {
     throw inputError("Analyze rule requires exactly one manually enabled rule.");
   }
   return createAnalysis(input, actorFor(auth), "manual_rule");
-}
-
-async function analyzeBatch(req, body) {
-  const auth = await requireManagedFeature(req, "settings");
-  requireBatchFields(body);
-  const settings = toAutomationPublicResult(await restQuery(
-    "rpc/get_financial_reconciliation_automation_settings",
-    { method: "POST", body: {} },
-  ));
-  const ruleKeys = (Array.isArray(settings?.rules) ? settings.rules : [])
-    .filter((rule) => rule?.enabled === true && rule?.includeInScheduledBatch === true)
-    .map((rule) => rule.ruleKey);
-  const input = requireClientRequestId(normalizeAnalyzePayload({
-    action: "analyze_batch",
-    ruleKeys,
-    clientRequestId: body.clientRequestId,
-  }));
-  return createAnalysis(input, actorFor(auth), "manual_batch");
 }
 
 async function continueAnalysis(req, body) {
@@ -227,11 +198,9 @@ module.exports = async function handler(req, res) {
       const action = normalizeAutomationAction(body.action);
       const result = action === "analyze_rule"
         ? await analyzeRule(req, body)
-        : action === "analyze_batch"
-          ? await analyzeBatch(req, body)
-          : action === "continue_analysis"
-            ? await continueAnalysis(req, body)
-            : await executeSelected(req, body);
+        : action === "continue_analysis"
+          ? await continueAnalysis(req, body)
+          : await executeSelected(req, body);
       return res.status(200).json(result);
     }
 

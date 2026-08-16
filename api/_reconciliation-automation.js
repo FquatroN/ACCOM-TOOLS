@@ -1,9 +1,17 @@
 const { SOURCE_TYPES, normalizeSourceType } = require("./_reconciliation");
 
-const AUTOMATIC_RULE_KEY = "financial_documents_cgd_bank_statement";
-const AUTOMATIC_RULE_VERSION = 2;
+const BANK_STATEMENT_RULE_KEY = "financial_documents_cgd_bank_statement";
+const BANK_STATEMENT_RULE_VERSION = 2;
+const CREDIT_CARD_RULE_KEY = "financial_documents_cgd_credit_card";
+const CREDIT_CARD_RULE_VERSION = 1;
+const AUTOMATIC_RULE_VERSIONS = Object.freeze({
+  [BANK_STATEMENT_RULE_KEY]: BANK_STATEMENT_RULE_VERSION,
+  [CREDIT_CARD_RULE_KEY]: CREDIT_CARD_RULE_VERSION,
+});
+const AUTOMATIC_RULE_KEY = BANK_STATEMENT_RULE_KEY;
+const AUTOMATIC_RULE_VERSION = BANK_STATEMENT_RULE_VERSION;
 const AUTOMATIC_TIME_ZONE = "Europe/Lisbon";
-const AUTOMATION_ACTIONS = new Set(["analyze_rule", "analyze_batch", "continue_analysis", "execute_selected"]);
+const AUTOMATION_ACTIONS = new Set(["analyze_rule", "continue_analysis", "execute_selected"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EDITABLE_SCHEDULE_FIELDS = new Set(["enabled", "timeOfDay", "timeZone"]);
 const EDITABLE_RULE_FIELDS = new Set([
@@ -37,6 +45,11 @@ const PUBLIC_KEY_MAP = Object.freeze({
   time_of_day: "timeOfDay",
   time_zone: "timeZone",
   last_scheduled_run: "lastScheduledRun",
+  batch_id: "batchId",
+  batch_rule_key: "batchRuleKey",
+  batch_rule_position: "batchRulePosition",
+  batch_rule_count: "batchRuleCount",
+  last_scheduled_batch: "lastScheduledBatch",
   client_request_id: "clientRequestId",
   scheduled_slot: "scheduledSlot",
   definition_config_snapshot: "definitionConfigSnapshot",
@@ -127,12 +140,13 @@ function normalizeTimeOfDay(value) {
 }
 
 function normalizeRuleKey(value) {
-  if (value !== AUTOMATIC_RULE_KEY) throw inputError("Rule key is invalid.");
+  if (!Object.hasOwn(AUTOMATIC_RULE_VERSIONS, value)) throw inputError("Rule key is invalid.");
   return value;
 }
 
-function normalizeRuleVersion(value) {
-  if (value !== AUTOMATIC_RULE_VERSION) throw inputError("Rule version is invalid.");
+function normalizeRuleVersion(value, ruleKey) {
+  const normalizedRuleKey = normalizeRuleKey(ruleKey);
+  if (value !== AUTOMATIC_RULE_VERSIONS[normalizedRuleKey]) throw inputError("Rule version is invalid.");
   return value;
 }
 
@@ -154,9 +168,10 @@ function normalizeManagedRule(value) {
       throw inputError("Automation rules accept only editable managed-rule fields.");
     }
   }
+  const ruleKey = normalizeRuleKey(rule.ruleKey);
   return {
-    ruleKey: normalizeRuleKey(rule.ruleKey),
-    ruleVersion: normalizeRuleVersion(rule.ruleVersion),
+    ruleKey,
+    ruleVersion: normalizeRuleVersion(rule.ruleVersion, ruleKey),
     enabled: requireBoolean(rule.enabled, "Rule enabled"),
     allowManualExecution: requireBoolean(rule.allowManualExecution, "Allow manual execution"),
     includeInScheduledBatch: requireBoolean(rule.includeInScheduledBatch, "Include in scheduled batch"),
@@ -214,11 +229,13 @@ function normalizeAnalyzePayload(value) {
   const input = requirePlainObject(value, "Analyze payload");
   requireOnlyKeys(input, new Set(["action", "ruleKeys", "clientRequestId"]), "Analyze payload");
   const action = normalizeAutomationAction(input.action);
-  if (action !== "analyze_rule" && action !== "analyze_batch") throw inputError("Analysis action is invalid.");
+  if (action !== "analyze_rule") throw inputError("Analysis action is invalid.");
   const clientRequestId = input.clientRequestId === undefined
     ? ""
     : normalizeUuid(input.clientRequestId, "Client request ID");
-  return { action, ruleKeys: normalizeRuleKeys(input.ruleKeys), clientRequestId };
+  const ruleKeys = normalizeRuleKeys(input.ruleKeys);
+  if (ruleKeys.length !== 1) throw inputError("Analyze rule requires exactly one selected rule.");
+  return { action, ruleKeys, clientRequestId };
 }
 
 function normalizeContinueAnalysisPayload(value) {
@@ -269,9 +286,10 @@ function normalizeRpcSettings(settings) {
       "maxDifferenceDays",
       "priority",
     ]), "Automation rule");
+    const ruleKey = normalizeRuleKey(input.ruleKey);
     const normalized = {
-      ruleKey: normalizeRuleKey(input.ruleKey),
-      ruleVersion: normalizeRuleVersion(input.ruleVersion),
+      ruleKey,
+      ruleVersion: normalizeRuleVersion(input.ruleVersion, ruleKey),
       enabled: requireBoolean(input.enabled, "Rule enabled"),
       allowManualExecution: requireBoolean(input.allowManualExecution, "Allow manual execution"),
       includeInScheduledBatch: requireBoolean(input.includeInScheduledBatch, "Include in scheduled batch"),
@@ -338,7 +356,12 @@ module.exports = {
   AUTOMATIC_RULE_KEY,
   AUTOMATIC_RULE_VERSION,
   AUTOMATIC_TIME_ZONE,
+  AUTOMATIC_RULE_VERSIONS,
   AUTOMATION_ACTIONS,
+  BANK_STATEMENT_RULE_KEY,
+  BANK_STATEMENT_RULE_VERSION,
+  CREDIT_CARD_RULE_KEY,
+  CREDIT_CARD_RULE_VERSION,
   SOURCE_TYPES,
   isCronRequest,
   normalizeAnalyzePayload,
@@ -346,6 +369,8 @@ module.exports = {
   normalizeAutomationSettingsPayload,
   normalizeContinueAnalysisPayload,
   normalizeExecutePayload,
+  normalizeRuleKey,
+  normalizeRuleVersion,
   normalizeSourceType,
   toAutomationPublicResult,
   toAutomationSettingsRpcPayload,
