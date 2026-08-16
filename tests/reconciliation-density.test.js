@@ -118,12 +118,12 @@ test("reloaded automatic reconciliations display escaped structured audit eviden
   const entry = {
     action: "automatic_complete",
     metadata: {
-      ruleSnapshot: { ruleKey: "rule-<unsafe>", ruleVersion: 3 },
-      configSnapshot: { differenceAllowed: 1.25 },
-      operatorSnapshot: { import_cgd_extrato_ordem: "-" },
+      ruleSnapshot: { ruleKey: "financial_documents_cgd_credit_card", ruleVersion: 1 },
+      configSnapshot: { differenceAllowed: 0, maxDifferenceDays: 10 },
+      operatorSnapshot: { import_cgd_cartao_credito: "+" },
       identityEvidence: [{
         documentNumber: { matched: true, normalized: "FT<script>" },
-        description: { matched: true, score: 0.75, threshold: 0.6 },
+        description: { matched: true, score: 0.55, threshold: 0.55 },
       }],
       trigger: "manual",
       runId: "run-123",
@@ -133,10 +133,10 @@ test("reloaded automatic reconciliations display escaped structured audit eviden
 
   const evidence = automaticAuditMarkup(entry);
   assert.match(evidence, /Automatic evidence/);
-  assert.match(evidence, /rule-&lt;unsafe&gt;[\s\S]*version 3/);
-  assert.match(evidence, /manual[\s\S]*run-123[\s\S]*1\.25 â‚¬[\s\S]*0\.00 â‚¬/i);
-  assert.match(evidence, /CGD Bank Statement operator[\s\S]*-/);
-  assert.match(evidence, /Document number FT&lt;script&gt;[\s\S]*Description 0\.750 ≥ 0\.600/);
+  assert.match(evidence, /financial_documents_cgd_credit_card[\s\S]*version 1/);
+  assert.match(evidence, /manual[\s\S]*run-123[\s\S]*0\.00 â‚¬[\s\S]*0\.00 â‚¬/i);
+  assert.match(evidence, /CGD Credit Card operator[\s\S]*\+/);
+  assert.match(evidence, /Document number FT&lt;script&gt;[\s\S]*Description 0\.550 ≥ 0\.550/);
   assert.doesNotMatch(evidence, /<script>/);
 
   const currentMarkup = renderCurrentSummary({
@@ -192,6 +192,8 @@ test("automatic reconciliation settings stay dense, wrapping, and reachable on n
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-settings-tabs\s*>\s*button\s*\{[\s\S]*flex:\s*1 1 12rem;/);
   assert.match(css, /\.financial-reconciliation-automation-rule-card\s*:focus-within\s*\{/);
   assert.match(css, /\.financial-reconciliation-automation-settings\s+input\[aria-invalid="true"\]\s*\{[\s\S]*border-color:/);
+  assert.match(html, /id="financial-reconciliation-automation-open-workbench"[^>]*>Open automatic reconciliation<\/button>/);
+  assert.match(appMain, /<input type="number" min="0" max="90"[^>]*data-reconciliation-automation-rule-field="maxDifferenceDays"/);
 });
 
 test("reconciliation settings validates and sends one atomic replacement RPC", () => {
@@ -259,7 +261,7 @@ test("reconciliation separates manual and automatic work into accessible tabs wi
   const history = html.indexOf('class="card financial-reconciliation-history-card"');
   assert.ok(manualPanel >= 0 && automaticPanel > manualPanel && history > automaticPanel);
   assert.match(html.slice(manualPanel, automaticPanel), /id="financial-reconciliation-filters"[\s\S]*id="financial-reconciliation-current"/);
-  assert.match(html.slice(automaticPanel, history), /id="financial-reconciliation-workbench-automation-rules"[\s\S]*id="financial-reconciliation-workbench-automation-proposals"/);
+  assert.match(html.slice(automaticPanel, history), /class="financial-reconciliation-workbench-automation-rule-picker"[\s\S]*for="financial-reconciliation-workbench-automation-rule"[\s\S]*id="financial-reconciliation-workbench-automation-rule"[\s\S]*id="financial-reconciliation-workbench-automation-analyze"[\s\S]*id="financial-reconciliation-workbench-automation-proposals"/);
   assert.match(html.slice(automaticPanel, history), /id="financial-reconciliation-status"[\s\S]*role="status"[\s\S]*aria-live="polite"/);
   assert.equal((html.match(/id="financial-reconciliation-history-rows"/g) || []).length, 1);
   assert.ok(html.indexOf('id="financial-reconciliation-history-rows"') > html.indexOf('id="financial-reconciliation-automatic-panel"'));
@@ -272,6 +274,10 @@ test("reconciliation application tabs remain visible and usable on narrow screen
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-view-tabs\s*>\s*button\s*\{[\s\S]*flex:\s*1 1 12rem;/);
   assert.match(html, /id="financial-reconciliation-manual-panel"[^>]*class="[^"]*financial-reconciliation-manual-panel/);
   assert.match(html, /id="financial-reconciliation-automatic-panel"[^>]*class="[^"]*financial-reconciliation-automatic-panel/);
+  assert.match(css, /\.financial-reconciliation-workbench-automation-rule-picker\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/);
+  assert.match(css, /\.financial-reconciliation-workbench-automation-rule-picker\s+(?:select|button):focus-visible\s*\{[\s\S]*outline:/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-workbench-automation-rule-picker\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-workbench-automation-rule-picker\s+(?:select|button)\s*\{[\s\S]*width:\s*100%;/);
 });
 
 function reconciliationTabClassList() {

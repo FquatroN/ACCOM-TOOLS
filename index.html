@@ -2542,7 +2542,7 @@
                         <p class="field-hint">Managed matching logic is versioned and read only. Save applies the complete schedule and rule configuration atomically.</p>
                       </div>
                       <div class="actions">
-                        <button id="financial-reconciliation-automation-run-batch-now" type="button" class="ghost">Run batch now</button>
+                        <button id="financial-reconciliation-automation-open-workbench" type="button" class="ghost">Open automatic reconciliation</button>
                         <button id="financial-reconciliation-automation-save" type="button" class="ghost">Save</button>
                       </div>
                     </div>
@@ -2555,7 +2555,7 @@
                       <p id="financial-reconciliation-automation-next-execution">Next expected execution: Schedule disabled</p>
                     </div>
                     <div id="financial-reconciliation-automation-rules" class="financial-reconciliation-automation-rule-list"></div>
-                    <p id="financial-reconciliation-automation-run-hint" class="field-hint">Run batch now performs analysis only and opens proposals for review.</p>
+                    <p id="financial-reconciliation-automation-run-hint" class="field-hint">Opens the saved manual-enabled rules in Reconciliation. Unsaved changes are not applied.</p>
                     <p id="financial-reconciliation-automation-status" class="auth-status" aria-live="polite"></p>
                   </section>
                 </div>
@@ -3922,7 +3922,11 @@
               </div>
               <p id="financial-reconciliation-workbench-automation-status" class="auth-status" role="status" aria-live="polite"></p>
             </div>
-            <div id="financial-reconciliation-workbench-automation-rules" class="financial-reconciliation-workbench-automation-rules"></div>
+            <div class="financial-reconciliation-workbench-automation-rule-picker">
+              <label for="financial-reconciliation-workbench-automation-rule">Rule</label>
+              <select id="financial-reconciliation-workbench-automation-rule" aria-describedby="financial-reconciliation-workbench-automation-status"></select>
+              <button id="financial-reconciliation-workbench-automation-analyze" type="button">Analyze</button>
+            </div>
             <div class="financial-reconciliation-workbench-automation-review">
               <div class="actions financial-reconciliation-workbench-automation-actions">
                 <button id="financial-reconciliation-workbench-automation-select-all" type="button" class="ghost">Select all executable</button>

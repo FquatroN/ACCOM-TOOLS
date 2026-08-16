@@ -63,7 +63,7 @@ function automationSettings(overrides = {}) {
     activeTab: "automatic",
     schedule: { enabled: true, timeOfDay: "02:15", timeZone: "Europe/Lisbon" },
     rules: managedRules(),
-    lastScheduledRun: null,
+    lastScheduledBatch: null,
     ...overrides,
   };
 }
@@ -112,7 +112,7 @@ function renderAutomationSettings(settings, { dirty = false, canOpenWorkbench = 
     financialReconciliationAutomationNextExecution: { textContent: "" },
     financialReconciliationAutomationRules: { innerHTML: "", querySelectorAll: () => [] },
     financialReconciliationAutomationSave: { disabled: false },
-    financialReconciliationAutomationRunBatchNow: { disabled: false },
+    financialReconciliationAutomationOpenWorkbench: { disabled: false },
     financialReconciliationAutomationRunHint: { textContent: "" },
   };
   const payload = compilePayload(state);
@@ -167,13 +167,17 @@ test("reconciliation settings expose accessible source and automatic tabs", () =
     "financial-reconciliation-automation-schedule-time",
     "financial-reconciliation-automation-rules",
     "financial-reconciliation-automation-save",
-    "financial-reconciliation-automation-run-batch-now",
+    "financial-reconciliation-automation-open-workbench",
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(html, /role="tablist"[\s\S]*aria-controls="financial-reconciliation-settings-source-panel"[\s\S]*aria-controls="financial-reconciliation-settings-automatic-panel"/);
   assert.match(html, /id="financial-reconciliation-automation-time-zone"[^>]*>Europe\/Lisbon</);
   assert.match(html, /id="financial-reconciliation-automation-schedule-time"[^>]*aria-describedby="financial-reconciliation-automation-status"/);
+  assert.match(html, /id="financial-reconciliation-automation-open-workbench"[^>]*>Open automatic reconciliation<\/button>/);
+  assert.doesNotMatch(html, /financial-reconciliation-automation-run-batch-now|>Run batch now<\/button>/);
+  assert.match(html, /id="financial-reconciliation-workbench-automation-rule"[^>]*aria-describedby="financial-reconciliation-workbench-automation-status"/);
+  assert.match(html, /id="financial-reconciliation-workbench-automation-analyze"[^>]*>Analyze<\/button>/);
 });
 
 test("actual renderer keeps managed definition text, versions, and thresholds read only and escaped", () => {
@@ -197,18 +201,21 @@ test("actual renderer keeps managed definition text, versions, and thresholds re
   assert.doesNotMatch(markup, /data-reconciliation-automation-rule-field="(?:definition|logicDescription|ruleVersion)"/);
 });
 
-test("actual renderer summarizes the last scheduled result separately from execution timing", () => {
+test("actual renderer summarizes the last scheduled batch without presenting one child run", () => {
   const els = renderAutomationSettings(automationSettings({
-    lastScheduledRun: {
+    lastScheduledBatch: {
+      batchId: "00000000-0000-0000-0000-000000000777",
       status: "partial",
       startedAt: "2026-08-14T02:00:00Z",
       finishedAt: "2026-08-14T02:01:00Z",
-      counts: { proposed: 4, completed: 3, failed: 1 },
+      counts: { rules: 2, completed: 1, failed: 1 },
+      childRunId: "must-not-render",
     },
   }));
 
-  assert.equal(els.financialReconciliationAutomationLastExecution.textContent, "Last execution: 2026-08-14 03:01 Europe/Lisbon · partial");
-  assert.equal(els.financialReconciliationAutomationLastResult.textContent, "Last result: proposed 4 · completed 3 · failed 1");
+  assert.equal(els.financialReconciliationAutomationLastExecution.textContent, "Last batch: 2026-08-14 03:01 Europe/Lisbon · partial");
+  assert.equal(els.financialReconciliationAutomationLastResult.textContent, "Batch result: rules 2 · completed 1 · failed 1");
+  assert.doesNotMatch(`${els.financialReconciliationAutomationLastExecution.textContent} ${els.financialReconciliationAutomationLastResult.textContent}`, /must-not-render/);
 });
 
 test("actual serializer emits only approved schedule and managed-rule configuration fields", () => {
@@ -275,7 +282,7 @@ test("invalid local automation values disable Save", () => {
     automationSettings({ rules: [{ ...managedRules()[1], differenceAllowed: "1.234" }] }),
     automationSettings({ rules: [{ ...managedRules()[1], differenceAllowed: "90071992547410.00" }] }),
     automationSettings({ rules: [{ ...managedRules()[1], maxDifferenceDays: "" }] }),
-    automationSettings({ rules: [{ ...managedRules()[1], maxDifferenceDays: 366 }] }),
+    automationSettings({ rules: [{ ...managedRules()[1], maxDifferenceDays: 91 }] }),
   ]) {
     const payload = compilePayload({ reconciliationAutomationSettings: invalid });
     assert.equal(payload(), null);
@@ -294,20 +301,15 @@ test("empty time remains visible as invalid instead of being replaced with the d
   assert.equal(els.financialReconciliationAutomationSave.disabled, true);
 });
 
-test("Run batch control requires saved settings, an eligible rule, and workbench access", () => {
+test("Open automatic reconciliation requires app access but ignores unsaved Settings drafts", () => {
   const dirtyEls = renderAutomationSettings(automationSettings(), { dirty: true });
-  assert.equal(dirtyEls.financialReconciliationAutomationRunBatchNow.disabled, true);
-  assert.match(dirtyEls.financialReconciliationAutomationRunHint.textContent, /save configuration changes/i);
+  assert.equal(dirtyEls.financialReconciliationAutomationOpenWorkbench.disabled, false);
+  assert.match(dirtyEls.financialReconciliationAutomationRunHint.textContent, /saved manual-enabled rules/i);
+  assert.match(dirtyEls.financialReconciliationAutomationRunHint.textContent, /unsaved changes are not applied/i);
 
   const noAccessEls = renderAutomationSettings(automationSettings(), { canOpenWorkbench: false });
-  assert.equal(noAccessEls.financialReconciliationAutomationRunBatchNow.disabled, true);
+  assert.equal(noAccessEls.financialReconciliationAutomationOpenWorkbench.disabled, true);
   assert.match(noAccessEls.financialReconciliationAutomationRunHint.textContent, /reconciliation app access/i);
-
-  const noRuleEls = renderAutomationSettings(automationSettings({
-    rules: managedRules().map((rule) => ({ ...rule, includeInScheduledBatch: false })),
-  }));
-  assert.equal(noRuleEls.financialReconciliationAutomationRunBatchNow.disabled, true);
-  assert.match(noRuleEls.financialReconciliationAutomationRunHint.textContent, /at least one rule/i);
 });
 
 test("automation inputs change only the local draft until one atomic Save", async () => {
@@ -377,7 +379,7 @@ test("automation inputs change only the local draft until one atomic Save", asyn
         rules: settings.rules.map((rule) => rule.ruleKey === "rule-a"
           ? { ...rule, ruleVersion: 9, displayName: "Authoritative name", definition: { authoritative: true } }
           : rule),
-        lastScheduledRun: null,
+        lastScheduledBatch: null,
       };
     },
     payload,
@@ -411,102 +413,50 @@ test("Reconciliation entry defaults to Manual and accepts only an explicit Autom
   assert.equal(entryTab({ financialReconciliationTab: "AUTOMATIC" }), "manual");
 });
 
-test("Run batch now stores analysis, navigates to Reconciliation Automatic, and never executes", async () => {
-  const requests = [];
-  const sequence = [];
-  const run = { runId: "00000000-0000-0000-0000-000000000001", proposals: [{ id: "proposal-1", status: "proposed" }] };
-  const existingRules = [{ ruleKey: "authoritative-workbench-rule" }];
-  const current = { automation: { rules: existingRules, run: null, selectedProposalIds: new Set(), pendingAction: "", loaded: false } };
-  const state = { reconciliationAutomationSettings: automationSettings(), reconciliationAutomationSettingsDirty: false };
-  const runBatchNow = new Function(
-    "state",
-    "api",
-    "crypto",
-    "financialReconciliationState",
-    "setView",
-    "renderFinancialReconciliation",
-    "renderReconciliationAutomationSettings",
-    "setReconciliationAutomationSettingsStatus",
+test("Open automatic reconciliation only navigates to the Automatic tab and never leaks the Settings draft", async () => {
+  const calls = [];
+  const statuses = [];
+  const openWorkbench = new Function(
     "canAppFinancialReconciliation",
-    "reconciliationAutomationSettingsPayload",
-    `${appFunctionSource("runReconciliationAutomationBatchNow").replace(/^function /, "async function ")}
-     return runReconciliationAutomationBatchNow;`,
+    "setReconciliationAutomationSettingsStatus",
+    "setView",
+    `${appFunctionSource("openFinancialReconciliationAutomation").replace(/^function /, "async function ")}
+     return openFinancialReconciliationAutomation;`,
   )(
-    state,
-    async (url, options) => {
-      requests.push({ url, options });
-      sequence.push("api");
-      return run;
-    },
-    { randomUUID: () => "00000000-0000-0000-0000-000000000099" },
-    () => current,
-    async (view, options) => sequence.push(`view:${view}:${options?.financialReconciliationTab || "manual"}`),
-    () => sequence.push(`render:${current.automation.run?.runId || "missing"}`),
-    () => {},
-    () => {},
     () => true,
-    compilePayload(state),
+    (message, isError) => statuses.push({ message, isError }),
+    async (view, options) => calls.push({ view, options }),
   );
 
-  await runBatchNow();
+  await openWorkbench();
 
-  assert.deepEqual(requests, [{
-    url: "/api/reconciliation-automation",
-    options: {
-      method: "POST",
-      body: { action: "analyze_batch", clientRequestId: "00000000-0000-0000-0000-000000000099" },
-    },
+  assert.deepEqual(calls, [{
+    view: "financial-reconciliation",
+    options: { financialReconciliationTab: "automatic" },
   }]);
-  assert.equal(current.automation.rules, existingRules);
-  assert.deepEqual(sequence, ["api", "view:financial-reconciliation:automatic"]);
-  assert.equal(current.automation.run, run);
-  assert.deepEqual([...current.automation.selectedProposalIds], ["proposal-1"]);
-  assert.doesNotMatch(JSON.stringify(requests), /execute_selected|proposalIds/);
+  assert.deepEqual(statuses, []);
+  assert.doesNotMatch(appFunctionSource("openFinancialReconciliationAutomation"), /api\(|analyze_|execute_|proposal|reconciliationAutomationSettingsPayload/);
 });
 
-test("Run batch now refuses dispatch for dirty settings or missing workbench access", async () => {
-  for (const scenario of [
-    { dirty: true, canOpenWorkbench: true, expected: /save.*before running/i },
-    { dirty: false, canOpenWorkbench: false, expected: /reconciliation app access/i },
-  ]) {
-    const requests = [];
-    const statuses = [];
-    const state = {
-      reconciliationAutomationSettings: automationSettings(),
-      reconciliationAutomationSettingsDirty: scenario.dirty,
-    };
-    const runBatchNow = new Function(
-      "state",
-      "api",
-      "crypto",
-      "financialReconciliationState",
-      "setView",
-      "renderFinancialReconciliation",
-      "renderReconciliationAutomationSettings",
-      "setReconciliationAutomationSettingsStatus",
-      "canAppFinancialReconciliation",
-      "reconciliationAutomationSettingsPayload",
-      `${appFunctionSource("runReconciliationAutomationBatchNow").replace(/^function /, "async function ")}
-       return runReconciliationAutomationBatchNow;`,
-    )(
-      state,
-      async (...args) => requests.push(args),
-      { randomUUID: () => "00000000-0000-0000-0000-000000000099" },
-      () => ({ automation: {} }),
-      async () => {},
-      () => {},
-      () => {},
-      (message, isError) => statuses.push({ message, isError }),
-      () => scenario.canOpenWorkbench,
-      compilePayload(state),
-    );
+test("Open automatic reconciliation fails closed without Reconciliation app access", async () => {
+  const calls = [];
+  const statuses = [];
+  const openWorkbench = new Function(
+    "canAppFinancialReconciliation",
+    "setReconciliationAutomationSettingsStatus",
+    "setView",
+    `${appFunctionSource("openFinancialReconciliationAutomation").replace(/^function /, "async function ")}
+     return openFinancialReconciliationAutomation;`,
+  )(
+    () => false,
+    (message, isError) => statuses.push({ message, isError }),
+    async (...args) => calls.push(args),
+  );
 
-    await runBatchNow();
+  await openWorkbench();
 
-    assert.deepEqual(requests, []);
-    assert.match(statuses.at(-1).message, scenario.expected);
-    assert.equal(statuses.at(-1).isError, true);
-  }
+  assert.deepEqual(calls, []);
+  assert.deepEqual(statuses, [{ message: "Reconciliation app access is required.", isError: true }]);
 });
 
 test("settings tabs support roving focus and horizontal keyboard activation", () => {
@@ -614,11 +564,12 @@ function compileAutomationOutcomeCounts() {
   )((value) => String(value ?? "").trim());
 }
 
-function renderAutomationWorkbench(run, selectedProposalIds = new Set(), { continuationRetry = false } = {}) {
-  const state = { automation: { rules: [], run, selectedProposalIds, pendingAction: "", loaded: true, continuationRetry } };
+function renderAutomationWorkbench(run, selectedProposalIds = new Set(), { continuationRetry = false, rules = workbenchRules(), selectedRuleKey = "manual-enabled", pendingAction = "" } = {}) {
+  const state = { automation: { rules, run, selectedRuleKey, selectedProposalIds, pendingAction, loaded: true, continuationRetry } };
   const proposalContainer = { innerHTML: "", querySelectorAll: () => [] };
   const els = {
-    financialReconciliationWorkbenchAutomationRules: { innerHTML: "" },
+    financialReconciliationWorkbenchAutomationRule: { innerHTML: "", value: "", disabled: false },
+    financialReconciliationWorkbenchAutomationAnalyze: { disabled: false, textContent: "" },
     financialReconciliationWorkbenchAutomationProposals: proposalContainer,
     financialReconciliationWorkbenchAutomationResults: { innerHTML: "" },
     financialReconciliationWorkbenchAutomationSelectAll: { disabled: false },
@@ -629,11 +580,12 @@ function renderAutomationWorkbench(run, selectedProposalIds = new Set(), { conti
     "financialReconciliationState",
     "clean",
     "els",
-    "financialReconciliationAutomationRulesMarkup",
+    "financialReconciliationAutomationRuleOptions",
     "financialReconciliationAutomationProposalMarkup",
     "financialReconciliationAutomationResultsMarkup",
     "escape",
-    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+    `${appFunctionSource("financialReconciliationAutomationOpenRun")}
+     ${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
      ${appFunctionSource("financialReconciliationAutomationProgressLabel")}
      ${appFunctionSource("financialReconciliationAutomationVisibleProposals")}
      ${appFunctionSource("financialReconciliationAutomationEmptyMessage")}
@@ -643,7 +595,15 @@ function renderAutomationWorkbench(run, selectedProposalIds = new Set(), { conti
     () => state,
     (value) => String(value ?? "").trim(),
     els,
-    () => "",
+    new Function(
+      "clean",
+      "escape",
+      `${appFunctionSource("financialReconciliationAutomationRuleOptions")}
+       return financialReconciliationAutomationRuleOptions;`,
+    )(
+      (value) => String(value ?? "").trim(),
+      new Function(`${appFunctionSource("escape")}; return escape;`)(),
+    ),
     (proposal) => `<article data-proposal-id="${proposal.id}">${proposal.id}</article>`,
     () => "",
     (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]),
@@ -733,7 +693,12 @@ test("serial continuation replaces progress and selects proposals only after ana
 test("automatic tab restores an unfinished actor run before continuing it", async () => {
   const current = {
     automation: {
+      rules: [
+        ...workbenchRules(),
+        { ...workbenchRules()[0], ruleKey: "other-manual", displayName: "Other manual", priority: 4 },
+      ],
       run: null,
+      selectedRuleKey: "other-manual",
       selectedProposalIds: new Set(["old"]),
       pendingAction: "",
       continuationToken: 0,
@@ -746,6 +711,7 @@ test("automatic tab restores an unfinished actor run before continuing it", asyn
     analysisCompletedAt: null,
     analysisProcessed: 25,
     analysisTotal: 75,
+    definitions: [{ ruleKey: "manual-enabled", ruleVersion: 3 }],
     proposals: [],
   };
   const calls = [];
@@ -773,6 +739,7 @@ test("automatic tab restores an unfinished actor run before continuing it", asyn
 
   assert.deepEqual(calls, ["/api/reconciliation-automation?view=active_run"]);
   assert.strictEqual(current.automation.run, activeRun);
+  assert.equal(current.automation.selectedRuleKey, "manual-enabled");
   assert.deepEqual([...current.automation.selectedProposalIds], []);
   assert.equal(current.automation.continuationRetry, false);
   assert.deepEqual(continuedTokens, [1]);
@@ -1029,31 +996,97 @@ function compileWorkbenchProposalMarkup() {
   );
 }
 
-test("workbench shows Analyze only for enabled manual rules from the app catalog", () => {
-  const rulesMarkup = new Function(
+test("workbench rule LOV filters, sorts, escapes, and preserves only a valid selection", () => {
+  const ruleOptions = new Function(
     "clean",
     "escape",
-    "financialReconciliationSourceLabel",
-    "formatMoney",
-    `${appFunctionSource("financialReconciliationAutomationRulesMarkup")}
-     return financialReconciliationAutomationRulesMarkup;`,
+    `${appFunctionSource("financialReconciliationAutomationRuleOptions")}
+     return financialReconciliationAutomationRuleOptions;`,
   )(
     (value) => String(value ?? "").trim(),
     new Function(`${appFunctionSource("escape")}; return escape;`)(),
-    (value) => ({ financial_documents: "Financial Documents", import_cgd_extrato_ordem: "CGD Bank Statement" })[value] || value,
-    (value) => `${Number(value).toFixed(2)} â‚¬`,
+  );
+  const eligibleLater = {
+    ...workbenchRules()[0],
+    ruleKey: "manual-&-later",
+    displayName: "<Unsafe & later>",
+    priority: 9,
+  };
+  const eligibleFirst = {
+    ...workbenchRules()[0],
+    ruleKey: 'manual-"-first',
+    displayName: "First eligible",
+    priority: 0,
+  };
+  const rules = [eligibleLater, ...workbenchRules(), eligibleFirst];
+
+  const retainedMarkup = ruleOptions(rules, "manual-&-later");
+  assert.equal((retainedMarkup.match(/<option /g) || []).length, 3);
+  assert.ok(retainedMarkup.indexOf("First eligible") < retainedMarkup.indexOf("Manual enabled"));
+  assert.ok(retainedMarkup.indexOf("Manual enabled") < retainedMarkup.indexOf("&lt;Unsafe &amp; later&gt;"));
+  assert.match(retainedMarkup, /value="manual-&amp;-later"[^>]*selected[^>]*>&lt;Unsafe &amp; later&gt;<\/option>/);
+  assert.doesNotMatch(retainedMarkup, /Disabled rule|Scheduled only/);
+
+  const defaultMarkup = ruleOptions(rules, "missing-rule");
+  assert.match(defaultMarkup, /value="manual-&quot;-first"[^>]*selected[^>]*>First eligible<\/option>/);
+  assert.doesNotMatch(defaultMarkup, /value="manual-enabled"[^>]*selected/);
+});
+
+test("workbench rule change keeps the user selection and refuses changes while a run is open", () => {
+  const otherRule = { ...workbenchRules()[0], ruleKey: "other-manual", displayName: "Other manual", priority: 2 };
+  const current = {
+    automation: {
+      rules: [workbenchRules()[0], otherRule],
+      run: null,
+      selectedRuleKey: "manual-enabled",
+      pendingAction: "",
+    },
+  };
+  let renders = 0;
+  const onChange = new Function(
+    "financialReconciliationState",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    `${appFunctionSource("financialReconciliationAutomationOpenRun")}
+     ${appFunctionSource("onFinancialReconciliationAutomationRuleChange")}
+     return onFinancialReconciliationAutomationRuleChange;`,
+  )(
+    () => current,
+    (value) => String(value ?? "").trim(),
+    () => { renders += 1; },
   );
 
-  const markup = rulesMarkup(workbenchRules(), "");
-  assert.equal((markup.match(/data-financial-reconciliation-automation-analyze/g) || []).length, 1);
-  assert.match(markup, /data-financial-reconciliation-automation-rule-key="manual-enabled"/);
-  assert.match(markup, /Manual enabled[\s\S]*Financial Documents[\s\S]*CGD Bank Statement[\s\S]*1\.00 â‚¬[\s\S]*7 days/);
-  assert.doesNotMatch(markup, /Disabled rule|Scheduled only/);
+  onChange({ target: { value: "other-manual" } });
+  assert.equal(current.automation.selectedRuleKey, "other-manual");
+
+  current.automation.run = { ...workbenchRun([]), status: "ready", finishedAt: null };
+  onChange({ target: { value: "manual-enabled" } });
+  assert.equal(current.automation.selectedRuleKey, "other-manual");
+  assert.equal(renders, 2);
+});
+
+test("workbench selector locks only for unfinished analyzing, ready, or running runs", () => {
+  const openRun = new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationAutomationOpenRun")}
+     return financialReconciliationAutomationOpenRun;`,
+  )((value) => String(value ?? "").trim());
+
+  for (const status of ["analyzing", "ready", "running"]) {
+    assert.equal(openRun({ status, finishedAt: null }), true, status);
+    const { els } = renderAutomationWorkbench({ ...workbenchRun([]), status, finishedAt: null });
+    assert.equal(els.financialReconciliationWorkbenchAutomationRule.disabled, true, status);
+    assert.equal(els.financialReconciliationWorkbenchAutomationAnalyze.disabled, true, status);
+  }
+  assert.equal(openRun({ status: "completed", finishedAt: "2026-08-16T10:00:00Z" }), false);
+  const terminal = renderAutomationWorkbench({ ...workbenchRun([]), status: "completed", finishedAt: "2026-08-16T10:00:00Z" });
+  assert.equal(terminal.els.financialReconciliationWorkbenchAutomationRule.disabled, false);
+  assert.equal(terminal.els.financialReconciliationWorkbenchAutomationAnalyze.disabled, false);
 });
 
 test("manual rule loader uses the app-authorized catalog without schedule administration", async () => {
   const current = {
-    automation: { rules: [], run: null, selectedProposalIds: new Set(), pendingAction: "", loaded: false },
+    automation: { rules: [], run: null, selectedRuleKey: "manual-enabled", selectedProposalIds: new Set(), pendingAction: "", loaded: false },
   };
   const calls = [];
   const loadRules = new Function(
@@ -1081,8 +1114,45 @@ test("manual rule loader uses the app-authorized catalog without schedule admini
 
   assert.deepEqual(calls, ["/api/reconciliation-automation?view=rules"]);
   assert.deepEqual(current.automation.rules, workbenchRules());
+  assert.equal(current.automation.selectedRuleKey, "manual-enabled");
   assert.equal(current.automation.loaded, true);
   assert.equal(Object.hasOwn(current.automation, "schedule"), false);
+});
+
+test("authoritative rule reload keeps a valid selection and defaults only an invalid one", async () => {
+  const current = {
+    activeTab: "manual",
+    automation: { rules: [], run: null, selectedRuleKey: "missing", selectedProposalIds: new Set(), pendingAction: "", loaded: false },
+  };
+  const orderedRules = [
+    { ...workbenchRules()[0], ruleKey: "second", displayName: "Second", priority: 2 },
+    { ...workbenchRules()[0], ruleKey: "first", displayName: "First", priority: 1 },
+  ];
+  const loadRules = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "clone",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    `${appFunctionSource("loadFinancialReconciliationAutomationRules").replace(/^function /, "async function ")}
+     return loadFinancialReconciliationAutomationRules;`,
+  )(
+    () => current,
+    async () => ({ rules: orderedRules }),
+    (value) => String(value ?? "").trim(),
+    (value) => JSON.parse(JSON.stringify(value)),
+    () => {},
+    () => {},
+  );
+
+  await loadRules();
+  assert.equal(current.automation.selectedRuleKey, "first");
+
+  current.automation.loaded = false;
+  current.automation.selectedRuleKey = "second";
+  await loadRules();
+  assert.equal(current.automation.selectedRuleKey, "second");
 });
 
 test("failed manual catalog reload clears stale Analyze rules without clearing the retained run or selection", async () => {
@@ -1161,6 +1231,7 @@ test("Analyze sends one rule and a fresh UUID, clears old selection, and selects
     automation: {
       rules: workbenchRules(),
       run: null,
+      selectedRuleKey: "manual-enabled",
       selectedProposalIds: new Set(["old-proposal"]),
       pendingAction: "",
       loaded: true,
@@ -1180,7 +1251,8 @@ test("Analyze sends one rule and a fresh UUID, clears old selection, and selects
     "setFinancialReconciliationAutomationStatus",
     "showToast",
     "finalizeFinancialReconciliationAutomationAnalysis",
-    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+    `${appFunctionSource("financialReconciliationAutomationOpenRun")}
+     ${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
      ${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
      return analyzeFinancialReconciliationAutomationRule;`,
   )(
@@ -1201,7 +1273,7 @@ test("Analyze sends one rule and a fresh UUID, clears old selection, and selects
     },
   );
 
-  await analyze("manual-enabled");
+  await analyze();
 
   assert.deepEqual(calls, [{
     url: "/api/reconciliation-automation",
@@ -1249,7 +1321,8 @@ test("Analyze reports a terminal first-page failure instead of announcing ready 
     "setFinancialReconciliationAutomationStatus",
     "showToast",
     "finalizeFinancialReconciliationAutomationAnalysis",
-    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+    `${appFunctionSource("financialReconciliationAutomationOpenRun")}
+     ${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
      ${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
      return analyzeFinancialReconciliationAutomationRule;`,
   )(
@@ -1270,9 +1343,14 @@ test("Analyze reports a terminal first-page failure instead of announcing ready 
   assert.deepEqual([...current.automation.selectedProposalIds], []);
 });
 
-test("failed analysis preserves the displayed run and its prior selected proposals", async () => {
-  const retainedRun = workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "proposed" }]);
+test("failed analysis preserves the displayed terminal run and its prior selected proposals", async () => {
+  const retainedRun = {
+    ...workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "completed" }]),
+    status: "completed",
+    finishedAt: "2026-08-16T09:05:00.000Z",
+  };
   const retainedSelections = new Set([WORKBENCH_PROPOSAL_1]);
+  let calls = 0;
   const current = {
     automation: {
       rules: workbenchRules(),
@@ -1290,11 +1368,12 @@ test("failed analysis preserves the displayed run and its prior selected proposa
     "renderFinancialReconciliationAutomation",
     "setFinancialReconciliationAutomationStatus",
     "showToast",
-    `${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
+    `${appFunctionSource("financialReconciliationAutomationOpenRun")}
+     ${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
      return analyzeFinancialReconciliationAutomationRule;`,
   )(
     () => current,
-    async () => { throw new Error("analysis unavailable"); },
+    async () => { calls += 1; throw new Error("analysis unavailable"); },
     { randomUUID: () => "00000000-0000-0000-0000-000000000299" },
     (value) => String(value ?? "").trim(),
     () => {},
@@ -1306,6 +1385,7 @@ test("failed analysis preserves the displayed run and its prior selected proposa
 
   assert.strictEqual(current.automation.run, retainedRun);
   assert.strictEqual(current.automation.selectedProposalIds, retainedSelections);
+  assert.equal(calls, 1);
   assert.deepEqual([...current.automation.selectedProposalIds], [WORKBENCH_PROPOSAL_1]);
   assert.equal(current.automation.pendingAction, "");
 });

@@ -6759,32 +6759,26 @@ button[id^="close-settings"] {
   margin: 0;
 }
 
-.financial-reconciliation-workbench-automation-rules {
+.financial-reconciliation-workbench-automation-rule-picker {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: .65rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .35rem .65rem;
+  align-items: end;
 }
 
-.financial-reconciliation-automation-rule {
-  display: grid;
-  gap: .45rem;
-  align-content: start;
-  padding: .75rem;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-soft, rgba(255,255,255,.55));
+.financial-reconciliation-workbench-automation-rule-picker label {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
-.financial-reconciliation-automation-rule > div {
-  display: flex;
-  justify-content: space-between;
-  gap: .5rem;
+.financial-reconciliation-workbench-automation-rule-picker select {
+  min-width: 0;
 }
 
-.financial-reconciliation-automation-rule span,
-.financial-reconciliation-automation-rule p {
-  font-size: .74rem;
-  overflow-wrap: anywhere;
+.financial-reconciliation-workbench-automation-rule-picker select:focus-visible,
+.financial-reconciliation-workbench-automation-rule-picker button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 28%, transparent);
+  outline-offset: 2px;
 }
 
 .financial-reconciliation-workbench-automation-review {
@@ -7070,6 +7064,15 @@ button[id^="close-settings"] {
 }
 
 @media (max-width: 768px) {
+  .financial-reconciliation-workbench-automation-rule-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .financial-reconciliation-workbench-automation-rule-picker select,
+  .financial-reconciliation-workbench-automation-rule-picker button {
+    width: 100%;
+  }
+
   .financial-reconciliation-workbench-automation-actions {
     align-items: stretch;
     flex-direction: column;
