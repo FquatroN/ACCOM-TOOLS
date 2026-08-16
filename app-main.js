@@ -22131,17 +22131,23 @@ function financialReconciliationAutomationProposalMarkup(proposal, run, rules, s
   const reason = executable || !clean(value.reason) ? "" : `<p class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;
   const baseSource = financialReconciliationSourceLabel(clean(value.baseSnapshot?.sourceType)) || "unknown source";
   const baseId = clean(value.baseSnapshot?.sourceId) || clean(value.baseSourceId) || "unknown record";
-  const accessibleName = `${executable ? "Execute" : "Review"} automatic proposal for ${baseSource} record ${baseId}`;
+  const accessibleName = `Execute automatic proposal for ${baseSource} record ${baseId}`;
   const executionOutcome = (Array.isArray(run?.executionOutcomes) ? run.executionOutcomes : []).find((outcome) => clean(outcome?.proposalId ?? outcome?.id) === clean(value.id));
   const executionOutcomeStatus = clean(executionOutcome?.status).toLowerCase();
   const executionOutcomeMarkup = executionOutcomeStatus && executionOutcomeStatus !== status
     ? `<p class="financial-reconciliation-automation-attempt financial-reconciliation-automation-attempt--${escape(executionOutcomeStatus)}">Execution attempt: ${escape(executionOutcomeStatus)} &middot; ${escape(financialReconciliationAutomationReasonLabel(executionOutcome.reason))}</p>`
     : "";
+  const selectionMarkup = !executable ? "" : `<label class="financial-reconciliation-automation-proposal-selection"><input type="checkbox" aria-label="${escape(accessibleName)}" data-financial-reconciliation-automation-proposal-id="${escape(clean(value.id))}" ${selected ? "checked" : ""} ${pending ? "disabled" : ""} /><span>Execute proposal</span></label>`;
   return `<article class="financial-reconciliation-automation-proposal financial-reconciliation-automation-proposal--${escape(status || "unknown")}" tabindex="-1">
-    <header><label><input type="checkbox" aria-label="${escape(accessibleName)}" data-financial-reconciliation-automation-proposal-id="${escape(clean(value.id))}" ${selected ? "checked" : ""} ${!executable || pending ? "disabled" : ""} /><span>${executable ? "Execute proposal" : "Review only"}</span></label><span class="financial-reconciliation-automation-proposal-status">${escape(status || "unknown")}</span></header>
-    ${reason}${executionOutcomeMarkup}
+    <aside class="financial-reconciliation-automation-proposal-meta">
+      ${selectionMarkup}
+      <span class="financial-reconciliation-automation-proposal-status">${escape(status || "unknown")}</span>
+      ${reason}${executionOutcomeMarkup}
+      <strong>Difference ${escape(formatMoney(Number(value.calculatedDifference || 0)))}</strong>
+      <span>Allowed ${escape(formatMoney(Number(value.allowedDifference ?? definition.differenceAllowed ?? 0)))}</span>
+      <span>${escape(clean(rule.displayName) || clean(value.ruleKey))} &middot; version ${escape(Number(value.ruleVersion) || 1)}</span>
+    </aside>
     <div class="financial-reconciliation-automation-proposal-records">${financialReconciliationAutomationItemMarkup(value.baseSnapshot, "Base record")}${destinationMarkup}${groupsMarkup}</div>
-    <footer><span>Difference ${escape(formatMoney(Number(value.calculatedDifference || 0)))}</span><span>Allowed ${escape(formatMoney(Number(value.allowedDifference ?? definition.differenceAllowed ?? 0)))}</span><span>${escape(clean(rule.displayName) || clean(value.ruleKey))} &middot; version ${escape(Number(value.ruleVersion) || 1)}</span></footer>
   </article>`;
 }
 

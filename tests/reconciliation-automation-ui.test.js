@@ -1015,8 +1015,12 @@ test("proposal markup starts executable rows selected and audits every ambiguous
   const proposedMarkup = proposalMarkup(proposed, run, workbenchRules(), new Set([WORKBENCH_PROPOSAL_1]), false);
   const ambiguousMarkup = proposalMarkup(ambiguous, run, workbenchRules(), new Set(), false);
 
+  assert.match(proposedMarkup, /financial-reconciliation-automation-proposal-meta/);
   assert.match(proposedMarkup, /type="checkbox"[^>]*checked/);
   assert.doesNotMatch(proposedMarkup, /type="checkbox"[^>]*disabled/);
+  assert.match(proposedMarkup, /financial-reconciliation-automation-proposal-status[^>]*>proposed</);
+  assert.doesNotMatch(proposedMarkup, /<header>/);
+  assert.doesNotMatch(proposedMarkup, /<footer>/);
   assert.match(proposedMarkup, /Financial Documents[\s\S]*2026-08-01[\s\S]*Document FT 2026\/55[\s\S]*Supplier Safe Supplier/);
   assert.match(proposedMarkup, /financial-reconciliation-automation-item-amount">101\.00 â‚¬/);
   assert.match(proposedMarkup, /CGD Bank Statement[\s\S]*financial-reconciliation-automation-item-operator">-[\s\S]*-100\.00 â‚¬[\s\S]*Primary bank row/);
@@ -1025,10 +1029,18 @@ test("proposal markup starts executable rows selected and audits every ambiguous
   assert.match(proposedMarkup, /Invoice &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(proposedMarkup, /<script>/);
 
-  assert.match(ambiguousMarkup, /type="checkbox"[^>]*disabled/);
+  assert.doesNotMatch(ambiguousMarkup, /type="checkbox"/);
+  assert.match(ambiguousMarkup, /financial-reconciliation-automation-proposal-status[^>]*>ambiguous</);
   assert.match(ambiguousMarkup, /Multiple qualifying combinations/);
   assert.match(ambiguousMarkup, /Candidate group 1[\s\S]*Candidate group A[\s\S]*Candidate group 2[\s\S]*Candidate group B/);
   assert.match(proposedMarkup, new RegExp(`aria-label="Execute automatic proposal for Financial Documents record ${baseSnapshot.sourceId}"`));
+
+  for (const status of ["completed", "stale", "failed"]) {
+    const lifecycleMarkup = proposalMarkup({ ...proposed, status }, run, workbenchRules(), new Set(), false);
+    assert.doesNotMatch(lifecycleMarkup, /type="checkbox"/);
+    assert.match(lifecycleMarkup, new RegExp(`financial-reconciliation-automation-proposal-status[^>]*>${status}<`));
+    assert.match(lifecycleMarkup, /Difference[\s\S]*Allowed[\s\S]*version 3/i);
+  }
 
   const hostileBase = {
     sourceType: "financial_documents",

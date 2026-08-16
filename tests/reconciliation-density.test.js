@@ -428,9 +428,10 @@ test("late Settings Automatic handoff focus respects the tab selected while data
   assert.equal(els.financialReconciliationAutomaticTab.focusCalls, 0);
 });
 
-test("automatic proposal records use fixed desktop pairs and narrow stacks", () => {
-  assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-  assert.match(css, /@media\s*\(max-width:\s*700px\)[\s\S]*\.financial-reconciliation-automation-proposal-records\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+test("automatic proposals use a metadata-first desktop row and narrow stack", () => {
+  assert.match(css, /\.financial-reconciliation-automation-proposal\s*\{[\s\S]*grid-template-columns:\s*minmax\([^;]+\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal-meta\s*\{/);
+  assert.match(css, /@media\s*\(max-width:\s*700px\)[\s\S]*\.financial-reconciliation-automation-proposal\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
 });
 
 test("workbench rule snapshots keep only valid unique signed sources", () => {
