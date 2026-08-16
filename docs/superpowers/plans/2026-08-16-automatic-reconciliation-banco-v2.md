@@ -32,7 +32,7 @@
 
 - Create `supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql`: immutable version-2 catalog seed, configuration migration, latest candidate-function installation, guarded execution-function upgrade, privileges, and schema reload.
 - Modify `api/_reconciliation-automation.js`: make version 2 the only editable/current managed rule version while leaving recursive historical result mapping unchanged.
-- Modify `tests/reconciliation-automation.test.js`: pin the API version and migration source/security contracts.
+- Modify `tests/reconciliation-automation.test.js`: prove version-2 settings behavior through the real API normalization boundary.
 - Modify `tests/reconciliation-automation-rpc.smoke.sql`: executable idempotency, exact-Payment eligibility, no-row exclusion, stale-version, Payment-drift, security, and legacy-regression coverage.
 - Modify `app-main.js`: pure proposal-visibility selector, compact proposal/item markup, and rendering integration.
 - Modify `styles.css`: compact paired-card density, safe wrapping, focus behavior, and narrow-screen stacking.
@@ -52,24 +52,13 @@
 - Produces: current managed catalog entry `(rule_key = 'financial_documents_cgd_bank_statement', version = 2)` and `AUTOMATIC_RULE_VERSION = 2` for settings validation.
 - Preserves: all existing function signatures and the camelCase API response structure.
 
-- [ ] **Step 1: Add failing API and migration source-contract tests**
+- [ ] **Step 1: Add a failing API behavior test**
 
-Add the new migration path beside the existing migration constants:
-
-```js
-const BANCO_V2_MIGRATION_PATH = path.join(
-  __dirname,
-  "..",
-  "supabase-migrations",
-  "2026-08-16-financial-reconciliation-automation-banco-v2.sql",
-);
-```
-
-Update the managed-settings expectation to `ruleVersion: 2`, change the invalid-version fixture to version `1`, and add these assertions:
+Update the managed-settings expectation to `ruleVersion: 2`, change the invalid-version fixture to version `1`, and add this behavior test:
 
 ```js
-test("automation uses managed rule version 2 for editable settings", () => {
-  assert.equal(AUTOMATIC_RULE_VERSION, 2);
+test("automation accepts current version 2 settings and rejects legacy version 1 edits", () => {
+  assert.equal(normalizeAutomationSettingsPayload(managedSettings()).rules[0].ruleVersion, 2);
   assert.throws(
     () => normalizeAutomationSettingsPayload({
       ...managedSettings(),
@@ -78,28 +67,9 @@ test("automation uses managed rule version 2 for editable settings", () => {
     /rule version/i,
   );
 });
-
-test("Banco version 2 migration preserves legacy history and exact base eligibility", () => {
-  assert.equal(fs.existsSync(BANCO_V2_MIGRATION_PATH), true);
-  const migration = fs.readFileSync(BANCO_V2_MIGRATION_PATH, "utf8");
-
-  assert.match(migration, /'financial_documents_cgd_bank_statement',\s*2/);
-  assert.match(migration, /"payment"\s*:\s*\{[\s\S]*"operator"\s*:\s*"exact_text_equal"[\s\S]*"value"\s*:\s*"Banco"[\s\S]*"caseSensitive"\s*:\s*true[\s\S]*"trim"\s*:\s*false/);
-  assert.match(migration, /Payment must equal exactly Banco/);
-  assert.match(migration, /p_rule_version\s*=\s*2/);
-  assert.match(migration, /d\.payment\s*=\s*'Banco'/);
-  assert.doesNotMatch(migration, /(?:lower|upper|trim|btrim)\s*\(\s*d\.payment/i);
-  assert.match(migration, /left join lateral\s*\([\s\S]*from public\.import_cgd_extrato_ordem bank/i);
-  assert.doesNotMatch(migration, /bank_rows\s+as\s+materialized/i);
-  assert.match(migration, /v_proposal\.rule_version <> 2/);
-  assert.match(migration, /v_proposal\.rule_version::text/);
-  assert.match(migration, /security definer set search_path = public, pg_temp/i);
-  assert.match(migration, /revoke all on function public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\) from public, anon, authenticated/);
-  assert.match(migration, /grant execute on function public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\) to service_role/);
-  assert.doesNotMatch(migration, /(?:update|delete)\s+public\.financial_reconciliation_automatic_rule_definitions[\s\S]*version\s*=\s*1/i);
-  assert.match(migration, /notify pgrst, 'reload schema'/);
-});
 ```
+
+Do not add tests that grep SQL migration text. Exact catalog, predicate, idempotency, stale behavior, indexed lookup, and privilege behavior belong to the executable PostgreSQL smoke contract in Step 7.
 
 - [ ] **Step 2: Run the focused Node test and capture RED**
 
@@ -109,7 +79,7 @@ Run:
 node --test --test-isolation=none tests/reconciliation-automation.test.js
 ```
 
-Expected: FAIL because `AUTOMATIC_RULE_VERSION` is still `1` and the Banco version-2 migration does not exist.
+Expected: FAIL because the editable API normalization boundary still accepts only version `1`.
 
 - [ ] **Step 3: Change only the current editable API rule version**
 
@@ -567,7 +537,7 @@ node --check api/_reconciliation-automation.js
 node --test --test-isolation=none tests/reconciliation-automation.test.js
 ```
 
-Expected: both PASS.
+Expected: both PASS. The Node suite proves the API boundary; it does not claim PostgreSQL behavior.
 
 When PostgreSQL/Supabase credentials are available, run:
 
@@ -799,19 +769,16 @@ assert.match(markup, /Difference[\s\S]*Allowed[\s\S]*version 3/);
 
 Also assert the existing checkbox retains its proposal ID, escaped accessible label, checked state, and focusable proposal article.
 
-- [ ] **Step 2: Add failing CSS density and responsive-layout assertions**
+- [ ] **Step 2: Add minimal failing CSS structure assertions**
 
 Read `styles.css` in `tests/reconciliation-density.test.js` and assert:
 
 ```js
-assert.match(styles, /\.financial-reconciliation-automation-proposal\s*\{[\s\S]*gap:\s*\.4rem;[\s\S]*padding:\s*\.55rem;/);
 assert.match(styles, /\.financial-reconciliation-automation-proposal-records\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-assert.match(styles, /\.financial-reconciliation-automation-item\s*\{[\s\S]*padding:\s*\.45rem;[\s\S]*line-height:\s*1\.25/);
-assert.match(styles, /\.financial-reconciliation-automation-item-meta\s*\{[\s\S]*font-size:\s*\.68rem/);
-assert.match(styles, /\.financial-reconciliation-automation-item-description\s*\{[\s\S]*overflow-wrap:\s*anywhere/);
 assert.match(styles, /@media\s*\(max-width:\s*700px\)[\s\S]*\.financial-reconciliation-automation-proposal-records\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-assert.match(styles, /\.financial-reconciliation-automation-proposal:focus-within\s*\{[\s\S]*outline:/);
 ```
+
+These two assertions protect only the desktop-pair/narrow-stack structural contract. Verify density, line height, wrapping, and focus as browser behavior in Step 6 instead of pinning cosmetic CSS declarations in source-text tests.
 
 - [ ] **Step 3: Run the focused tests and capture RED**
 
