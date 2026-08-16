@@ -30498,7 +30498,7 @@ function renderSidebarReviewSummary() {
     .map((source) => `
       <div class="sidebar-summary-grid-row sidebar-summary-source-row">
         <span class="sidebar-summary-source-icon">${reviewSourceIconHtml(source.source)}</span>
-        ${renderSidebarReviewSummaryValue(source.last3MonthsAverage)}
+        ${renderSidebarReviewSummaryValue(source.last1MonthAverage)}
         ${renderSidebarReviewSummaryValue(source.last6MonthsAverage)}
       </div>`)
     .join("");
@@ -30508,7 +30508,7 @@ function renderSidebarReviewSummary() {
       <div class="sidebar-summary-grid sidebar-summary-source-grid">
         <div class="sidebar-summary-grid-head">
           <span class="sidebar-summary-head-label">Source</span>
-          <span class="sidebar-summary-head-value">3 months</span>
+          <span class="sidebar-summary-head-value">1 month</span>
           <span class="sidebar-summary-head-value">6 months</span>
         </div>
         ${sourceRows}
