@@ -56,6 +56,12 @@ const AUTOMATION_90_DAY_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-16-financial-reconciliation-automation-90-day-performance.sql",
 );
+const CREDIT_CARD_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-16-financial-reconciliation-automation-credit-card-rule.sql",
+);
 const EXECUTION_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -2307,6 +2313,89 @@ test("90-day automation migration installs resumable indexed analysis after Banc
   assert.match(smokeSql, /Unauthorized continuation changed the owned run state/i);
   assert.match(smokeSql, /analysis_continuation_failed/i);
   assert.match(smokeSql, /90-day boundary did not include day 90 and exclude day 91/i);
+});
+
+test("credit-card automation migration preserves Banco v2 and installs an explicit indexed adapter", () => {
+  assert.equal(fs.existsSync(CREDIT_CARD_MIGRATION_PATH), true,
+    "credit-card automatic reconciliation migration must exist in the normal migration folder");
+  const sql = fs.readFileSync(CREDIT_CARD_MIGRATION_PATH, "utf8");
+  const previousSql = fs.readFileSync(AUTOMATION_90_DAY_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+
+  assert.match(sql, /financial_documents_cgd_credit_card/);
+  assert.match(sql, /payment\s*=\s*'Visa'/);
+  assert.match(sql, /description_score\s*>=\s*0\.55/);
+  assert.match(sql, /supplier_score\s*>=\s*0\.60/);
+  assert.match(sql, /import_cgd_cartao_credito/);
+  assert.doesNotMatch(sql, /extensions\.unaccent|extensions\.digest/);
+
+  for (const signature of [
+    "financial_reconciliation_automatic_rule_contract",
+    "financial_reconciliation_automatic_bank_candidates_for_base_ids",
+    "financial_reconciliation_automatic_credit_card_candidates_for_base_ids",
+    "financial_reconciliation_automatic_candidates_for_base_ids",
+    "financial_reconciliation_automatic_base_page",
+    "financial_reconciliation_automatic_base_count",
+    "financial_reconciliation_automatic_candidate_page",
+    "financial_reconciliation_automatic_single_base_candidates",
+    "financial_reconciliation_automatic_rule_candidates",
+  ]) {
+    assert.match(sql, new RegExp(`create or replace function public\\.${signature}\\(`, "i"), signature);
+  }
+  for (const indexName of [
+    "financial_reconciliation_cgd_credit_card_match_search_date_id_idx",
+    "financial_reconciliation_cgd_credit_card_match_search_normalized_trgm_idx",
+    "financial_reconciliation_cgd_credit_card_match_search_compact_trgm_idx",
+  ]) {
+    assert.match(sql, new RegExp(`create index if not exists ${indexName}`, "i"), indexName);
+  }
+  assert.match(sql, /old\.id is distinct from new\.id[\s\S]*delete from public\.financial_reconciliation_cgd_credit_card_match_search where source_id = old\.id/i);
+  assert.match(sql, /new\.id, new\.data, new\.valor, new\.descricao/);
+  assert.match(sql, /financial_reconciliation_automatic_rule_contract\([\s\S]*'payment','Banco'[\s\S]*'payment','Visa'/i);
+  assert.match(sql, /char_length\(q\.compact_document_number\) >= 4[\s\S]*position\(q\.compact_document_number in q\.compact_description\)[\s\S]*position\(q\.compact_description in q\.compact_document_number\)/i);
+  assert.match(sql, /alter table public\.financial_reconciliation_cgd_credit_card_match_search enable row level security/i);
+  assert.match(sql, /revoke all on table public\.financial_reconciliation_cgd_credit_card_match_search[\s\S]*grant select on table public\.financial_reconciliation_cgd_credit_card_match_search to service_role/i);
+
+  const functionSource = (migration, functionName) => {
+    const match = migration.match(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\$body\\$;`,
+      "i",
+    ));
+    assert.ok(match, `${functionName} SQL body must exist`);
+    return match[0]
+      .replaceAll(functionName, "candidate_adapter")
+      .replaceAll("\r\n", "\n");
+  };
+  assert.equal(
+    functionSource(sql, "financial_reconciliation_automatic_bank_candidates_for_base_ids"),
+    functionSource(previousSql, "financial_reconciliation_automatic_candidates_for_base_ids"),
+    "the named Banco v2 adapter must remain byte-for-byte identical to the indexed base-ID query",
+  );
+
+  const ninetyDayInclude = smokeSql.indexOf(
+    "\\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql",
+  );
+  const creditCardInclude = smokeSql.indexOf(
+    "\\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-credit-card-rule.sql",
+  );
+  assert.ok(creditCardInclude > ninetyDayInclude,
+    "credit-card smoke migration must run after the 90-day migration");
+  assert.equal((smokeSql.match(/2026-08-16-financial-reconciliation-automation-credit-card-rule\.sql/g) || []).length, 2);
+  for (const contract of [
+    "credit-card immutable definition and first config",
+    "credit-card source rule",
+    "credit-card projection INSERT UPDATE ID-change DELETE and data_valor isolation",
+    "credit-card exact Visa eligibility and exclusions",
+    "credit-card dates exactly 10 and 11 days apart",
+    "credit-card symmetric compact document-number containment with four-character minimum",
+    "credit-card description score immediately below and at 0.55",
+    "credit-card supplier word score immediately below and at 0.60",
+    "credit-card independent identity branches",
+    "Banco v2 dispatcher IDs and evidence remain byte-for-byte unchanged",
+    "credit-card migration reapply is idempotent and preserves administrator settings",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
 });
 
 test("release documentation and SQL smokes pin the complete 90-day migration order", () => {

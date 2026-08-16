@@ -1294,6 +1294,533 @@ where rule_key = 'financial_documents_cgd_bank_statement';
 \ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql
 \ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql
 
+insert into public.financial_documents (
+  id, document_date, doc_number, description, supplier_name, payment, amount, fat
+) values (
+  '44000000-0000-0000-0000-000000000901', date '2027-08-01',
+  'BANK-DISPATCH-901', '', '', 'Banco', 901.00, 'S'
+);
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values (
+  '45000000-0000-0000-0000-000000000901', 'smoke-credit-card',
+  'bank-dispatch-901', date '2027-08-01', 'Payment BANKDISPATCH901', -901.00
+);
+create temporary table credit_card_bank_v2_baseline on commit drop as
+select to_jsonb(candidate) as row_snapshot
+from public.financial_reconciliation_automatic_candidates_for_base_ids(
+  'financial_documents_cgd_bank_statement', 2, 0, 10,
+  array['44000000-0000-0000-0000-000000000901'::uuid]
+) candidate;
+
+\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-credit-card-rule.sql
+
+-- credit-card immutable definition and first config
+-- credit-card source rule
+do $$
+declare
+  v_definition jsonb := '{
+    "baseEligibility":{"payment":{"operator":"exact_text_equal","value":"Visa","caseSensitive":true,"trim":false}},
+    "identityBranches":{"document_number":{"algorithm":"symmetric_compact_containment"},"description_similarity":{"algorithm":"similarity"},"supplier_similarity":{"algorithm":"word_similarity"}},
+    "documentNumberMinimumCompactLength":4,
+    "descriptionSimilarityThreshold":0.55,
+    "supplierWordSimilarityThreshold":0.60,
+    "maxDestinationRecords":4,
+    "maxIdentityCandidatesPerBase":12
+  }'::jsonb;
+  v_logic text := 'Payment must equal exactly Visa. Each credit-card candidate must satisfy invoice containment, description similarity, or supplier word similarity. Exactly one one-to-four-record amount combination is executable.';
+begin
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_definitions definition
+    where definition.rule_key = 'financial_documents_cgd_credit_card'
+      and definition.version = 1
+      and definition.display_name = 'Financial Documents to CGD Credit Card'
+      and definition.base_source_type = 'financial_documents'
+      and definition.destination_source_types = '["import_cgd_cartao_credito"]'::jsonb
+      and definition.logic_description = v_logic
+      and definition.definition = v_definition
+  ) then
+    raise exception 'Credit-card immutable definition differs from the approved literal.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    where config.rule_key = 'financial_documents_cgd_credit_card'
+      and config.rule_version = 1
+      and not config.enabled
+      and not config.allow_manual_execution
+      and not config.include_in_scheduled_batch
+      and config.difference_allowed = 0
+      and config.max_difference_days = 10
+      and config.priority = 2
+  ) or not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    where config.rule_key = 'financial_documents_cgd_bank_statement'
+      and config.priority = 1
+  ) then
+    raise exception 'Credit-card config was not inserted disabled at priority 2 after Banco.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_source_rules source_rule
+    where source_rule.base_source_type = 'financial_documents'
+      and source_rule.matching_source_type = 'import_cgd_cartao_credito'
+      and source_rule.operator = '+'
+  ) then
+    raise exception 'Credit-card directional source rule is not financial_documents to import_cgd_cartao_credito (+).';
+  end if;
+end $$;
+
+insert into public.import_cgd_cartao_credito (
+  id, import_batch, row_key, data, data_valor, descricao, debito
+) values (
+  '46000000-0000-0000-0000-000000000990', 'smoke-credit-card',
+  'credit-card-reapply-990', date '2027-08-02', date '2027-08-03',
+  'Credit card reapply projection', 9.90
+);
+update public.financial_reconciliation_automatic_rule_configs
+set enabled = true,
+    allow_manual_execution = true,
+    include_in_scheduled_batch = true,
+    difference_allowed = 3.21,
+    max_difference_days = 12,
+    priority = 3,
+    updated_by = 'smoke:credit-card-admin'
+where rule_key = 'financial_documents_cgd_credit_card';
+
+\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-credit-card-rule.sql
+
+-- Banco v2 dispatcher IDs and evidence remain byte-for-byte unchanged
+-- credit-card migration reapply is idempotent and preserves administrator settings
+do $$
+declare
+  v_before text;
+  v_after text;
+begin
+  select row_snapshot::text into strict v_before
+  from credit_card_bank_v2_baseline;
+  select to_jsonb(candidate)::text into strict v_after
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement', 2, 0, 10,
+    array['44000000-0000-0000-0000-000000000901'::uuid]
+  ) candidate;
+  if convert_to(v_before, 'UTF8') is distinct from convert_to(v_after, 'UTF8') then
+    raise exception 'Banco v2 dispatcher IDs or evidence changed byte-for-byte.';
+  end if;
+  if (select row_snapshot#>>'{base_source_id}' from credit_card_bank_v2_baseline)
+      <> '44000000-0000-0000-0000-000000000901'
+    or (select row_snapshot#>>'{candidates,0,sourceId}' from credit_card_bank_v2_baseline)
+      <> '45000000-0000-0000-0000-000000000901'
+    or (select (row_snapshot#>>'{candidates,0,evidence,documentNumber,matched}')::boolean
+        from credit_card_bank_v2_baseline) is not true
+    or (select row_snapshot#>>'{candidates,0,evidence,documentNumber,normalized}'
+        from credit_card_bank_v2_baseline) <> 'bankdispatch901'
+    or (select row_snapshot#>>'{candidates,0,evidence,description,threshold}'
+        from credit_card_bank_v2_baseline) <> '0.60'
+    or (select row_snapshot#>>'{candidates,0,evidence,supplier,threshold}'
+        from credit_card_bank_v2_baseline) <> '0.70' then
+    raise exception 'Banco v2 dispatcher fixture lost its literal IDs or evidence.';
+  end if;
+
+  if (select count(*) from public.financial_reconciliation_automatic_rule_definitions
+      where rule_key = 'financial_documents_cgd_credit_card' and version = 1) <> 1
+    or (select count(*) from public.financial_reconciliation_automatic_rule_configs
+        where rule_key = 'financial_documents_cgd_credit_card') <> 1
+    or (select count(*) from pg_trigger
+        where tgrelid = 'public.import_cgd_cartao_credito'::regclass
+          and tgname = 'financial_reconciliation_sync_cgd_credit_card_match_search_trigger'
+          and not tgisinternal) <> 1
+    or (select count(*) from pg_indexes
+        where schemaname = 'public' and indexname in (
+          'financial_reconciliation_cgd_credit_card_match_search_date_id_idx',
+          'financial_reconciliation_cgd_credit_card_match_search_normalized_trgm_idx',
+          'financial_reconciliation_cgd_credit_card_match_search_compact_trgm_idx'
+        )) <> 3
+    or (select count(*) from public.financial_reconciliation_cgd_credit_card_match_search
+        where source_id = '46000000-0000-0000-0000-000000000990') <> 1 then
+    raise exception 'Credit-card migration reapply duplicated a managed row, projection, trigger, or index.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    where config.rule_key = 'financial_documents_cgd_credit_card'
+      and config.rule_version = 1
+      and config.enabled
+      and config.allow_manual_execution
+      and config.include_in_scheduled_batch
+      and config.difference_allowed = 3.21
+      and config.max_difference_days = 12
+      and config.priority = 3
+      and config.updated_by = 'smoke:credit-card-admin'
+  ) then
+    raise exception 'Credit-card migration reapply overwrote administrator settings or priority.';
+  end if;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = false,
+      allow_manual_execution = false,
+      include_in_scheduled_batch = false,
+      difference_allowed = 0,
+      max_difference_days = 10,
+      priority = 2,
+      updated_by = ''
+  where rule_key = 'financial_documents_cgd_credit_card';
+end $$;
+
+-- credit-card projection INSERT UPDATE ID-change DELETE and data_valor isolation
+do $$
+declare
+  v_projected_date date;
+begin
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, data_valor, descricao, credito
+  ) values (
+    '46000000-0000-0000-0000-000000000901', 'smoke-credit-card',
+    'credit-card-sync-901', date '2027-08-10', date '2027-08-11',
+    'Credit card projection insert', 12.34
+  );
+  if not exists (
+    select 1 from public.financial_reconciliation_cgd_credit_card_match_search
+    where source_id = '46000000-0000-0000-0000-000000000901'
+      and source_date = date '2027-08-10'
+      and amount = 12.34
+      and description = 'Credit card projection insert'
+  ) then
+    raise exception 'Credit-card projection INSERT did not synchronize data, valor, and descricao.';
+  end if;
+
+  update public.import_cgd_cartao_credito
+  set data = date '2027-08-12',
+      data_valor = date '2027-08-13',
+      descricao = 'Credit card projection update',
+      credito = 23.45
+  where id = '46000000-0000-0000-0000-000000000901';
+  if not exists (
+    select 1 from public.financial_reconciliation_cgd_credit_card_match_search
+    where source_id = '46000000-0000-0000-0000-000000000901'
+      and source_date = date '2027-08-12'
+      and amount = 23.45
+      and description = 'Credit card projection update'
+  ) then
+    raise exception 'Credit-card projection UPDATE did not synchronize data, valor, and descricao.';
+  end if;
+
+  select source_date into strict v_projected_date
+  from public.financial_reconciliation_cgd_credit_card_match_search
+  where source_id = '46000000-0000-0000-0000-000000000901';
+  update public.import_cgd_cartao_credito
+  set data_valor = date '2027-09-30'
+  where id = '46000000-0000-0000-0000-000000000901';
+  if (select source_date from public.financial_reconciliation_cgd_credit_card_match_search
+      where source_id = '46000000-0000-0000-0000-000000000901') is distinct from v_projected_date then
+    raise exception 'A data_valor-only change altered the projected reconciliation date.';
+  end if;
+
+  update public.import_cgd_cartao_credito
+  set id = '46000000-0000-0000-0000-000000000902'
+  where id = '46000000-0000-0000-0000-000000000901';
+  if exists (
+      select 1 from public.financial_reconciliation_cgd_credit_card_match_search
+      where source_id = '46000000-0000-0000-0000-000000000901'
+    ) or not exists (
+      select 1 from public.financial_reconciliation_cgd_credit_card_match_search
+      where source_id = '46000000-0000-0000-0000-000000000902'
+        and source_date = date '2027-08-12'
+        and amount = 23.45
+        and description = 'Credit card projection update'
+    ) then
+    raise exception 'Credit-card projection did not synchronize a source ID change.';
+  end if;
+
+  delete from public.import_cgd_cartao_credito
+  where id = '46000000-0000-0000-0000-000000000902';
+  if exists (
+    select 1 from public.financial_reconciliation_cgd_credit_card_match_search
+    where source_id = '46000000-0000-0000-0000-000000000902'
+  ) then
+    raise exception 'Credit-card projection did not synchronize DELETE.';
+  end if;
+end $$;
+
+-- credit-card exact Visa eligibility and exclusions
+do $$
+declare
+  v_reconciliation_id uuid;
+  v_base_ids uuid[];
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('47000000-0000-0000-0000-000000000001', date '2027-09-01', 'CC-EXACT-0001', '', '', 'Visa', 101.00, 'S'),
+    ('47000000-0000-0000-0000-000000000002', date '2027-09-02', 'CC-UPPER-0002', '', '', 'VISA', 102.00, 'S'),
+    ('47000000-0000-0000-0000-000000000003', date '2027-09-03', 'CC-LOWER-0003', '', '', 'visa', 103.00, 'S'),
+    ('47000000-0000-0000-0000-000000000004', date '2027-09-04', 'CC-PADDED-0004', '', '', ' Visa ', 104.00, 'S'),
+    ('47000000-0000-0000-0000-000000000005', date '2027-09-05', 'CC-NULL-0005', '', '', null, 105.00, 'S'),
+    ('47000000-0000-0000-0000-000000000006', date '2025-12-31', 'CC-PRE-0006', '', '', 'Visa', 106.00, 'S'),
+    ('47000000-0000-0000-0000-000000000007', date '2027-09-07', 'CC-LOCKED-0007', '', '', 'Visa', 107.00, 'S');
+
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values
+    ('48000000-0000-0000-0000-000000000001', 'smoke-credit-card', 'cc-exact-0001', date '2027-09-01', 'Payment CCEXACT0001', 101.00),
+    ('48000000-0000-0000-0000-000000000002', 'smoke-credit-card', 'cc-upper-0002', date '2027-09-02', 'Payment CCUPPER0002', 102.00),
+    ('48000000-0000-0000-0000-000000000003', 'smoke-credit-card', 'cc-lower-0003', date '2027-09-03', 'Payment CCLOWER0003', 103.00),
+    ('48000000-0000-0000-0000-000000000004', 'smoke-credit-card', 'cc-padded-0004', date '2027-09-04', 'Payment CCPADDED0004', 104.00),
+    ('48000000-0000-0000-0000-000000000005', 'smoke-credit-card', 'cc-null-0005', date '2027-09-05', 'Payment CCNULL0005', 105.00),
+    ('48000000-0000-0000-0000-000000000006', 'smoke-credit-card', 'cc-pre-0006', date '2025-12-31', 'Payment CCPRE0006', 106.00),
+    ('48000000-0000-0000-0000-000000000007', 'smoke-credit-card', 'cc-locked-0007', date '2027-09-07', 'Payment CCLOCKED0007', 107.00);
+
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'financial_documents', '["import_cgd_cartao_credito"]'::jsonb,
+    'smoke:credit-card-lock'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  ) values (
+    v_reconciliation_id, 'financial_documents',
+    '47000000-0000-0000-0000-000000000007', 107.00,
+    'smoke:credit-card-lock'
+  );
+
+  select coalesce(array_agg(candidate.base_source_id order by candidate.base_source_id), '{}'::uuid[])
+  into v_base_ids
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array[
+      '47000000-0000-0000-0000-000000000001'::uuid,
+      '47000000-0000-0000-0000-000000000002'::uuid,
+      '47000000-0000-0000-0000-000000000003'::uuid,
+      '47000000-0000-0000-0000-000000000004'::uuid,
+      '47000000-0000-0000-0000-000000000005'::uuid,
+      '47000000-0000-0000-0000-000000000006'::uuid,
+      '47000000-0000-0000-0000-000000000007'::uuid
+    ]
+  ) candidate;
+  if v_base_ids is distinct from array['47000000-0000-0000-0000-000000000001'::uuid] then
+    raise exception 'Exact Visa eligibility returned uppercase, lowercase, padded, null, pre-2026, or locked bases: %', v_base_ids;
+  end if;
+end $$;
+
+-- credit-card dates exactly 10 and 11 days apart
+do $$
+declare
+  v_candidates jsonb;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values (
+    '47000000-0000-0000-0000-000000000010', date '2027-10-01',
+    'CC-DAY-0010', '', '', 'Visa', 110.00, 'S'
+  );
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values
+    ('48000000-0000-0000-0000-000000000010', 'smoke-credit-card', 'cc-day-10', date '2027-10-11', 'Payment CCDAY0010', 110.00),
+    ('48000000-0000-0000-0000-000000000011', 'smoke-credit-card', 'cc-day-11', date '2027-10-12', 'Payment CCDAY0010', 110.00);
+
+  select candidates into strict v_candidates
+  from public.financial_reconciliation_automatic_credit_card_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000010'::uuid]
+  );
+  if jsonb_array_length(v_candidates) <> 1
+    or v_candidates->0->>'sourceId' <> '48000000-0000-0000-0000-000000000010' then
+    raise exception 'Credit-card date boundary did not include day 10 and exclude day 11.';
+  end if;
+end $$;
+
+-- credit-card symmetric compact document-number containment with four-character minimum
+do $$
+declare
+  v_forward jsonb;
+  v_reverse jsonb;
+  v_short_count integer;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('47000000-0000-0000-0000-000000000020', date '2027-11-01', 'AB-12', '', '', 'Visa', 120.00, 'S'),
+    ('47000000-0000-0000-0000-000000000021', date '2027-11-20', 'LONG-1234', '', '', 'Visa', 121.00, 'S'),
+    ('47000000-0000-0000-0000-000000000022', date '2027-12-10', 'A-12', '', '', 'Visa', 122.00, 'S');
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values
+    ('48000000-0000-0000-0000-000000000020', 'smoke-credit-card', 'cc-containment-forward', date '2027-11-01', 'Payment AB12 reference', 120.00),
+    ('48000000-0000-0000-0000-000000000021', 'smoke-credit-card', 'cc-containment-reverse', date '2027-11-20', 'LONG', 121.00),
+    ('48000000-0000-0000-0000-000000000022', 'smoke-credit-card', 'cc-containment-short', date '2027-12-10', 'A12', 122.00);
+
+  select candidates into strict v_forward
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000020'::uuid]
+  );
+  select candidates into strict v_reverse
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000021'::uuid]
+  );
+  select candidate_count into strict v_short_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000022'::uuid]
+  );
+  if jsonb_array_length(v_forward) <> 1
+    or (v_forward#>>'{0,evidence,documentNumber,matched}')::boolean is not true
+    or jsonb_array_length(v_reverse) <> 1
+    or (v_reverse#>>'{0,evidence,documentNumber,matched}')::boolean is not true
+    or v_short_count <> 0 then
+    raise exception 'Symmetric compact containment or its four-character invoice minimum changed.';
+  end if;
+end $$;
+
+-- credit-card description score immediately below and at 0.55
+-- credit-card supplier word score immediately below and at 0.60
+-- credit-card independent identity branches
+do $$
+declare
+  v_description_at text := 'abcdefghijk';
+  v_description_at_score real;
+  v_description_below text;
+  v_description_below_score real;
+  v_supplier_at text;
+  v_supplier_at_score real;
+  v_supplier_below text;
+  v_supplier_below_score real;
+  v_document_candidates jsonb;
+  v_description_candidates jsonb;
+  v_supplier_candidates jsonb;
+  v_below_count integer;
+begin
+  v_description_at_score := public.financial_reconciliation_extension_similarity(
+    'abcdefghijklmnopqr', v_description_at
+  );
+  select candidate, score into v_description_below, v_description_below_score
+  from (
+    select left('abcdefghijklmnopqr', prefix_length) as candidate,
+           public.financial_reconciliation_extension_similarity(
+             'abcdefghijklmnopqr', left('abcdefghijklmnopqr', prefix_length)
+           ) as score
+    from generate_series(1, 17) prefix_length
+  ) scores
+  where score < 0.55
+  order by 0.55 - score, candidate
+  limit 1;
+  if abs(v_description_at_score - 0.55) >= 0.000001 then
+    raise exception 'Credit-card description threshold fixture did not measure exactly 0.55: %', v_description_at_score;
+  end if;
+  if v_description_below is null or v_description_below_score >= 0.55
+    or 0.55 - v_description_below_score > 0.051 then
+    raise exception 'Credit-card description below fixture was not boundary-adjacent: %', v_description_below_score;
+  end if;
+
+  select candidate, score into v_supplier_at, v_supplier_at_score
+  from (
+    select candidate,
+           public.financial_reconciliation_extension_word_similarity('abcdefg', candidate) as score
+    from (
+      select left('abcdefg', prefix_length) || repeat('z', suffix_length) as candidate
+      from generate_series(1, 7) prefix_length
+      cross join generate_series(1, 24) suffix_length
+    ) corpus
+  ) scores
+  where abs(score - 0.60) < 0.000001
+  order by candidate
+  limit 1;
+  select candidate, score into v_supplier_below, v_supplier_below_score
+  from (
+    select candidate,
+           public.financial_reconciliation_extension_word_similarity('abcdefg', candidate) as score
+    from (
+      select left('abcdefg', prefix_length) || repeat('z', suffix_length) as candidate
+      from generate_series(1, 7) prefix_length
+      cross join generate_series(1, 24) suffix_length
+    ) corpus
+  ) scores
+  where score < 0.60
+  order by 0.60 - score, candidate
+  limit 1;
+  if v_supplier_at is null or abs(v_supplier_at_score - 0.60) >= 0.000001 then
+    raise exception 'Credit-card supplier threshold fixture did not measure exactly 0.60.';
+  end if;
+  if v_supplier_below is null or v_supplier_below_score >= 0.60
+    or 0.60 - v_supplier_below_score > 0.051 then
+    raise exception 'Credit-card supplier below fixture was not boundary-adjacent: %', v_supplier_below_score;
+  end if;
+
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('47000000-0000-0000-0000-000000000030', date '2028-01-01', 'ONLY-DOC-0030', '', '', 'Visa', 130.00, 'S'),
+    ('47000000-0000-0000-0000-000000000031', date '2028-01-20', '', 'abcdefghijklmnopqr', '', 'Visa', 131.00, 'S'),
+    ('47000000-0000-0000-0000-000000000032', date '2028-02-10', '', 'abcdefghijklmnopqr', '', 'Visa', 132.00, 'S'),
+    ('47000000-0000-0000-0000-000000000033', date '2028-03-01', '', '', 'abcdefg', 'Visa', 133.00, 'S'),
+    ('47000000-0000-0000-0000-000000000034', date '2028-03-20', '', '', 'abcdefg', 'Visa', 134.00, 'S');
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values
+    ('48000000-0000-0000-0000-000000000030', 'smoke-credit-card', 'cc-only-document', date '2028-01-01', 'ONLYDOC0030', 130.00),
+    ('48000000-0000-0000-0000-000000000031', 'smoke-credit-card', 'cc-description-at', date '2028-01-20', v_description_at, 131.00),
+    ('48000000-0000-0000-0000-000000000032', 'smoke-credit-card', 'cc-description-below', date '2028-02-10', v_description_below, 132.00),
+    ('48000000-0000-0000-0000-000000000033', 'smoke-credit-card', 'cc-supplier-at', date '2028-03-01', v_supplier_at, 133.00),
+    ('48000000-0000-0000-0000-000000000034', 'smoke-credit-card', 'cc-supplier-below', date '2028-03-20', v_supplier_below, 134.00);
+
+  select candidates into strict v_document_candidates
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000030'::uuid]
+  );
+  select candidates into strict v_description_candidates
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000031'::uuid]
+  );
+  select candidate_count into strict v_below_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000032'::uuid]
+  );
+  if v_below_count <> 0 then
+    raise exception 'Credit-card description score immediately below 0.55 qualified.';
+  end if;
+  select candidates into strict v_supplier_candidates
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000033'::uuid]
+  );
+  select candidate_count into strict v_below_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 10,
+    array['47000000-0000-0000-0000-000000000034'::uuid]
+  );
+  if v_below_count <> 0 then
+    raise exception 'Credit-card supplier score immediately below 0.60 qualified.';
+  end if;
+
+  if jsonb_array_length(v_document_candidates) <> 1
+    or (v_document_candidates#>>'{0,evidence,documentNumber,matched}')::boolean is not true
+    or (v_document_candidates#>>'{0,evidence,description,matched}')::boolean is not false
+    or (v_document_candidates#>>'{0,evidence,supplier,matched}')::boolean is not false
+    or jsonb_array_length(v_description_candidates) <> 1
+    or (v_description_candidates#>>'{0,evidence,documentNumber,matched}')::boolean is not false
+    or (v_description_candidates#>>'{0,evidence,description,matched}')::boolean is not true
+    or (v_description_candidates#>>'{0,evidence,supplier,matched}')::boolean is not false
+    or abs((v_description_candidates#>>'{0,evidence,description,score}')::real - 0.55) >= 0.000001
+    or jsonb_array_length(v_supplier_candidates) <> 1
+    or (v_supplier_candidates#>>'{0,evidence,documentNumber,matched}')::boolean is not false
+    or (v_supplier_candidates#>>'{0,evidence,description,matched}')::boolean is not false
+    or (v_supplier_candidates#>>'{0,evidence,supplier,matched}')::boolean is not true
+    or abs((v_supplier_candidates#>>'{0,evidence,supplier,score}')::real - 0.60) >= 0.000001 then
+    raise exception 'Credit-card identity branches did not qualify independently at exact thresholds.';
+  end if;
+end $$;
+
 do $$
 begin
   if not exists (
