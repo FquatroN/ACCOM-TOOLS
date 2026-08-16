@@ -703,6 +703,7 @@ test("serial continuation replaces progress and selects proposals only after ana
     "renderFinancialReconciliationAutomation",
     "setFinancialReconciliationAutomationStatus",
     "showToast",
+    "finalizeFinancialReconciliationAutomationAnalysis",
     `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
      ${appFunctionSource("financialReconciliationAutomationProgressLabel")}
      ${appFunctionSource("finalizeFinancialReconciliationAutomationAnalysis")}
@@ -777,6 +778,102 @@ test("automatic tab restores an unfinished actor run before continuing it", asyn
   assert.deepEqual(continuedTokens, [1]);
 });
 
+test("automatic tab restores a ready manual run for proposal review without continuing it", async () => {
+  const readyRun = workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "proposed" }]);
+  const current = {
+    automation: {
+      run: null,
+      selectedProposalIds: new Set(),
+      pendingAction: "",
+      continuationToken: 0,
+      continuationRetry: false,
+    },
+  };
+  const continuedTokens = [];
+  const statuses = [];
+  const restore = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "continueFinancialReconciliationAutomationAnalysis",
+    "finalizeFinancialReconciliationAutomationAnalysis",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("restoreFinancialReconciliationAutomationAnalysis").replace(/^function /, "async function ")}
+     return restoreFinancialReconciliationAutomationAnalysis;`,
+  )(
+    () => current,
+    async () => readyRun,
+    (value) => String(value ?? "").trim(),
+    () => {},
+    (message, tone) => statuses.push({ message, tone }),
+    async (token) => { continuedTokens.push(token); },
+    () => {
+      current.automation.selectedProposalIds = new Set([WORKBENCH_PROPOSAL_1]);
+      statuses.push({ message: "Analysis ready", tone: "success" });
+    },
+  );
+
+  await restore();
+
+  assert.strictEqual(current.automation.run, readyRun);
+  assert.deepEqual(continuedTokens, []);
+  assert.deepEqual([...current.automation.selectedProposalIds], [WORKBENCH_PROPOSAL_1]);
+  assert.match(statuses.at(-1).message, /Analysis ready/i);
+});
+
+test("failed initial restore exposes a retry that retries the active-run lookup", async () => {
+  const current = {
+    automation: {
+      run: null,
+      selectedProposalIds: new Set(),
+      pendingAction: "",
+      continuationToken: 0,
+      continuationRetry: false,
+    },
+  };
+  const restore = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "continueFinancialReconciliationAutomationAnalysis",
+    "finalizeFinancialReconciliationAutomationAnalysis",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("restoreFinancialReconciliationAutomationAnalysis").replace(/^function /, "async function ")}
+     return restoreFinancialReconciliationAutomationAnalysis;`,
+  )(
+    () => current,
+    async () => { throw new Error("network unavailable"); },
+    (value) => String(value ?? "").trim(),
+    () => {},
+    () => {},
+    async () => {},
+    () => {},
+  );
+
+  await restore();
+
+  assert.equal(current.automation.continuationRetry, true);
+  const { els } = renderAutomationWorkbench(null, new Set(), { continuationRetry: true });
+  assert.equal((els.financialReconciliationWorkbenchAutomationProposals.innerHTML.match(/data-financial-reconciliation-automation-retry/g) || []).length, 1);
+});
+
+test("analysis completion timestamp is the authoritative review boundary", () => {
+  const isAnalyzing = new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     return financialReconciliationAutomationIsAnalyzing;`,
+  )((value) => String(value ?? "").trim());
+
+  assert.equal(isAnalyzing({ status: "ready", analysisCompletedAt: null, finishedAt: null }), true);
+  assert.equal(isAnalyzing({ status: "analyzing", analysisCompletedAt: "2026-08-16T10:00:00.000Z", finishedAt: null }), false);
+  assert.equal(isAnalyzing({ status: "failed", analysisCompletedAt: null, finishedAt: "2026-08-16T10:00:01.000Z" }), false);
+  assert.match(appFunctionSource("analyzeFinancialReconciliationAutomationRule"), /if \(financialReconciliationAutomationIsAnalyzing\(run\)\)/);
+});
+
 test("uncertain continuation reloads persisted progress and exposes one retry action", async () => {
   const persistedRun = {
     runId: WORKBENCH_RUN_ID,
@@ -846,7 +943,7 @@ test("active automation runs show proposed and ambiguous rows only", () => {
     { id: "skipped", status: "skipped" },
     { id: "completed", status: "completed" },
   ];
-  const run = Object.freeze({ finishedAt: null, proposals: Object.freeze(proposals) });
+  const run = Object.freeze({ analysisCompletedAt: "2026-08-16T09:00:00.000Z", finishedAt: null, proposals: Object.freeze(proposals) });
 
   assert.deepEqual(visible(run).map((proposal) => proposal.id), ["checked", "unchecked", "ambiguous"]);
   assert.equal(run.proposals, proposals);
@@ -1082,7 +1179,9 @@ test("Analyze sends one rule and a fresh UUID, clears old selection, and selects
     "renderFinancialReconciliationAutomation",
     "setFinancialReconciliationAutomationStatus",
     "showToast",
-    `${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
+    "finalizeFinancialReconciliationAutomationAnalysis",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
      return analyzeFinancialReconciliationAutomationRule;`,
   )(
     () => current,
@@ -1095,6 +1194,11 @@ test("Analyze sends one rule and a fresh UUID, clears old selection, and selects
     () => {},
     () => {},
     () => {},
+    () => {
+      current.automation.selectedProposalIds = new Set(current.automation.run.proposals
+        .filter((proposal) => proposal.status === "proposed")
+        .map((proposal) => proposal.id));
+    },
   );
 
   await analyze("manual-enabled");
@@ -1114,6 +1218,56 @@ test("Analyze sends one rule and a fresh UUID, clears old selection, and selects
   assert.equal(current.automation.run, run);
   assert.deepEqual([...current.automation.selectedProposalIds], [WORKBENCH_PROPOSAL_1]);
   assert.equal(current.automation.pendingAction, "");
+});
+
+test("Analyze reports a terminal first-page failure instead of announcing ready proposals", async () => {
+  const failedRun = {
+    ...workbenchRun([]),
+    status: "failed",
+    analysisCompletedAt: null,
+    finishedAt: "2026-08-16T09:00:01.000Z",
+    analysisErrorCode: "analysis_continuation_failed",
+  };
+  const current = {
+    automation: {
+      rules: workbenchRules(),
+      run: null,
+      selectedProposalIds: new Set(),
+      pendingAction: "",
+      loaded: true,
+      continuationToken: 0,
+      continuationRetry: false,
+    },
+  };
+  const finalized = [];
+  const analyze = new Function(
+    "financialReconciliationState",
+    "api",
+    "crypto",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "showToast",
+    "finalizeFinancialReconciliationAutomationAnalysis",
+    `${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
+     return analyzeFinancialReconciliationAutomationRule;`,
+  )(
+    () => current,
+    async () => failedRun,
+    { randomUUID: () => "00000000-0000-0000-0000-000000000198" },
+    (value) => String(value ?? "").trim(),
+    () => {},
+    () => {},
+    () => {},
+    () => finalized.push(current.automation.run?.status),
+  );
+
+  await analyze("manual-enabled");
+
+  assert.strictEqual(current.automation.run, failedRun);
+  assert.deepEqual(finalized, ["failed"]);
+  assert.deepEqual([...current.automation.selectedProposalIds], []);
 });
 
 test("failed analysis preserves the displayed run and its prior selected proposals", async () => {

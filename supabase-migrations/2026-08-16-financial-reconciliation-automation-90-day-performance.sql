@@ -31,6 +31,20 @@ begin
 end
 $migration$;
 
+do $migration$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.financial_reconciliation_automatic_runs'::regclass
+      and conname = 'financial_reconciliation_automatic_runs_cursor_pair_check'
+  ) then
+    alter table public.financial_reconciliation_automatic_runs
+      add constraint financial_reconciliation_automatic_runs_cursor_pair_check
+      check ((analysis_cursor_date is null) = (analysis_cursor_id is null));
+  end if;
+end
+$migration$;
+
 update public.financial_reconciliation_automatic_rule_configs
 set max_difference_days = least(max_difference_days, 90),
     updated_at = now()
@@ -58,7 +72,7 @@ end
 $migration$;
 
 create table if not exists public.financial_reconciliation_cgd_match_search (
-  source_id uuid primary key references public.import_cgd_extrato_ordem(id) on delete cascade,
+  source_id uuid primary key references public.import_cgd_extrato_ordem(id) on update cascade on delete cascade,
   source_date date not null,
   amount numeric,
   description text,
@@ -66,6 +80,28 @@ create table if not exists public.financial_reconciliation_cgd_match_search (
   compact_description text not null,
   updated_at timestamptz not null default now()
 );
+
+do $migration$
+declare v_fk record;
+begin
+  select constraint_row.oid, constraint_row.conname, constraint_row.confupdtype
+  into strict v_fk
+  from pg_constraint constraint_row
+  where constraint_row.conrelid = 'public.financial_reconciliation_cgd_match_search'::regclass
+    and constraint_row.confrelid = 'public.import_cgd_extrato_ordem'::regclass
+    and constraint_row.contype = 'f';
+  if v_fk.confupdtype <> 'c' then
+    execute format(
+      'alter table public.financial_reconciliation_cgd_match_search drop constraint %I',
+      v_fk.conname
+    );
+    alter table public.financial_reconciliation_cgd_match_search
+      add constraint financial_reconciliation_cgd_match_search_source_id_fkey
+      foreign key (source_id) references public.import_cgd_extrato_ordem(id)
+      on update cascade on delete cascade;
+  end if;
+end
+$migration$;
 
 create index if not exists financial_reconciliation_cgd_match_search_date_id_idx
   on public.financial_reconciliation_cgd_match_search(source_date, source_id);
@@ -107,6 +143,11 @@ begin
     delete from public.financial_reconciliation_cgd_match_search where source_id = old.id;
   end if;
 
+  if new.data is null then
+    delete from public.financial_reconciliation_cgd_match_search where source_id = new.id;
+    return new;
+  end if;
+
   insert into public.financial_reconciliation_cgd_match_search (
     source_id, source_date, amount, description,
     normalized_description, compact_description, updated_at
@@ -143,6 +184,7 @@ select
   coalesce(public.financial_reconciliation_match_compact(bank.descritivo), ''),
   now()
 from public.import_cgd_extrato_ordem bank
+where bank.data is not null
 on conflict (source_id) do update set
   source_date = excluded.source_date,
   amount = excluded.amount,
@@ -317,7 +359,6 @@ language plpgsql
 stable
 security definer set search_path = public, pg_temp
 as $$
-declare v_base_ids uuid[];
 begin
   if p_rule_key <> 'financial_documents_cgd_bank_statement' or p_rule_version <> 2 then
     raise exception 'Automatic reconciliation rule is unsupported.';
@@ -329,9 +370,8 @@ begin
     raise exception 'Automatic analysis page size must be between 1 and 25.';
   end if;
 
-  select coalesce(array_agg(page.id order by page.document_date, page.id), array[]::uuid[])
-  into v_base_ids
-  from (
+  return query
+  with page as materialized (
     select d.id, d.document_date
     from public.financial_documents d
     where d.fat = 'S'
@@ -344,11 +384,13 @@ begin
       )
     order by d.document_date, d.id
     limit p_page_size
-  ) page;
-
-  return query
+  )
   select * from public.financial_reconciliation_automatic_candidates_for_base_ids(
-    p_rule_key, p_rule_version, p_difference_allowed, p_max_difference_days, v_base_ids
+    p_rule_key,
+    p_rule_version,
+    p_difference_allowed,
+    p_max_difference_days,
+    array(select page.id from page order by page.document_date, page.id)
   );
 end
 $$;
@@ -574,6 +616,7 @@ declare
   v_combination record;
   v_combination_count integer;
   v_page_count integer := 0;
+  v_total integer;
   v_last_date date;
   v_last_id uuid;
   v_operator text;
@@ -592,6 +635,22 @@ begin
   end if;
   if v_run.status <> 'analyzing' then
     raise exception 'Automatic analysis run is not resumable.';
+  end if;
+
+  begin
+  if v_run.analysis_total = 0 then
+    select count(*) into v_total
+    from public.financial_documents document
+    where document.fat = 'S' and document.payment = 'Banco'
+      and document.document_date >= date '2026-01-01'
+      and not exists (
+        select 1 from public.financial_reconciliation_items item
+        where item.source_type = 'financial_documents' and item.source_id = document.id
+      );
+    update public.financial_reconciliation_automatic_runs
+    set analysis_total = v_total, updated_at = now()
+    where id = v_run.id;
+    v_run.analysis_total := v_total;
   end if;
 
   select value into strict v_rule
@@ -710,6 +769,7 @@ begin
     set analysis_cursor_date = v_last_date,
         analysis_cursor_id = v_last_id,
         analysis_processed = analysis_processed + v_page_count,
+        analysis_total = greatest(analysis_total, analysis_processed + v_page_count),
         updated_at = now(), analysis_error_code = null, analysis_error_at = null
     where id = v_run.id;
   end if;
@@ -720,9 +780,13 @@ begin
   return public.financial_reconciliation_automatic_progress_or_run(v_run.id);
 exception when others then
   update public.financial_reconciliation_automatic_runs
-  set analysis_error_code = sqlstate, analysis_error_at = now(), updated_at = now()
+  set status = 'failed',
+      error_summary = 'Automatic analysis could not be completed.',
+      analysis_error_code = 'analysis_continuation_failed',
+      analysis_error_at = now(), finished_at = coalesce(finished_at, now()), updated_at = now()
   where id = p_run_id;
-  raise;
+  return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end;
 end
 $$;
 
@@ -810,13 +874,137 @@ begin
   select id into v_run_id
   from public.financial_reconciliation_automatic_runs
   where actor = p_actor and trigger = 'manual'
-    and status = 'analyzing' and analysis_completed_at is null
+    and finished_at is null and status in ('analyzing', 'ready')
   order by started_at desc, id desc
   limit 1;
   if v_run_id is null then return null; end if;
   return public.financial_reconciliation_automatic_progress_or_run(v_run_id);
 end
 $$;
+
+create or replace function public.claim_financial_reconciliation_automatic_schedule(
+  p_now timestamptz,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_schedule public.financial_reconciliation_automatic_schedule%rowtype;
+  v_local timestamp;
+  v_slot text;
+  v_snapshot jsonb;
+  v_run_id uuid;
+  v_total integer;
+  v_enabled_rule_count integer;
+  v_existing_status text;
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then raise exception 'Actor is required.'; end if;
+  select * into strict v_schedule
+  from public.financial_reconciliation_automatic_schedule where id = true for update;
+  v_local := p_now at time zone 'Europe/Lisbon';
+  v_slot := to_char(v_local::date, 'YYYY-MM-DD');
+  if not v_schedule.enabled then
+    return jsonb_build_object('claimed', false, 'reason', 'schedule_disabled');
+  end if;
+  select id into v_run_id
+  from public.financial_reconciliation_automatic_runs
+  where trigger = 'scheduled' and finished_at is null
+  order by scheduled_slot, started_at for update;
+  if found then
+    return jsonb_build_object(
+      'claimed', true, 'resumed', true,
+      'run', public.get_financial_reconciliation_automatic_run(v_run_id)
+    );
+  end if;
+  if v_local::time < v_schedule.time_of_day then
+    return jsonb_build_object('claimed', false, 'reason', 'before_scheduled_time');
+  end if;
+
+  select count(*) into v_enabled_rule_count
+  from public.financial_reconciliation_automatic_rule_configs config
+  where config.enabled and config.include_in_scheduled_batch;
+  if v_enabled_rule_count = 0 then
+    return jsonb_build_object('claimed', false, 'reason', 'no_enabled_rules');
+  end if;
+  if v_enabled_rule_count <> 1 or not exists (
+    select 1 from public.financial_reconciliation_automatic_rule_configs config
+    where config.enabled and config.include_in_scheduled_batch
+      and config.rule_key = 'financial_documents_cgd_bank_statement'
+      and config.rule_version = 2
+      and config.max_difference_days between 0 and 90
+  ) then
+    return jsonb_build_object('claimed', false, 'reason', 'unsupported_rule_set');
+  end if;
+
+  select jsonb_agg(jsonb_build_object(
+    'ruleKey', config.rule_key, 'ruleVersion', config.rule_version,
+    'displayName', definition.display_name, 'priority', config.priority,
+    'differenceAllowed', config.difference_allowed,
+    'maxDifferenceDays', config.max_difference_days,
+    'definition', definition.definition, 'operator', source_rule.operator
+  ) order by config.priority, config.rule_key)
+  into strict v_snapshot
+  from public.financial_reconciliation_automatic_rule_configs config
+  join public.financial_reconciliation_automatic_rule_definitions definition
+    on definition.rule_key = config.rule_key and definition.version = config.rule_version
+  join public.financial_reconciliation_source_rules source_rule
+    on source_rule.base_source_type = definition.base_source_type
+   and source_rule.matching_source_type = 'import_cgd_extrato_ordem'
+  where config.enabled and config.include_in_scheduled_batch
+    and config.rule_key = 'financial_documents_cgd_bank_statement'
+    and config.rule_version = 2;
+  if v_snapshot is null or jsonb_array_length(v_snapshot) <> 1 then
+    return jsonb_build_object('claimed', false, 'reason', 'unsupported_rule_set');
+  end if;
+
+  select count(*) into v_total
+  from public.financial_documents document
+  where document.fat = 'S' and document.payment = 'Banco'
+    and document.document_date >= date '2026-01-01'
+    and not exists (
+      select 1 from public.financial_reconciliation_items item
+      where item.source_type = 'financial_documents' and item.source_id = document.id
+    );
+
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, scheduled_slot, definition_config_snapshot,
+    analysis_processed, analysis_total
+  ) values ('scheduled', 'batch', p_actor, v_slot, v_snapshot, 0, v_total)
+  on conflict do nothing returning id into v_run_id;
+  if v_run_id is null then
+    select id, status into strict v_run_id, v_existing_status
+    from public.financial_reconciliation_automatic_runs where scheduled_slot = v_slot;
+    if v_existing_status = 'failed' then
+      return jsonb_build_object('claimed', false, 'reason', 'slot_failed');
+    end if;
+    return jsonb_build_object(
+      'claimed', true, 'resumed', true,
+      'run', public.get_financial_reconciliation_automatic_run(v_run_id)
+    );
+  end if;
+  return jsonb_build_object(
+    'claimed', true, 'resumed', false,
+    'run', public.get_financial_reconciliation_automatic_run(v_run_id)
+  );
+end
+$$;
+
+do $migration$
+declare v_settings_definition text;
+begin
+  select pg_get_functiondef(
+    'public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)'::regprocedure
+  ) into strict v_settings_definition;
+  if strpos(v_settings_definition, 'not between 0 and 365') > 0 then
+    v_settings_definition := replace(v_settings_definition, 'not between 0 and 365', 'not between 0 and 90');
+  elsif strpos(v_settings_definition, 'not between 0 and 90') = 0 then
+    raise exception 'Unexpected automatic settings day-range validation definition.';
+  end if;
+  execute v_settings_definition;
+end
+$migration$;
 
 create or replace function public.continue_financial_reconciliation_automatic_oldest_analysis(p_worker text)
 returns jsonb
@@ -915,6 +1103,7 @@ revoke all on function public.continue_financial_reconciliation_automatic_analys
 revoke all on function public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid) from public, anon, authenticated;
 revoke all on function public.get_financial_reconciliation_automatic_active_run(text) from public, anon, authenticated;
 revoke all on function public.continue_financial_reconciliation_automatic_oldest_analysis(text) from public, anon, authenticated;
+revoke all on function public.claim_financial_reconciliation_automatic_schedule(timestamptz,text) from public, anon, authenticated;
 revoke all on function public.get_financial_reconciliation_automatic_run(uuid) from public, anon, authenticated;
 revoke all on function public.execute_financial_reconciliation_automatic_proposal(uuid,text) from public, anon, authenticated;
 
@@ -925,6 +1114,7 @@ grant execute on function public.continue_financial_reconciliation_automatic_ana
 grant execute on function public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid) to service_role;
 grant execute on function public.get_financial_reconciliation_automatic_active_run(text) to service_role;
 grant execute on function public.continue_financial_reconciliation_automatic_oldest_analysis(text) to service_role;
+grant execute on function public.claim_financial_reconciliation_automatic_schedule(timestamptz,text) to service_role;
 grant execute on function public.get_financial_reconciliation_automatic_run(uuid) to service_role;
 grant execute on function public.execute_financial_reconciliation_automatic_proposal(uuid,text) to service_role;
 

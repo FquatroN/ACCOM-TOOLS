@@ -459,6 +459,8 @@ test("scheduled heartbeat returns safe database reasons when disabled or not due
     ["schedule_disabled", "2026-08-15T01:00:00.000Z"],
     ["before_scheduled_time", "2026-08-15T01:59:00.000Z"],
     ["no_enabled_rules", "2026-08-15T02:00:00.000Z"],
+    ["unsupported_rule_set", "2026-08-15T02:00:00.000Z"],
+    ["slot_failed", "2026-08-15T02:00:00.000Z"],
   ];
 
   for (const [reason, nowIso] of cases) {
@@ -534,6 +536,91 @@ test("scheduled heartbeat advances one unfinished analysis page before claiming 
     analysisTotal: 100,
     hasMore: true,
   });
+});
+
+test("scheduled heartbeat reports a persisted continuation failure without retrying or returning 500", async () => {
+  const failedRun = scheduledRun({
+    status: "failed",
+    analysisComplete: false,
+    analysisCompletedAt: null,
+    analysisErrorCode: "analysis_continuation_failed",
+    analysisErrorAt: "2026-08-15T02:00:01.000Z",
+    finishedAt: "2026-08-15T02:00:01.000Z",
+    proposals: [],
+  });
+  const calls = [];
+  const response = responseRecorder();
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      exposeOldestAnalysis: true,
+      restQuery: async (resource) => {
+        calls.push(resource);
+        if (resource === "rpc/continue_financial_reconciliation_automatic_oldest_analysis") {
+          return { continued: true, run: failedRun };
+        }
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    ok: true,
+    claimed: false,
+    continuedAnalysis: true,
+    runId: failedRun.runId,
+    status: "failed",
+    analysisProcessed: failedRun.analysisProcessed,
+    analysisTotal: failedRun.analysisTotal,
+    hasMore: false,
+  });
+  assert.deepEqual(calls, ["rpc/continue_financial_reconciliation_automatic_oldest_analysis"]);
+});
+
+test("first scheduled analysis page can fail terminally without returning 500 or more work", async () => {
+  const claimedRun = scheduledRun({
+    status: "analyzing",
+    analysisComplete: false,
+    analysisCompletedAt: null,
+    analysisProcessed: 0,
+    analysisTotal: 1,
+  });
+  const failedRun = scheduledRun({
+    status: "failed",
+    analysisComplete: false,
+    analysisCompletedAt: null,
+    analysisProcessed: 0,
+    analysisTotal: 1,
+    analysisErrorCode: "analysis_continuation_failed",
+    analysisErrorAt: "2026-08-15T02:00:01.000Z",
+    finishedAt: "2026-08-15T02:00:01.000Z",
+  });
+  const calls = [];
+  const response = responseRecorder();
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource) => {
+        calls.push(resource);
+        if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+          return { claimed: true, resumed: false, run: claimedRun };
+        }
+        if (resource === "rpc/continue_financial_reconciliation_automatic_analysis") return failedRun;
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.status, "failed");
+  assert.equal(response.body.hasMore, false);
+  assert.deepEqual(calls, [
+    "rpc/claim_financial_reconciliation_automatic_schedule",
+    "rpc/continue_financial_reconciliation_automatic_analysis",
+  ]);
 });
 
 test("first scheduled claim populates analysis and executes proposals in stable priority and base order", async () => {
@@ -2164,12 +2251,28 @@ test("90-day automation migration installs resumable indexed analysis after Banc
   const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
 
   assert.match(migration, /create table if not exists public\.financial_reconciliation_cgd_match_search/i);
+  assert.match(migration, /references public\.import_cgd_extrato_ordem\(id\)\s+on update cascade on delete cascade/i);
+  assert.match(migration, /if new\.data is null then[\s\S]*delete from public\.financial_reconciliation_cgd_match_search/i);
+  assert.match(migration, /from public\.import_cgd_extrato_ordem bank\s+where bank\.data is not null/i);
   assert.match(migration, /create or replace function public\.continue_financial_reconciliation_automatic_analysis\(/i);
+  assert.match(migration, /continue_financial_reconciliation_automatic_analysis\([\s\S]*if v_run\.analysis_total = 0 then[\s\S]*count\(\*\)[\s\S]*analysis_total = v_total/i);
+  assert.match(migration, /analysis_total = greatest\(analysis_total, analysis_processed \+ v_page_count\)/i);
+  assert.match(migration, /exception when others then[\s\S]*status = 'failed'[\s\S]*analysis_error_code = 'analysis_continuation_failed'[\s\S]*return public\.get_financial_reconciliation_automatic_run/i);
+  assert.match(migration, /if v_run\.actor <> p_actor then raise exception[^;]+; end if;[\s\S]*if v_run\.status <> 'analyzing' then[\s\S]*end if;\s+begin[\s\S]*exception when others then/i);
+  assert.match(migration, /financial_reconciliation_automatic_candidate_page\([\s\S]*with page as materialized[\s\S]*array\(select page\.id/i);
   assert.match(migration, /create or replace function public\.get_financial_reconciliation_automatic_active_run\(/i);
+  assert.match(migration, /trigger = 'manual'[\s\S]*finished_at is null[\s\S]*status in \('analyzing', 'ready'\)/i);
   assert.match(migration, /create or replace function public\.continue_financial_reconciliation_automatic_oldest_analysis\(/i);
+  assert.match(migration, /create or replace function public\.claim_financial_reconciliation_automatic_schedule\([\s\S]*unsupported_rule_set/i);
+  assert.match(migration, /if v_existing_status = 'failed' then[\s\S]*'slot_failed'/i);
+  assert.match(migration, /replace\(v_settings_definition, 'not between 0 and 365', 'not between 0 and 90'\)/i);
   assert.match(migration, /max_difference_days between 0 and 90/i);
   assert.match(smokeSql,
     /2026-08-16-financial-reconciliation-automation-banco-v2\.sql[\s\S]*2026-08-16-financial-reconciliation-automation-90-day-performance\.sql/i);
+  assert.match(smokeSql, /Projection sync fixture updated[\s\S]*did not synchronize a delete/i);
+  assert.match(smokeSql, /Unauthorized continuation changed the owned run state/i);
+  assert.match(smokeSql, /analysis_continuation_failed/i);
+  assert.match(smokeSql, /90-day boundary did not include day 90 and exclude day 91/i);
 });
 
 test("release documentation and SQL smokes pin the complete 90-day migration order", () => {

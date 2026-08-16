@@ -1371,12 +1371,43 @@ begin
     ('42000000-0000-0000-0000-000000000202', 'smoke-banco-v2', 'banco-v2-202', date '2027-01-20', 'Payment BANCOV2202', -102.00),
     ('42000000-0000-0000-0000-000000000203', 'smoke-banco-v2', 'banco-v2-203', date '2027-01-20', 'Payment BANCOV2203', -103.00),
     ('42000000-0000-0000-0000-000000000204', 'smoke-banco-v2', 'banco-v2-204', date '2027-01-20', 'Payment BANCOV2204', -104.00),
-    ('42000000-0000-0000-0000-000000000205', 'smoke-banco-v2', 'banco-v2-205', date '2027-01-20', 'Payment BANCOV2205', -105.00);
+    ('42000000-0000-0000-0000-000000000205', 'smoke-banco-v2', 'banco-v2-205', date '2027-01-20', 'Payment BANCOV2205', -105.00),
+    ('42000000-0000-0000-0000-000000000298', 'smoke-banco-v2', 'banco-v2-sync', date '2027-01-20', 'Projection sync fixture', -298.00),
+    ('42000000-0000-0000-0000-000000000299', 'smoke-banco-v2', 'banco-v2-undated', null, 'Undated ineligible row', -999.00);
 
   if (select count(*) from public.financial_reconciliation_cgd_match_search
       where source_id between '42000000-0000-0000-0000-000000000201'::uuid
                           and '42000000-0000-0000-0000-000000000205'::uuid) <> 5 then
     raise exception 'CGD match projection trigger did not synchronize inserted rows.';
+  end if;
+  if exists (
+    select 1 from public.financial_reconciliation_cgd_match_search
+    where source_id = '42000000-0000-0000-0000-000000000299'::uuid
+  ) then
+    raise exception 'CGD match projection retained an ineligible undated row.';
+  end if;
+
+  update public.import_cgd_extrato_ordem
+  set id = '42000000-0000-0000-0000-000000000297',
+      descritivo = 'Projection sync fixture updated'
+  where id = '42000000-0000-0000-0000-000000000298';
+  if exists (
+      select 1 from public.financial_reconciliation_cgd_match_search
+      where source_id = '42000000-0000-0000-0000-000000000298'
+    ) or not exists (
+      select 1 from public.financial_reconciliation_cgd_match_search
+      where source_id = '42000000-0000-0000-0000-000000000297'
+        and description = 'Projection sync fixture updated'
+    ) then
+    raise exception 'CGD match projection did not synchronize an ID/content update.';
+  end if;
+  delete from public.import_cgd_extrato_ordem
+  where id = '42000000-0000-0000-0000-000000000297';
+  if exists (
+    select 1 from public.financial_reconciliation_cgd_match_search
+    where source_id = '42000000-0000-0000-0000-000000000297'
+  ) then
+    raise exception 'CGD match projection did not synchronize a delete.';
   end if;
 
   select coalesce(array_agg(candidate.base_source_id order by candidate.base_source_id), '{}'::uuid[])
@@ -1422,6 +1453,61 @@ begin
       and base_source_id = any(v_excluded_ids)
   ) then
     raise exception 'Non-Banco bases created proposal or skipped rows.';
+  end if;
+end $$;
+
+do $$
+declare
+  v_failed_run_id uuid;
+  v_failed_run jsonb;
+begin
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, client_request_id, definition_config_snapshot,
+    analysis_processed, analysis_total
+  ) values (
+    'manual', 'rule', 'smoke:continuation-failure',
+    '43000000-0000-0000-0000-000000000208',
+    jsonb_build_array(jsonb_build_object(
+      'ruleKey', 'financial_documents_cgd_bank_statement',
+      'ruleVersion', 2,
+      'displayName', 'Failure fixture',
+      'priority', 1,
+      'differenceAllowed', 0,
+      'maxDifferenceDays', 7,
+      'operator', '?'
+    )),
+    0, 1
+  ) returning id into v_failed_run_id;
+
+  begin
+    perform public.continue_financial_reconciliation_automatic_analysis(
+      v_failed_run_id,
+      'smoke:continuation-intruder'
+    );
+    raise exception 'Expected continuation actor ownership validation.';
+  exception when others then
+    if sqlerrm not like '%belongs to another actor%' then raise; end if;
+  end;
+  if exists (
+    select 1 from public.financial_reconciliation_automatic_runs
+    where id = v_failed_run_id
+      and (status <> 'analyzing' or analysis_error_code is not null)
+  ) then
+    raise exception 'Unauthorized continuation changed the owned run state.';
+  end if;
+
+  v_failed_run := public.continue_financial_reconciliation_automatic_analysis(
+    v_failed_run_id,
+    'smoke:continuation-failure'
+  );
+  if v_failed_run->>'status' <> 'failed'
+    or v_failed_run->>'analysisErrorCode' <> 'analysis_continuation_failed'
+    or nullif(v_failed_run->>'finishedAt', '') is null
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals
+      where run_id = v_failed_run_id
+    ) then
+    raise exception 'Continuation failure did not persist one sanitized terminal run state.';
   end if;
 end $$;
 
@@ -1493,15 +1579,43 @@ end $$;
 
 do $$
 declare
+  v_window_candidates jsonb;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name,
+    payment, amount, fat
+  ) values (
+    '41000000-0000-0000-0000-000000000209', date '2027-04-01',
+    'WINDOW-90-209', '', '', 'Banco', 209.00, 'S'
+  );
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values
+    ('42000000-0000-0000-0000-000000000209', 'smoke-window', 'window-day-90', date '2027-06-30', 'Payment WINDOW90209', -209.00),
+    ('42000000-0000-0000-0000-000000000210', 'smoke-window', 'window-day-91', date '2027-07-01', 'Payment WINDOW90209', -209.00);
+
+  select candidates into strict v_window_candidates
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement', 2, 0, 90,
+    array['41000000-0000-0000-0000-000000000209'::uuid]
+  );
+  if jsonb_array_length(v_window_candidates) <> 1
+    or v_window_candidates->0->>'sourceId' <> '42000000-0000-0000-0000-000000000209' then
+    raise exception 'The 90-day boundary did not include day 90 and exclude day 91.';
+  end if;
+end $$;
+
+do $$
+declare
   v_version_one_run_id uuid;
   v_version_one_proposal_id uuid;
   v_result jsonb;
 begin
   insert into public.financial_reconciliation_automatic_runs (
-    trigger, scope, actor, client_request_id
+    trigger, scope, actor, client_request_id, status, analysis_completed_at
   ) values (
     'manual', 'rule', 'smoke:legacy-version',
-    '43000000-0000-0000-0000-000000000207'
+    '43000000-0000-0000-0000-000000000207', 'ready', now()
   ) returning id into v_version_one_run_id;
 
   insert into public.financial_reconciliation_automatic_proposals (
@@ -1536,11 +1650,11 @@ declare
   v_signature text;
 begin
   select pg_get_functiondef(
-    'public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)'::regprocedure
+    'public.financial_reconciliation_automatic_candidates_for_base_ids(text,integer,numeric,integer,uuid[])'::regprocedure
   ) into strict v_candidate_definition;
 
   if v_candidate_definition !~* 'left join lateral\s+\('
-    or v_candidate_definition ~* 'bank_rows\s+as\s+materialized'
+    or v_candidate_definition !~* 'financial_reconciliation_cgd_match_search'
     or v_candidate_definition !~* 'd\.payment\s*=\s*''Banco'''
     or v_candidate_definition !~* 'p_rule_version\s*=\s*2' then
     raise exception 'Version 2 candidate function lost indexed Banco semantics.';

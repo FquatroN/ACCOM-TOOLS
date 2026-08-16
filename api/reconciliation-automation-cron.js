@@ -8,6 +8,8 @@ const SAFE_UNCLAIMED_REASONS = new Set([
   "schedule_disabled",
   "before_scheduled_time",
   "no_enabled_rules",
+  "unsupported_rule_set",
+  "slot_failed",
 ]);
 const SAFE_RUN_STATUSES = new Set([
   "analyzing",
@@ -157,9 +159,18 @@ function requireScheduledRun(value, expectedRunId = "") {
     throw new Error("Scheduled reconciliation analysis progress is inconsistent.");
   }
   const finished = run.finishedAt !== null;
+  const analysisFailed = run.status === "failed"
+    && !analysisComplete
+    && finished
+    && run.proposals.length === 0
+    && run.analysisErrorCode === "analysis_continuation_failed"
+    && isTimestamp(run.analysisErrorAt);
   if ((run.status === "analyzing" && (analysisComplete || finished || run.proposals.length > 0))
     || ((run.status === "ready" || run.status === "running") && (!analysisComplete || finished))
-    || ((run.status === "completed" || run.status === "partial" || run.status === "failed")
+    || ((run.status === "completed" || run.status === "partial")
+      && (!analysisComplete || !finished || hasMoreWork(run)))
+    || (run.status === "failed"
+      && !analysisFailed
       && (!analysisComplete || !finished || hasMoreWork(run)))) {
     throw new Error("Scheduled reconciliation run lifecycle is invalid.");
   }
@@ -287,7 +298,7 @@ module.exports = async function handler(req, res) {
         status: run.status,
         analysisProcessed: run.analysisProcessed,
         analysisTotal: run.analysisTotal,
-        hasMore: !run.analysisComplete,
+        hasMore: run.status === "analyzing" && !run.analysisComplete,
       });
     }
 
@@ -329,7 +340,7 @@ module.exports = async function handler(req, res) {
         { method: "POST", body: { p_run_id: run.runId, p_actor: SCHEDULE_ACTOR } },
       ), claimedRunId);
       if (!run.analysisCompletedAt) {
-        return res.status(200).json(publicRunResponse(claim, run, 0, true));
+        return res.status(200).json(publicRunResponse(claim, run, 0, run.status === "analyzing"));
       }
     }
 
