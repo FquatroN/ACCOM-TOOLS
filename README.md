@@ -51,16 +51,26 @@ migrations in this order:
 5. `supabase-migrations/2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql`
 6. `supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql`
 7. `supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql`
+8. `supabase-migrations/2026-08-16-financial-reconciliation-automation-credit-card-rule.sql`
 
-If the database is already current through Banco v2, only
-`2026-08-16-financial-reconciliation-automation-90-day-performance.sql` is
-needed. The supported **Max difference in days** range is 0-90 days.
+If the database is already current through Banco v2, apply migrations 7 and 8
+in that order. If it is already current through the 90-day migration, apply
+only `2026-08-16-financial-reconciliation-automation-credit-card-rule.sql`.
+The Credit Card migration is reapply-safe: it verifies the immutable managed
+definition and does not overwrite saved administrator flags, tolerance, day
+window, or priority. The supported **Max difference in days** range is 0-90
+days.
 
 After applying the migration, run the transaction-safe database smoke suite:
 
 ```powershell
 psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f tests/reconciliation-automation-rpc.smoke.sql
 ```
+
+Run the same command a second time against the disposable or development
+database. The smoke rolls back its fixtures, applies the Credit Card migration
+once in normal order and once as an explicit reapply, and must complete cleanly
+on both invocations before deployment.
 
 For production-size verification, save the rule with 90 days, press Analyze,
 and observe the processed/total progress until Ready. Require Ready within two minutes
@@ -69,10 +79,23 @@ evidence, and reconciliation-history semantics with the existing rule. Confirm
 the API and Vercel logs contain no HTTP 500 and no statement timeout before
 enabling scheduled execution.
 
-The managed rule and shared schedule are disabled by default. Keep them
-disabled while deploying, then validate representative matches, non-matches,
-threshold boundaries, and ambiguities through manual analysis and execution in
-a non-production environment. Complete manual validation before enabling scheduled execution.
+The Credit Card rule is disabled by default; its initial tolerance is `0.00`,
+maximum date difference is 10 days, and priority is 2. The migration preserves
+the existing Bank Statement configuration. Enable Credit Card for manual analysis with scheduled execution disabled. In an authenticated
+non-production session, select Credit Card from the Automatic reconciliation
+rule list and verify exact-`Visa` eligibility, one-to-four-card proposals,
+ambiguity, hidden no-match rows with accurate counts, execution, history,
+identity evidence, stale outcomes, selector locking, and reload/resume. Use
+**Open automatic reconciliation** from Settings to confirm that navigation does
+not start analysis. Complete this manual validation before enabling scheduled
+execution.
+
+For scheduled validation, enable both managed rules in a disposable or
+development environment and confirm Bank Statement then Credit Card appear as
+separate child runs and separate history entries. Deliberately create a failed
+first child and confirm it does not block the second child. Do not rely on the
+production daily schedule until both the two-rule order and failure
+continuation have been observed.
 
 Vercel calls `/api/reconciliation-automation-cron` every minute as a heartbeat.
 The database—not the Vercel schedule—atomically claims at most one configured

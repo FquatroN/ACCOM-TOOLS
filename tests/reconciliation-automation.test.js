@@ -2995,7 +2995,7 @@ test("scheduled automation snapshots deterministic parent batches and advances o
   }
 });
 
-test("release documentation and SQL smokes pin the complete 90-day migration order", () => {
+test("release documentation and SQL smokes pin the complete automatic migration order", () => {
   const migrationNames = [
     "2026-08-14-financial-reconciliation-automation-schema.sql",
     "2026-08-14-financial-reconciliation-automation-analysis.sql",
@@ -3014,10 +3014,140 @@ test("release documentation and SQL smokes pin the complete 90-day migration ord
     assert.match(source, orderedPattern, label);
   }
   assert.equal((automationSmoke.match(/2026-08-16-financial-reconciliation-automation-90-day-performance\.sql/g) || []).length >= 2, true);
-  assert.match(readme, /already current through Banco v2[\s\S]*only[\s\S]*90-day-performance/i);
-  assert.match(readme, /0(?:â€“|-| to )90 days/i);
+  assert.match(readme, /already current through Banco v2[\s\S]*apply migrations 7 and 8[\s\S]*current through the 90-day migration[\s\S]*only[\s\S]*credit-card-rule/i);
+  assert.match(readme, /0-90\s+days/i);
   assert.match(readme, /reconciliation-automation-rpc\.smoke\.sql/);
   assert.match(readme, /Ready within two minutes[\s\S]*no (?:HTTP )?500[\s\S]*no (?:statement )?timeout/i);
+});
+
+test("credit-card rollout pins migration order, RPC ACLs, reapply, and fixed production dispatch", () => {
+  const migration = fs.readFileSync(CREDIT_CARD_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const readme = fs.readFileSync(README_PATH, "utf8");
+  const ninetyDayName = "2026-08-16-financial-reconciliation-automation-90-day-performance.sql";
+  const creditCardName = "2026-08-16-financial-reconciliation-automation-credit-card-rule.sql";
+
+  assert.match(
+    readme,
+    /7\. `supabase-migrations\/2026-08-16-financial-reconciliation-automation-90-day-performance\.sql`[\s\S]*8\. `supabase-migrations\/2026-08-16-financial-reconciliation-automation-credit-card-rule\.sql`/,
+  );
+  assert.match(readme, /credit card[^\n]*disabled by default|disabled by default[^\n]*credit card/i);
+  assert.match(readme, /manual[\s\S]{0,120}scheduled execution disabled|scheduled execution disabled[\s\S]{0,120}manual/i);
+  assert.match(readme, /Bank Statement[\s\S]{0,120}Credit Card[\s\S]{0,120}separate|separate[\s\S]{0,120}Bank Statement[\s\S]{0,120}Credit Card/i);
+  assert.match(readme, /failed[\s\S]{0,40}first child[\s\S]{0,80}does not block[\s\S]{0,40}second|second[\s\S]{0,80}not blocked[\s\S]{0,40}failed[\s\S]{0,40}first child/i);
+
+  const creditCardIncludes = [...smokeSql.matchAll(new RegExp(
+    `^\\\\ir \\.\\./supabase-migrations/${creditCardName.replaceAll(".", "\\.")}$`,
+    "gm",
+  ))];
+  assert.equal(creditCardIncludes.length, 2, "smoke must apply the migration once and explicitly reapply it once");
+  const ninetyDayInclude = smokeSql.indexOf(`\\ir ../supabase-migrations/${ninetyDayName}`);
+  assert.ok(creditCardIncludes[0].index > ninetyDayInclude, "normal credit-card migration must follow the 90-day migration");
+  assert.ok(creditCardIncludes[1].index > creditCardIncludes[0].index, "credit-card reapply must follow its normal application");
+  assert.match(
+    smokeSql.slice(creditCardIncludes[1].index),
+    /credit-card migration reapply is idempotent and preserves administrator settings/i,
+  );
+
+  const serviceRoleRpcSignatures = [
+    "financial_reconciliation_automatic_rule_contract\\(text,integer\\)",
+    "financial_reconciliation_automatic_bank_candidates_for_base_ids\\(text,integer,numeric,integer,uuid\\[\\]\\)",
+    "financial_reconciliation_automatic_credit_card_candidates_for_base_ids\\(text,integer,numeric,integer,uuid\\[\\]\\)",
+    "financial_reconciliation_automatic_candidates_for_base_ids\\(text,integer,numeric,integer,uuid\\[\\]\\)",
+    "financial_reconciliation_automatic_base_page\\(text,integer,date,uuid,integer\\)",
+    "financial_reconciliation_automatic_base_count\\(text,integer\\)",
+    "financial_reconciliation_automatic_candidate_page\\(text,integer,numeric,integer,date,uuid,integer\\)",
+    "financial_reconciliation_automatic_single_base_candidates\\(text,integer,numeric,integer,uuid\\)",
+    "financial_reconciliation_automatic_rule_candidates\\(text,integer,numeric,integer\\)",
+    "continue_financial_reconciliation_automatic_analysis\\(uuid,text\\)",
+    "create_financial_reconciliation_automatic_analysis\\(text\\[\\],text,text,uuid\\)",
+    "get_financial_reconciliation_automatic_active_run\\(text\\)",
+    "continue_financial_reconciliation_automatic_oldest_analysis\\(text\\)",
+    "execute_financial_reconciliation_automatic_proposal\\(uuid,text\\)",
+    "financial_reconciliation_refresh_automatic_batch\\(uuid\\)",
+    "claim_financial_reconciliation_automatic_schedule\\(timestamptz,text\\)",
+    "get_financial_reconciliation_automatic_run\\(uuid\\)",
+    "financial_reconciliation_automatic_progress_or_run\\(uuid\\)",
+    "get_financial_reconciliation_automation_settings\\(\\)",
+  ];
+  for (const signature of serviceRoleRpcSignatures) {
+    assert.match(
+      migration,
+      new RegExp(`revoke all on function public\\.${signature}\\s+from public, anon, authenticated, service_role;`, "i"),
+      `${signature} revoke`,
+    );
+    assert.match(
+      migration,
+      new RegExp(`grant execute on function public\\.${signature}\\s+to service_role;`, "i"),
+      `${signature} service-role grant`,
+    );
+  }
+  for (const signature of [
+    "financial_reconciliation_finalize_automatic_analysis\\(uuid\\)",
+    "financial_reconciliation_automatic_lock_destination_items\\(text,jsonb\\)",
+    "financial_reconciliation_refresh_automatic_batch_from_run\\(\\)",
+  ]) {
+    assert.match(
+      migration,
+      new RegExp(`revoke all on function public\\.${signature}\\s+from public, anon, authenticated, service_role;`, "i"),
+      `${signature} internal revoke`,
+    );
+    assert.doesNotMatch(migration, new RegExp(`grant execute on function public\\.${signature}`, "i"));
+  }
+
+  const productionPaths = [
+    path.join(__dirname, "..", "api", "_reconciliation-automation.js"),
+    MANUAL_HANDLER_PATH,
+    SETTINGS_HANDLER_PATH,
+    CRON_HANDLER_PATH,
+    path.join(__dirname, "..", "app-main.js"),
+    path.join(__dirname, "..", "index.html"),
+    path.join(__dirname, "..", "styles.css"),
+    CREDIT_CARD_MIGRATION_PATH,
+  ];
+  for (const productionPath of productionPaths) {
+    const source = fs.readFileSync(productionPath, "utf8");
+    assert.doesNotMatch(source, /analyze_batch/i, `${path.basename(productionPath)} analyze_batch`);
+    assert.doesNotMatch(source, /Run batch now/i, `${path.basename(productionPath)} Run batch now`);
+    assert.doesNotMatch(source, /\bextensions\./i, `${path.basename(productionPath)} extension-schema call`);
+  }
+
+  const functionSource = (functionName) => {
+    const match = migration.match(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "i",
+    ));
+    assert.ok(match, `${functionName} body must exist`);
+    return match[0];
+  };
+  for (const functionName of [
+    "financial_reconciliation_automatic_candidates_for_base_ids",
+    "financial_reconciliation_automatic_lock_destination_items",
+    "execute_financial_reconciliation_automatic_proposal",
+    "claim_financial_reconciliation_automatic_schedule",
+  ]) {
+    assert.doesNotMatch(
+      functionSource(functionName),
+      /\bexecute\b|\bformat\s*\(/i,
+      `${functionName} must not dynamically dispatch SQL, tables, or functions`,
+    );
+  }
+  for (const apiPath of [MANUAL_HANDLER_PATH, SETTINGS_HANDLER_PATH, CRON_HANDLER_PATH]) {
+    const source = fs.readFileSync(apiPath, "utf8");
+    const rpcFirstArguments = [...source.matchAll(/restQuery\(\s*([^,\r\n]+)/g)]
+      .map((match) => match[1].trim());
+    for (const firstArgument of rpcFirstArguments) {
+      assert.ok(
+        /^["']/.test(firstArgument)
+          || (apiPath === MANUAL_HANDLER_PATH && firstArgument === "resource"),
+        `${path.basename(apiPath)} must use literal or explicitly allowlisted RPC resources`,
+      );
+    }
+  }
+  const manualApi = fs.readFileSync(MANUAL_HANDLER_PATH, "utf8");
+  assert.match(manualApi, /new Set\(\["rules", "active_run"\]\)\.has\(view\)/);
+  assert.match(manualApi,
+    /const resource = view === "rules"\s*\? "rpc\/get_financial_reconciliation_automatic_manual_rules"\s*:\s*"rpc\/get_financial_reconciliation_automatic_active_run"/);
 });
 
 test("automation execution migration revalidates and completes each proposal atomically", () => {
