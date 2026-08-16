@@ -57,10 +57,12 @@ module.exports = async function handler(req, res) {
     const current = lisbonMonthParts();
     const previous = shiftMonth(current.year, current.month, -1);
     const next = shiftMonth(current.year, current.month, 1);
+    const last2Months = shiftMonth(current.year, current.month, -1);
     const last6Months = shiftMonth(current.year, current.month, -5);
     const previousStart = isoMonthStart(previous.year, previous.month);
     const currentStart = isoMonthStart(current.year, current.month);
     const nextStart = isoMonthStart(next.year, next.month);
+    const last2MonthsStart = isoMonthStart(last2Months.year, last2Months.month);
     const last6MonthsStart = isoMonthStart(last6Months.year, last6Months.month);
 
     const basePath = `reviews?select=review_date,rating_normalized_100,source,properties(name)&review_date=gte.${encodeURIComponent(last6MonthsStart)}&review_date=lt.${encodeURIComponent(nextStart)}&rating_normalized_100=not.is.null&order=review_date.desc`;
@@ -92,8 +94,8 @@ module.exports = async function handler(req, res) {
 
       const source = cleanText(row?.source).toLowerCase();
       if (!source) return;
-      const sourceBucket = sourceBuckets.get(source) || { last1Month: [], last6Months: [] };
-      if (reviewDate >= currentStart && reviewDate < nextStart) sourceBucket.last1Month.push(rating);
+      const sourceBucket = sourceBuckets.get(source) || { last2Months: [], last6Months: [] };
+      if (reviewDate >= last2MonthsStart && reviewDate < nextStart) sourceBucket.last2Months.push(rating);
       if (reviewDate >= last6MonthsStart && reviewDate < nextStart) sourceBucket.last6Months.push(rating);
       sourceBuckets.set(source, sourceBucket);
     });
@@ -129,9 +131,9 @@ module.exports = async function handler(req, res) {
         sources: Array.from(sourceBuckets.entries())
           .map(([source, bucket]) => ({
             source,
-            last1MonthAverage: average(bucket.last1Month),
+            last2MonthsAverage: average(bucket.last2Months),
             last6MonthsAverage: average(bucket.last6Months),
-            last1MonthCount: bucket.last1Month.length,
+            last2MonthsCount: bucket.last2Months.length,
             last6MonthsCount: bucket.last6Months.length,
           }))
           .sort((a, b) => a.source.localeCompare(b.source)),
