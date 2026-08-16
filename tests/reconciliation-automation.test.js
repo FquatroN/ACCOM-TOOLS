@@ -11,6 +11,7 @@ const {
   normalizeAnalyzePayload,
   normalizeAutomationAction,
   normalizeAutomationSettingsPayload,
+  normalizeContinueAnalysisPayload,
   normalizeExecutePayload,
   toAutomationPublicResult,
   toAutomationSettingsRpcPayload,
@@ -224,8 +225,8 @@ test("automation settings reject invalid managed schedule and editable rule valu
     ["non-Lisbon time zone", { schedule: { enabled: true, timeOfDay: "02:15", timeZone: "UTC" } }, /time zone/i],
     ["negative tolerance", { rules: [{ ...managedSettings().rules[0], differenceAllowed: "-0.01" }] }, /non-negative amount/i],
     ["three-decimal tolerance", { rules: [{ ...managedSettings().rules[0], differenceAllowed: "1.234" }] }, /non-negative amount/i],
-    ["day below zero", { rules: [{ ...managedSettings().rules[0], maxDifferenceDays: -1 }] }, /between 0 and 365/i],
-    ["day above limit", { rules: [{ ...managedSettings().rules[0], maxDifferenceDays: 366 }] }, /between 0 and 365/i],
+    ["day below zero", { rules: [{ ...managedSettings().rules[0], maxDifferenceDays: -1 }] }, /between 0 and 90/i],
+    ["day above limit", { rules: [{ ...managedSettings().rules[0], maxDifferenceDays: 91 }] }, /between 0 and 90/i],
     ["unknown rule key", { rules: [{ ...managedSettings().rules[0], ruleKey: "other" }] }, /rule key/i],
     ["unknown rule version", { rules: [{ ...managedSettings().rules[0], ruleVersion: 1 }] }, /rule version/i],
     ["definition field", { rules: [{ ...managedSettings().rules[0], definition: {} }] }, /editable managed-rule fields/i],
@@ -258,12 +259,52 @@ test("automation settings reject duplicate priorities and return copies", () => 
   assert.equal(valid.rules[0].priority, 1);
 });
 
+test("automatic reconciliation caps managed date windows at 90 days", () => {
+  assert.equal(normalizeAutomationSettingsPayload(managedSettings({
+    rules: [{ ...managedSettings().rules[0], maxDifferenceDays: 90 }],
+  })).rules[0].maxDifferenceDays, 90);
+  assert.throws(() => normalizeAutomationSettingsPayload(managedSettings({
+    rules: [{ ...managedSettings().rules[0], maxDifferenceDays: 91 }],
+  })), /between 0 and 90/i);
+});
+
 test("automation actions are restricted to their public contract", () => {
   assert.equal(normalizeAutomationAction("analyze_rule"), "analyze_rule");
   assert.equal(normalizeAutomationAction("analyze_batch"), "analyze_batch");
+  assert.equal(normalizeAutomationAction("continue_analysis"), "continue_analysis");
   assert.equal(normalizeAutomationAction("execute_selected"), "execute_selected");
   assert.throws(() => normalizeAutomationAction("start"), /automation action/i);
   assert.throws(() => normalizeAutomationAction(1), /automation action/i);
+});
+
+test("continue analysis accepts only its action and run ID", () => {
+  assert.deepEqual(normalizeContinueAnalysisPayload({
+    action: "continue_analysis",
+    runId: RUN_ID,
+  }), { action: "continue_analysis", runId: RUN_ID });
+  assert.throws(() => normalizeContinueAnalysisPayload({
+    action: "continue_analysis",
+    runId: RUN_ID,
+    pageSize: 1000,
+  }), /unsupported field/i);
+});
+
+test("automation run mapping exposes resumable analysis progress", () => {
+  assert.deepEqual(toAutomationPublicResult({
+    analysis_cursor_date: "2026-04-30",
+    analysis_cursor_id: RUN_ID,
+    analysis_processed: 25,
+    analysis_total: 876,
+    analysis_error_code: "",
+    analysis_error_at: null,
+  }), {
+    analysisCursorDate: "2026-04-30",
+    analysisCursorId: RUN_ID,
+    analysisProcessed: 25,
+    analysisTotal: 876,
+    analysisErrorCode: "",
+    analysisErrorAt: null,
+  });
 });
 
 test("analysis normalizes managed rule keys and validates request UUIDs", () => {

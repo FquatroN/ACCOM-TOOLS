@@ -3,7 +3,7 @@ const { SOURCE_TYPES, normalizeSourceType } = require("./_reconciliation");
 const AUTOMATIC_RULE_KEY = "financial_documents_cgd_bank_statement";
 const AUTOMATIC_RULE_VERSION = 2;
 const AUTOMATIC_TIME_ZONE = "Europe/Lisbon";
-const AUTOMATION_ACTIONS = new Set(["analyze_rule", "analyze_batch", "execute_selected"]);
+const AUTOMATION_ACTIONS = new Set(["analyze_rule", "analyze_batch", "continue_analysis", "execute_selected"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EDITABLE_SCHEDULE_FIELDS = new Set(["enabled", "timeOfDay", "timeZone"]);
 const EDITABLE_RULE_FIELDS = new Set([
@@ -41,6 +41,12 @@ const PUBLIC_KEY_MAP = Object.freeze({
   scheduled_slot: "scheduledSlot",
   definition_config_snapshot: "definitionConfigSnapshot",
   analysis_completed_at: "analysisCompletedAt",
+  analysis_cursor_date: "analysisCursorDate",
+  analysis_cursor_id: "analysisCursorId",
+  analysis_processed: "analysisProcessed",
+  analysis_total: "analysisTotal",
+  analysis_error_code: "analysisErrorCode",
+  analysis_error_at: "analysisErrorAt",
   started_at: "startedAt",
   finished_at: "finishedAt",
   run_id: "runId",
@@ -155,7 +161,7 @@ function normalizeManagedRule(value) {
     allowManualExecution: requireBoolean(rule.allowManualExecution, "Allow manual execution"),
     includeInScheduledBatch: requireBoolean(rule.includeInScheduledBatch, "Include in scheduled batch"),
     differenceAllowedCents: moneyToCents(rule.differenceAllowed, "Difference allowed"),
-    maxDifferenceDays: requireInteger(rule.maxDifferenceDays, "Max difference days", 0, 365),
+    maxDifferenceDays: requireInteger(rule.maxDifferenceDays, "Max difference days", 0, 90),
     priority: requireInteger(rule.priority, "Priority", 1),
   };
 }
@@ -215,6 +221,15 @@ function normalizeAnalyzePayload(value) {
   return { action, ruleKeys: normalizeRuleKeys(input.ruleKeys), clientRequestId };
 }
 
+function normalizeContinueAnalysisPayload(value) {
+  const input = requirePlainObject(value, "Continue analysis payload");
+  requireOnlyKeys(input, new Set(["action", "runId"]), "Continue analysis payload");
+  if (normalizeAutomationAction(input.action) !== "continue_analysis") {
+    throw inputError("Continue analysis action is invalid.");
+  }
+  return { action: "continue_analysis", runId: normalizeUuid(input.runId, "Run ID") };
+}
+
 function normalizeExecutePayload(value) {
   const input = requirePlainObject(value, "Execute payload");
   requireOnlyKeys(input, new Set(["action", "runId", "proposalIds"]), "Execute payload");
@@ -261,7 +276,7 @@ function normalizeRpcSettings(settings) {
       allowManualExecution: requireBoolean(input.allowManualExecution, "Allow manual execution"),
       includeInScheduledBatch: requireBoolean(input.includeInScheduledBatch, "Include in scheduled batch"),
       differenceAllowedCents: requireInteger(input.differenceAllowedCents, "Difference allowed cents", 0),
-      maxDifferenceDays: requireInteger(input.maxDifferenceDays, "Max difference days", 0, 365),
+      maxDifferenceDays: requireInteger(input.maxDifferenceDays, "Max difference days", 0, 90),
       priority: requireInteger(input.priority, "Priority", 1),
     };
     if (priorities.has(normalized.priority)) throw inputError("Duplicate rule priority.");
@@ -329,6 +344,7 @@ module.exports = {
   normalizeAnalyzePayload,
   normalizeAutomationAction,
   normalizeAutomationSettingsPayload,
+  normalizeContinueAnalysisPayload,
   normalizeExecutePayload,
   normalizeSourceType,
   toAutomationPublicResult,
