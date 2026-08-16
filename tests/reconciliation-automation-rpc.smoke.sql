@@ -1279,4 +1279,245 @@ begin
   end if;
 end $$;
 
+update public.financial_reconciliation_automatic_rule_configs
+set enabled = true,
+    allow_manual_execution = true,
+    include_in_scheduled_batch = false,
+    difference_allowed = 4.56,
+    max_difference_days = 11,
+    priority = 1,
+    updated_by = 'smoke:banco-v2'
+where rule_key = 'financial_documents_cgd_bank_statement';
+
+\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql
+\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql
+
+do $$
+begin
+  if not exists (
+    select 1 from public.financial_reconciliation_automatic_rule_definitions
+    where rule_key = 'financial_documents_cgd_bank_statement' and version = 1
+  ) or not exists (
+    select 1 from public.financial_reconciliation_automatic_rule_definitions
+    where rule_key = 'financial_documents_cgd_bank_statement'
+      and version = 2
+      and definition#>>'{baseEligibility,payment,value}' = 'Banco'
+      and (definition#>>'{baseEligibility,payment,caseSensitive}')::boolean
+      and not (definition#>>'{baseEligibility,payment,trim}')::boolean
+  ) then
+    raise exception 'Managed Banco rule versions are invalid.';
+  end if;
+
+  if not exists (
+    select 1 from public.financial_reconciliation_automatic_rule_configs
+    where rule_key = 'financial_documents_cgd_bank_statement'
+      and rule_version = 2
+      and enabled
+      and allow_manual_execution
+      and not include_in_scheduled_batch
+      and difference_allowed = 4.56
+      and max_difference_days = 11
+      and priority = 1
+      and updated_by = 'smoke:banco-v2'
+  ) then
+    raise exception 'Version 2 migration changed administrator configuration.';
+  end if;
+end $$;
+
+do $$
+declare
+  v_exact_id uuid := '41000000-0000-0000-0000-000000000201';
+  v_excluded_ids uuid[] := array[
+    '41000000-0000-0000-0000-000000000202'::uuid,
+    '41000000-0000-0000-0000-000000000203'::uuid,
+    '41000000-0000-0000-0000-000000000204'::uuid,
+    '41000000-0000-0000-0000-000000000205'::uuid
+  ];
+  v_candidate_ids uuid[];
+  v_run jsonb;
+  v_run_id uuid;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name,
+    payment, amount, fat
+  ) values
+    (v_exact_id, date '2027-01-20', 'BANCO-V2-201', '', '', 'Banco', 101.00, 'S'),
+    (v_excluded_ids[1], date '2027-01-20', 'BANCO-V2-202', '', '', 'BANCO', 102.00, 'S'),
+    (v_excluded_ids[2], date '2027-01-20', 'BANCO-V2-203', '', '', ' banco ', 103.00, 'S'),
+    (v_excluded_ids[3], date '2027-01-20', 'BANCO-V2-204', '', '', '', 104.00, 'S'),
+    (v_excluded_ids[4], date '2027-01-20', 'BANCO-V2-205', '', '', null, 105.00, 'S');
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values
+    ('42000000-0000-0000-0000-000000000201', 'smoke-banco-v2', 'banco-v2-201', date '2027-01-20', 'Payment BANCOV2201', -101.00),
+    ('42000000-0000-0000-0000-000000000202', 'smoke-banco-v2', 'banco-v2-202', date '2027-01-20', 'Payment BANCOV2202', -102.00),
+    ('42000000-0000-0000-0000-000000000203', 'smoke-banco-v2', 'banco-v2-203', date '2027-01-20', 'Payment BANCOV2203', -103.00),
+    ('42000000-0000-0000-0000-000000000204', 'smoke-banco-v2', 'banco-v2-204', date '2027-01-20', 'Payment BANCOV2204', -104.00),
+    ('42000000-0000-0000-0000-000000000205', 'smoke-banco-v2', 'banco-v2-205', date '2027-01-20', 'Payment BANCOV2205', -105.00);
+
+  select coalesce(array_agg(candidate.base_source_id order by candidate.base_source_id), '{}'::uuid[])
+  into v_candidate_ids
+  from public.financial_reconciliation_automatic_rule_candidates(
+    'financial_documents_cgd_bank_statement', 2, 4.56, 11
+  ) candidate
+  where candidate.base_source_id = v_exact_id
+     or candidate.base_source_id = any(v_excluded_ids);
+
+  if v_candidate_ids is distinct from array[v_exact_id] then
+    raise exception 'Exact Banco eligibility returned an unexpected base set: %', v_candidate_ids;
+  end if;
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_bank_statement'],
+    'manual_rule',
+    'smoke:banco-v2',
+    '43000000-0000-0000-0000-000000000201'
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals
+    where run_id = v_run_id
+      and base_source_id = v_exact_id
+      and status = 'proposed'
+  ) or exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals
+    where run_id = v_run_id
+      and base_source_id = any(v_excluded_ids)
+  ) then
+    raise exception 'Non-Banco bases created proposal or skipped rows.';
+  end if;
+end $$;
+
+do $$
+declare
+  v_drift_document_id uuid := '41000000-0000-0000-0000-000000000206';
+  v_run jsonb;
+  v_run_id uuid;
+  v_drift_proposal_id uuid;
+  v_result jsonb;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name,
+    payment, amount, fat
+  ) values (
+    v_drift_document_id, date '2027-02-20', 'BANCO-V2-206', '', '',
+    'Banco', 106.00, 'S'
+  );
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    '42000000-0000-0000-0000-000000000206',
+    'smoke-banco-v2', 'banco-v2-206', date '2027-02-20',
+    'Payment BANCOV2206', -106.00
+  );
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_bank_statement'],
+    'manual_rule',
+    'smoke:banco-drift',
+    '43000000-0000-0000-0000-000000000206'
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  select id into strict v_drift_proposal_id
+  from public.financial_reconciliation_automatic_proposals
+  where run_id = v_run_id
+    and base_source_id = v_drift_document_id
+    and status = 'proposed';
+
+  update public.financial_documents
+  set payment = 'BANCO'
+  where id = v_drift_document_id;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_drift_proposal_id,
+    'smoke:banco-drift'
+  );
+
+  if v_result->>'status' <> 'stale'
+    or v_result->>'reason' <> 'source_snapshot_changed'
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals
+      where id = v_drift_proposal_id and reconciliation_id is not null
+    ) then
+    raise exception 'Payment drift created an automatic reconciliation.';
+  end if;
+end $$;
+
+do $$
+declare
+  v_version_one_run_id uuid;
+  v_version_one_proposal_id uuid;
+  v_result jsonb;
+begin
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, client_request_id
+  ) values (
+    'manual', 'rule', 'smoke:legacy-version',
+    '43000000-0000-0000-0000-000000000207'
+  ) returning id into v_version_one_run_id;
+
+  insert into public.financial_reconciliation_automatic_proposals (
+    run_id, rule_key, rule_version, base_source_type,
+    base_source_id, base_source_date, allowed_difference, status, signature
+  ) values (
+    v_version_one_run_id,
+    'financial_documents_cgd_bank_statement',
+    1,
+    'financial_documents',
+    '41000000-0000-0000-0000-000000000201',
+    date '2027-01-20',
+    4.56,
+    'proposed',
+    'smoke-banco-v1-pending'
+  ) returning id into v_version_one_proposal_id;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_version_one_proposal_id,
+    'smoke:legacy-version'
+  );
+
+  if v_result->>'status' <> 'stale'
+    or v_result->>'reason' <> 'rule_version_changed' then
+    raise exception 'Pending version 1 proposal did not become stale.';
+  end if;
+end $$;
+
+do $$
+declare
+  v_candidate_definition text;
+  v_signature text;
+begin
+  select pg_get_functiondef(
+    'public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)'::regprocedure
+  ) into strict v_candidate_definition;
+
+  if v_candidate_definition !~* 'left join lateral\s+\('
+    or v_candidate_definition ~* 'bank_rows\s+as\s+materialized'
+    or v_candidate_definition !~* 'd\.payment\s*=\s*''Banco'''
+    or v_candidate_definition !~* 'p_rule_version\s*=\s*2' then
+    raise exception 'Version 2 candidate function lost indexed Banco semantics.';
+  end if;
+
+  foreach v_signature in array array[
+    'public.financial_reconciliation_automatic_rule_candidates(text,integer,numeric,integer)',
+    'public.execute_financial_reconciliation_automatic_proposal(uuid,text)'
+  ] loop
+    if not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[]) @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    )
+      or has_function_privilege('anon', v_signature, 'EXECUTE')
+      or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+      or not has_function_privilege('service_role', v_signature, 'EXECUTE') then
+      raise exception 'Automatic reconciliation function security changed for %.', v_signature;
+    end if;
+  end loop;
+end $$;
+
 rollback;

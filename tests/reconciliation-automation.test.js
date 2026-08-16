@@ -196,7 +196,7 @@ test("automation settings accept only editable managed-rule fields", () => {
     schedule: { enabled: true, timeOfDay: "02:15", timeZone: "Europe/Lisbon" },
     rules: [{
       ruleKey: AUTOMATIC_RULE_KEY,
-      ruleVersion: 1,
+      ruleVersion: 2,
       enabled: true,
       allowManualExecution: true,
       includeInScheduledBatch: false,
@@ -205,6 +205,17 @@ test("automation settings accept only editable managed-rule fields", () => {
       priority: 1,
     }],
   });
+});
+
+test("automation accepts current version 2 settings and rejects legacy version 1 edits", () => {
+  assert.equal(normalizeAutomationSettingsPayload(managedSettings()).rules[0].ruleVersion, 2);
+  assert.throws(
+    () => normalizeAutomationSettingsPayload({
+      ...managedSettings(),
+      rules: [{ ...managedSettings().rules[0], ruleVersion: 1 }],
+    }),
+    /rule version/i,
+  );
 });
 
 test("automation settings reject invalid managed schedule and editable rule values", () => {
@@ -216,7 +227,7 @@ test("automation settings reject invalid managed schedule and editable rule valu
     ["day below zero", { rules: [{ ...managedSettings().rules[0], maxDifferenceDays: -1 }] }, /between 0 and 365/i],
     ["day above limit", { rules: [{ ...managedSettings().rules[0], maxDifferenceDays: 366 }] }, /between 0 and 365/i],
     ["unknown rule key", { rules: [{ ...managedSettings().rules[0], ruleKey: "other" }] }, /rule key/i],
-    ["unknown rule version", { rules: [{ ...managedSettings().rules[0], ruleVersion: 2 }] }, /rule version/i],
+    ["unknown rule version", { rules: [{ ...managedSettings().rules[0], ruleVersion: 1 }] }, /rule version/i],
     ["definition field", { rules: [{ ...managedSettings().rules[0], definition: {} }] }, /editable managed-rule fields/i],
     ["threshold field", { rules: [{ ...managedSettings().rules[0], thresholds: {} }] }, /editable managed-rule fields/i],
     ["unsupported top-level field", { unexpected: true }, /unsupported field/i],
@@ -309,7 +320,7 @@ test("settings RPC payload uses only managed snake-case fields and integer cents
     p_schedule: { enabled: true, time_of_day: "02:15", time_zone: "Europe/Lisbon" },
     p_rules: [{
       rule_key: AUTOMATIC_RULE_KEY,
-      rule_version: 1,
+      rule_version: 2,
       enabled: true,
       allow_manual_execution: true,
       include_in_scheduled_batch: false,
@@ -1201,7 +1212,7 @@ test("automation settings GET authorizes and calls only the settings RPC", async
       calls.push({ resource, options });
       return {
         schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
-        rules: [{ rule_key: AUTOMATIC_RULE_KEY, rule_version: 1, diagnostic: "hidden" }],
+        rules: [{ rule_key: AUTOMATIC_RULE_KEY, rule_version: 2, diagnostic: "hidden" }],
       };
     },
   }), async (handler) => {
@@ -1216,7 +1227,7 @@ test("automation settings GET authorizes and calls only the settings RPC", async
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, {
     schedule: { enabled: true, timeOfDay: "02:15", timeZone: AUTOMATIC_TIME_ZONE },
-    rules: [{ ruleKey: AUTOMATIC_RULE_KEY, ruleVersion: 1 }],
+    rules: [{ ruleKey: AUTOMATIC_RULE_KEY, ruleVersion: 2 }],
   });
 });
 
@@ -1244,7 +1255,7 @@ test("automation settings PUT normalizes the complete payload and actor into one
         p_schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
         p_rules: [{
           rule_key: AUTOMATIC_RULE_KEY,
-          rule_version: 1,
+          rule_version: 2,
           enabled: true,
           allow_manual_execution: true,
           include_in_scheduled_batch: false,
@@ -1322,7 +1333,7 @@ test("manual automation GET exposes only the app-authorized enabled manual rule 
       return {
         rules: [{
           rule_key: AUTOMATIC_RULE_KEY,
-          rule_version: 1,
+          rule_version: 2,
           display_name: "Financial Documents to CGD Bank Statement",
           enabled: true,
           allow_manual_execution: true,
@@ -1345,7 +1356,7 @@ test("manual automation GET exposes only the app-authorized enabled manual rule 
   assert.deepEqual(response.body, {
     rules: [{
       ruleKey: AUTOMATIC_RULE_KEY,
-      ruleVersion: 1,
+      ruleVersion: 2,
       displayName: "Financial Documents to CGD Bank Statement",
       enabled: true,
       allowManualExecution: true,

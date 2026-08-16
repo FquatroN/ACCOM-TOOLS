@@ -1,7 +1,7 @@
 const { SOURCE_TYPES, normalizeSourceType } = require("./_reconciliation");
 
 const AUTOMATIC_RULE_KEY = "financial_documents_cgd_bank_statement";
-const AUTOMATIC_RULE_VERSION = 1;
+const AUTOMATIC_RULE_VERSION = 2;
 const AUTOMATIC_TIME_ZONE = "Europe/Lisbon";
 const AUTOMATION_ACTIONS = new Set(["analyze_rule", "analyze_batch", "execute_selected"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
