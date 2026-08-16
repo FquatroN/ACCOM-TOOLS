@@ -2581,6 +2581,108 @@ test("automatic proposal execution dispatches explicit managed adapters and reta
   }
 });
 
+test("scheduled automation snapshots deterministic parent batches and advances one rule child at a time", () => {
+  const sql = fs.readFileSync(CREDIT_CARD_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const functionSource = (functionName) => {
+    const match = sql.match(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "i",
+    ));
+    assert.ok(match, `${functionName} replacement must exist in the credit-card migration`);
+    return match[0];
+  };
+
+  assert.match(sql,
+    /create table if not exists public\.financial_reconciliation_automatic_batches[\s\S]*scheduled_slot text not null[\s\S]*rule_snapshot jsonb not null[\s\S]*unique \(scheduled_slot\)/i);
+  for (const column of ["batch_id", "batch_rule_key", "batch_rule_position", "batch_rule_count"]) {
+    assert.match(sql, new RegExp(`add column if not exists ${column}`, "i"), column);
+  }
+  assert.match(sql, /drop index if exists public\.financial_reconciliation_automatic_runs_scheduled_slot_uidx/i);
+  assert.match(sql,
+    /create unique index if not exists financial_reconciliation_automatic_runs_legacy_scheduled_slot_uidx[\s\S]*where scheduled_slot is not null and batch_id is null/i);
+  assert.match(sql,
+    /create unique index if not exists financial_reconciliation_automatic_runs_batch_position_uidx[\s\S]*\(batch_id, batch_rule_position\)/i);
+  assert.match(sql,
+    /create unique index if not exists financial_reconciliation_automatic_runs_batch_rule_uidx[\s\S]*\(batch_id, batch_rule_key\)/i);
+  assert.match(sql,
+    /trigger = 'scheduled'\s+and scope = 'rule'[\s\S]*batch_id is not null[\s\S]*batch_rule_key is not null/i);
+  assert.match(sql,
+    /trigger = 'scheduled'\s+and scope = 'batch'[\s\S]*batch_id is not null/i);
+  assert.match(sql,
+    /Analysis must be restarted after the 90-day performance upgrade\.[\s\S]*analysis_upgrade_restart_required/i);
+
+  const refreshSource = functionSource("financial_reconciliation_refresh_automatic_batch");
+  assert.match(refreshSource, /for update/i);
+  assert.match(refreshSource, /jsonb_array_length\(v_batch\.rule_snapshot\)/i);
+  assert.match(refreshSource, /count\(\*\) filter \(where run\.status = 'completed'\)/i);
+  assert.match(refreshSource, /then 'failed'[\s\S]*then 'partial'[\s\S]*else 'completed'/i);
+  assert.doesNotMatch(refreshSource, /error_summary|error_detail/i);
+
+  const claimSource = functionSource("claim_financial_reconciliation_automatic_schedule");
+  assert.match(claimSource,
+    /jsonb_agg\(jsonb_build_object\([\s\S]*'destinationSourceType', destination\.source_type[\s\S]*order by config\.priority, config\.rule_key/i);
+  assert.match(claimSource,
+    /jsonb_array_elements\(v_batch\.rule_snapshot\)\s+with ordinality/i);
+  assert.match(claimSource,
+    /from public\.financial_reconciliation_automatic_batches batch[\s\S]*for update/i);
+  assert.match(claimSource,
+    /run\.batch_id = v_batch\.id[\s\S]*run\.finished_at is null[\s\S]*order by run\.batch_rule_position/i);
+  assert.match(claimSource,
+    /'scheduled', 'rule'[\s\S]*jsonb_build_array\(v_selected_rule\)[\s\S]*financial_reconciliation_automatic_base_count/i);
+  assert.match(claimSource, /'reason', 'batch_complete'/i);
+  assert.doesNotMatch(claimSource,
+    /v_enabled_rule_count\s*<>\s*1|matching_source_type\s*=\s*'import_cgd_extrato_ordem'|payment\s*=\s*'Banco'/i);
+  assert.doesNotMatch(claimSource, /\bexecute\b|\bformat\s*\(/i,
+    "scheduled claiming must not use dynamic SQL dispatch");
+
+  for (const serializer of [
+    "get_financial_reconciliation_automatic_run",
+    "financial_reconciliation_automatic_progress_or_run",
+  ]) {
+    const source = functionSource(serializer);
+    for (const field of ["batchId", "batchRuleKey", "batchRulePosition", "batchRuleCount"]) {
+      assert.match(source, new RegExp(`'${field}'`), `${serializer} ${field}`);
+    }
+  }
+
+  const settingsSource = functionSource("get_financial_reconciliation_automation_settings");
+  assert.match(settingsSource, /'last_scheduled_batch', v_last_scheduled_batch/i);
+  assert.match(settingsSource, /from public\.financial_reconciliation_automatic_batches/i);
+  assert.doesNotMatch(settingsSource, /error_summary|error_detail/i);
+  assert.match(sql,
+    /create trigger financial_reconciliation_refresh_automatic_batch_trigger[\s\S]*execute function public\.financial_reconciliation_refresh_automatic_batch_from_run\(\)/i);
+  assert.match(sql,
+    /alter table public\.financial_reconciliation_automatic_batches enable row level security[\s\S]*revoke all on table public\.financial_reconciliation_automatic_batches[\s\S]*from public, anon, authenticated, service_role/i);
+  assert.match(sql,
+    /revoke all on function public\.financial_reconciliation_refresh_automatic_batch\(uuid\)[\s\S]*grant execute on function public\.financial_reconciliation_refresh_automatic_batch\(uuid\)[\s\S]*to service_role/i);
+  for (const signature of [
+    "claim_financial_reconciliation_automatic_schedule\\(timestamptz,text\\)",
+    "get_financial_reconciliation_automatic_run\\(uuid\\)",
+    "financial_reconciliation_automatic_progress_or_run\\(uuid\\)",
+    "get_financial_reconciliation_automation_settings\\(\\)",
+  ]) {
+    assert.match(sql,
+      new RegExp(`revoke all on function public\\.${signature}[\\s\\S]*from public, anon, authenticated, service_role`, "i"));
+    assert.match(sql,
+      new RegExp(`grant execute on function public\\.${signature}[\\s\\S]*to service_role`, "i"));
+  }
+
+  for (const contract of [
+    "scheduled parent batch schema security and legacy backfill",
+    "scheduled batch snapshots all rules in deterministic priority order",
+    "scheduled child resumes before the next rule starts",
+    "scheduled snapshot survives settings changes and tomorrow uses new settings",
+    "failed scheduled child advances and aggregate batch becomes partial",
+    "equal scheduled priorities use the rule-key tie-breaker while Settings rejects duplicates",
+    "scheduled retries and cross-midnight heartbeats are idempotent",
+    "completed scheduled batch returns stable no-work state",
+    "historical scheduled runs remain readable and cannot execute again",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
+});
+
 test("release documentation and SQL smokes pin the complete 90-day migration order", () => {
   const migrationNames = [
     "2026-08-14-financial-reconciliation-automation-schema.sql",

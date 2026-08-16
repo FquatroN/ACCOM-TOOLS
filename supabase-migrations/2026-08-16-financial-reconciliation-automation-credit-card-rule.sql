@@ -1840,6 +1840,750 @@ begin
 end
 $$;
 
+create table if not exists public.financial_reconciliation_automatic_batches (
+  id uuid primary key default gen_random_uuid(),
+  scheduled_slot text not null check (scheduled_slot ~ '^\d{4}-\d{2}-\d{2}$'),
+  actor text not null,
+  status text not null check (status in ('pending','running','completed','partial','failed')),
+  rule_snapshot jsonb not null check (jsonb_typeof(rule_snapshot) = 'array'),
+  counts jsonb not null default '{}'::jsonb check (jsonb_typeof(counts) = 'object'),
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  updated_at timestamptz not null default now(),
+  unique (scheduled_slot)
+);
+
+alter table public.financial_reconciliation_automatic_runs
+  add column if not exists batch_id uuid,
+  add column if not exists batch_rule_key text,
+  add column if not exists batch_rule_position integer,
+  add column if not exists batch_rule_count integer;
+
+do $migration$
+begin
+  if not exists (
+    select 1
+    from pg_constraint constraint_row
+    where constraint_row.conrelid = 'public.financial_reconciliation_automatic_runs'::regclass
+      and constraint_row.conname = 'financial_reconciliation_automatic_runs_batch_id_fkey'
+  ) then
+    alter table public.financial_reconciliation_automatic_runs
+      add constraint financial_reconciliation_automatic_runs_batch_id_fkey
+      foreign key (batch_id)
+      references public.financial_reconciliation_automatic_batches(id);
+  end if;
+  if not exists (
+    select 1
+    from pg_constraint constraint_row
+    where constraint_row.conrelid = 'public.financial_reconciliation_automatic_runs'::regclass
+      and constraint_row.conname = 'financial_reconciliation_automatic_runs_batch_rule_position_check'
+  ) then
+    alter table public.financial_reconciliation_automatic_runs
+      add constraint financial_reconciliation_automatic_runs_batch_rule_position_check
+      check (batch_rule_position is null or batch_rule_position > 0);
+  end if;
+  if not exists (
+    select 1
+    from pg_constraint constraint_row
+    where constraint_row.conrelid = 'public.financial_reconciliation_automatic_runs'::regclass
+      and constraint_row.conname = 'financial_reconciliation_automatic_runs_batch_rule_count_check'
+  ) then
+    alter table public.financial_reconciliation_automatic_runs
+      add constraint financial_reconciliation_automatic_runs_batch_rule_count_check
+      check (batch_rule_count is null or batch_rule_count > 0);
+  end if;
+end
+$migration$;
+
+update public.financial_reconciliation_automatic_runs run
+set status = 'failed',
+    error_summary = 'Analysis must be restarted after the 90-day performance upgrade.',
+    analysis_error_code = 'analysis_upgrade_restart_required',
+    analysis_error_at = now(),
+    finished_at = now(),
+    updated_at = now()
+where run.trigger = 'scheduled'
+  and run.batch_id is null
+  and run.finished_at is null;
+
+insert into public.financial_reconciliation_automatic_batches (
+  scheduled_slot, actor, status, rule_snapshot, counts,
+  started_at, finished_at, updated_at
+)
+select
+  run.scheduled_slot,
+  run.actor,
+  case
+    when run.status = 'completed' then 'completed'
+    when run.status = 'partial' then 'partial'
+    else 'failed'
+  end,
+  run.definition_config_snapshot,
+  run.counts,
+  run.started_at,
+  coalesce(run.finished_at, now()),
+  run.updated_at
+from public.financial_reconciliation_automatic_runs run
+where run.trigger = 'scheduled'
+  and run.scheduled_slot is not null
+  and run.batch_id is null
+on conflict (scheduled_slot) do nothing;
+
+update public.financial_reconciliation_automatic_runs run
+set batch_id = batch.id
+from public.financial_reconciliation_automatic_batches batch
+where run.trigger = 'scheduled'
+  and run.scheduled_slot = batch.scheduled_slot
+  and run.batch_id is null;
+
+do $migration$
+declare
+  v_constraint record;
+begin
+  for v_constraint in
+    select constraint_row.conname
+    from pg_constraint constraint_row
+    where constraint_row.conrelid = 'public.financial_reconciliation_automatic_runs'::regclass
+      and constraint_row.contype = 'c'
+      and pg_get_constraintdef(constraint_row.oid) ilike '%client_request_id%'
+      and pg_get_constraintdef(constraint_row.oid) ilike '%scheduled_slot%'
+      and pg_get_constraintdef(constraint_row.oid) ilike '%trigger%'
+  loop
+    execute format(
+      'alter table public.financial_reconciliation_automatic_runs drop constraint %I',
+      v_constraint.conname
+    );
+  end loop;
+
+  alter table public.financial_reconciliation_automatic_runs
+    add constraint financial_reconciliation_automatic_runs_origin_check check (
+      (
+        trigger = 'manual'
+        and client_request_id is not null
+        and scheduled_slot is null
+        and batch_id is null
+        and batch_rule_key is null
+        and batch_rule_position is null
+        and batch_rule_count is null
+      )
+      or
+      (
+        trigger = 'scheduled'
+        and scope = 'batch'
+        and client_request_id is null
+        and scheduled_slot is not null
+        and batch_id is not null
+        and batch_rule_key is null
+        and batch_rule_position is null
+        and batch_rule_count is null
+      )
+      or
+      (
+        trigger = 'scheduled'
+        and scope = 'rule'
+        and client_request_id is null
+        and scheduled_slot is not null
+        and batch_id is not null
+        and batch_rule_key is not null
+        and batch_rule_position is not null
+        and batch_rule_count is not null
+        and batch_rule_position <= batch_rule_count
+        and jsonb_array_length(definition_config_snapshot) = 1
+        and definition_config_snapshot->0->>'ruleKey' = batch_rule_key
+      )
+    ) not valid;
+end
+$migration$;
+
+alter table public.financial_reconciliation_automatic_runs
+  validate constraint financial_reconciliation_automatic_runs_origin_check;
+
+drop index if exists public.financial_reconciliation_automatic_runs_scheduled_slot_uidx;
+create unique index if not exists financial_reconciliation_automatic_runs_legacy_scheduled_slot_uidx
+  on public.financial_reconciliation_automatic_runs (scheduled_slot)
+  where scheduled_slot is not null and batch_id is null;
+create unique index if not exists financial_reconciliation_automatic_runs_batch_position_uidx
+  on public.financial_reconciliation_automatic_runs (batch_id, batch_rule_position)
+  where batch_id is not null and batch_rule_position is not null;
+create unique index if not exists financial_reconciliation_automatic_runs_batch_rule_uidx
+  on public.financial_reconciliation_automatic_runs (batch_id, batch_rule_key)
+  where batch_id is not null and batch_rule_key is not null;
+
+create or replace function public.get_financial_reconciliation_automatic_run(p_run_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_proposals jsonb;
+begin
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs
+  where id = p_run_id;
+  if not found then raise exception 'Automatic analysis run was not found.'; end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', proposal.id,
+    'runId', proposal.run_id,
+    'ruleKey', proposal.rule_key,
+    'ruleVersion', proposal.rule_version,
+    'baseSourceType', proposal.base_source_type,
+    'baseSourceId', proposal.base_source_id,
+    'baseSourceDate', proposal.base_source_date,
+    'baseSnapshot', proposal.base_snapshot,
+    'items', proposal.items,
+    'evidence', proposal.evidence,
+    'candidateGroups', proposal.candidate_groups,
+    'calculatedDifference', proposal.calculated_difference,
+    'allowedDifference', proposal.allowed_difference,
+    'status', proposal.status,
+    'reason', proposal.reason,
+    'signature', proposal.signature,
+    'reconciliationId', proposal.reconciliation_id,
+    'createdAt', proposal.created_at,
+    'updatedAt', proposal.updated_at
+  ) order by proposal.base_source_date, proposal.base_source_id, proposal.signature), '[]'::jsonb)
+  into v_proposals
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_run.id;
+
+  return jsonb_build_object(
+    'runId', v_run.id,
+    'trigger', v_run.trigger,
+    'scope', v_run.scope,
+    'status', v_run.status,
+    'actor', v_run.actor,
+    'clientRequestId', v_run.client_request_id,
+    'scheduledSlot', v_run.scheduled_slot,
+    'batchId', v_run.batch_id,
+    'batchRuleKey', v_run.batch_rule_key,
+    'batchRulePosition', v_run.batch_rule_position,
+    'batchRuleCount', v_run.batch_rule_count,
+    'definitions', v_run.definition_config_snapshot,
+    'counts', v_run.counts,
+    'analysisCursorDate', v_run.analysis_cursor_date,
+    'analysisCursorId', v_run.analysis_cursor_id,
+    'analysisProcessed', v_run.analysis_processed,
+    'analysisTotal', v_run.analysis_total,
+    'analysisErrorCode', v_run.analysis_error_code,
+    'analysisErrorAt', v_run.analysis_error_at,
+    'analysisComplete', v_run.analysis_completed_at is not null,
+    'analysisCompletedAt', v_run.analysis_completed_at,
+    'startedAt', v_run.started_at,
+    'finishedAt', v_run.finished_at,
+    'proposals', v_proposals
+  );
+end
+$$;
+
+create or replace function public.financial_reconciliation_automatic_progress_or_run(p_run_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+begin
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs
+  where id = p_run_id;
+  if not found then raise exception 'Automatic analysis run was not found.'; end if;
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+
+  return jsonb_build_object(
+    'runId', v_run.id,
+    'trigger', v_run.trigger,
+    'scope', v_run.scope,
+    'status', v_run.status,
+    'actor', v_run.actor,
+    'clientRequestId', v_run.client_request_id,
+    'scheduledSlot', v_run.scheduled_slot,
+    'batchId', v_run.batch_id,
+    'batchRuleKey', v_run.batch_rule_key,
+    'batchRulePosition', v_run.batch_rule_position,
+    'batchRuleCount', v_run.batch_rule_count,
+    'definitions', v_run.definition_config_snapshot,
+    'counts', v_run.counts,
+    'analysisCursorDate', v_run.analysis_cursor_date,
+    'analysisCursorId', v_run.analysis_cursor_id,
+    'analysisProcessed', v_run.analysis_processed,
+    'analysisTotal', v_run.analysis_total,
+    'analysisErrorCode', v_run.analysis_error_code,
+    'analysisErrorAt', v_run.analysis_error_at,
+    'analysisComplete', false,
+    'analysisCompletedAt', null,
+    'startedAt', v_run.started_at,
+    'finishedAt', v_run.finished_at,
+    'proposals', '[]'::jsonb
+  );
+end
+$$;
+
+create or replace function public.financial_reconciliation_refresh_automatic_batch(p_batch_id uuid)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_batch public.financial_reconciliation_automatic_batches%rowtype;
+  v_rule_count integer;
+  v_child_count integer;
+  v_completed_children integer;
+  v_partial_children integer;
+  v_failed_children integer;
+  v_unfinished_children integer;
+  v_counts jsonb;
+  v_status text;
+begin
+  if p_batch_id is null then
+    raise exception 'Automatic batch ID is required.';
+  end if;
+  select * into v_batch
+  from public.financial_reconciliation_automatic_batches
+  where id = p_batch_id
+  for update;
+  if not found then
+    raise exception 'Automatic scheduled batch was not found.';
+  end if;
+
+  v_rule_count := jsonb_array_length(v_batch.rule_snapshot);
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_runs run
+    where run.batch_id = v_batch.id
+      and run.scope = 'batch'
+  ) then
+    return jsonb_build_object(
+      'id', v_batch.id,
+      'scheduledSlot', v_batch.scheduled_slot,
+      'actor', v_batch.actor,
+      'status', v_batch.status,
+      'ruleCount', v_rule_count,
+      'childCount', 0,
+      'counts', v_batch.counts,
+      'startedAt', v_batch.started_at,
+      'finishedAt', v_batch.finished_at,
+      'updatedAt', v_batch.updated_at
+    );
+  end if;
+
+  select
+    count(*)::integer,
+    count(*) filter (where run.status = 'completed')::integer,
+    count(*) filter (where run.status = 'partial')::integer,
+    count(*) filter (where run.status = 'failed')::integer,
+    count(*) filter (
+      where run.status not in ('completed', 'partial', 'failed')
+    )::integer,
+    jsonb_build_object(
+      'ruleCount', v_rule_count,
+      'childCount', count(*),
+      'completedChildren', count(*) filter (where run.status = 'completed'),
+      'partialChildren', count(*) filter (where run.status = 'partial'),
+      'failedChildren', count(*) filter (where run.status = 'failed'),
+      'unfinishedChildren', count(*) filter (
+        where run.status not in ('completed', 'partial', 'failed')
+      ),
+      'bases', coalesce(sum(coalesce((run.counts->>'bases')::bigint, 0)), 0),
+      'proposed', coalesce(sum(coalesce((run.counts->>'proposed')::bigint, 0)), 0),
+      'ambiguous', coalesce(sum(coalesce((run.counts->>'ambiguous')::bigint, 0)), 0),
+      'skipped', coalesce(sum(coalesce((run.counts->>'skipped')::bigint, 0)), 0),
+      'deselected', coalesce(sum(coalesce((run.counts->>'deselected')::bigint, 0)), 0),
+      'completed', coalesce(sum(coalesce((run.counts->>'completed')::bigint, 0)), 0),
+      'stale', coalesce(sum(coalesce((run.counts->>'stale')::bigint, 0)), 0),
+      'failed', coalesce(sum(coalesce((run.counts->>'failed')::bigint, 0)), 0)
+    )
+  into
+    v_child_count,
+    v_completed_children,
+    v_partial_children,
+    v_failed_children,
+    v_unfinished_children,
+    v_counts
+  from public.financial_reconciliation_automatic_runs run
+  where run.batch_id = v_batch.id
+    and run.scope = 'rule';
+
+  v_status := case
+    when v_child_count = 0 then 'pending'
+    when v_child_count < v_rule_count or v_unfinished_children > 0 then 'running'
+    when v_failed_children = v_child_count then 'failed'
+    when v_failed_children > 0 or v_partial_children > 0 then 'partial'
+    else 'completed'
+  end;
+
+  update public.financial_reconciliation_automatic_batches batch
+  set status = v_status,
+      counts = v_counts,
+      finished_at = case
+        when v_status in ('completed', 'partial', 'failed')
+          then coalesce(batch.finished_at, now())
+        else null
+      end,
+      updated_at = now()
+  where batch.id = v_batch.id
+  returning * into v_batch;
+
+  return jsonb_build_object(
+    'id', v_batch.id,
+    'scheduledSlot', v_batch.scheduled_slot,
+    'actor', v_batch.actor,
+    'status', v_batch.status,
+    'ruleCount', v_rule_count,
+    'childCount', v_child_count,
+    'counts', v_batch.counts,
+    'startedAt', v_batch.started_at,
+    'finishedAt', v_batch.finished_at,
+    'updatedAt', v_batch.updated_at
+  );
+end
+$$;
+
+create or replace function public.financial_reconciliation_refresh_automatic_batch_from_run()
+returns trigger
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+begin
+  if new.batch_id is not null and new.scope = 'rule' then
+    perform public.financial_reconciliation_refresh_automatic_batch(new.batch_id);
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists financial_reconciliation_refresh_automatic_batch_trigger
+  on public.financial_reconciliation_automatic_runs;
+create trigger financial_reconciliation_refresh_automatic_batch_trigger
+after insert or update of status, finished_at, counts, batch_id
+on public.financial_reconciliation_automatic_runs
+for each row execute function public.financial_reconciliation_refresh_automatic_batch_from_run();
+
+create or replace function public.claim_financial_reconciliation_automatic_schedule(
+  p_now timestamptz,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_schedule public.financial_reconciliation_automatic_schedule%rowtype;
+  v_batch public.financial_reconciliation_automatic_batches%rowtype;
+  v_local timestamp;
+  v_slot text;
+  v_snapshot jsonb;
+  v_enabled_rule_count integer;
+  v_batch_rule_count integer;
+  v_selected_rule jsonb;
+  v_selected_position integer;
+  v_selected_rule_key text;
+  v_selected_rule_version integer;
+  v_contract jsonb;
+  v_run_id uuid;
+begin
+  if p_now is null then raise exception 'Schedule time is required.'; end if;
+  if nullif(trim(coalesce(p_actor, '')), '') is null then raise exception 'Actor is required.'; end if;
+
+  lock table public.financial_reconciliation_source_rules in share row exclusive mode;
+  lock table public.financial_reconciliation_automatic_rule_configs in share row exclusive mode;
+  select * into strict v_schedule
+  from public.financial_reconciliation_automatic_schedule
+  where id = true
+  for update;
+  if not v_schedule.enabled then
+    return jsonb_build_object('claimed', false, 'reason', 'schedule_disabled');
+  end if;
+
+  v_local := p_now at time zone v_schedule.time_zone;
+  v_slot := to_char(v_local::date, 'YYYY-MM-DD');
+
+  select * into v_batch
+  from public.financial_reconciliation_automatic_batches batch
+  where batch.status in ('pending', 'running')
+  order by batch.scheduled_slot, batch.started_at, batch.id
+  for update
+  limit 1;
+
+  if not found then
+    if v_local::time < v_schedule.time_of_day then
+      return jsonb_build_object('claimed', false, 'reason', 'before_scheduled_time');
+    end if;
+
+    select * into v_batch
+    from public.financial_reconciliation_automatic_batches batch
+    where batch.scheduled_slot = v_slot
+    for update;
+
+    if not found then
+      select count(*)::integer into v_enabled_rule_count
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.enabled
+        and config.include_in_scheduled_batch;
+      if v_enabled_rule_count = 0 then
+        return jsonb_build_object('claimed', false, 'reason', 'no_enabled_rules');
+      end if;
+
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'ruleKey', config.rule_key,
+        'ruleVersion', config.rule_version,
+        'displayName', definition.display_name,
+        'priority', config.priority,
+        'differenceAllowed', config.difference_allowed,
+        'maxDifferenceDays', config.max_difference_days,
+        'destinationSourceType', destination.source_type,
+        'definition', definition.definition,
+        'operator', source_rule.operator
+      ) order by config.priority, config.rule_key), '[]'::jsonb)
+      into v_snapshot
+      from public.financial_reconciliation_automatic_rule_configs config
+      join public.financial_reconciliation_automatic_rule_definitions definition
+        on definition.rule_key = config.rule_key
+       and definition.version = config.rule_version
+      cross join lateral jsonb_array_elements_text(
+        definition.destination_source_types
+      ) destination(source_type)
+      cross join lateral (
+        select public.financial_reconciliation_automatic_rule_contract(
+          config.rule_key, config.rule_version
+        ) as value
+      ) contract
+      join public.financial_reconciliation_source_rules source_rule
+        on source_rule.base_source_type = definition.base_source_type
+       and source_rule.matching_source_type = destination.source_type
+      where config.enabled
+        and config.include_in_scheduled_batch
+        and config.max_difference_days between 0 and 90
+        and jsonb_array_length(definition.destination_source_types) = 1
+        and contract.value is not null
+        and contract.value->>'destinationSourceType' = destination.source_type
+        and source_rule.operator in ('+', '-');
+
+      if jsonb_array_length(v_snapshot) <> v_enabled_rule_count then
+        return jsonb_build_object('claimed', false, 'reason', 'unsupported_rule_set');
+      end if;
+
+      insert into public.financial_reconciliation_automatic_batches (
+        scheduled_slot, actor, status, rule_snapshot
+      ) values (
+        v_slot, trim(p_actor), 'pending', v_snapshot
+      )
+      on conflict (scheduled_slot) do nothing
+      returning * into v_batch;
+      if not found then
+        select * into strict v_batch
+        from public.financial_reconciliation_automatic_batches batch
+        where batch.scheduled_slot = v_slot
+        for update;
+      end if;
+    end if;
+  end if;
+
+  perform public.financial_reconciliation_refresh_automatic_batch(v_batch.id);
+  select * into strict v_batch
+  from public.financial_reconciliation_automatic_batches batch
+  where batch.id = v_batch.id
+  for update;
+  if v_batch.status in ('completed', 'partial', 'failed') then
+    return jsonb_build_object(
+      'claimed', false,
+      'reason', 'batch_complete',
+      'batchId', v_batch.id
+    );
+  end if;
+
+  v_batch_rule_count := jsonb_array_length(v_batch.rule_snapshot);
+  select run.id into v_run_id
+  from public.financial_reconciliation_automatic_runs run
+  where run.batch_id = v_batch.id
+    and run.scope = 'rule'
+    and run.status in ('analyzing', 'ready', 'running')
+    and run.finished_at is null
+  order by run.batch_rule_position, run.started_at, run.id
+  limit 1;
+  if found then
+    return jsonb_build_object(
+      'claimed', true,
+      'resumed', true,
+      'batchId', v_batch.id,
+      'batchRulePosition', (
+        select run.batch_rule_position
+        from public.financial_reconciliation_automatic_runs run
+        where run.id = v_run_id
+      ),
+      'batchRuleCount', v_batch_rule_count,
+      'run', public.financial_reconciliation_automatic_progress_or_run(v_run_id)
+    );
+  end if;
+
+  select snapshot.value, snapshot.ordinality::integer
+  into v_selected_rule, v_selected_position
+  from jsonb_array_elements(v_batch.rule_snapshot)
+    with ordinality snapshot(value, ordinality)
+  where not exists (
+    select 1
+    from public.financial_reconciliation_automatic_runs run
+    where run.batch_id = v_batch.id
+      and run.batch_rule_position = snapshot.ordinality::integer
+  )
+  order by snapshot.ordinality
+  limit 1;
+
+  if not found then
+    perform public.financial_reconciliation_refresh_automatic_batch(v_batch.id);
+    select * into strict v_batch
+    from public.financial_reconciliation_automatic_batches batch
+    where batch.id = v_batch.id
+    for update;
+    if v_batch.status in ('completed', 'partial', 'failed') then
+      return jsonb_build_object(
+        'claimed', false,
+        'reason', 'batch_complete',
+        'batchId', v_batch.id
+      );
+    end if;
+    raise exception 'Automatic scheduled batch has no resumable rule.';
+  end if;
+
+  if jsonb_typeof(v_selected_rule) <> 'object'
+    or coalesce(v_selected_rule->>'ruleVersion', '') !~ '^[0-9]+$'
+    or coalesce(v_selected_rule->>'priority', '') !~ '^[0-9]+$'
+    or coalesce(v_selected_rule->>'differenceAllowed', '') !~ '^[0-9]+(\.[0-9]+)?$'
+    or coalesce(v_selected_rule->>'maxDifferenceDays', '') !~ '^[0-9]+$'
+    or jsonb_typeof(v_selected_rule->'definition') is distinct from 'object'
+    or coalesce(v_selected_rule->>'operator', '') not in ('+', '-') then
+    raise exception 'Automatic scheduled batch snapshot is invalid.';
+  end if;
+  v_selected_rule_key := v_selected_rule->>'ruleKey';
+  v_selected_rule_version := (v_selected_rule->>'ruleVersion')::integer;
+  v_contract := public.financial_reconciliation_automatic_rule_contract(
+    v_selected_rule_key, v_selected_rule_version
+  );
+  if v_contract is null
+    or v_selected_rule->>'destinationSourceType' is distinct from
+      v_contract->>'destinationSourceType' then
+    raise exception 'Automatic scheduled batch snapshot is invalid.';
+  end if;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, scheduled_slot, definition_config_snapshot,
+    analysis_processed, analysis_total,
+    batch_id, batch_rule_key, batch_rule_position, batch_rule_count
+  ) values (
+    'scheduled', 'rule', v_batch.actor, v_batch.scheduled_slot,
+    jsonb_build_array(v_selected_rule), 0,
+    public.financial_reconciliation_automatic_base_count(
+      v_selected_rule_key, v_selected_rule_version
+    ),
+    v_batch.id, v_selected_rule_key, v_selected_position, v_batch_rule_count
+  )
+  on conflict do nothing
+  returning id into v_run_id;
+  if v_run_id is null then
+    select run.id into strict v_run_id
+    from public.financial_reconciliation_automatic_runs run
+    where run.batch_id = v_batch.id
+      and run.batch_rule_position = v_selected_position
+    limit 1;
+    return jsonb_build_object(
+      'claimed', true,
+      'resumed', true,
+      'batchId', v_batch.id,
+      'batchRulePosition', v_selected_position,
+      'batchRuleCount', v_batch_rule_count,
+      'run', public.financial_reconciliation_automatic_progress_or_run(v_run_id)
+    );
+  end if;
+
+  return jsonb_build_object(
+    'claimed', true,
+    'resumed', false,
+    'batchId', v_batch.id,
+    'batchRulePosition', v_selected_position,
+    'batchRuleCount', v_batch_rule_count,
+    'run', public.financial_reconciliation_automatic_progress_or_run(v_run_id)
+  );
+end
+$$;
+
+create or replace function public.get_financial_reconciliation_automation_settings()
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_schedule jsonb;
+  v_rules jsonb;
+  v_last_scheduled_batch jsonb;
+begin
+  select jsonb_build_object(
+    'enabled', schedule.enabled,
+    'timeOfDay', to_char(schedule.time_of_day, 'HH24:MI'),
+    'timeZone', schedule.time_zone,
+    'updatedBy', schedule.updated_by,
+    'updatedAt', schedule.updated_at
+  )
+  into v_schedule
+  from public.financial_reconciliation_automatic_schedule schedule
+  where schedule.id = true;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'ruleKey', definition.rule_key,
+    'ruleVersion', config.rule_version,
+    'displayName', definition.display_name,
+    'baseSourceType', definition.base_source_type,
+    'destinationSourceTypes', definition.destination_source_types,
+    'logicDescription', definition.logic_description,
+    'definition', definition.definition,
+    'enabled', config.enabled,
+    'allowManualExecution', config.allow_manual_execution,
+    'includeInScheduledBatch', config.include_in_scheduled_batch,
+    'differenceAllowed', config.difference_allowed,
+    'maxDifferenceDays', config.max_difference_days,
+    'priority', config.priority,
+    'updatedBy', config.updated_by,
+    'updatedAt', config.updated_at
+  ) order by config.priority, definition.rule_key), '[]'::jsonb)
+  into v_rules
+  from public.financial_reconciliation_automatic_rule_configs config
+  join public.financial_reconciliation_automatic_rule_definitions definition
+    on definition.rule_key = config.rule_key
+   and definition.version = config.rule_version;
+
+  select jsonb_build_object(
+    'id', batch.id,
+    'scheduledSlot', batch.scheduled_slot,
+    'status', batch.status,
+    'counts', batch.counts,
+    'ruleCount', jsonb_array_length(batch.rule_snapshot),
+    'childCount', coalesce((batch.counts->>'childCount')::integer, 0),
+    'startedAt', batch.started_at,
+    'finishedAt', batch.finished_at,
+    'updatedAt', batch.updated_at
+  )
+  into v_last_scheduled_batch
+  from public.financial_reconciliation_automatic_batches batch
+  order by batch.scheduled_slot desc, batch.started_at desc, batch.id desc
+  limit 1;
+
+  return jsonb_build_object(
+    'schedule', v_schedule,
+    'rules', v_rules,
+    'last_scheduled_batch', v_last_scheduled_batch
+  );
+end
+$$;
+
+alter table public.financial_reconciliation_automatic_batches enable row level security;
+revoke all on table public.financial_reconciliation_automatic_batches
+  from public, anon, authenticated, service_role;
+
 alter table public.financial_reconciliation_cgd_credit_card_match_search enable row level security;
 revoke all on table public.financial_reconciliation_cgd_credit_card_match_search
   from public, anon, authenticated, service_role;
@@ -1880,6 +2624,18 @@ revoke all on function public.financial_reconciliation_automatic_lock_destinatio
   from public, anon, authenticated, service_role;
 revoke all on function public.execute_financial_reconciliation_automatic_proposal(uuid,text)
   from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_refresh_automatic_batch(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_refresh_automatic_batch_from_run()
+  from public, anon, authenticated, service_role;
+revoke all on function public.claim_financial_reconciliation_automatic_schedule(timestamptz,text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_financial_reconciliation_automatic_run(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_automatic_progress_or_run(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_financial_reconciliation_automation_settings()
+  from public, anon, authenticated, service_role;
 
 grant execute on function public.financial_reconciliation_automatic_rule_contract(text,integer)
   to service_role;
@@ -1908,6 +2664,16 @@ grant execute on function public.get_financial_reconciliation_automatic_active_r
 grant execute on function public.continue_financial_reconciliation_automatic_oldest_analysis(text)
   to service_role;
 grant execute on function public.execute_financial_reconciliation_automatic_proposal(uuid,text)
+  to service_role;
+grant execute on function public.financial_reconciliation_refresh_automatic_batch(uuid)
+  to service_role;
+grant execute on function public.claim_financial_reconciliation_automatic_schedule(timestamptz,text)
+  to service_role;
+grant execute on function public.get_financial_reconciliation_automatic_run(uuid)
+  to service_role;
+grant execute on function public.financial_reconciliation_automatic_progress_or_run(uuid)
+  to service_role;
+grant execute on function public.get_financial_reconciliation_automation_settings()
   to service_role;
 
 notify pgrst, 'reload schema';
