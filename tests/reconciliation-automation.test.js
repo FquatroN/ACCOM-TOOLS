@@ -2172,6 +2172,31 @@ test("90-day automation migration installs resumable indexed analysis after Banc
     /2026-08-16-financial-reconciliation-automation-banco-v2\.sql[\s\S]*2026-08-16-financial-reconciliation-automation-90-day-performance\.sql/i);
 });
 
+test("release documentation and SQL smokes pin the complete 90-day migration order", () => {
+  const migrationNames = [
+    "2026-08-14-financial-reconciliation-automation-schema.sql",
+    "2026-08-14-financial-reconciliation-automation-analysis.sql",
+    "2026-08-14-financial-reconciliation-automation-execution.sql",
+    "2026-08-15-financial-reconciliation-automation-analysis-performance.sql",
+    "2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql",
+    "2026-08-16-financial-reconciliation-automation-banco-v2.sql",
+    "2026-08-16-financial-reconciliation-automation-90-day-performance.sql",
+  ];
+  const orderedPattern = new RegExp(migrationNames.map((name) => name.replaceAll(".", "\\.")).join("[\\s\\S]*"));
+  const readme = fs.readFileSync(README_PATH, "utf8");
+  const automationSmoke = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const manualSmoke = fs.readFileSync(MANUAL_RPC_SMOKE_PATH, "utf8");
+
+  for (const [label, source] of [["README", readme], ["automation smoke", automationSmoke], ["manual smoke", manualSmoke]]) {
+    assert.match(source, orderedPattern, label);
+  }
+  assert.equal((automationSmoke.match(/2026-08-16-financial-reconciliation-automation-90-day-performance\.sql/g) || []).length >= 2, true);
+  assert.match(readme, /already current through Banco v2[\s\S]*only[\s\S]*90-day-performance/i);
+  assert.match(readme, /0(?:â€“|-| to )90 days/i);
+  assert.match(readme, /reconciliation-automation-rpc\.smoke\.sql/);
+  assert.match(readme, /Ready within two minutes[\s\S]*no (?:HTTP )?500[\s\S]*no (?:statement )?timeout/i);
+});
+
 test("automation execution migration revalidates and completes each proposal atomically", () => {
   assert.equal(fs.existsSync(EXECUTION_MIGRATION_PATH), true, "automation execution migration must exist");
   const executionMigration = fs.readFileSync(EXECUTION_MIGRATION_PATH, "utf8");

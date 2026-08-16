@@ -16,6 +16,10 @@ insert into financial_reconciliations (
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
+\ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql
+\ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql
+\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql
+\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-workspace-filter-lovs.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-workspace-filter-lovs.sql
 do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); old_doc_id uuid := '00000000-0000-0000-0000-000000000101'; same_date_low_id uuid := '00000000-0000-0000-0000-000000000102'; same_date_high_id uuid := '00000000-0000-0000-0000-000000000103'; new_doc_id uuid := '00000000-0000-0000-0000-000000000104'; lov_locked_document_id uuid := gen_random_uuid(); lov_locked_fdm_id uuid := gen_random_uuid(); candidate_ids uuid[]; r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean; history_rid uuid := gen_random_uuid(); history_row jsonb; history_source_ids text[]; history_card_item_id uuid := gen_random_uuid();

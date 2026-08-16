@@ -4,9 +4,9 @@ begin;
 
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql
-\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 
 -- definition/config preservation
 update public.financial_reconciliation_automatic_rule_definitions
@@ -31,9 +31,9 @@ where id = true;
 
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
+\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql
-\ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
 
 -- optimized analysis definition and privileges
 do $$

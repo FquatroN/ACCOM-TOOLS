@@ -47,6 +47,27 @@ migrations in this order:
 1. `supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql`
 2. `supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql`
 3. `supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql`
+4. `supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql`
+5. `supabase-migrations/2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql`
+6. `supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql`
+7. `supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql`
+
+If the database is already current through Banco v2, only
+`2026-08-16-financial-reconciliation-automation-90-day-performance.sql` is
+needed. The supported **Max difference in days** range is 0-90 days.
+
+After applying the migration, run the transaction-safe database smoke suite:
+
+```powershell
+psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f tests/reconciliation-automation-rpc.smoke.sql
+```
+
+For production-size verification, save the rule with 90 days, press Analyze,
+and observe the processed/total progress until Ready. Require Ready within two minutes
+on the current dataset. Compare proposal counts, ambiguity,
+evidence, and reconciliation-history semantics with the existing rule. Confirm
+the API and Vercel logs contain no HTTP 500 and no statement timeout before
+enabling scheduled execution.
 
 The managed rule and shared schedule are disabled by default. Keep them
 disabled while deploying, then validate representative matches, non-matches,
@@ -56,8 +77,8 @@ a non-production environment. Complete manual validation before enabling schedul
 Vercel calls `/api/reconciliation-automation-cron` every minute as a heartbeat.
 The database—not the Vercel schedule—atomically claims at most one configured
 once-daily slot in `Europe/Lisbon`, including across retries and daylight-saving
-changes. Each heartbeat processes no more than 25 proposals and a later
-heartbeat safely resumes any remaining work.
+changes. Each heartbeat advances no more than 25 analysis records or processes
+no more than 25 proposals, and a later heartbeat safely resumes remaining work.
 
 In Settings → Reconciliation → Automatic reconciliation, inspect the last batch result
 before and after scheduled enablement. Disabling the shared schedule or
