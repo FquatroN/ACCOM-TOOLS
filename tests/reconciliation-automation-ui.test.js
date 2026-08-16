@@ -1017,8 +1017,9 @@ test("proposal markup starts executable rows selected and audits every ambiguous
 
   assert.match(proposedMarkup, /type="checkbox"[^>]*checked/);
   assert.doesNotMatch(proposedMarkup, /type="checkbox"[^>]*disabled/);
-  assert.match(proposedMarkup, /Financial Documents[\s\S]*2026-08-01[\s\S]*FT 2026\/55[\s\S]*Safe Supplier[\s\S]*101\.00 â‚¬/);
-  assert.match(proposedMarkup, /CGD Bank Statement[\s\S]*Primary bank row[\s\S]*-100\.00 â‚¬[\s\S]*Operator -/);
+  assert.match(proposedMarkup, /Financial Documents[\s\S]*2026-08-01[\s\S]*Document FT 2026\/55[\s\S]*Supplier Safe Supplier/);
+  assert.match(proposedMarkup, /financial-reconciliation-automation-item-amount">101\.00 â‚¬/);
+  assert.match(proposedMarkup, /CGD Bank Statement[\s\S]*financial-reconciliation-automation-item-operator">-[\s\S]*-100\.00 â‚¬[\s\S]*Primary bank row/);
   assert.match(proposedMarkup, new RegExp(`Document number matched[\\s\\S]*FT202655[\\s\\S]*Description score 0\\.750 ${"\u2265"} 0\\.600`));
   assert.match(proposedMarkup, /Difference 1\.00 â‚¬[\s\S]*Allowed 1\.00 â‚¬[\s\S]*Manual enabled[\s\S]*version 3/i);
   assert.match(proposedMarkup, /Invoice &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
@@ -1028,6 +1029,53 @@ test("proposal markup starts executable rows selected and audits every ambiguous
   assert.match(ambiguousMarkup, /Multiple qualifying combinations/);
   assert.match(ambiguousMarkup, /Candidate group 1[\s\S]*Candidate group A[\s\S]*Candidate group 2[\s\S]*Candidate group B/);
   assert.match(proposedMarkup, new RegExp(`aria-label="Execute automatic proposal for Financial Documents record ${baseSnapshot.sourceId}"`));
+
+  const hostileBase = {
+    sourceType: "financial_documents",
+    sourceId: "document-<one>",
+    sourceDate: "2026-08-16",
+    docNumber: "FT <42>",
+    supplierName: "Supplier & Sons",
+    description: "Invoice <script>alert(1)</script>",
+    amount: 100,
+  };
+  const compactMarkup = proposalMarkup(
+    {
+      id: WORKBENCH_PROPOSAL_1,
+      ruleKey: "manual-enabled",
+      ruleVersion: 3,
+      status: "proposed",
+      baseSnapshot: hostileBase,
+      items: [{
+        sourceType: "import_cgd_extrato_ordem",
+        sourceId: "bank-<one>",
+        sourceDate: "2026-08-16",
+        description: "Bank <match>",
+        amount: -100,
+        evidence: { documentNumber: { matched: true, normalized: "FT42" } },
+      }],
+      calculatedDifference: 0,
+      allowedDifference: 1,
+    },
+    workbenchRun([]),
+    workbenchRules(),
+    new Set([WORKBENCH_PROPOSAL_1]),
+    false,
+  );
+
+  assert.match(compactMarkup, /financial-reconciliation-automation-item-meta/);
+  assert.match(compactMarkup, /financial-reconciliation-automation-item-description/);
+  assert.match(compactMarkup, /financial-reconciliation-automation-item-operator/);
+  assert.match(compactMarkup, /financial-reconciliation-automation-item-id/);
+  assert.match(compactMarkup, /Supplier &amp; Sons/);
+  assert.match(compactMarkup, /FT &lt;42&gt;/);
+  assert.match(compactMarkup, /Invoice &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(compactMarkup, /<script>/);
+  assert.match(compactMarkup, /Document number matched: FT42/);
+  assert.match(compactMarkup, /Difference[\s\S]*Allowed[\s\S]*version 3/);
+  assert.match(compactMarkup, new RegExp(`type="checkbox"[^>]*aria-label="Execute automatic proposal for Financial Documents record document-&lt;one&gt;"[^>]*data-financial-reconciliation-automation-proposal-id="${WORKBENCH_PROPOSAL_1}"[^>]*checked`));
+  assert.match(compactMarkup, /<article class="financial-reconciliation-automation-proposal[^>]*tabindex="-1"/);
+  assert.match(compactMarkup, /Record ID<\/summary><code>document-&lt;one&gt;<\/code>/);
 });
 
 test("scheduled-only batch proposals use the immutable friendly rule name", () => {

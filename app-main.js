@@ -22094,12 +22094,22 @@ function financialReconciliationAutomationItemMarkup(item, label, operator = "")
   const value = item && typeof item === "object" ? item : {};
   const supplier = clean(value.supplierName ?? value.supplier);
   const documentNumber = clean(value.docNumber ?? value.documentNumber);
+  const sourceId = clean(value.sourceId) || "-";
+  const meta = [
+    formatDateOnly(value.sourceDate) || "-",
+    documentNumber ? `Document ${documentNumber}` : "",
+    supplier ? `Supplier ${supplier}` : "",
+  ].filter(Boolean);
+  const amount = formatMoney(Number(value.amount || 0));
   return `<article class="financial-reconciliation-automation-item">
-    <div class="financial-reconciliation-automation-item-head"><strong>${escape(label)}</strong><span>${escape(financialReconciliationSourceLabel(clean(value.sourceType)) || "Unknown source")}</span></div>
-    <dl><div><dt>Date</dt><dd>${escape(formatDateOnly(value.sourceDate) || "-")}</dd></div><div><dt>Record</dt><dd>${escape(clean(value.sourceId) || "-")}</dd></div>${documentNumber ? `<div><dt>Document</dt><dd>${escape(documentNumber)}</dd></div>` : ""}${supplier ? `<div><dt>Supplier</dt><dd>${escape(supplier)}</dd></div>` : ""}<div><dt>Description</dt><dd>${escape(clean(value.description) || "-")}</dd></div></dl>
-    <strong class="financial-reconciliation-automation-item-amount">${escape(formatMoney(Number(value.amount || 0)))}</strong>
-    ${operator ? `<p class="field-hint">Operator ${escape(operator)}</p>` : ""}
+    <div class="financial-reconciliation-automation-item-head">
+      <span><strong>${escape(label)}</strong><small>${escape(financialReconciliationSourceLabel(clean(value.sourceType)) || "Unknown source")}</small></span>
+      <strong class="financial-reconciliation-automation-item-amount">${operator ? `<span class="financial-reconciliation-automation-item-operator">${escape(operator)}</span> ` : ""}${escape(amount)}</strong>
+    </div>
+    <p class="financial-reconciliation-automation-item-meta">${meta.map((entry) => `<span>${escape(entry)}</span>`).join("")}</p>
+    <p class="financial-reconciliation-automation-item-description">${escape(clean(value.description) || "-")}</p>
     ${value.evidence ? financialReconciliationAutomationIdentityEvidenceMarkup(value.evidence) : ""}
+    <details class="financial-reconciliation-automation-item-id"><summary>Record ID</summary><code>${escape(sourceId)}</code></details>
   </article>`;
 }
 
