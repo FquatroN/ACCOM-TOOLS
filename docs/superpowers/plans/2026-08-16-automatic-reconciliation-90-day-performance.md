@@ -289,7 +289,7 @@ When the page is empty, run the existing cross-base overlap CTE, recalculate cou
 
 Replace create-analysis population with creation/lookup plus one continuation call. Add active-run lookup constrained to `trigger='manual'`, actor equality, and `analysis_completed_at is null`. Add an internal progress serializer that returns lifecycle/progress fields with an empty proposal array while analysis is incomplete, avoiding repeated aggregation of accumulated skipped rows; return the existing full run only at Ready. Extend `get_financial_reconciliation_automatic_run` with all six progress fields.
 
-Add `continue_financial_reconciliation_automatic_oldest_analysis(p_worker text)`. It accepts only the fixed worker identity `system:financial-reconciliation-schedule`, locks the oldest unfinished run with `FOR UPDATE SKIP LOCKED`, advances one page using the persisted run actor for ownership, and returns `jsonb_build_object('continued', false)` when none exists or `jsonb_build_object('continued', true, 'run', public.financial_reconciliation_automatic_progress_or_run(v_run_id))` after one page.
+Add `continue_financial_reconciliation_automatic_oldest_analysis(p_worker text)`. It accepts only the existing fixed worker identity `system:reconciliation`, locks the oldest unfinished run with `FOR UPDATE SKIP LOCKED`, advances one page using the persisted run actor for ownership, and returns `jsonb_build_object('continued', false)` when none exists or `jsonb_build_object('continued', true, 'run', public.financial_reconciliation_automatic_progress_or_run(v_run_id))` after one page.
 
 Patch execution revalidation to call the single-base helper rather than scanning the compatibility function, and reject runs without `analysis_completed_at`.
 

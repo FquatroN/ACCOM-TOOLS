@@ -1291,6 +1291,8 @@ where rule_key = 'financial_documents_cgd_bank_statement';
 
 \ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql
 \ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql
+\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql
+\ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql
 
 do $$
 begin
@@ -1322,6 +1324,20 @@ begin
   ) then
     raise exception 'Version 2 migration changed administrator configuration.';
   end if;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set max_difference_days = 90
+  where rule_key = 'financial_documents_cgd_bank_statement';
+  begin
+    update public.financial_reconciliation_automatic_rule_configs
+    set max_difference_days = 91
+    where rule_key = 'financial_documents_cgd_bank_statement';
+    raise exception 'Expected the 90-day database cap to reject 91.';
+  exception when check_violation then null;
+  end;
+  update public.financial_reconciliation_automatic_rule_configs
+  set max_difference_days = 11
+  where rule_key = 'financial_documents_cgd_bank_statement';
 end $$;
 
 do $$
@@ -1336,6 +1352,7 @@ declare
   v_candidate_ids uuid[];
   v_run jsonb;
   v_run_id uuid;
+  v_continue_guard integer := 0;
 begin
   insert into public.financial_documents (
     id, document_date, doc_number, description, supplier_name,
@@ -1356,6 +1373,12 @@ begin
     ('42000000-0000-0000-0000-000000000204', 'smoke-banco-v2', 'banco-v2-204', date '2027-01-20', 'Payment BANCOV2204', -104.00),
     ('42000000-0000-0000-0000-000000000205', 'smoke-banco-v2', 'banco-v2-205', date '2027-01-20', 'Payment BANCOV2205', -105.00);
 
+  if (select count(*) from public.financial_reconciliation_cgd_match_search
+      where source_id between '42000000-0000-0000-0000-000000000201'::uuid
+                          and '42000000-0000-0000-0000-000000000205'::uuid) <> 5 then
+    raise exception 'CGD match projection trigger did not synchronize inserted rows.';
+  end if;
+
   select coalesce(array_agg(candidate.base_source_id order by candidate.base_source_id), '{}'::uuid[])
   into v_candidate_ids
   from public.financial_reconciliation_automatic_rule_candidates(
@@ -1375,6 +1398,16 @@ begin
     '43000000-0000-0000-0000-000000000201'
   );
   v_run_id := (v_run->>'runId')::uuid;
+  while not coalesce((v_run->>'analysisComplete')::boolean, false) loop
+    v_continue_guard := v_continue_guard + 1;
+    if v_continue_guard > 100 then
+      raise exception 'Resumable Banco analysis did not finish.';
+    end if;
+    v_run := public.continue_financial_reconciliation_automatic_analysis(
+      v_run_id,
+      'smoke:banco-v2'
+    );
+  end loop;
 
   if not exists (
     select 1
@@ -1399,6 +1432,7 @@ declare
   v_run_id uuid;
   v_drift_proposal_id uuid;
   v_result jsonb;
+  v_continue_guard integer := 0;
 begin
   insert into public.financial_documents (
     id, document_date, doc_number, description, supplier_name,
@@ -1422,6 +1456,16 @@ begin
     '43000000-0000-0000-0000-000000000206'
   );
   v_run_id := (v_run->>'runId')::uuid;
+  while not coalesce((v_run->>'analysisComplete')::boolean, false) loop
+    v_continue_guard := v_continue_guard + 1;
+    if v_continue_guard > 100 then
+      raise exception 'Resumable Banco drift analysis did not finish.';
+    end if;
+    v_run := public.continue_financial_reconciliation_automatic_analysis(
+      v_run_id,
+      'smoke:banco-drift'
+    );
+  end loop;
   select id into strict v_drift_proposal_id
   from public.financial_reconciliation_automatic_proposals
   where run_id = v_run_id

@@ -45,6 +45,12 @@ const ANALYSIS_INDEX_LOOKUP_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql",
 );
+const AUTOMATION_90_DAY_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-16-financial-reconciliation-automation-90-day-performance.sql",
+);
 const EXECUTION_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -2043,6 +2049,21 @@ test("automation candidate lookup keeps the bank date index available for every 
   assert.match(migration, /revoke all on function public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\) from public, anon, authenticated;/);
   assert.match(migration, /grant execute on function public\.financial_reconciliation_automatic_rule_candidates\(text,integer,numeric,integer\) to service_role;/);
   assert.doesNotMatch(migration, /statement_timeout/i);
+});
+
+test("90-day automation migration installs resumable indexed analysis after Banco v2", () => {
+  assert.equal(fs.existsSync(AUTOMATION_90_DAY_MIGRATION_PATH), true,
+    "90-day automatic reconciliation migration must exist in the normal migration folder");
+  const migration = fs.readFileSync(AUTOMATION_90_DAY_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+
+  assert.match(migration, /create table if not exists public\.financial_reconciliation_cgd_match_search/i);
+  assert.match(migration, /create or replace function public\.continue_financial_reconciliation_automatic_analysis\(/i);
+  assert.match(migration, /create or replace function public\.get_financial_reconciliation_automatic_active_run\(/i);
+  assert.match(migration, /create or replace function public\.continue_financial_reconciliation_automatic_oldest_analysis\(/i);
+  assert.match(migration, /max_difference_days between 0 and 90/i);
+  assert.match(smokeSql,
+    /2026-08-16-financial-reconciliation-automation-banco-v2\.sql[\s\S]*2026-08-16-financial-reconciliation-automation-90-day-performance\.sql/i);
 });
 
 test("automation execution migration revalidates and completes each proposal atomically", () => {
