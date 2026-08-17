@@ -1914,6 +1914,690 @@ begin
   );
 end $$;
 
+-- amount-only four-rule dispatch and exact one-to-one candidate behavior
+do $$
+declare
+  v_expected jsonb;
+begin
+  v_expected := jsonb_build_object(
+    'payment','Banco','destinationSourceType','import_cgd_extrato_ordem',
+    'descriptionThreshold',0.60,'supplierThreshold',0.70,
+    'maxDestinationRecords',4,'maxCandidates',12
+  );
+  if public.financial_reconciliation_automatic_rule_contract(
+      'financial_documents_cgd_bank_statement', 2
+    ) is distinct from v_expected then
+    raise exception 'The Banco identity adapter contract changed.';
+  end if;
+
+  v_expected := jsonb_build_object(
+    'payment','Visa','destinationSourceType','import_cgd_cartao_credito',
+    'descriptionThreshold',0.55,'supplierThreshold',0.60,
+    'maxDestinationRecords',4,'maxCandidates',12
+  );
+  if public.financial_reconciliation_automatic_rule_contract(
+      'financial_documents_cgd_credit_card', 1
+    ) is distinct from v_expected then
+    raise exception 'The Visa identity adapter contract changed.';
+  end if;
+
+  v_expected := jsonb_build_object(
+    'payment','Banco','destinationSourceType','import_cgd_extrato_ordem',
+    'matchingMode','amount_only_one_to_one','maxDestinationRecords',1,
+    'maxCandidates',12,'fixedDifferenceAllowed',0
+  );
+  if public.financial_reconciliation_automatic_rule_contract(
+      'financial_documents_cgd_bank_statement_amount_only', 1
+    ) is distinct from v_expected then
+    raise exception 'The Banco amount-only adapter contract is invalid.';
+  end if;
+
+  v_expected := jsonb_build_object(
+    'payment','Visa','destinationSourceType','import_cgd_cartao_credito',
+    'matchingMode','amount_only_one_to_one','maxDestinationRecords',1,
+    'maxCandidates',12,'fixedDifferenceAllowed',0
+  );
+  if public.financial_reconciliation_automatic_rule_contract(
+      'financial_documents_cgd_credit_card_amount_only', 1
+    ) is distinct from v_expected
+    or public.financial_reconciliation_automatic_rule_contract(
+      'financial_documents_cgd_bank_statement_amount_only', 2
+    ) is not null then
+    raise exception 'The Visa amount-only adapter contract or version allowlist is invalid.';
+  end if;
+end $$;
+
+update public.financial_documents
+set payment = case payment
+  when 'Banco' then 'smoke:before-amount-only-banco'
+  when 'Visa' then 'smoke:before-amount-only-visa'
+  else payment end
+where payment in ('Banco', 'Visa');
+
+alter table public.financial_documents
+  alter column document_date drop not null,
+  alter column amount drop not null,
+  alter column payment drop not null;
+
+do $$
+declare
+  v_reconciliation_id uuid;
+  v_bank_base_ids uuid[];
+  v_card_base_ids uuid[];
+  v_candidate jsonb;
+  v_candidate_count integer;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('60000000-0000-0000-0000-000000000001', date '2030-06-15', 'BANK-EXACT', 'never similar', 'unrelated supplier', 'Banco', 100.00, 'S'),
+    ('60000000-0000-0000-0000-000000000002', date '2030-06-15', 'BANK-CASE', '', '', 'banco', 100.00, 'S'),
+    ('60000000-0000-0000-0000-000000000003', date '2030-06-15', 'BANK-PAD', '', '', ' Banco ', 100.00, 'S'),
+    ('60000000-0000-0000-0000-000000000004', date '2030-06-15', 'BANK-BLANK', '', '', '', 100.00, 'S'),
+    ('60000000-0000-0000-0000-000000000005', date '2030-06-15', 'BANK-NULL-PAYMENT', '', '', null, 100.00, 'S'),
+    ('60000000-0000-0000-0000-000000000006', date '2030-06-15', 'BANK-FAT', '', '', 'Banco', 100.00, 'N'),
+    ('60000000-0000-0000-0000-000000000007', date '2025-12-31', 'BANK-PRE-2026', '', '', 'Banco', 100.00, 'S'),
+    ('60000000-0000-0000-0000-000000000008', null, 'BANK-NULL-DATE', '', '', 'Banco', 100.00, 'S'),
+    ('60000000-0000-0000-0000-000000000009', date '2030-06-15', 'BANK-NULL-AMOUNT', '', '', 'Banco', null, 'S'),
+    ('60000000-0000-0000-0000-000000000010', date '2030-06-15', 'BANK-LOCKED', '', '', 'Banco', 100.00, 'S'),
+    ('60000000-0000-0000-0000-000000000020', date '2026-01-01', 'BANK-DEST-EXCLUSIONS', '', '', 'Banco', 130.00, 'S'),
+    ('62000000-0000-0000-0000-000000000001', date '2030-06-15', 'CARD-EXACT', 'never similar', 'unrelated supplier', 'Visa', 100.00, 'S'),
+    ('62000000-0000-0000-0000-000000000002', date '2030-06-15', 'CARD-CASE', '', '', 'visa', 100.00, 'S'),
+    ('62000000-0000-0000-0000-000000000003', date '2030-06-15', 'CARD-PAD', '', '', ' Visa ', 100.00, 'S'),
+    ('62000000-0000-0000-0000-000000000004', date '2030-06-15', 'CARD-BLANK', '', '', '', 100.00, 'S'),
+    ('62000000-0000-0000-0000-000000000005', date '2030-06-15', 'CARD-NULL-PAYMENT', '', '', null, 100.00, 'S'),
+    ('62000000-0000-0000-0000-000000000006', date '2030-06-15', 'CARD-FAT', '', '', 'Visa', 100.00, 'N'),
+    ('62000000-0000-0000-0000-000000000007', date '2025-12-31', 'CARD-PRE-2026', '', '', 'Visa', 100.00, 'S'),
+    ('62000000-0000-0000-0000-000000000008', null, 'CARD-NULL-DATE', '', '', 'Visa', 100.00, 'S'),
+    ('62000000-0000-0000-0000-000000000009', date '2030-06-15', 'CARD-NULL-AMOUNT', '', '', 'Visa', null, 'S'),
+    ('62000000-0000-0000-0000-000000000010', date '2030-06-15', 'CARD-LOCKED', '', '', 'Visa', 100.00, 'S'),
+    ('62000000-0000-0000-0000-000000000020', date '2026-01-01', 'CARD-DEST-EXCLUSIONS', '', '', 'Visa', 130.00, 'S');
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, data_valor, descritivo, montante
+  ) values
+    ('61000000-0000-0000-0000-000000000001', 'smoke-amount-only', 'amount-bank-exact', date '2030-06-15', date '1999-01-01', 'nothing in common', -100.00),
+    ('61000000-0000-0000-0000-000000000020', 'smoke-amount-only', 'amount-bank-pre', date '2025-12-31', date '2026-01-01', 'BANK-DEST-EXCLUSIONS', -130.00),
+    ('61000000-0000-0000-0000-000000000021', 'smoke-amount-only', 'amount-bank-null-date', null, date '2026-01-01', 'BANK-DEST-EXCLUSIONS', -130.00),
+    ('61000000-0000-0000-0000-000000000022', 'smoke-amount-only', 'amount-bank-null-amount', date '2026-01-01', date '2026-01-01', 'BANK-DEST-EXCLUSIONS', null),
+    ('61000000-0000-0000-0000-000000000023', 'smoke-amount-only', 'amount-bank-locked', date '2026-01-01', date '2026-01-01', 'BANK-DEST-EXCLUSIONS', -130.00),
+    ('61000000-0000-0000-0000-000000000024', 'smoke-amount-only', 'amount-bank-wrong-date-field', date '2026-01-03', date '2026-01-01', 'BANK-DEST-EXCLUSIONS', -130.00);
+
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, data_valor, descricao, debito, credito
+  ) values
+    ('63000000-0000-0000-0000-000000000001', 'smoke-amount-only', 'amount-card-exact', date '2030-06-15', date '1999-01-01', 'nothing in common', 100.00, null),
+    ('63000000-0000-0000-0000-000000000020', 'smoke-amount-only', 'amount-card-pre', date '2025-12-31', date '2026-01-01', 'CARD-DEST-EXCLUSIONS', 130.00, null),
+    ('63000000-0000-0000-0000-000000000021', 'smoke-amount-only', 'amount-card-null-date', null, date '2026-01-01', 'CARD-DEST-EXCLUSIONS', 130.00, null),
+    ('63000000-0000-0000-0000-000000000022', 'smoke-amount-only', 'amount-card-empty-source-amount', date '2026-01-01', date '2026-01-01', 'CARD-DEST-EXCLUSIONS', null, null),
+    ('63000000-0000-0000-0000-000000000023', 'smoke-amount-only', 'amount-card-locked', date '2026-01-01', date '2026-01-01', 'CARD-DEST-EXCLUSIONS', 130.00, null),
+    ('63000000-0000-0000-0000-000000000024', 'smoke-amount-only', 'amount-card-wrong-date-field', date '2026-01-03', date '2026-01-01', 'CARD-DEST-EXCLUSIONS', 130.00, null);
+
+  if (select valor from public.import_cgd_cartao_credito
+      where id = '63000000-0000-0000-0000-000000000022') <> 0 then
+    raise exception 'Empty card debit/credit inputs no longer generate the schema-defined zero approved amount.';
+  end if;
+
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'financial_documents',
+    '["import_cgd_extrato_ordem","import_cgd_cartao_credito"]'::jsonb,
+    'smoke:amount-only-locks'
+  ) returning id into v_reconciliation_id;
+
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  ) values
+    (v_reconciliation_id, 'financial_documents', '60000000-0000-0000-0000-000000000010', 100.00, 'smoke:amount-only-locks'),
+    (v_reconciliation_id, 'financial_documents', '62000000-0000-0000-0000-000000000010', 100.00, 'smoke:amount-only-locks'),
+    (v_reconciliation_id, 'import_cgd_extrato_ordem', '61000000-0000-0000-0000-000000000023', -130.00, 'smoke:amount-only-locks'),
+    (v_reconciliation_id, 'import_cgd_cartao_credito', '63000000-0000-0000-0000-000000000023', -130.00, 'smoke:amount-only-locks');
+
+  select coalesce(array_agg(candidate.base_source_id order by candidate.base_source_id), '{}'::uuid[])
+  into v_bank_base_ids
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
+    array(select ('60000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid
+          from generate_series(1, 10) series)
+  ) candidate;
+  if v_bank_base_ids is distinct from array['60000000-0000-0000-0000-000000000001'::uuid] then
+    raise exception 'Banco amount-only base eligibility admitted case, space, blank, null, fat, date, amount, or lock exclusions: %', v_bank_base_ids;
+  end if;
+
+  select coalesce(array_agg(candidate.base_source_id order by candidate.base_source_id), '{}'::uuid[])
+  into v_card_base_ids
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 1,
+    array(select ('62000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid
+          from generate_series(1, 10) series)
+  ) candidate;
+  if v_card_base_ids is distinct from array['62000000-0000-0000-0000-000000000001'::uuid] then
+    raise exception 'Visa amount-only base eligibility admitted case, space, blank, null, fat, date, amount, or lock exclusions: %', v_card_base_ids;
+  end if;
+
+  select coalesce(array_agg(page.id order by page.document_date, page.id), '{}'::uuid[])
+  into v_bank_base_ids
+  from public.financial_reconciliation_automatic_base_page(
+    'financial_documents_cgd_bank_statement_amount_only', 1, null, null, 25
+  ) page
+  where page.id between '60000000-0000-0000-0000-000000000001'::uuid
+                    and '60000000-0000-0000-0000-000000000020'::uuid;
+  if v_bank_base_ids is distinct from array[
+      '60000000-0000-0000-0000-000000000001'::uuid,
+      '60000000-0000-0000-0000-000000000020'::uuid
+    ] or public.financial_reconciliation_automatic_base_count(
+      'financial_documents_cgd_bank_statement_amount_only', 1
+    ) <> 2 then
+    raise exception 'Banco amount-only base paging/counting admitted a null amount or other ineligible base: %', v_bank_base_ids;
+  end if;
+
+  select coalesce(array_agg(page.id order by page.document_date, page.id), '{}'::uuid[])
+  into v_card_base_ids
+  from public.financial_reconciliation_automatic_base_page(
+    'financial_documents_cgd_credit_card_amount_only', 1, null, null, 25
+  ) page
+  where page.id between '62000000-0000-0000-0000-000000000001'::uuid
+                    and '62000000-0000-0000-0000-000000000020'::uuid;
+  if v_card_base_ids is distinct from array[
+      '62000000-0000-0000-0000-000000000001'::uuid,
+      '62000000-0000-0000-0000-000000000020'::uuid
+    ] or public.financial_reconciliation_automatic_base_count(
+      'financial_documents_cgd_credit_card_amount_only', 1
+    ) <> 2 then
+    raise exception 'Visa amount-only base paging/counting admitted a null amount or other ineligible base: %', v_card_base_ids;
+  end if;
+
+  select candidates, candidate_count into strict v_candidate, v_candidate_count
+  from public.financial_reconciliation_automatic_single_base_candidates(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
+    '60000000-0000-0000-0000-000000000001'
+  );
+  if v_candidate_count <> 1
+    or jsonb_array_length(v_candidate) <> 1
+    or v_candidate->0->>'sourceType' <> 'import_cgd_extrato_ordem'
+    or v_candidate->0->>'sourceId' <> '61000000-0000-0000-0000-000000000001'
+    or v_candidate->0->>'sourceDate' <> '2030-06-15'
+    or (v_candidate->0->>'amount')::numeric <> -100.00
+    or v_candidate#>>'{0,evidence,amount,baseAmountCents}' <> '10000'
+    or v_candidate#>>'{0,evidence,amount,destinationAmountCents}' <> '-10000'
+    or v_candidate#>>'{0,evidence,amount,signedDifferenceCents}' <> '0'
+    or v_candidate#>>'{0,evidence,date,distanceDays}' <> '0'
+    or v_candidate#>'{0,evidence}' ?| array['documentNumber','description','supplier','similarity'] then
+    raise exception 'Banco amount-only candidate identity, exact-cent/date evidence, or no-similarity contract is invalid: %', v_candidate;
+  end if;
+
+  select candidates, candidate_count into strict v_candidate, v_candidate_count
+  from public.financial_reconciliation_automatic_single_base_candidates(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 1,
+    '62000000-0000-0000-0000-000000000001'
+  );
+  if v_candidate_count <> 1
+    or jsonb_array_length(v_candidate) <> 1
+    or v_candidate->0->>'sourceType' <> 'import_cgd_cartao_credito'
+    or v_candidate->0->>'sourceId' <> '63000000-0000-0000-0000-000000000001'
+    or v_candidate->0->>'sourceDate' <> '2030-06-15'
+    or (v_candidate->0->>'amount')::numeric <> -100.00
+    or v_candidate#>>'{0,evidence,amount,baseAmountCents}' <> '10000'
+    or v_candidate#>>'{0,evidence,amount,destinationAmountCents}' <> '-10000'
+    or v_candidate#>>'{0,evidence,amount,signedDifferenceCents}' <> '0'
+    or v_candidate#>>'{0,evidence,date,distanceDays}' <> '0'
+    or v_candidate#>'{0,evidence}' ?| array['documentNumber','description','supplier','similarity'] then
+    raise exception 'Visa amount-only candidate identity, exact-cent/date evidence, or no-similarity contract is invalid: %', v_candidate;
+  end if;
+
+  select candidates, candidate_count into strict v_candidate, v_candidate_count
+  from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
+    array['60000000-0000-0000-0000-000000000020'::uuid]
+  );
+  if v_candidate_count <> 0 or v_candidate <> '[]'::jsonb then
+    raise exception 'Banco amount-only admitted a pre-2026, null, locked, or wrong approved-field destination: %', v_candidate;
+  end if;
+
+  select candidates, candidate_count into strict v_candidate, v_candidate_count
+  from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 1,
+    array['62000000-0000-0000-0000-000000000020'::uuid]
+  );
+  if v_candidate_count <> 0 or v_candidate <> '[]'::jsonb then
+    raise exception 'Visa amount-only admitted a pre-2026, empty-source, locked, or wrong approved-field destination: %', v_candidate;
+  end if;
+
+  if exists (
+    select 1 from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+      'financial_documents_cgd_bank_statement_amount_only', 1, 0.01, 1,
+      array['60000000-0000-0000-0000-000000000001'::uuid]
+    )
+  ) or exists (
+    select 1 from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+      'financial_documents_cgd_credit_card_amount_only', 1, 0.01, 1,
+      array['62000000-0000-0000-0000-000000000001'::uuid]
+    )
+  ) then
+    raise exception 'An amount-only adapter accepted a nonzero difference allowance.';
+  end if;
+end $$;
+
+update public.financial_documents
+set document_date = coalesce(document_date, date '2030-06-15'),
+    amount = coalesce(amount, 0),
+    payment = coalesce(payment, 'smoke:null-payment')
+where id between '60000000-0000-0000-0000-000000000001'::uuid
+             and '62000000-0000-0000-0000-000000000020'::uuid;
+
+alter table public.financial_documents
+  alter column document_date set not null,
+  alter column amount set not null,
+  alter column payment set not null;
+
+-- amount-only inclusive date windows, signed integer cents, stable order, and identity independence
+do $$
+declare
+  v_ids uuid[];
+  v_candidate jsonb;
+  v_count integer;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('60000000-0000-0000-0000-000000000030', date '2031-06-15', 'BANK-WINDOW', 'window identity', 'window supplier', 'Banco', 110.00, 'S'),
+    ('60000000-0000-0000-0000-000000000031', date '2031-09-01', 'BANK-90', 'boundary identity', 'boundary supplier', 'Banco', 111.00, 'S'),
+    ('60000000-0000-0000-0000-000000000032', date '2031-12-01', 'BANK-AMOUNT-032', 'matching text', 'same supplier', 'Banco', 120.00, 'S'),
+    ('62000000-0000-0000-0000-000000000030', date '2031-06-15', 'CARD-WINDOW', 'window identity', 'window supplier', 'Visa', 110.00, 'S'),
+    ('62000000-0000-0000-0000-000000000031', date '2031-09-01', 'CARD-90', 'boundary identity', 'boundary supplier', 'Visa', 111.00, 'S'),
+    ('62000000-0000-0000-0000-000000000032', date '2031-12-01', 'CARD-AMOUNT-032', 'matching text', 'same supplier', 'Visa', 120.00, 'S');
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values
+    ('61000000-0000-0000-0000-000000000030', 'smoke-amount-only', 'bank-window-minus-2', date '2031-06-13', '', -110.00),
+    ('61000000-0000-0000-0000-000000000031', 'smoke-amount-only', 'bank-window-minus-1', date '2031-06-14', '', -110.00),
+    ('61000000-0000-0000-0000-000000000032', 'smoke-amount-only', 'bank-window-zero', date '2031-06-15', '', -110.00),
+    ('61000000-0000-0000-0000-000000000033', 'smoke-amount-only', 'bank-window-plus-1', date '2031-06-16', '', -110.00),
+    ('61000000-0000-0000-0000-000000000034', 'smoke-amount-only', 'bank-window-plus-2', date '2031-06-17', '', -110.00),
+    ('61000000-0000-0000-0000-000000000035', 'smoke-amount-only', 'bank-window-90', date '2031-11-30', '', -111.00),
+    ('61000000-0000-0000-0000-000000000036', 'smoke-amount-only', 'bank-window-91', date '2031-12-01', '', -111.00),
+    ('61000000-0000-0000-0000-000000000040', 'smoke-amount-only', 'bank-exact-cents', date '2031-12-01', 'totally unrelated', -120.00),
+    ('61000000-0000-0000-0000-000000000041', 'smoke-amount-only', 'bank-one-cent', date '2031-12-01', 'BANKAMOUNT032 matching text same supplier', -119.99),
+    ('61000000-0000-0000-0000-000000000042', 'smoke-amount-only', 'bank-same-sign', date '2031-12-01', 'BANKAMOUNT032 matching text same supplier', 120.00);
+
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito, credito
+  ) values
+    ('63000000-0000-0000-0000-000000000030', 'smoke-amount-only', 'card-window-minus-2', date '2031-06-13', '', 110.00, null),
+    ('63000000-0000-0000-0000-000000000031', 'smoke-amount-only', 'card-window-minus-1', date '2031-06-14', '', 110.00, null),
+    ('63000000-0000-0000-0000-000000000032', 'smoke-amount-only', 'card-window-zero', date '2031-06-15', '', 110.00, null),
+    ('63000000-0000-0000-0000-000000000033', 'smoke-amount-only', 'card-window-plus-1', date '2031-06-16', '', 110.00, null),
+    ('63000000-0000-0000-0000-000000000034', 'smoke-amount-only', 'card-window-plus-2', date '2031-06-17', '', 110.00, null),
+    ('63000000-0000-0000-0000-000000000035', 'smoke-amount-only', 'card-window-90', date '2031-11-30', '', 111.00, null),
+    ('63000000-0000-0000-0000-000000000036', 'smoke-amount-only', 'card-window-91', date '2031-12-01', '', 111.00, null),
+    ('63000000-0000-0000-0000-000000000040', 'smoke-amount-only', 'card-exact-cents', date '2031-12-01', 'totally unrelated', 120.00, null),
+    ('63000000-0000-0000-0000-000000000041', 'smoke-amount-only', 'card-one-cent', date '2031-12-01', 'CARDAMOUNT032 matching text same supplier', 119.99, null),
+    ('63000000-0000-0000-0000-000000000042', 'smoke-amount-only', 'card-same-sign', date '2031-12-01', 'CARDAMOUNT032 matching text same supplier', null, 120.00);
+
+  select array_agg((item->>'sourceId')::uuid order by ordinal)
+  into v_ids
+  from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
+    array['60000000-0000-0000-0000-000000000030'::uuid]
+  ) candidate
+  cross join lateral jsonb_array_elements(candidate.candidates) with ordinality entry(item, ordinal);
+  if v_ids is distinct from array[
+    '61000000-0000-0000-0000-000000000031'::uuid,
+    '61000000-0000-0000-0000-000000000032'::uuid,
+    '61000000-0000-0000-0000-000000000033'::uuid
+  ] then
+    raise exception 'Banco amount-only default window did not include -1/0/+1 and exclude -2/+2 in stable order: %', v_ids;
+  end if;
+
+  select candidates into strict v_candidate
+  from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 0,
+    array['60000000-0000-0000-0000-000000000030'::uuid]
+  );
+  if jsonb_array_length(v_candidate) <> 1
+    or v_candidate->0->>'sourceId' <> '61000000-0000-0000-0000-000000000032' then
+    raise exception 'Banco amount-only zero-day window admitted a non-same-day row.';
+  end if;
+
+  select candidates into strict v_candidate
+  from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 90,
+    array['60000000-0000-0000-0000-000000000031'::uuid]
+  );
+  if jsonb_array_length(v_candidate) <> 1
+    or v_candidate->0->>'sourceId' <> '61000000-0000-0000-0000-000000000035'
+    or v_candidate#>>'{0,evidence,date,distanceDays}' <> '90' then
+    raise exception 'Banco amount-only 90-day boundary was not inclusive or admitted day 91.';
+  end if;
+
+  select candidates, candidate_count into strict v_candidate, v_count
+  from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 0,
+    array['60000000-0000-0000-0000-000000000032'::uuid]
+  );
+  if v_count <> 1 or v_candidate->0->>'sourceId' <> '61000000-0000-0000-0000-000000000040'
+    or v_candidate#>>'{0,evidence,amount,signedDifferenceCents}' <> '0' then
+    raise exception 'Banco amount-only allowed a one-cent mismatch, same sign, or identity override: %', v_candidate;
+  end if;
+
+  select array_agg((item->>'sourceId')::uuid order by ordinal)
+  into v_ids
+  from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 1,
+    array['62000000-0000-0000-0000-000000000030'::uuid]
+  ) candidate
+  cross join lateral jsonb_array_elements(candidate.candidates) with ordinality entry(item, ordinal);
+  if v_ids is distinct from array[
+    '63000000-0000-0000-0000-000000000031'::uuid,
+    '63000000-0000-0000-0000-000000000032'::uuid,
+    '63000000-0000-0000-0000-000000000033'::uuid
+  ] then
+    raise exception 'Visa amount-only default window did not include -1/0/+1 and exclude -2/+2 in stable order: %', v_ids;
+  end if;
+
+  select candidates into strict v_candidate
+  from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 0,
+    array['62000000-0000-0000-0000-000000000030'::uuid]
+  );
+  if jsonb_array_length(v_candidate) <> 1
+    or v_candidate->0->>'sourceId' <> '63000000-0000-0000-0000-000000000032' then
+    raise exception 'Visa amount-only zero-day window admitted a non-same-day row.';
+  end if;
+
+  select candidates into strict v_candidate
+  from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 90,
+    array['62000000-0000-0000-0000-000000000031'::uuid]
+  );
+  if jsonb_array_length(v_candidate) <> 1
+    or v_candidate->0->>'sourceId' <> '63000000-0000-0000-0000-000000000035'
+    or v_candidate#>>'{0,evidence,date,distanceDays}' <> '90' then
+    raise exception 'Visa amount-only 90-day boundary was not inclusive or admitted day 91.';
+  end if;
+
+  select candidates, candidate_count into strict v_candidate, v_count
+  from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 0,
+    array['62000000-0000-0000-0000-000000000032'::uuid]
+  );
+  if v_count <> 1 or v_candidate->0->>'sourceId' <> '63000000-0000-0000-0000-000000000040'
+    or v_candidate#>>'{0,evidence,amount,signedDifferenceCents}' <> '0' then
+    raise exception 'Visa amount-only allowed a one-cent mismatch, same sign, or identity override: %', v_candidate;
+  end if;
+end $$;
+
+update public.financial_documents
+set payment = 'smoke:amount-only-candidate-covered'
+where id between '60000000-0000-0000-0000-000000000001'::uuid
+             and '62000000-0000-0000-0000-000000000032'::uuid;
+
+-- amount-only skipped, duplicate, candidate-limit, cross-base, and one-row proposal lifecycle
+do $$
+declare
+  v_run jsonb;
+  v_run_id uuid;
+  v_candidates jsonb;
+  v_candidate_count integer;
+  v_base_ids uuid[];
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('70000000-0000-0000-0000-000000000001', date '2135-01-01', 'BANK-NONE', '', '', 'Banco', 200.00, 'S'),
+    ('70000000-0000-0000-0000-000000000002', date '2135-01-01', 'BANK-ONE', 'does not match', 'does not match', 'Banco', 201.00, 'S'),
+    ('70000000-0000-0000-0000-000000000003', date '2135-01-01', 'BANK-TWO', '', '', 'Banco', 202.00, 'S'),
+    ('70000000-0000-0000-0000-000000000004', date '2135-01-01', 'BANK-LIMIT', '', '', 'Banco', 203.00, 'S'),
+    ('70000000-0000-0000-0000-000000000005', date '2135-01-01', 'BANK-CROSS-A', '', '', 'Banco', 204.00, 'S'),
+    ('70000000-0000-0000-0000-000000000006', date '2135-01-01', 'BANK-CROSS-B', '', '', 'Banco', 204.00, 'S'),
+    ('70000000-0000-0000-0000-000000000007', date '2135-01-01', 'BANK-SUM', 'SUM-IDENTITY', 'SUM-SUPPLIER', 'Banco', 205.00, 'S'),
+    ('72000000-0000-0000-0000-000000000001', date '2135-01-01', 'CARD-NONE', '', '', 'Visa', 200.00, 'S'),
+    ('72000000-0000-0000-0000-000000000002', date '2135-01-01', 'CARD-ONE', 'does not match', 'does not match', 'Visa', 201.00, 'S'),
+    ('72000000-0000-0000-0000-000000000003', date '2135-01-01', 'CARD-TWO', '', '', 'Visa', 202.00, 'S'),
+    ('72000000-0000-0000-0000-000000000004', date '2135-01-01', 'CARD-LIMIT', '', '', 'Visa', 203.00, 'S'),
+    ('72000000-0000-0000-0000-000000000005', date '2135-01-01', 'CARD-CROSS-A', '', '', 'Visa', 204.00, 'S'),
+    ('72000000-0000-0000-0000-000000000006', date '2135-01-01', 'CARD-CROSS-B', '', '', 'Visa', 204.00, 'S'),
+    ('72000000-0000-0000-0000-000000000007', date '2135-01-01', 'CARD-SUM', 'SUM-IDENTITY', 'SUM-SUPPLIER', 'Visa', 205.00, 'S');
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values
+    ('71000000-0000-0000-0000-000000000002', 'smoke-amount-only-lifecycle', 'bank-one', date '2135-01-01', 'unrelated', -201.00),
+    ('71000000-0000-0000-0000-000000000003', 'smoke-amount-only-lifecycle', 'bank-two-a', date '2135-01-01', '', -202.00),
+    ('71000000-0000-0000-0000-000000000004', 'smoke-amount-only-lifecycle', 'bank-two-b', date '2135-01-01', '', -202.00),
+    ('71000000-0000-0000-0000-000000000005', 'smoke-amount-only-lifecycle', 'bank-cross', date '2135-01-01', '', -204.00),
+    ('71000000-0000-0000-0000-000000000006', 'smoke-amount-only-lifecycle', 'bank-sum-a', date '2135-01-01', 'SUMIDENTITY SUMSUPPLIER', -100.00),
+    ('71000000-0000-0000-0000-000000000007', 'smoke-amount-only-lifecycle', 'bank-sum-b', date '2135-01-01', 'SUMIDENTITY SUMSUPPLIER', -105.00);
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  )
+  select
+    ('71000000-0000-0000-0000-' || lpad((100 + series)::text, 12, '0'))::uuid,
+    'smoke-amount-only-lifecycle', 'bank-limit-' || series,
+    date '2135-01-01', '', -203.00
+  from generate_series(1, 13) series;
+
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values
+    ('73000000-0000-0000-0000-000000000002', 'smoke-amount-only-lifecycle', 'card-one', date '2135-01-01', 'unrelated', 201.00),
+    ('73000000-0000-0000-0000-000000000003', 'smoke-amount-only-lifecycle', 'card-two-a', date '2135-01-01', '', 202.00),
+    ('73000000-0000-0000-0000-000000000004', 'smoke-amount-only-lifecycle', 'card-two-b', date '2135-01-01', '', 202.00),
+    ('73000000-0000-0000-0000-000000000005', 'smoke-amount-only-lifecycle', 'card-cross', date '2135-01-01', '', 204.00),
+    ('73000000-0000-0000-0000-000000000006', 'smoke-amount-only-lifecycle', 'card-sum-a', date '2135-01-01', 'SUMIDENTITY SUMSUPPLIER', 100.00),
+    ('73000000-0000-0000-0000-000000000007', 'smoke-amount-only-lifecycle', 'card-sum-b', date '2135-01-01', 'SUMIDENTITY SUMSUPPLIER', 105.00);
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  )
+  select
+    ('73000000-0000-0000-0000-' || lpad((100 + series)::text, 12, '0'))::uuid,
+    'smoke-amount-only-lifecycle', 'card-limit-' || series,
+    date '2135-01-01', '', 203.00
+  from generate_series(1, 13) series;
+
+  select candidates, candidate_count into strict v_candidates, v_candidate_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
+    array['70000000-0000-0000-0000-000000000004'::uuid]
+  );
+  if v_candidate_count <> 13 or jsonb_array_length(v_candidates) <> 12 then
+    raise exception 'Banco amount-only did not retain unbounded count with twelve bounded evidence rows: %, %', v_candidate_count, v_candidates;
+  end if;
+
+  select candidates, candidate_count into strict v_candidates, v_candidate_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 1,
+    array['72000000-0000-0000-0000-000000000004'::uuid]
+  );
+  if v_candidate_count <> 13 or jsonb_array_length(v_candidates) <> 12 then
+    raise exception 'Visa amount-only did not retain unbounded count with twelve bounded evidence rows: %, %', v_candidate_count, v_candidates;
+  end if;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true,
+      allow_manual_execution = true,
+      include_in_scheduled_batch = false,
+      difference_allowed = 0,
+      max_difference_days = 1
+  where rule_key = 'financial_documents_cgd_bank_statement_amount_only';
+
+  if public.financial_reconciliation_automatic_base_count(
+      'financial_documents_cgd_bank_statement_amount_only', 1
+    ) <> 7 then
+    raise exception 'Banco amount-only base count did not use exact managed eligibility.';
+  end if;
+  select array_agg(page.id order by page.document_date, page.id) into v_base_ids
+  from public.financial_reconciliation_automatic_base_page(
+    'financial_documents_cgd_bank_statement_amount_only', 1, null, null, 25
+  ) page;
+  if v_base_ids is distinct from array[
+    '70000000-0000-0000-0000-000000000001'::uuid,
+    '70000000-0000-0000-0000-000000000002'::uuid,
+    '70000000-0000-0000-0000-000000000003'::uuid,
+    '70000000-0000-0000-0000-000000000004'::uuid,
+    '70000000-0000-0000-0000-000000000005'::uuid,
+    '70000000-0000-0000-0000-000000000006'::uuid,
+    '70000000-0000-0000-0000-000000000007'::uuid
+  ] then
+    raise exception 'Banco amount-only base page did not preserve (document_date,id) ordering: %', v_base_ids;
+  end if;
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_bank_statement_amount_only'], 'manual_rule',
+    'smoke:bank-amount-only-lifecycle', '74000000-0000-0000-0000-000000000001'
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  if v_run->>'status' <> 'ready'
+    or v_run->>'analysisComplete' <> 'true'
+    or v_run#>>'{counts,bases}' <> '7'
+    or v_run#>>'{counts,proposed}' <> '1'
+    or v_run#>>'{counts,ambiguous}' <> '4'
+    or v_run#>>'{counts,skipped}' <> '2' then
+    raise exception 'Banco amount-only lifecycle counts or terminal state are invalid: %', v_run;
+  end if;
+  if not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '70000000-0000-0000-0000-000000000001'
+        and proposal.status = 'skipped' and proposal.reason = 'no_qualifying_combination'
+        and proposal.items = '[]'::jsonb
+    ) or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '70000000-0000-0000-0000-000000000002'
+        and proposal.status = 'proposed' and jsonb_array_length(proposal.items) = 1
+        and proposal.calculated_difference = 0
+        and not (proposal.evidence->0 ?| array['documentNumber','description','supplier','similarity'])
+    ) or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '70000000-0000-0000-0000-000000000003'
+        and proposal.status = 'ambiguous' and proposal.reason = 'multiple_combinations'
+        and jsonb_array_length(proposal.candidate_groups) = 2
+    ) or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '70000000-0000-0000-0000-000000000004'
+        and proposal.status = 'ambiguous' and proposal.reason = 'candidate_limit'
+        and jsonb_array_length(proposal.candidate_groups) = 12
+    ) or (select count(*) from public.financial_reconciliation_automatic_proposals proposal
+          where proposal.run_id = v_run_id
+            and proposal.base_source_id in (
+              '70000000-0000-0000-0000-000000000005',
+              '70000000-0000-0000-0000-000000000006'
+            ) and proposal.status = 'ambiguous' and proposal.reason = 'cross_base_overlap') <> 2
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '70000000-0000-0000-0000-000000000007'
+        and proposal.status = 'skipped' and proposal.reason = 'no_qualifying_combination'
+        and proposal.candidate_groups = '[]'::jsonb
+    ) then
+    raise exception 'Banco amount-only proposal, ambiguity, overlap, candidate-limit, or two-row-sum behavior is invalid.';
+  end if;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = false, allow_manual_execution = false
+  where rule_key = 'financial_documents_cgd_bank_statement_amount_only';
+  update public.financial_documents
+  set payment = 'smoke:bank-amount-only-lifecycle-covered'
+  where id between '70000000-0000-0000-0000-000000000001'::uuid
+               and '70000000-0000-0000-0000-000000000007'::uuid;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true,
+      allow_manual_execution = true,
+      include_in_scheduled_batch = false,
+      difference_allowed = 0,
+      max_difference_days = 1
+  where rule_key = 'financial_documents_cgd_credit_card_amount_only';
+
+  if public.financial_reconciliation_automatic_base_count(
+      'financial_documents_cgd_credit_card_amount_only', 1
+    ) <> 7 then
+    raise exception 'Visa amount-only base count did not use exact managed eligibility.';
+  end if;
+  select array_agg(page.id order by page.document_date, page.id) into v_base_ids
+  from public.financial_reconciliation_automatic_base_page(
+    'financial_documents_cgd_credit_card_amount_only', 1, null, null, 25
+  ) page;
+  if v_base_ids is distinct from array[
+    '72000000-0000-0000-0000-000000000001'::uuid,
+    '72000000-0000-0000-0000-000000000002'::uuid,
+    '72000000-0000-0000-0000-000000000003'::uuid,
+    '72000000-0000-0000-0000-000000000004'::uuid,
+    '72000000-0000-0000-0000-000000000005'::uuid,
+    '72000000-0000-0000-0000-000000000006'::uuid,
+    '72000000-0000-0000-0000-000000000007'::uuid
+  ] then
+    raise exception 'Visa amount-only base page did not preserve (document_date,id) ordering: %', v_base_ids;
+  end if;
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_credit_card_amount_only'], 'manual_rule',
+    'smoke:card-amount-only-lifecycle', '74000000-0000-0000-0000-000000000002'
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  if v_run->>'status' <> 'ready'
+    or v_run->>'analysisComplete' <> 'true'
+    or v_run#>>'{counts,bases}' <> '7'
+    or v_run#>>'{counts,proposed}' <> '1'
+    or v_run#>>'{counts,ambiguous}' <> '4'
+    or v_run#>>'{counts,skipped}' <> '2' then
+    raise exception 'Visa amount-only lifecycle counts or terminal state are invalid: %', v_run;
+  end if;
+  if not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '72000000-0000-0000-0000-000000000001'
+        and proposal.status = 'skipped' and proposal.reason = 'no_qualifying_combination'
+        and proposal.items = '[]'::jsonb
+    ) or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '72000000-0000-0000-0000-000000000002'
+        and proposal.status = 'proposed' and jsonb_array_length(proposal.items) = 1
+        and proposal.calculated_difference = 0
+        and not (proposal.evidence->0 ?| array['documentNumber','description','supplier','similarity'])
+    ) or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '72000000-0000-0000-0000-000000000003'
+        and proposal.status = 'ambiguous' and proposal.reason = 'multiple_combinations'
+        and jsonb_array_length(proposal.candidate_groups) = 2
+    ) or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '72000000-0000-0000-0000-000000000004'
+        and proposal.status = 'ambiguous' and proposal.reason = 'candidate_limit'
+        and jsonb_array_length(proposal.candidate_groups) = 12
+    ) or (select count(*) from public.financial_reconciliation_automatic_proposals proposal
+          where proposal.run_id = v_run_id
+            and proposal.base_source_id in (
+              '72000000-0000-0000-0000-000000000005',
+              '72000000-0000-0000-0000-000000000006'
+            ) and proposal.status = 'ambiguous' and proposal.reason = 'cross_base_overlap') <> 2
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '72000000-0000-0000-0000-000000000007'
+        and proposal.status = 'skipped' and proposal.reason = 'no_qualifying_combination'
+        and proposal.candidate_groups = '[]'::jsonb
+    ) then
+    raise exception 'Visa amount-only proposal, ambiguity, overlap, candidate-limit, or two-row-sum behavior is invalid.';
+  end if;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = false, allow_manual_execution = false
+  where rule_key = 'financial_documents_cgd_credit_card_amount_only';
+  update public.financial_documents
+  set payment = 'smoke:card-amount-only-lifecycle-covered'
+  where id between '72000000-0000-0000-0000-000000000001'::uuid
+               and '72000000-0000-0000-0000-000000000007'::uuid;
+end $$;
+
 -- credit-card projection INSERT UPDATE ID-change DELETE and data_valor isolation
 do $$
 declare
@@ -4066,18 +4750,52 @@ end $$;
 
 do $$
 declare
-  v_candidate_definition text;
+  v_candidates jsonb;
+  v_candidate_count integer;
   v_signature text;
 begin
-  select pg_get_functiondef(
-    'public.financial_reconciliation_automatic_candidates_for_base_ids(text,integer,numeric,integer,uuid[])'::regprocedure
-  ) into strict v_candidate_definition;
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('76000000-0000-0000-0000-000000009001', date '2140-01-01', 'IDENTITY-BANK-9001', '', '', 'Banco', 301.00, 'S'),
+    ('78000000-0000-0000-0000-000000009001', date '2140-01-01', 'IDENTITY-CARD-9001', '', '', 'Visa', 302.00, 'S');
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    '77000000-0000-0000-0000-000000009001', 'smoke-final-identity-dispatch',
+    'final-identity-bank-9001', date '2140-01-01', 'Payment IDENTITYBANK9001', -301.00
+  );
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values (
+    '79000000-0000-0000-0000-000000009001', 'smoke-final-identity-dispatch',
+    'final-identity-card-9001', date '2140-01-01', 'Payment IDENTITYCARD9001', 302.00
+  );
 
-  if v_candidate_definition !~* 'left join lateral\s+\('
-    or v_candidate_definition !~* 'financial_reconciliation_cgd_match_search'
-    or v_candidate_definition !~* 'd\.payment\s*=\s*''Banco'''
-    or v_candidate_definition !~* 'p_rule_version\s*=\s*2' then
-    raise exception 'Version 2 candidate function lost indexed Banco semantics.';
+  select candidates, candidate_count into strict v_candidates, v_candidate_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement', 2, 0, 1,
+    array['76000000-0000-0000-0000-000000009001'::uuid]
+  );
+  if v_candidate_count <> 1
+    or jsonb_array_length(v_candidates) <> 1
+    or v_candidates->0->>'sourceType' <> 'import_cgd_extrato_ordem'
+    or v_candidates->0->>'sourceId' <> '77000000-0000-0000-0000-000000009001'
+    or v_candidates#>>'{0,evidence,documentNumber,matched}' <> 'true' then
+    raise exception 'The Banco identity adapter no longer dispatches with its executable candidate evidence: %', v_candidates;
+  end if;
+
+  select candidates, candidate_count into strict v_candidates, v_candidate_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card', 1, 0, 1,
+    array['78000000-0000-0000-0000-000000009001'::uuid]
+  );
+  if v_candidate_count <> 1
+    or jsonb_array_length(v_candidates) <> 1
+    or v_candidates->0->>'sourceType' <> 'import_cgd_cartao_credito'
+    or v_candidates->0->>'sourceId' <> '79000000-0000-0000-0000-000000009001'
+    or v_candidates#>>'{0,evidence,documentNumber,matched}' <> 'true' then
+    raise exception 'The Visa identity adapter no longer dispatches with its executable candidate evidence: %', v_candidates;
   end if;
 
   foreach v_signature in array array[

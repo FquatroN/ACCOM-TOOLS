@@ -413,7 +413,17 @@ test("amount-only tolerance is fixed at zero in both settings shapes", () => {
 
 test("amount-only database migration is loadable for transactional contract coverage", () => {
   assert.equal(fs.existsSync(AMOUNT_ONLY_MIGRATION_PATH), true, "amount-only migration must exist");
-  assert.ok(fs.readFileSync(AMOUNT_ONLY_MIGRATION_PATH, "utf8").length > 0);
+  const migration = fs.readFileSync(AMOUNT_ONLY_MIGRATION_PATH, "utf8");
+  assert.ok(migration.length > 0);
+  for (const adapter of [
+    "financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids",
+    "financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids",
+  ]) {
+    assert.ok(
+      migration.includes(`create or replace function public.${adapter}(`),
+      `${adapter} must be installed for the transactional SQL behavior gate`,
+    );
+  }
 });
 
 test("public amount-only keys cannot disable amount-only validation", () => {

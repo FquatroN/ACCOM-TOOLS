@@ -229,6 +229,471 @@ begin
 end
 $migration$;
 
+create or replace function public.financial_reconciliation_automatic_rule_contract(
+  p_rule_key text,
+  p_rule_version integer
+)
+returns jsonb
+language sql
+immutable
+security definer set search_path = public, pg_temp
+as $$
+  select case
+    when p_rule_key = 'financial_documents_cgd_bank_statement' and p_rule_version = 2 then
+      jsonb_build_object('payment','Banco','destinationSourceType','import_cgd_extrato_ordem',
+        'descriptionThreshold',0.60,'supplierThreshold',0.70,'maxDestinationRecords',4,'maxCandidates',12)
+    when p_rule_key = 'financial_documents_cgd_credit_card' and p_rule_version = 1 then
+      jsonb_build_object('payment','Visa','destinationSourceType','import_cgd_cartao_credito',
+        'descriptionThreshold',0.55,'supplierThreshold',0.60,'maxDestinationRecords',4,'maxCandidates',12)
+    when p_rule_key = 'financial_documents_cgd_bank_statement_amount_only' and p_rule_version = 1 then
+      jsonb_build_object('payment','Banco','destinationSourceType','import_cgd_extrato_ordem',
+        'matchingMode','amount_only_one_to_one','maxDestinationRecords',1,'maxCandidates',12,
+        'fixedDifferenceAllowed',0)
+    when p_rule_key = 'financial_documents_cgd_credit_card_amount_only' and p_rule_version = 1 then
+      jsonb_build_object('payment','Visa','destinationSourceType','import_cgd_cartao_credito',
+        'matchingMode','amount_only_one_to_one','maxDestinationRecords',1,'maxCandidates',12,
+        'fixedDifferenceAllowed',0)
+    else null
+  end
+$$;
+
+create or replace function public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+  p_rule_key text,
+  p_rule_version integer,
+  p_difference_allowed numeric,
+  p_max_difference_days integer,
+  p_base_ids uuid[]
+)
+returns table (
+  base_source_id uuid,
+  base_source_date date,
+  base_snapshot jsonb,
+  candidates jsonb,
+  candidate_count integer
+)
+language sql
+stable
+security definer set search_path = public, pg_temp
+as $$
+  with bases as materialized (
+    select
+      document.id,
+      document.document_date,
+      document.amount,
+      round(document.amount * 100)::bigint as base_amount_cents
+    from public.financial_documents document
+    where p_rule_key = 'financial_documents_cgd_bank_statement_amount_only'
+      and p_rule_version = 1
+      and p_difference_allowed = 0
+      and p_max_difference_days between 0 and 90
+      and document.id = any(coalesce(p_base_ids, array[]::uuid[]))
+      and document.fat = 'S'
+      and document.payment = 'Banco'
+      and document.document_date is not null
+      and document.document_date >= date '2026-01-01'
+      and document.amount is not null
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items item
+        where item.source_type = 'financial_documents'
+          and item.source_id = document.id
+      )
+  ), qualified as materialized (
+    select
+      base.id as base_id,
+      base.document_date as base_date,
+      base.base_amount_cents,
+      jsonb_build_object(
+        'sourceType', 'financial_documents',
+        'sourceId', base.id,
+        'sourceDate', base.document_date,
+        'amount', base.amount
+      ) as base_snapshot,
+      destination.source_id,
+      destination.source_date,
+      destination.amount,
+      destination.destination_amount_cents,
+      destination.candidate_ordinal,
+      destination.total_candidate_count
+    from bases base
+    left join lateral (
+      select
+        bank.id as source_id,
+        bank.data as source_date,
+        bank.montante as amount,
+        round(bank.montante * 100)::bigint as destination_amount_cents,
+        row_number() over (order by bank.data, bank.id) as candidate_ordinal,
+        (count(*) over ())::integer as total_candidate_count
+      from public.import_cgd_extrato_ordem bank
+      where bank.montante = -base.amount
+        and round(bank.montante * 100)::bigint = -base.base_amount_cents
+        and bank.data between base.document_date - p_max_difference_days
+                          and base.document_date + p_max_difference_days
+        and bank.data >= date '2026-01-01'
+        and bank.data is not null
+        and bank.montante is not null
+        and not exists (
+          select 1
+          from public.financial_reconciliation_items item
+          where item.source_type = 'import_cgd_extrato_ordem'
+            and item.source_id = bank.id
+        )
+      order by bank.data, bank.id
+      limit 13
+    ) destination on true
+  ), grouped as (
+    select
+      base_id,
+      base_date,
+      base_snapshot,
+      coalesce(jsonb_agg(jsonb_build_object(
+        'sourceType', 'import_cgd_extrato_ordem',
+        'sourceId', source_id,
+        'sourceDate', source_date,
+        'amount', amount,
+        'evidence', jsonb_build_object(
+          'amount', jsonb_build_object(
+            'baseAmountCents', base_amount_cents,
+            'destinationAmountCents', destination_amount_cents,
+            'signedDifferenceCents', base_amount_cents + destination_amount_cents,
+            'matched', base_amount_cents + destination_amount_cents = 0
+          ),
+          'date', jsonb_build_object(
+            'distanceDays', abs(source_date - base_date),
+            'maxDifferenceDays', p_max_difference_days,
+            'matched', source_date between base_date - p_max_difference_days
+                                      and base_date + p_max_difference_days
+          )
+        )
+      ) order by source_date, source_id) filter (
+        where source_id is not null and candidate_ordinal <= 12
+      ), '[]'::jsonb) as candidates,
+      coalesce(max(total_candidate_count), 0)::integer as candidate_count
+    from qualified
+    group by base_id, base_date, base_snapshot
+  )
+  select base_id, base_date, base_snapshot, candidates, candidate_count
+  from grouped
+  order by base_date, base_id
+$$;
+
+create or replace function public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+  p_rule_key text,
+  p_rule_version integer,
+  p_difference_allowed numeric,
+  p_max_difference_days integer,
+  p_base_ids uuid[]
+)
+returns table (
+  base_source_id uuid,
+  base_source_date date,
+  base_snapshot jsonb,
+  candidates jsonb,
+  candidate_count integer
+)
+language sql
+stable
+security definer set search_path = public, pg_temp
+as $$
+  with bases as materialized (
+    select
+      document.id,
+      document.document_date,
+      document.amount,
+      round(document.amount * 100)::bigint as base_amount_cents
+    from public.financial_documents document
+    where p_rule_key = 'financial_documents_cgd_credit_card_amount_only'
+      and p_rule_version = 1
+      and p_difference_allowed = 0
+      and p_max_difference_days between 0 and 90
+      and document.id = any(coalesce(p_base_ids, array[]::uuid[]))
+      and document.fat = 'S'
+      and document.payment = 'Visa'
+      and document.document_date is not null
+      and document.document_date >= date '2026-01-01'
+      and document.amount is not null
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items item
+        where item.source_type = 'financial_documents'
+          and item.source_id = document.id
+      )
+  ), qualified as materialized (
+    select
+      base.id as base_id,
+      base.document_date as base_date,
+      base.base_amount_cents,
+      jsonb_build_object(
+        'sourceType', 'financial_documents',
+        'sourceId', base.id,
+        'sourceDate', base.document_date,
+        'amount', base.amount
+      ) as base_snapshot,
+      destination.source_id,
+      destination.source_date,
+      destination.amount,
+      destination.destination_amount_cents,
+      destination.candidate_ordinal,
+      destination.total_candidate_count
+    from bases base
+    left join lateral (
+      select
+        card.id as source_id,
+        card.data as source_date,
+        card.valor as amount,
+        round(card.valor * 100)::bigint as destination_amount_cents,
+        row_number() over (order by card.data, card.id) as candidate_ordinal,
+        (count(*) over ())::integer as total_candidate_count
+      from public.import_cgd_cartao_credito card
+      where card.valor = -base.amount
+        and round(card.valor * 100)::bigint = -base.base_amount_cents
+        and card.data between base.document_date - p_max_difference_days
+                          and base.document_date + p_max_difference_days
+        and card.data >= date '2026-01-01'
+        and card.data is not null
+        and card.valor is not null
+        and not exists (
+          select 1
+          from public.financial_reconciliation_items item
+          where item.source_type = 'import_cgd_cartao_credito'
+            and item.source_id = card.id
+        )
+      order by card.data, card.id
+      limit 13
+    ) destination on true
+  ), grouped as (
+    select
+      base_id,
+      base_date,
+      base_snapshot,
+      coalesce(jsonb_agg(jsonb_build_object(
+        'sourceType', 'import_cgd_cartao_credito',
+        'sourceId', source_id,
+        'sourceDate', source_date,
+        'amount', amount,
+        'evidence', jsonb_build_object(
+          'amount', jsonb_build_object(
+            'baseAmountCents', base_amount_cents,
+            'destinationAmountCents', destination_amount_cents,
+            'signedDifferenceCents', base_amount_cents + destination_amount_cents,
+            'matched', base_amount_cents + destination_amount_cents = 0
+          ),
+          'date', jsonb_build_object(
+            'distanceDays', abs(source_date - base_date),
+            'maxDifferenceDays', p_max_difference_days,
+            'matched', source_date between base_date - p_max_difference_days
+                                      and base_date + p_max_difference_days
+          )
+        )
+      ) order by source_date, source_id) filter (
+        where source_id is not null and candidate_ordinal <= 12
+      ), '[]'::jsonb) as candidates,
+      coalesce(max(total_candidate_count), 0)::integer as candidate_count
+    from qualified
+    group by base_id, base_date, base_snapshot
+  )
+  select base_id, base_date, base_snapshot, candidates, candidate_count
+  from grouped
+  order by base_date, base_id
+$$;
+
+create or replace function public.financial_reconciliation_automatic_candidates_for_base_ids(
+  p_rule_key text,
+  p_rule_version integer,
+  p_difference_allowed numeric,
+  p_max_difference_days integer,
+  p_base_ids uuid[]
+)
+returns table (
+  base_source_id uuid,
+  base_source_date date,
+  base_snapshot jsonb,
+  candidates jsonb,
+  candidate_count integer
+)
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+begin
+  if public.financial_reconciliation_automatic_rule_contract(p_rule_key, p_rule_version) is null then
+    raise exception 'Automatic reconciliation rule is unsupported.';
+  end if;
+  if p_max_difference_days not between 0 and 90 then
+    raise exception 'Max difference in days must be between 0 and 90.';
+  end if;
+
+  if p_rule_key = 'financial_documents_cgd_bank_statement' and p_rule_version = 2 then
+    return query
+    select *
+    from public.financial_reconciliation_automatic_bank_candidates_for_base_ids(
+      p_rule_key, p_rule_version, p_difference_allowed, p_max_difference_days, p_base_ids
+    );
+  elsif p_rule_key = 'financial_documents_cgd_credit_card' and p_rule_version = 1 then
+    return query
+    select *
+    from public.financial_reconciliation_automatic_credit_card_candidates_for_base_ids(
+      p_rule_key, p_rule_version, p_difference_allowed, p_max_difference_days, p_base_ids
+    );
+  elsif p_rule_key = 'financial_documents_cgd_bank_statement_amount_only' and p_rule_version = 1 then
+    return query
+    select *
+    from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+      p_rule_key, p_rule_version, p_difference_allowed, p_max_difference_days, p_base_ids
+    );
+  elsif p_rule_key = 'financial_documents_cgd_credit_card_amount_only' and p_rule_version = 1 then
+    return query
+    select *
+    from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+      p_rule_key, p_rule_version, p_difference_allowed, p_max_difference_days, p_base_ids
+    );
+  end if;
+end
+$$;
+
+create or replace function public.financial_reconciliation_automatic_base_page(
+  p_rule_key text,
+  p_rule_version integer,
+  p_after_date date,
+  p_after_id uuid,
+  p_page_size integer
+)
+returns table (
+  id uuid,
+  document_date date
+)
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_contract jsonb;
+begin
+  v_contract := public.financial_reconciliation_automatic_rule_contract(p_rule_key, p_rule_version);
+  if v_contract is null then
+    raise exception 'Automatic reconciliation rule is unsupported.';
+  end if;
+  if p_page_size not between 1 and 25 then
+    raise exception 'Automatic analysis page size must be between 1 and 25.';
+  end if;
+
+  return query
+  select document.id, document.document_date
+  from public.financial_documents document
+  where document.fat = 'S'
+    and document.payment = v_contract->>'payment'
+    and document.document_date is not null
+    and document.document_date >= date '2026-01-01'
+    and document.amount is not null
+    and (p_after_date is null or (document.document_date, document.id) > (p_after_date, p_after_id))
+    and not exists (
+      select 1 from public.financial_reconciliation_items item
+      where item.source_type = 'financial_documents' and item.source_id = document.id
+    )
+  order by document.document_date, document.id
+  limit p_page_size;
+end
+$$;
+
+create or replace function public.financial_reconciliation_automatic_base_count(
+  p_rule_key text,
+  p_rule_version integer
+)
+returns bigint
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_contract jsonb;
+  v_count bigint;
+begin
+  v_contract := public.financial_reconciliation_automatic_rule_contract(p_rule_key, p_rule_version);
+  if v_contract is null then
+    raise exception 'Automatic reconciliation rule is unsupported.';
+  end if;
+
+  select count(*) into v_count
+  from public.financial_documents document
+  where document.fat = 'S'
+    and document.payment = v_contract->>'payment'
+    and document.document_date is not null
+    and document.document_date >= date '2026-01-01'
+    and document.amount is not null
+    and not exists (
+      select 1 from public.financial_reconciliation_items item
+      where item.source_type = 'financial_documents' and item.source_id = document.id
+    );
+  return v_count;
+end
+$$;
+
+create or replace function public.financial_reconciliation_automatic_candidate_page(
+  p_rule_key text,
+  p_rule_version integer,
+  p_difference_allowed numeric,
+  p_max_difference_days integer,
+  p_after_date date,
+  p_after_id uuid,
+  p_page_size integer default 25
+)
+returns table (
+  base_source_id uuid,
+  base_source_date date,
+  base_snapshot jsonb,
+  candidates jsonb,
+  candidate_count integer
+)
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+begin
+  if p_max_difference_days not between 0 and 90 then
+    raise exception 'Max difference in days must be between 0 and 90.';
+  end if;
+
+  return query
+  with page as materialized (
+    select base.id, base.document_date
+    from public.financial_reconciliation_automatic_base_page(
+      p_rule_key, p_rule_version, p_after_date, p_after_id, p_page_size
+    ) base
+  )
+  select * from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    p_rule_key,
+    p_rule_version,
+    p_difference_allowed,
+    p_max_difference_days,
+    array(select page.id from page order by page.document_date, page.id)
+  );
+end
+$$;
+
+create or replace function public.financial_reconciliation_automatic_single_base_candidates(
+  p_rule_key text,
+  p_rule_version integer,
+  p_difference_allowed numeric,
+  p_max_difference_days integer,
+  p_base_source_id uuid
+)
+returns table (
+  base_source_id uuid,
+  base_source_date date,
+  base_snapshot jsonb,
+  candidates jsonb,
+  candidate_count integer
+)
+language sql
+stable
+security definer set search_path = public, pg_temp
+as $$
+  select * from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    p_rule_key, p_rule_version, p_difference_allowed, p_max_difference_days,
+    array[p_base_source_id]
+  )
+$$;
+
 create or replace function public.get_financial_reconciliation_automation_settings()
 returns jsonb
 language plpgsql
@@ -548,10 +1013,18 @@ revoke all on function public.get_financial_reconciliation_automation_settings()
   from public, anon, authenticated, service_role;
 revoke all on function public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)
   from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])
+  from public, anon, authenticated, service_role;
 
 grant execute on function public.get_financial_reconciliation_automation_settings()
   to service_role;
 grant execute on function public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)
+  to service_role;
+grant execute on function public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])
+  to service_role;
+grant execute on function public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])
   to service_role;
 
 notify pgrst, 'reload schema';
