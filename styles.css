@@ -6792,7 +6792,8 @@ button[id^="close-settings"] {
 
 .financial-reconciliation-workbench-automation-proposals {
   display: grid;
-  gap: .5rem;
+  gap: 0;
+  border-top: 1px solid var(--border);
 }
 
 .financial-reconciliation-automation-proposal {
@@ -6800,11 +6801,12 @@ button[id^="close-settings"] {
   grid-template-columns: minmax(8.5rem, .55fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 0;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 0;
+  border-bottom: 1px solid var(--border);
   border-left: 4px solid var(--brand);
-  border-radius: 10px;
+  border-radius: 0;
   overflow-wrap: anywhere;
-  background: var(--surface-soft, rgba(255,255,255,.55));
+  background: transparent;
 }
 
 .financial-reconciliation-automation-proposal:focus-within {
@@ -6842,7 +6844,7 @@ button[id^="close-settings"] {
   min-width: 0;
   padding: .55rem;
   border-right: 1px solid var(--border);
-  background: var(--surface-soft, rgba(255,255,255,.55));
+  background: transparent;
   font-size: .7rem;
 }
 
@@ -6877,7 +6879,7 @@ button[id^="close-settings"] {
   border: 0;
   border-radius: 0;
   line-height: 1.25;
-  background: white;
+  background: transparent;
 }
 
 .financial-reconciliation-automation-proposal-records > .financial-reconciliation-automation-item + .financial-reconciliation-automation-item {

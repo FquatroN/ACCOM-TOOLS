@@ -434,10 +434,23 @@ test("late Settings Automatic handoff focus respects the tab selected while data
   assert.equal(els.financialReconciliationAutomaticTab.focusCalls, 0);
 });
 
-test("automatic proposals use a metadata-first desktop row and narrow stack", () => {
-  assert.match(css, /\.financial-reconciliation-automation-proposal\s*\{[\s\S]*grid-template-columns:\s*minmax\([^;]+\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/);
-  assert.match(css, /\.financial-reconciliation-automation-proposal-meta\s*\{/);
-  assert.match(css, /@media\s*\(max-width:\s*700px\)[\s\S]*\.financial-reconciliation-automation-proposal\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+test("automatic proposals render as three divided open desktop columns", () => {
+  assert.match(css, /\.financial-reconciliation-workbench-automation-proposals\s*\{[^}]*gap:\s*0;[^}]*border-top:\s*1px solid var\(--border\)[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal\s*\{[^}]*grid-template-columns:\s*minmax\([^;]+\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--border\)[^}]*border-left:\s*4px solid var\(--brand\)[^}]*border-radius:\s*0[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal-meta\s*\{[^}]*border-right:\s*1px solid var\(--border\)[^}]*background:\s*transparent[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*\.financial-reconciliation-automation-item\s*\+\s*\.financial-reconciliation-automation-item\s*\{[^}]*border-left:\s*1px solid var\(--border\)[^}]*\}/);
+});
+
+test("automatic proposal dividers become section separators on narrow screens", () => {
+  const narrowStart = css.indexOf("@media (max-width: 700px)");
+  const narrowEnd = css.indexOf("@media (max-width: 620px)", narrowStart);
+  assert.notEqual(narrowStart, -1);
+  assert.notEqual(narrowEnd, -1);
+  const narrowCss = css.slice(narrowStart, narrowEnd);
+
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-meta\s*\{[^}]*border-right:\s*0[^}]*border-bottom:\s*1px solid var\(--border\)[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-records\s*>\s*\.financial-reconciliation-automation-item\s*\+\s*\.financial-reconciliation-automation-item\s*\{[^}]*border-left:\s*0[^}]*border-top:\s*1px solid var\(--border\)[^}]*\}/);
 });
 
 test("workbench rule snapshots keep only valid unique signed sources", () => {
