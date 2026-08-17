@@ -188,7 +188,9 @@ test("automatic reconciliation settings stay dense, wrapping, and reachable on n
   assert.match(css, /\.financial-reconciliation-automation-schedule\s*\{[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(10rem,\s*1fr\)\);/);
   assert.match(css, /\.financial-reconciliation-automation-logic\s*\{[\s\S]*overflow-wrap:\s*anywhere;[\s\S]*white-space:\s*pre-wrap;/);
   assert.match(css, /\.financial-reconciliation-automation-rule-controls\s*\{[\s\S]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(css, /\.financial-reconciliation-automation-fixed-value\s*\{[\s\S]*min-height:[\s\S]*border:[\s\S]*background:/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-automation-rule-controls\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-automation-fixed-value\s*\{[\s\S]*font-size:\s*16px;/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-settings-tabs\s*>\s*button\s*\{[\s\S]*flex:\s*1 1 12rem;/);
   assert.match(css, /\.financial-reconciliation-automation-rule-card\s*:focus-within\s*\{/);
   assert.match(css, /\.financial-reconciliation-automation-settings\s+input\[aria-invalid="true"\]\s*\{[\s\S]*border-color:/);

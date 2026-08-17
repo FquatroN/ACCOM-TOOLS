@@ -1334,6 +1334,20 @@ td {
   min-width: 0;
 }
 
+.financial-reconciliation-automation-fixed-value {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.28rem;
+  padding: .58rem .7rem;
+  border: 1px solid #d8cbc2;
+  border-radius: 10px;
+  background: #f7f4ee;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .financial-reconciliation-automation-settings input[aria-invalid="true"] {
   border-color: var(--danger);
   outline-color: var(--danger);
@@ -1390,7 +1404,8 @@ td {
   }
 
   .financial-reconciliation-automation-schedule input,
-  .financial-reconciliation-automation-rule-controls input {
+  .financial-reconciliation-automation-rule-controls input,
+  .financial-reconciliation-automation-fixed-value {
     font-size: 16px;
   }
 }

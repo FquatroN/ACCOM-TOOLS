@@ -53,7 +53,44 @@ function managedRules() {
       maxDifferenceDays: 7,
       priority: 1,
     },
+    {
+      ruleKey: "financial_documents_cgd_bank_statement_amount_only",
+      ruleVersion: 1,
+      displayName: "Bank statement amount-only <rule>",
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: ["import_cgd_extrato_ordem"],
+      logicDescription: "Amount-only bank statement rule",
+      definition: { matching: "amount-only" },
+      enabled: false,
+      allowManualExecution: true,
+      includeInScheduledBatch: false,
+      differenceAllowed: "0.00",
+      maxDifferenceDays: 2,
+      priority: 3,
+    },
+    {
+      ruleKey: "financial_documents_cgd_credit_card_amount_only",
+      ruleVersion: 1,
+      displayName: "Credit card amount-only rule",
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: ["import_fdm_accounts"],
+      logicDescription: "Amount-only credit card rule",
+      definition: { matching: "amount-only" },
+      enabled: false,
+      allowManualExecution: true,
+      includeInScheduledBatch: false,
+      differenceAllowed: "0.00",
+      maxDifferenceDays: 3,
+      priority: 4,
+    },
   ];
+}
+
+function isAmountOnlyRuleKey(ruleKey) {
+  return [
+    "financial_documents_cgd_bank_statement_amount_only",
+    "financial_documents_cgd_credit_card_amount_only",
+  ].includes(String(ruleKey ?? "").trim());
 }
 
 function automationSettings(overrides = {}) {
@@ -71,10 +108,11 @@ function automationSettings(overrides = {}) {
 function compilePayload(state) {
   return new Function(
     "state",
+    "isReconciliationAutomationAmountOnlyRule",
     `${appFunctionSource("clean")}
      ${appFunctionSource("reconciliationAutomationSettingsPayload")}
      return reconciliationAutomationSettingsPayload;`,
-  )(state);
+  )(state, isAmountOnlyRuleKey);
 }
 
 function fakeClassList() {
@@ -135,6 +173,7 @@ function renderAutomationSettings(settings, { dirty = false, canOpenWorkbench = 
     "financialReconciliationSourceLabel",
     "reconciliationAutomationSettingsPayload",
     "updateReconciliationAutomationControls",
+    "isReconciliationAutomationAmountOnlyRule",
     `${appFunctionSource("renderReconciliationAutomationSettings")}
      return renderReconciliationAutomationSettings;`,
   )(
@@ -152,6 +191,7 @@ function renderAutomationSettings(settings, { dirty = false, canOpenWorkbench = 
     })[value] || value,
     payload,
     updateControls,
+    isAmountOnlyRuleKey,
   );
   render();
   return els;
@@ -201,6 +241,31 @@ test("actual renderer keeps managed definition text, versions, and thresholds re
   assert.doesNotMatch(markup, /data-reconciliation-automation-rule-field="(?:definition|logicDescription|ruleVersion)"/);
 });
 
+test("amount-only Settings cards render a fixed zero while their other controls stay editable", () => {
+  const markup = renderAutomationSettings(automationSettings()).financialReconciliationAutomationRules.innerHTML;
+  const amountOnlyKeys = [
+    "financial_documents_cgd_bank_statement_amount_only",
+    "financial_documents_cgd_credit_card_amount_only",
+  ];
+
+  assert.equal((markup.match(/data-reconciliation-automation-rule-field="differenceAllowed"/g) || []).length, 2);
+  assert.equal((markup.match(/financial-reconciliation-automation-fixed-value/g) || []).length, 2);
+  for (const key of ["rule-a", "rule-b"]) {
+    const card = markup.match(new RegExp(`<article[^>]*data-reconciliation-automation-rule-card="${key}"[\\s\\S]*?<\\/article>`))?.[0] || "";
+    assert.match(card, /<input type="number"[^>]*data-reconciliation-automation-rule-field="differenceAllowed"/);
+    assert.doesNotMatch(card, /financial-reconciliation-automation-fixed-value/);
+  }
+  for (const key of amountOnlyKeys) {
+    const card = markup.match(new RegExp(`<article[^>]*data-reconciliation-automation-rule-card="${key}"[\\s\\S]*?<\\/article>`))?.[0] || "";
+    assert.match(card, /<output class="financial-reconciliation-automation-fixed-value"[^>]*aria-label="Difference allowed, fixed"[^>]*>0\.00 €<\/output>/);
+    assert.doesNotMatch(card, /data-reconciliation-automation-rule-field="differenceAllowed"/);
+    for (const field of ["enabled", "allowManualExecution", "includeInScheduledBatch", "maxDifferenceDays"]) {
+      assert.match(card, new RegExp(`data-reconciliation-automation-rule-field="${field}"`));
+      assert.doesNotMatch(card.match(new RegExp(`data-reconciliation-automation-rule-field="${field}"[^>]*`, "g"))?.join("") || "", /disabled/);
+    }
+  }
+});
+
 test("actual renderer summarizes the last scheduled batch without presenting one child run", () => {
   const els = renderAutomationSettings(automationSettings({
     lastScheduledBatch: {
@@ -248,8 +313,41 @@ test("actual serializer emits only approved schedule and managed-rule configurat
         maxDifferenceDays: 4,
         priority: 2,
       },
+      {
+        ruleKey: "financial_documents_cgd_bank_statement_amount_only",
+        ruleVersion: 1,
+        enabled: false,
+        allowManualExecution: true,
+        includeInScheduledBatch: false,
+        differenceAllowed: "0.00",
+        maxDifferenceDays: 2,
+        priority: 3,
+      },
+      {
+        ruleKey: "financial_documents_cgd_credit_card_amount_only",
+        ruleVersion: 1,
+        enabled: false,
+        allowManualExecution: true,
+        includeInScheduledBatch: false,
+        differenceAllowed: "0.00",
+        maxDifferenceDays: 3,
+        priority: 4,
+      },
     ],
   });
+});
+
+test("amount-only settings serialize authoritative zero despite a tampered local tolerance", () => {
+  const settings = automationSettings();
+  for (const rule of settings.rules.filter((item) => isAmountOnlyRuleKey(item.ruleKey))) rule.differenceAllowed = "9.99";
+
+  const payload = compilePayload({ reconciliationAutomationSettings: settings })();
+
+  assert.ok(payload);
+  assert.deepEqual(
+    payload.rules.filter((rule) => isAmountOnlyRuleKey(rule.ruleKey)).map((rule) => rule.differenceAllowed),
+    ["0.00", "0.00"],
+  );
 });
 
 test("actual reorder helper produces stable unique consecutive priorities", () => {
@@ -267,12 +365,22 @@ test("actual reorder helper produces stable unique consecutive priorities", () =
   move("rule-b", "up");
   assert.deepEqual(
     state.reconciliationAutomationSettings.rules.map(({ ruleKey, priority }) => ({ ruleKey, priority })),
-    [{ ruleKey: "rule-b", priority: 1 }, { ruleKey: "rule-a", priority: 2 }],
+    [
+      { ruleKey: "rule-b", priority: 1 },
+      { ruleKey: "rule-a", priority: 2 },
+      { ruleKey: "financial_documents_cgd_bank_statement_amount_only", priority: 3 },
+      { ruleKey: "financial_documents_cgd_credit_card_amount_only", priority: 4 },
+    ],
   );
   assert.equal(state.reconciliationAutomationSettingsDirty, true);
   assert.deepEqual(focusCalls[0], ["rule-b", "up"]);
+  move("financial_documents_cgd_bank_statement_amount_only", "up");
+  assert.equal(
+    state.reconciliationAutomationSettings.rules.find((rule) => rule.ruleKey === "financial_documents_cgd_bank_statement_amount_only").priority,
+    2,
+  );
   move("rule-b", "up");
-  assert.deepEqual(state.reconciliationAutomationSettings.rules.map((rule) => rule.priority), [1, 2]);
+  assert.deepEqual(state.reconciliationAutomationSettings.rules.map((rule) => rule.priority), [1, 2, 3, 4]);
 });
 
 test("invalid local automation values disable Save", () => {
@@ -331,16 +439,32 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     "HTMLElement",
     "state",
     "clean",
+    "isReconciliationAutomationAmountOnlyRule",
     "updateReconciliationAutomationNextExecution",
     "updateReconciliationAutomationControls",
     `${appFunctionSource("onReconciliationAutomationSettingsInput")}
      return onReconciliationAutomationSettingsInput;`,
-  )(FakeHTMLElement, state, (value) => String(value ?? "").trim(), () => {}, () => { validationUpdates += 1; });
+  )(FakeHTMLElement, state, (value) => String(value ?? "").trim(), isAmountOnlyRuleKey, () => {}, () => { validationUpdates += 1; });
   input({ target: new FakeHTMLElement({ reconciliationAutomationRuleKey: "rule-a", reconciliationAutomationRuleField: "differenceAllowed" }, { value: "3.25" }) });
   assert.equal(settings.rules.find((rule) => rule.ruleKey === "rule-a").differenceAllowed, "3.25");
   assert.equal(state.reconciliationAutomationSettingsDirty, true);
   assert.equal(validationUpdates, 1);
   assert.deepEqual(requests, []);
+
+  const amountOnlyRule = settings.rules.find((rule) => isAmountOnlyRuleKey(rule.ruleKey));
+  input({ target: new FakeHTMLElement({ reconciliationAutomationRuleKey: amountOnlyRule.ruleKey, reconciliationAutomationRuleField: "differenceAllowed" }, { value: "4.50" }) });
+  assert.equal(amountOnlyRule.differenceAllowed, "0.00");
+  assert.equal(validationUpdates, 1);
+
+  input({ target: new FakeHTMLElement({ reconciliationAutomationRuleKey: amountOnlyRule.ruleKey, reconciliationAutomationRuleField: "maxDifferenceDays" }, { value: "8" }) });
+  assert.equal(amountOnlyRule.maxDifferenceDays, "8");
+  assert.equal(validationUpdates, 2);
+
+  for (const [field, checked] of [["enabled", true], ["allowManualExecution", false], ["includeInScheduledBatch", true]]) {
+    input({ target: new FakeHTMLElement({ reconciliationAutomationRuleKey: amountOnlyRule.ruleKey, reconciliationAutomationRuleField: field }, { checked }) });
+    assert.equal(amountOnlyRule[field], checked);
+  }
+  assert.equal(validationUpdates, 5);
 
   const payload = compilePayload(state);
   const statuses = [];
@@ -348,12 +472,14 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     "state",
     "clean",
     "clone",
+    "isReconciliationAutomationAmountOnlyRule",
     `${appFunctionSource("applyReconciliationAutomationSettingsResult")}
      return applyReconciliationAutomationSettingsResult;`,
   )(
     state,
     new Function(`${appFunctionSource("clean")}; return clean;`)(),
     new Function(`${appFunctionSource("clone")}; return clone;`)(),
+    isAmountOnlyRuleKey,
   );
   const financialState = new Function(
     "state",
@@ -394,6 +520,10 @@ test("automation inputs change only the local draft until one atomic Save", asyn
   assert.equal(requests[0].url, "/api/reconciliation-automation-settings");
   assert.equal(requests[0].options.method, "PUT");
   assert.equal(requests[0].options.body.rules[0].differenceAllowed, "3.25");
+  assert.deepEqual(
+    requests[0].options.body.rules.filter((rule) => isAmountOnlyRuleKey(rule.ruleKey)).map((rule) => rule.differenceAllowed),
+    ["0.00", "0.00"],
+  );
   assert.equal(state.reconciliationAutomationSettingsDirty, false);
   assert.equal(state.reconciliationAutomationSettings.rules[0].ruleVersion, 9);
   assert.equal(state.reconciliationAutomationSettings.rules[0].displayName, "Authoritative name");
@@ -1085,6 +1215,25 @@ test("workbench rule LOV filters, sorts, escapes, and preserves only a valid sel
   assert.doesNotMatch(defaultMarkup, /value="manual-enabled"[^>]*selected/);
 });
 
+test("enabled manual amount-only rules appear escaped in the workbench selector", () => {
+  const amountOnly = {
+    ...managedRules()[2],
+    enabled: true,
+    allowManualExecution: true,
+    displayName: "<Amount-only & manual>",
+  };
+  const { els } = renderAutomationWorkbench(null, new Set(), {
+    rules: [amountOnly],
+    selectedRuleKey: amountOnly.ruleKey,
+  });
+
+  assert.match(
+    els.financialReconciliationWorkbenchAutomationRule.innerHTML,
+    /value="financial_documents_cgd_bank_statement_amount_only" selected>&lt;Amount-only &amp; manual&gt;<\/option>/,
+  );
+  assert.equal(els.financialReconciliationWorkbenchAutomationRule.disabled, false);
+});
+
 test("workbench rule change keeps the user selection and refuses changes while a run is open", () => {
   const otherRule = { ...workbenchRules()[0], ruleKey: "other-manual", displayName: "Other manual", priority: 2 };
   const current = {
@@ -1316,12 +1465,13 @@ test("Reconciliation loads Manual first and lazily loads Automatic rules once", 
   assert.deepEqual(calls, ["render"]);
 });
 
-test("Analyze sends one rule and a fresh UUID, clears old selection, and selects only proposals", async () => {
+test("Analyze sends only the selected amount-only rule and a fresh UUID", async () => {
+  const amountOnly = { ...managedRules()[2], enabled: true, allowManualExecution: true };
   const current = {
     automation: {
-      rules: workbenchRules(),
+      rules: [...workbenchRules(), amountOnly],
       run: null,
-      selectedRuleKey: "manual-enabled",
+      selectedRuleKey: amountOnly.ruleKey,
       selectedProposalIds: new Set(["old-proposal"]),
       pendingAction: "",
       loaded: true,
@@ -1371,7 +1521,7 @@ test("Analyze sends one rule and a fresh UUID, clears old selection, and selects
       method: "POST",
       body: {
         action: "analyze_rule",
-        ruleKeys: ["manual-enabled"],
+        ruleKeys: ["financial_documents_cgd_bank_statement_amount_only"],
         clientRequestId: "00000000-0000-0000-0000-000000000199",
       },
     },

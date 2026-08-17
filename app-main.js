@@ -21428,6 +21428,12 @@ function setReconciliationAutomationSettingsStatus(message, isError = false) {
   els.financialReconciliationAutomationStatus.classList.toggle("status-error", Boolean(isError));
 }
 
+function isReconciliationAutomationAmountOnlyRule(ruleKey) {
+  const key = clean(ruleKey);
+  return key === "financial_documents_cgd_bank_statement_amount_only"
+    || key === "financial_documents_cgd_credit_card_amount_only";
+}
+
 function applyReconciliationAutomationSettingsResult(result) {
   const current = state.reconciliationAutomationSettings;
   const schedule = result?.schedule && typeof result.schedule === "object" ? result.schedule : {};
@@ -21449,7 +21455,7 @@ function applyReconciliationAutomationSettingsResult(result) {
     enabled: rule?.enabled === true,
     allowManualExecution: rule?.allowManualExecution === true,
     includeInScheduledBatch: rule?.includeInScheduledBatch === true,
-    differenceAllowed: clean(rule?.differenceAllowed) || "0.00",
+    differenceAllowed: isReconciliationAutomationAmountOnlyRule(rule?.ruleKey) ? "0.00" : clean(rule?.differenceAllowed) || "0.00",
     maxDifferenceDays: Number(rule?.maxDifferenceDays),
     priority: Number.isInteger(Number(rule?.priority)) && Number(rule.priority) > 0 ? Number(rule.priority) : index + 1,
   })).sort((left, right) => left.priority - right.priority || left.ruleKey.localeCompare(right.ruleKey));
@@ -21473,7 +21479,7 @@ function reconciliationAutomationSettingsPayload() {
     const rule = orderedRules[index];
     const ruleKey = clean(rule?.ruleKey);
     const ruleVersion = Number(rule?.ruleVersion);
-    const differenceAllowed = clean(rule?.differenceAllowed);
+    const differenceAllowed = isReconciliationAutomationAmountOnlyRule(ruleKey) ? "0.00" : clean(rule?.differenceAllowed);
     const maxDifferenceDaysText = clean(rule?.maxDifferenceDays);
     const maxDifferenceDays = Number(maxDifferenceDaysText);
     if (!ruleKey || !Number.isInteger(ruleVersion) || ruleVersion < 1) return null;
@@ -21620,6 +21626,11 @@ function renderReconciliationAutomationSettings() {
         : "None";
       const definitionText = JSON.stringify(rule?.definition && typeof rule.definition === "object" ? rule.definition : {}, null, 2);
       const logicText = [clean(rule?.logicDescription), definitionText].filter(Boolean).join("\n\n");
+      const differenceAllowedControl = isReconciliationAutomationAmountOnlyRule(ruleKey)
+        ? `<label>Difference allowed
+      <output class="financial-reconciliation-automation-fixed-value" aria-label="Difference allowed, fixed">0.00 €</output>
+    </label>`
+        : `<label>Difference allowed<input type="number" min="0" step="0.01" inputmode="decimal" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="differenceAllowed" value="${escape(rule?.differenceAllowed)}" ${current.loading ? "disabled" : ""} /></label>`;
       return `<article class="financial-reconciliation-automation-rule-card" data-reconciliation-automation-rule-card="${escape(ruleKey)}" tabindex="-1">
   <div class="financial-reconciliation-automation-rule-head">
     <div><h4>${escape(rule?.displayName || ruleKey || "Managed rule")}</h4><span class="financial-reconciliation-automation-rule-version">Version ${escape(rule?.ruleVersion)} · managed definition</span></div>
@@ -21630,7 +21641,7 @@ function renderReconciliationAutomationSettings() {
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="enabled" ${rule?.enabled === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Enabled</label>
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="allowManualExecution" ${rule?.allowManualExecution === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Manual</label>
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="includeInScheduledBatch" ${rule?.includeInScheduledBatch === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Scheduled</label>
-    <label>Difference allowed<input type="number" min="0" step="0.01" inputmode="decimal" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="differenceAllowed" value="${escape(rule?.differenceAllowed)}" ${current.loading ? "disabled" : ""} /></label>
+    ${differenceAllowedControl}
     <label>Max difference days<input type="number" min="0" max="90" step="1" inputmode="numeric" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="maxDifferenceDays" value="${escape(rule?.maxDifferenceDays)}" ${current.loading ? "disabled" : ""} /></label>
   </div>
   <details class="financial-reconciliation-automation-definition"><summary>Managed definition (read only)</summary><pre class="financial-reconciliation-automation-logic">${escape(logicText)}</pre></details>
@@ -21709,6 +21720,10 @@ function onReconciliationAutomationSettingsInput(event) {
   const field = clean(target.dataset.reconciliationAutomationRuleField);
   const rule = current.rules.find((item) => clean(item?.ruleKey) === ruleKey);
   if (!rule || !["enabled", "allowManualExecution", "includeInScheduledBatch", "differenceAllowed", "maxDifferenceDays"].includes(field)) return;
+  if (field === "differenceAllowed" && isReconciliationAutomationAmountOnlyRule(ruleKey)) {
+    rule.differenceAllowed = "0.00";
+    return;
+  }
   rule[field] = ["enabled", "allowManualExecution", "includeInScheduledBatch"].includes(field)
     ? target.checked === true
     : clean(target.value);
