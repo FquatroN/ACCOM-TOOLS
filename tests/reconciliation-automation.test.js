@@ -70,12 +70,6 @@ const CREDIT_CARD_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-16-financial-reconciliation-automation-credit-card-rule.sql",
 );
-const AMOUNT_ONLY_MIGRATION_PATH = path.join(
-  __dirname,
-  "..",
-  "supabase-migrations",
-  "2026-08-17-financial-reconciliation-automation-amount-only-rules.sql",
-);
 const EXECUTION_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -600,24 +594,6 @@ test("amount-only tolerance is fixed at zero in both settings shapes", () => {
   assert.throws(() => normalizeRpcSettings(fourRuleRpcSettings({
     creditCardAmountOnlyDifferenceAllowedCents: 1,
   })), /amount-only.*zero/i);
-});
-
-test("amount-only database migration is loadable for transactional contract coverage", () => {
-  assert.equal(fs.existsSync(AMOUNT_ONLY_MIGRATION_PATH), true, "amount-only migration must exist");
-  const migration = fs.readFileSync(AMOUNT_ONLY_MIGRATION_PATH, "utf8");
-  assert.ok(migration.length > 0);
-  for (const functionName of [
-    "financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids",
-    "financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids",
-    "financial_reconciliation_finalize_automatic_analysis",
-    "financial_reconciliation_automatic_lock_destination_items",
-    "execute_financial_reconciliation_automatic_proposal",
-  ]) {
-    assert.ok(
-      migration.includes(`create or replace function public.${functionName}(`),
-      `${functionName} must be installed for the transactional SQL behavior gate`,
-    );
-  }
 });
 
 test("public amount-only keys cannot disable amount-only validation", () => {

@@ -266,6 +266,101 @@ test("amount-only Settings cards render a fixed zero while their other controls 
   }
 });
 
+test("server-loaded amount-only tolerances canonicalize to zero without changing identity tolerances", () => {
+  const rules = managedRules();
+  const result = {
+    schedule: {
+      enabled: true,
+      timeOfDay: "04:45",
+      timeZone: "Europe/Lisbon",
+      updatedBy: "admin@example.com",
+      updatedAt: "2026-08-17T10:00:00.000Z",
+    },
+    rules: [
+      {
+        ...rules[0],
+        ruleKey: "financial_documents_cgd_bank_statement",
+        ruleVersion: 2,
+        displayName: "Financial Documents to CGD Bank Statement",
+        differenceAllowed: 7.65,
+        priority: 1,
+        updatedBy: "admin@example.com",
+        updatedAt: "2026-08-17T10:00:01.000Z",
+      },
+      {
+        ...rules[1],
+        ruleKey: "financial_documents_cgd_credit_card",
+        ruleVersion: 1,
+        displayName: "Financial Documents to CGD Credit Card",
+        destinationSourceTypes: ["import_cgd_cartao_credito"],
+        differenceAllowed: 4.32,
+        priority: 2,
+        updatedBy: "admin@example.com",
+        updatedAt: "2026-08-17T10:00:02.000Z",
+      },
+      {
+        ...rules[2],
+        differenceAllowed: 9.87,
+        priority: 3,
+        updatedBy: "admin@example.com",
+        updatedAt: "2026-08-17T10:00:03.000Z",
+      },
+      {
+        ...rules[3],
+        destinationSourceTypes: ["import_cgd_cartao_credito"],
+        differenceAllowed: 6.54,
+        priority: 4,
+        updatedBy: "admin@example.com",
+        updatedAt: "2026-08-17T10:00:04.000Z",
+      },
+    ],
+    lastScheduledBatch: {
+      id: "00000000-0000-0000-0000-000000000777",
+      scheduledSlot: "2026-08-17",
+      status: "completed",
+      counts: {
+        ruleCount: 4,
+        childCount: 4,
+        completedChildren: 4,
+        partialChildren: 0,
+        failedChildren: 0,
+        unfinishedChildren: 0,
+      },
+      ruleCount: 4,
+      childCount: 4,
+      startedAt: "2026-08-17T04:45:00.000Z",
+      finishedAt: "2026-08-17T04:49:00.000Z",
+      updatedAt: "2026-08-17T04:49:00.000Z",
+    },
+  };
+  const state = {
+    reconciliationAutomationSettings: automationSettings({ loaded: false, rules: [] }),
+    reconciliationAutomationSettingsDirty: true,
+  };
+  const applyResult = new Function(
+    "state",
+    "clean",
+    "clone",
+    "isReconciliationAutomationAmountOnlyRule",
+    `${appFunctionSource("applyReconciliationAutomationSettingsResult")}
+     return applyReconciliationAutomationSettingsResult;`,
+  )(
+    state,
+    new Function(`${appFunctionSource("clean")}; return clean;`)(),
+    new Function(`${appFunctionSource("clone")}; return clone;`)(),
+    isAmountOnlyRuleKey,
+  );
+
+  applyResult(result);
+
+  const loadedDifference = (ruleKey) => state.reconciliationAutomationSettings.rules
+    .find((rule) => rule.ruleKey === ruleKey)?.differenceAllowed;
+  assert.equal(loadedDifference("financial_documents_cgd_bank_statement"), "7.65");
+  assert.equal(loadedDifference("financial_documents_cgd_credit_card"), "4.32");
+  assert.equal(loadedDifference("financial_documents_cgd_bank_statement_amount_only"), "0.00");
+  assert.equal(loadedDifference("financial_documents_cgd_credit_card_amount_only"), "0.00");
+});
+
 test("actual renderer summarizes the last scheduled batch without presenting one child run", () => {
   const els = renderAutomationSettings(automationSettings({
     lastScheduledBatch: {

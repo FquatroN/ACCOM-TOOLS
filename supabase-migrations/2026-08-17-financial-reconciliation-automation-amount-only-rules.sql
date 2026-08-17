@@ -188,6 +188,48 @@ begin
 end
 $migration$;
 
+do $migration$
+declare
+  v_constraint_type "char";
+  v_installed_definition text;
+  v_expected_definition text;
+begin
+  create temporary table financial_reconciliation_amount_only_zero_check_expected (
+    rule_key text,
+    difference_allowed numeric,
+    constraint financial_reconciliation_amount_only_zero_check_expected_check
+      check (
+        rule_key not in (
+          'financial_documents_cgd_bank_statement_amount_only',
+          'financial_documents_cgd_credit_card_amount_only'
+        )
+        or difference_allowed = 0
+      )
+  ) on commit drop;
+
+  select regexp_replace(pg_get_constraintdef(constraint_row.oid, true), '\s+NOT VALID$', '')
+  into strict v_expected_definition
+  from pg_constraint constraint_row
+  where constraint_row.conrelid = 'financial_reconciliation_amount_only_zero_check_expected'::regclass
+    and constraint_row.conname = 'financial_reconciliation_amount_only_zero_check_expected_check';
+
+  select
+    constraint_row.contype,
+    regexp_replace(pg_get_constraintdef(constraint_row.oid, true), '\s+NOT VALID$', '')
+  into v_constraint_type, v_installed_definition
+  from pg_constraint constraint_row
+  where constraint_row.conrelid = 'public.financial_reconciliation_automatic_rule_configs'::regclass
+    and constraint_row.conname = 'financial_reconciliation_automatic_rule_configs_amount_only_zero_check';
+
+  drop table financial_reconciliation_amount_only_zero_check_expected;
+
+  if v_constraint_type is distinct from 'c'
+    or v_installed_definition is distinct from v_expected_definition then
+    raise exception 'Installed amount-only fixed-zero constraint definition does not match the required predicate.';
+  end if;
+end
+$migration$;
+
 alter table public.financial_reconciliation_automatic_rule_configs
   validate constraint financial_reconciliation_automatic_rule_configs_amount_only_zero_check;
 
