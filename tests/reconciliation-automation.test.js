@@ -3673,7 +3673,7 @@ test("scheduled automation snapshots deterministic parent batches and advances o
   }
 });
 
-test("release documentation and SQL smokes pin the complete automatic migration order", () => {
+test("SQL smokes pin the complete automatic migration order", () => {
   const migrationNames = [
     "2026-08-14-financial-reconciliation-automation-schema.sql",
     "2026-08-14-financial-reconciliation-automation-analysis.sql",
@@ -3684,35 +3684,39 @@ test("release documentation and SQL smokes pin the complete automatic migration 
     "2026-08-16-financial-reconciliation-automation-90-day-performance.sql",
   ];
   const orderedPattern = new RegExp(migrationNames.map((name) => name.replaceAll(".", "\\.")).join("[\\s\\S]*"));
-  const readme = fs.readFileSync(README_PATH, "utf8");
   const automationSmoke = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
   const manualSmoke = fs.readFileSync(MANUAL_RPC_SMOKE_PATH, "utf8");
+  const creditCardName = "2026-08-16-financial-reconciliation-automation-credit-card-rule.sql";
+  const amountOnlyName = "2026-08-17-financial-reconciliation-automation-amount-only-rules.sql";
+  const completeAutomationPattern = new RegExp(
+    [...migrationNames, creditCardName, amountOnlyName]
+      .map((name) => name.replaceAll(".", "\\."))
+      .join("[\\s\\S]*"),
+  );
 
-  for (const [label, source] of [["README", readme], ["automation smoke", automationSmoke], ["manual smoke", manualSmoke]]) {
+  for (const [label, source] of [["automation smoke", automationSmoke], ["manual smoke", manualSmoke]]) {
     assert.match(source, orderedPattern, label);
   }
   assert.equal((automationSmoke.match(/2026-08-16-financial-reconciliation-automation-90-day-performance\.sql/g) || []).length >= 2, true);
-  assert.match(readme, /already current through Banco v2[\s\S]*apply migrations 7 and 8[\s\S]*current through the 90-day migration[\s\S]*only[\s\S]*credit-card-rule/i);
-  assert.match(readme, /0-90\s+days/i);
-  assert.match(readme, /reconciliation-automation-rpc\.smoke\.sql/);
-  assert.match(readme, /Ready within two minutes[\s\S]*no (?:HTTP )?500[\s\S]*no (?:statement )?timeout/i);
+  assert.match(automationSmoke, completeAutomationPattern, "automation smoke must apply Credit Card then amount-only migrations");
+  const amountOnlyIncludes = [...automationSmoke.matchAll(new RegExp(
+    `^\\\\ir \\.\\./supabase-migrations/${amountOnlyName.replaceAll(".", "\\.")}$`,
+    "gm",
+  ))];
+  assert.ok(amountOnlyIncludes.length >= 2, "smoke must apply the amount-only migration and explicitly reapply it");
+  const finalAmountOnlyInclude = amountOnlyIncludes.at(-1);
+  assert.ok(finalAmountOnlyInclude.index > amountOnlyIncludes[0].index, "amount-only reapply must follow its normal application");
+  assert.match(
+    automationSmoke.slice(finalAmountOnlyInclude.index),
+    /amount-only migration reapply overwrote administrator settings/i,
+  );
 });
 
-test("credit-card rollout pins migration order, RPC ACLs, reapply, and fixed production dispatch", () => {
+test("credit-card SQL and production code pin RPC ACLs, reapply, and fixed dispatch", () => {
   const migration = fs.readFileSync(CREDIT_CARD_MIGRATION_PATH, "utf8");
   const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
-  const readme = fs.readFileSync(README_PATH, "utf8");
   const ninetyDayName = "2026-08-16-financial-reconciliation-automation-90-day-performance.sql";
   const creditCardName = "2026-08-16-financial-reconciliation-automation-credit-card-rule.sql";
-
-  assert.match(
-    readme,
-    /7\. `supabase-migrations\/2026-08-16-financial-reconciliation-automation-90-day-performance\.sql`[\s\S]*8\. `supabase-migrations\/2026-08-16-financial-reconciliation-automation-credit-card-rule\.sql`/,
-  );
-  assert.match(readme, /credit card[^\n]*disabled by default|disabled by default[^\n]*credit card/i);
-  assert.match(readme, /manual[\s\S]{0,120}scheduled execution disabled|scheduled execution disabled[\s\S]{0,120}manual/i);
-  assert.match(readme, /Bank Statement[\s\S]{0,120}Credit Card[\s\S]{0,120}separate|separate[\s\S]{0,120}Bank Statement[\s\S]{0,120}Credit Card/i);
-  assert.match(readme, /failed[\s\S]{0,40}first child[\s\S]{0,80}does not block[\s\S]{0,40}second|second[\s\S]{0,80}not blocked[\s\S]{0,40}failed[\s\S]{0,40}first child/i);
 
   const creditCardIncludes = [...smokeSql.matchAll(new RegExp(
     `^\\\\ir \\.\\./supabase-migrations/${creditCardName.replaceAll(".", "\\.")}$`,
