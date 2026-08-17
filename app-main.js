@@ -19429,10 +19429,7 @@ function financialDocReconciliationButton(row) {
   if (!reconciliationId) return "";
   const status = clean(row?.reconciliationStatus || row?.reconciliation_status).toLowerCase();
   const label = status === "complete" ? "Open completed reconciliation" : "Open reconciliation";
-  const statusClass = status === "complete"
-    ? " financial-doc-reconciliation-button--complete"
-    : " financial-doc-reconciliation-button--started";
-  return `<button type="button" class="ghost financial-doc-reconciliation-button${statusClass}" data-action="open-financial-doc-reconciliation" data-id="${escape(row.id)}" data-reconciliation-id="${escape(reconciliationId)}" title="${escape(label)}" aria-label="${escape(label)}">R</button>`;
+  return `<button type="button" class="ghost financial-doc-reconciliation-button" data-action="open-financial-doc-reconciliation" data-id="${escape(row.id)}" data-reconciliation-id="${escape(reconciliationId)}" title="${escape(label)}" aria-label="${escape(label)}">&#10003;</button>`;
 }
 
 function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachment = false, showDownload = false } = {}) {
@@ -19504,8 +19501,8 @@ function buildFinancialDocTableRow(row) {
     <td>${escape(row.status || "-")}</td>
     <td>${fileCell}</td>
     <td class="row-actions center-cell">
+      <button type="button" class="ghost financial-doc-edit-button" data-action="edit-financial-doc-row" data-id="${escape(row.id)}">Edit</button>
       ${financialDocReconciliationButton(row)}
-      <button type="button" class="ghost" data-action="edit-financial-doc-row" data-id="${escape(row.id)}">Edit</button>
     </td>
   </tr>`;
 }
