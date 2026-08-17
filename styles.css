@@ -5601,19 +5601,19 @@ button[id^="close-settings"] {
   width: 100%;
   min-width: 22rem;
   table-layout: fixed;
-  font-size: 0.65rem;
+  font-size: 0.52rem;
 }
 
 .financial-bi-dif-analysis-table th,
 .financial-bi-dif-analysis-table td {
-  padding: 0.25rem 0.35rem;
+  padding: 0.16rem 0.18rem;
   white-space: nowrap;
   text-align: right;
 }
 
 .financial-bi-dif-analysis-table th:first-child,
 .financial-bi-dif-analysis-table td:first-child {
-  width: 8rem;
+  width: 5.4rem;
   text-align: left;
 }
 
@@ -5630,9 +5630,9 @@ button[id^="close-settings"] {
 }
 
 .financial-bi-dif-percent {
-  margin-left: 0.16rem;
+  margin-left: 0.06rem;
   color: var(--muted);
-  font-size: 0.65em;
+  font-size: 0.55em;
   font-weight: 400;
 }
 
