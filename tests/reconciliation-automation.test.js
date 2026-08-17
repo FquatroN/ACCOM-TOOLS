@@ -7,6 +7,7 @@ const {
   AUTOMATIC_RULE_KEY,
   AUTOMATIC_RULE_VERSION,
   AUTOMATIC_TIME_ZONE,
+  AMOUNT_ONLY_RULE_KEYS,
   BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
   BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   BANK_STATEMENT_RULE_KEY,
@@ -258,7 +259,12 @@ const creditCardRule = {
   priority: 2,
 };
 
-function fourRuleSettings({ amountOnlyDifferenceAllowed = "0.00", ...overrides } = {}) {
+function fourRuleSettings({
+  amountOnlyDifferenceAllowed = "0.00",
+  bankStatementAmountOnlyDifferenceAllowed = amountOnlyDifferenceAllowed,
+  creditCardAmountOnlyDifferenceAllowed = amountOnlyDifferenceAllowed,
+  ...overrides
+} = {}) {
   return managedSettings({
     rules: [
       managedSettings().rules[0],
@@ -269,7 +275,7 @@ function fourRuleSettings({ amountOnlyDifferenceAllowed = "0.00", ...overrides }
         enabled: false,
         allowManualExecution: false,
         includeInScheduledBatch: false,
-        differenceAllowed: amountOnlyDifferenceAllowed,
+        differenceAllowed: bankStatementAmountOnlyDifferenceAllowed,
         maxDifferenceDays: 1,
         priority: 3,
       },
@@ -279,7 +285,7 @@ function fourRuleSettings({ amountOnlyDifferenceAllowed = "0.00", ...overrides }
         enabled: false,
         allowManualExecution: false,
         includeInScheduledBatch: false,
-        differenceAllowed: amountOnlyDifferenceAllowed,
+        differenceAllowed: creditCardAmountOnlyDifferenceAllowed,
         maxDifferenceDays: 1,
         priority: 4,
       },
@@ -288,7 +294,12 @@ function fourRuleSettings({ amountOnlyDifferenceAllowed = "0.00", ...overrides }
   });
 }
 
-function fourRuleRpcSettings({ amountOnlyDifferenceAllowedCents = 0, ...overrides } = {}) {
+function fourRuleRpcSettings({
+  amountOnlyDifferenceAllowedCents = 0,
+  bankStatementAmountOnlyDifferenceAllowedCents = amountOnlyDifferenceAllowedCents,
+  creditCardAmountOnlyDifferenceAllowedCents = amountOnlyDifferenceAllowedCents,
+  ...overrides
+} = {}) {
   return {
     schedule: { enabled: true, timeOfDay: "02:15", timeZone: AUTOMATIC_TIME_ZONE },
     rules: [
@@ -318,7 +329,7 @@ function fourRuleRpcSettings({ amountOnlyDifferenceAllowedCents = 0, ...override
         enabled: false,
         allowManualExecution: false,
         includeInScheduledBatch: false,
-        differenceAllowedCents: amountOnlyDifferenceAllowedCents,
+        differenceAllowedCents: bankStatementAmountOnlyDifferenceAllowedCents,
         maxDifferenceDays: 1,
         priority: 3,
       },
@@ -328,7 +339,7 @@ function fourRuleRpcSettings({ amountOnlyDifferenceAllowedCents = 0, ...override
         enabled: false,
         allowManualExecution: false,
         includeInScheduledBatch: false,
-        differenceAllowedCents: amountOnlyDifferenceAllowedCents,
+        differenceAllowedCents: creditCardAmountOnlyDifferenceAllowedCents,
         maxDifferenceDays: 1,
         priority: 4,
       },
@@ -386,6 +397,31 @@ test("amount-only tolerance is fixed at zero in both settings shapes", () => {
   assert.throws(() => normalizeRpcSettings(fourRuleRpcSettings({
     amountOnlyDifferenceAllowedCents: 1,
   })), /amount-only.*zero/i);
+  assert.throws(() => normalizeAutomationSettingsPayload(fourRuleSettings({
+    creditCardAmountOnlyDifferenceAllowed: "0.01",
+  })), /amount-only.*zero/i);
+  assert.throws(() => normalizeRpcSettings(fourRuleRpcSettings({
+    creditCardAmountOnlyDifferenceAllowedCents: 1,
+  })), /amount-only.*zero/i);
+});
+
+test("public amount-only keys cannot disable amount-only validation", () => {
+  const restoreCreditCardKey = typeof AMOUNT_ONLY_RULE_KEYS.add === "function";
+  try {
+    const mutationResult = typeof AMOUNT_ONLY_RULE_KEYS.delete === "function"
+      ? AMOUNT_ONLY_RULE_KEYS.delete(CREDIT_CARD_AMOUNT_ONLY_RULE_KEY)
+      : Reflect.deleteProperty(AMOUNT_ONLY_RULE_KEYS, 1);
+    assert.equal(mutationResult, false);
+
+    const copiedKeys = [...AMOUNT_ONLY_RULE_KEYS];
+    copiedKeys.length = 0;
+    assert.equal(isAmountOnlyRuleKey(CREDIT_CARD_AMOUNT_ONLY_RULE_KEY), true);
+    assert.throws(() => normalizeRpcSettings(fourRuleRpcSettings({
+      creditCardAmountOnlyDifferenceAllowedCents: 1,
+    })), /amount-only.*zero/i);
+  } finally {
+    if (restoreCreditCardKey) AMOUNT_ONLY_RULE_KEYS.add(CREDIT_CARD_AMOUNT_ONLY_RULE_KEY);
+  }
 });
 
 test("rule-version validation rejects an unknown key even with an undefined version", () => {

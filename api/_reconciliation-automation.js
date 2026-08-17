@@ -14,10 +14,11 @@ const AUTOMATIC_RULE_VERSIONS = Object.freeze({
   [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY]: BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY]: CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
 });
-const AMOUNT_ONLY_RULE_KEYS = Object.freeze(new Set([
+const AMOUNT_ONLY_RULE_KEYS = Object.freeze([
   BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
   CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
-]));
+]);
+const AMOUNT_ONLY_RULE_KEY_SET = new Set(AMOUNT_ONLY_RULE_KEYS);
 const AUTOMATIC_RULE_KEY = BANK_STATEMENT_RULE_KEY;
 const AUTOMATIC_RULE_VERSION = BANK_STATEMENT_RULE_VERSION;
 const AUTOMATIC_TIME_ZONE = "Europe/Lisbon";
@@ -161,7 +162,7 @@ function normalizeRuleVersion(value, ruleKey) {
 }
 
 function isAmountOnlyRuleKey(ruleKey) {
-  return AMOUNT_ONLY_RULE_KEYS.has(ruleKey);
+  return AMOUNT_ONLY_RULE_KEY_SET.has(ruleKey);
 }
 
 function normalizeSchedule(value) {
