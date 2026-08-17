@@ -368,9 +368,17 @@ begin
     ) or not exists (
       select 1 from public.financial_reconciliation_automatic_rule_configs
       where rule_key = 'smoke_second_rule' and priority = 1
-    ) then
+  ) then
     raise exception 'Automatic rule priorities did not swap atomically.';
   end if;
+
+  delete from public.financial_reconciliation_automatic_rule_configs
+  where rule_key = 'smoke_second_rule';
+  delete from public.financial_reconciliation_automatic_rule_definitions
+  where rule_key = 'smoke_second_rule';
+  update public.financial_reconciliation_automatic_rule_configs
+  set priority = 1
+  where rule_key = 'financial_documents_cgd_bank_statement';
 end $$;
 
 -- provenance checks
@@ -1559,6 +1567,351 @@ begin
       priority = 2,
       updated_by = ''
   where rule_key = 'financial_documents_cgd_credit_card';
+end $$;
+
+-- amount-only managed definitions, deterministic configs, and fixed-zero Settings contract
+create temporary table amount_only_existing_priority_baseline on commit drop as
+select config.rule_key, config.priority
+from public.financial_reconciliation_automatic_rule_configs config;
+
+\ir ../supabase-migrations/2026-08-17-financial-reconciliation-automation-amount-only-rules.sql
+\ir ../supabase-migrations/2026-08-17-financial-reconciliation-automation-amount-only-rules.sql
+
+do $$
+declare
+  v_bank_definition jsonb := '{
+    "baseSourceType":"financial_documents",
+    "destinationSourceTypes":["import_cgd_extrato_ordem"],
+    "baseEligibility":{"payment":{"operator":"exact_text_equal","value":"Banco","caseSensitive":true,"trim":false}},
+    "matchingMode":"amount_only_one_to_one",
+    "fixedDifferenceAllowed":0,
+    "maxDifferenceDays":{"minimum":0,"maximum":90,"default":1},
+    "maxDestinationRecords":1
+  }'::jsonb;
+  v_card_definition jsonb := '{
+    "baseSourceType":"financial_documents",
+    "destinationSourceTypes":["import_cgd_cartao_credito"],
+    "baseEligibility":{"payment":{"operator":"exact_text_equal","value":"Visa","caseSensitive":true,"trim":false}},
+    "matchingMode":"amount_only_one_to_one",
+    "fixedDifferenceAllowed":0,
+    "maxDifferenceDays":{"minimum":0,"maximum":90,"default":1},
+    "maxDestinationRecords":1
+  }'::jsonb;
+  v_settings jsonb;
+  v_schedule jsonb;
+  v_rules jsonb;
+  v_before jsonb;
+  v_after jsonb;
+  v_key text;
+  v_rejected boolean;
+  v_signature text;
+begin
+  if not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_definitions definition
+      where definition.rule_key = 'financial_documents_cgd_bank_statement_amount_only'
+        and definition.version = 1
+        and definition.display_name = 'Financial Documents to CGD Bank Account – AMOUNT ONLY'
+        and definition.base_source_type = 'financial_documents'
+        and definition.destination_source_types = '["import_cgd_extrato_ordem"]'::jsonb
+        and definition.logic_description = 'Payment must equal exactly Banco. Exactly one CGD Bank Account destination record must make the signed amounts sum to zero within the inclusive configured date window; identity fields and similarity are not used.'
+        and definition.definition = v_bank_definition
+    ) or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_definitions definition
+      where definition.rule_key = 'financial_documents_cgd_credit_card_amount_only'
+        and definition.version = 1
+        and definition.display_name = 'Financial Documents to CGD Credit Card – AMOUNT ONLY'
+        and definition.base_source_type = 'financial_documents'
+        and definition.destination_source_types = '["import_cgd_cartao_credito"]'::jsonb
+        and definition.logic_description = 'Payment must equal exactly Visa. Exactly one CGD Credit Card destination record must make the signed amounts sum to zero within the inclusive configured date window; identity fields and similarity are not used.'
+        and definition.definition = v_card_definition
+    ) then
+    raise exception 'Amount-only immutable definitions differ from the approved literals.';
+  end if;
+
+  if not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.rule_key = 'financial_documents_cgd_bank_statement_amount_only'
+        and config.rule_version = 1
+        and not config.enabled
+        and not config.allow_manual_execution
+        and not config.include_in_scheduled_batch
+        and config.difference_allowed = 0
+        and config.max_difference_days = 1
+        and config.priority = 3
+    ) or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.rule_key = 'financial_documents_cgd_credit_card_amount_only'
+        and config.rule_version = 1
+        and not config.enabled
+        and not config.allow_manual_execution
+        and not config.include_in_scheduled_batch
+        and config.difference_allowed = 0
+        and config.max_difference_days = 1
+        and config.priority = 4
+    ) then
+    raise exception 'Amount-only configs were not appended disabled at standard priorities 3 and 4.';
+  end if;
+
+  if exists (
+    select baseline.rule_key
+    from amount_only_existing_priority_baseline baseline
+    join public.financial_reconciliation_automatic_rule_configs config
+      on config.rule_key = baseline.rule_key
+    where config.priority <> baseline.priority
+  ) then
+    raise exception 'Amount-only migration rewrote a pre-existing administrator priority.';
+  end if;
+
+  if exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_configs amount_config
+      join public.financial_reconciliation_automatic_rule_configs existing_config
+        on existing_config.rule_key not in (
+          'financial_documents_cgd_bank_statement_amount_only',
+          'financial_documents_cgd_credit_card_amount_only'
+        )
+      where amount_config.rule_key in (
+          'financial_documents_cgd_bank_statement_amount_only',
+          'financial_documents_cgd_credit_card_amount_only'
+        )
+        and amount_config.priority <= existing_config.priority
+    ) or (select priority from public.financial_reconciliation_automatic_rule_configs
+          where rule_key = 'financial_documents_cgd_bank_statement_amount_only') >=
+         (select priority from public.financial_reconciliation_automatic_rule_configs
+          where rule_key = 'financial_documents_cgd_credit_card_amount_only') then
+    raise exception 'Amount-only configs were not appended in Bank-then-Card order.';
+  end if;
+
+  if (select count(*)
+      from public.financial_reconciliation_source_rules source_rule
+      where source_rule.base_source_type = 'financial_documents'
+        and source_rule.operator = '+'
+        and source_rule.matching_source_type in (
+          'import_cgd_extrato_ordem', 'import_cgd_cartao_credito'
+        )) <> 2 then
+    raise exception 'Amount-only managed directional source operators are not fixed to +.';
+  end if;
+
+  if (select count(*) from pg_indexes
+      where schemaname = 'public'
+        and indexname in (
+          'import_cgd_extrato_ordem_reconciliation_amount_date_id_idx',
+          'import_cgd_cartao_credito_reconciliation_amount_date_id_idx'
+        )) <> 2 then
+    raise exception 'Amount-only destination lookup indexes are missing.';
+  end if;
+  if not exists (
+      select 1
+      from pg_index index_row
+      where index_row.indexrelid = 'public.import_cgd_extrato_ordem_reconciliation_amount_date_id_idx'::regclass
+        and pg_get_indexdef(index_row.indexrelid, 1, true) = 'montante'
+        and pg_get_indexdef(index_row.indexrelid, 2, true) = 'data'
+        and pg_get_indexdef(index_row.indexrelid, 3, true) = 'id'
+    ) or not exists (
+      select 1
+      from pg_index index_row
+      where index_row.indexrelid = 'public.import_cgd_cartao_credito_reconciliation_amount_date_id_idx'::regclass
+        and pg_get_indexdef(index_row.indexrelid, 1, true) = 'valor'
+        and pg_get_indexdef(index_row.indexrelid, 2, true) = 'data'
+        and pg_get_indexdef(index_row.indexrelid, 3, true) = 'id'
+    ) then
+    raise exception 'Amount-only destination lookup indexes use the wrong key order.';
+  end if;
+
+  v_settings := public.get_financial_reconciliation_automation_settings();
+  if jsonb_array_length(v_settings->'rules') <> 4
+    or exists (
+      select 1
+      from jsonb_array_elements(v_settings->'rules') rule
+      group by rule->>'ruleKey'
+      having count(*) <> 1
+    )
+    or (select count(*) from jsonb_array_elements(v_settings->'rules') rule
+        where rule->>'ruleKey' in (
+          'financial_documents_cgd_bank_statement',
+          'financial_documents_cgd_credit_card',
+          'financial_documents_cgd_bank_statement_amount_only',
+          'financial_documents_cgd_credit_card_amount_only'
+        )) <> 4 then
+    raise exception 'Settings getter did not return each of the four managed rules exactly once.';
+  end if;
+
+  foreach v_signature in array array[
+    'public.get_financial_reconciliation_automation_settings()',
+    'public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)'
+  ] loop
+    if not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[]) @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    )
+      or has_function_privilege('anon', v_signature, 'EXECUTE')
+      or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+      or not has_function_privilege('service_role', v_signature, 'EXECUTE') then
+      raise exception 'Amount-only Settings function security is invalid for %.', v_signature;
+    end if;
+  end loop;
+
+  select jsonb_build_object(
+    'enabled', schedule.enabled,
+    'time_of_day', to_char(schedule.time_of_day, 'HH24:MI'),
+    'time_zone', schedule.time_zone
+  ) into strict v_schedule
+  from public.financial_reconciliation_automatic_schedule schedule
+  where schedule.id = true;
+
+  select jsonb_agg(jsonb_build_object(
+    'rule_key', config.rule_key,
+    'rule_version', config.rule_version,
+    'enabled', case when config.rule_key = 'financial_documents_cgd_bank_statement_amount_only' then true else config.enabled end,
+    'allow_manual_execution', case when config.rule_key = 'financial_documents_cgd_bank_statement_amount_only' then true else config.allow_manual_execution end,
+    'include_in_scheduled_batch', case when config.rule_key = 'financial_documents_cgd_bank_statement_amount_only' then true else config.include_in_scheduled_batch end,
+    'difference_allowed', to_char(config.difference_allowed, 'FM999999999990.00'),
+    'max_difference_days', case config.rule_key
+      when 'financial_documents_cgd_bank_statement_amount_only' then 15
+      when 'financial_documents_cgd_credit_card_amount_only' then 90
+      else config.max_difference_days end,
+    'priority', case config.rule_key
+      when 'financial_documents_cgd_bank_statement_amount_only' then 4
+      when 'financial_documents_cgd_credit_card_amount_only' then 3
+      else config.priority end
+  ) order by config.priority, config.rule_key) into strict v_rules
+  from public.financial_reconciliation_automatic_rule_configs config;
+
+  perform public.replace_financial_reconciliation_automation_settings(
+    v_schedule, v_rules, 'smoke:amount-only-admin'
+  );
+  if not exists (
+      select 1 from public.financial_reconciliation_automatic_rule_configs
+      where rule_key = 'financial_documents_cgd_bank_statement_amount_only'
+        and enabled and allow_manual_execution and include_in_scheduled_batch
+        and difference_allowed = 0 and max_difference_days = 15 and priority = 4
+        and updated_by = 'smoke:amount-only-admin'
+    ) or not exists (
+      select 1 from public.financial_reconciliation_automatic_rule_configs
+      where rule_key = 'financial_documents_cgd_credit_card_amount_only'
+        and difference_allowed = 0 and max_difference_days = 90 and priority = 3
+        and updated_by = 'smoke:amount-only-admin'
+    ) then
+    raise exception 'Settings replacement did not accept amount-only days, priority, and enablement edits.';
+  end if;
+
+  foreach v_key in array array[
+    'financial_documents_cgd_bank_statement_amount_only',
+    'financial_documents_cgd_credit_card_amount_only'
+  ] loop
+    select public.get_financial_reconciliation_automation_settings() into v_before;
+    v_rejected := false;
+    begin
+      perform public.replace_financial_reconciliation_automation_settings(
+        v_schedule,
+        (
+          select jsonb_agg(case when rule->>'rule_key' = v_key
+            then jsonb_set(rule, '{difference_allowed}', '"0.01"'::jsonb)
+            else rule end)
+          from jsonb_array_elements(v_rules) rule
+        ),
+        'smoke:amount-only-nonzero'
+      );
+    exception when raise_exception then
+      if sqlerrm = 'Amount-only automatic rules require zero difference allowed.' then
+        v_rejected := true;
+      else
+        raise;
+      end if;
+    end;
+    select public.get_financial_reconciliation_automation_settings() into v_after;
+    if not v_rejected or v_after is distinct from v_before then
+      raise exception 'Nonzero tolerance for % was accepted or partially persisted.', v_key;
+    end if;
+
+    v_rejected := false;
+    begin
+      perform public.replace_financial_reconciliation_automation_settings(
+        v_schedule,
+        (select jsonb_agg(rule) from jsonb_array_elements(v_rules) rule
+         where rule->>'rule_key' <> v_key),
+        'smoke:amount-only-missing'
+      );
+    exception when raise_exception then
+      if sqlerrm = 'Automation settings require every managed rule exactly once.' then
+        v_rejected := true;
+      else
+        raise;
+      end if;
+    end;
+    select public.get_financial_reconciliation_automation_settings() into v_after;
+    if not v_rejected or v_after is distinct from v_before then
+      raise exception 'Missing managed rule % was accepted or partially persisted.', v_key;
+    end if;
+  end loop;
+
+  select public.get_financial_reconciliation_automation_settings() into v_before;
+  v_rejected := false;
+  begin
+    perform public.replace_financial_reconciliation_automation_settings(
+      v_schedule,
+      (
+        select jsonb_agg(case
+          when rule->>'rule_key' = 'financial_documents_cgd_bank_statement_amount_only'
+            then jsonb_set(rule, '{max_difference_days}', '91'::jsonb)
+          else rule end)
+        from jsonb_array_elements(v_rules) rule
+      ),
+      'smoke:amount-only-days'
+    );
+  exception when raise_exception then
+    if sqlerrm = 'Automatic rule values are invalid.' then
+      v_rejected := true;
+    else
+      raise;
+    end if;
+  end;
+  select public.get_financial_reconciliation_automation_settings() into v_after;
+  if not v_rejected or v_after is distinct from v_before then
+    raise exception 'Amount-only Settings accepted a date window above 90 or partially persisted it.';
+  end if;
+end $$;
+
+\ir ../supabase-migrations/2026-08-17-financial-reconciliation-automation-amount-only-rules.sql
+
+do $$
+begin
+  if not exists (
+    select 1 from public.financial_reconciliation_automatic_rule_configs
+    where rule_key = 'financial_documents_cgd_bank_statement_amount_only'
+      and enabled and allow_manual_execution and include_in_scheduled_batch
+      and difference_allowed = 0 and max_difference_days = 15 and priority = 4
+      and updated_by = 'smoke:amount-only-admin'
+  ) or not exists (
+    select 1 from public.financial_reconciliation_automatic_rule_configs
+    where rule_key = 'financial_documents_cgd_credit_card_amount_only'
+      and difference_allowed = 0 and max_difference_days = 90 and priority = 3
+      and updated_by = 'smoke:amount-only-admin'
+  ) then
+    raise exception 'Amount-only migration reapply overwrote administrator settings.';
+  end if;
+
+  set constraints financial_reconciliation_automatic_rule_configs_priority_key deferred;
+  update public.financial_reconciliation_automatic_rule_configs config
+  set enabled = false,
+      allow_manual_execution = false,
+      include_in_scheduled_batch = false,
+      difference_allowed = 0,
+      max_difference_days = 1,
+      priority = case config.rule_key
+        when 'financial_documents_cgd_bank_statement_amount_only' then 3
+        else 4 end,
+      updated_by = ''
+  where config.rule_key in (
+    'financial_documents_cgd_bank_statement_amount_only',
+    'financial_documents_cgd_credit_card_amount_only'
+  );
 end $$;
 
 -- credit-card projection INSERT UPDATE ID-change DELETE and data_valor isolation

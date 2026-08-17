@@ -70,6 +70,12 @@ const CREDIT_CARD_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-16-financial-reconciliation-automation-credit-card-rule.sql",
 );
+const AMOUNT_ONLY_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-17-financial-reconciliation-automation-amount-only-rules.sql",
+);
 const EXECUTION_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -403,6 +409,11 @@ test("amount-only tolerance is fixed at zero in both settings shapes", () => {
   assert.throws(() => normalizeRpcSettings(fourRuleRpcSettings({
     creditCardAmountOnlyDifferenceAllowedCents: 1,
   })), /amount-only.*zero/i);
+});
+
+test("amount-only database migration is loadable for transactional contract coverage", () => {
+  assert.equal(fs.existsSync(AMOUNT_ONLY_MIGRATION_PATH), true, "amount-only migration must exist");
+  assert.ok(fs.readFileSync(AMOUNT_ONLY_MIGRATION_PATH, "utf8").length > 0);
 });
 
 test("public amount-only keys cannot disable amount-only validation", () => {
