@@ -5601,7 +5601,7 @@ button[id^="close-settings"] {
   width: 100%;
   min-width: 22rem;
   table-layout: fixed;
-  font-size: 0.44rem;
+  font-size: 0.42rem;
 }
 
 .financial-bi-dif-analysis-table th,
@@ -5632,7 +5632,7 @@ button[id^="close-settings"] {
 .financial-bi-dif-percent {
   margin-left: 0.06rem;
   color: var(--muted);
-  font-size: 0.34rem;
+  font-size: 0.36rem;
   font-weight: 400;
 }
 
