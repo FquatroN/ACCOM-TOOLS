@@ -34,7 +34,7 @@ function normalizeRows(rows) {
       yearMonth: clean(row?.year_month || row?.yearMonth),
       fdmAmount: Number.isFinite(fdmAmount) ? fdmAmount : 0,
       extratoAmount: Number.isFinite(extratoAmount) ? extratoAmount : 0,
-      difference: Number(row?.difference ?? (fdmAmount - extratoAmount)) || 0,
+      difference: Number(row?.difference ?? (extratoAmount - fdmAmount)) || 0,
     };
   }).filter((row) => row.analysis && row.year && row.month);
 }

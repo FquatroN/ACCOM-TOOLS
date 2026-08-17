@@ -106,7 +106,7 @@ select
   to_char(months.month_start, 'YYYY-MM') as year_month,
   coalesce(fdm_by_month.amount, 0)::numeric as fdm_amount,
   coalesce(extrato_by_month.amount, 0)::numeric as extrato_amount,
-  (coalesce(fdm_by_month.amount, 0) - coalesce(extrato_by_month.amount, 0))::numeric as difference
+  (coalesce(extrato_by_month.amount, 0) - coalesce(fdm_by_month.amount, 0))::numeric as difference
 from months
 left join fdm_by_month on fdm_by_month.analysis = months.analysis and fdm_by_month.month_start = months.month_start
 left join extrato_by_month on extrato_by_month.analysis = months.analysis and extrato_by_month.month_start = months.month_start

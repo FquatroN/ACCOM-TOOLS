@@ -25669,13 +25669,13 @@ function sumFinancialBiDifAnalysisRows(rows) {
     result.extratoAmount += financialBiDifAnalysisNumber(row?.extratoAmount);
     return result;
   }, { fdmAmount: 0, extratoAmount: 0 });
-  return { ...totals, difference: totals.fdmAmount - totals.extratoAmount };
+  return { ...totals, difference: totals.extratoAmount - totals.fdmAmount };
 }
 
 function financialBiDifAnalysisCells(row) {
   const fdmAmount = financialBiDifAnalysisNumber(row?.fdmAmount);
   const extratoAmount = financialBiDifAnalysisNumber(row?.extratoAmount);
-  const difference = fdmAmount - extratoAmount;
+  const difference = extratoAmount - fdmAmount;
   const percentage = Math.abs(fdmAmount) >= 0.005 ? (difference / fdmAmount) * 100 : null;
   const differenceClass = difference > 0 ? "financial-bi-cash-positive" : difference < 0 ? "financial-bi-cash-negative" : "";
   const percentageLabel = percentage === null ? "-" : `${percentage > 0 ? "+" : ""}${percentage.toFixed(1)}%`;
