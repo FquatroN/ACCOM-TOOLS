@@ -6882,8 +6882,17 @@ button[id^="close-settings"] {
   background: transparent;
 }
 
-.financial-reconciliation-automation-proposal-records > .financial-reconciliation-automation-item:nth-child(even) {
+.financial-reconciliation-automation-proposal-records > :first-child {
+  grid-column: 1;
+}
+
+.financial-reconciliation-automation-proposal-records > :not(:first-child) {
+  grid-column: 2;
   border-left: 1px solid var(--line);
+}
+
+.financial-reconciliation-automation-proposal-records > :not(:first-child):not(:nth-child(2)) {
+  border-top: 1px solid var(--line);
 }
 
 .financial-reconciliation-automation-item-head > span {
@@ -6938,14 +6947,13 @@ button[id^="close-settings"] {
 
 .financial-reconciliation-automation-candidate-group {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: .35rem;
-  grid-column: 1 / -1;
   min-width: 0;
   padding: .45rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: white;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .financial-reconciliation-automation-candidate-group h4 {
@@ -7101,7 +7109,12 @@ button[id^="close-settings"] {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .financial-reconciliation-automation-proposal-records > .financial-reconciliation-automation-item + .financial-reconciliation-automation-item {
+  .financial-reconciliation-automation-proposal-records > :first-child,
+  .financial-reconciliation-automation-proposal-records > :not(:first-child) {
+    grid-column: 1;
+  }
+
+  .financial-reconciliation-automation-proposal-records > :not(:first-child) {
     border-left: 0;
     border-top: 1px solid var(--line);
   }

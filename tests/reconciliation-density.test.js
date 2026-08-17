@@ -442,9 +442,11 @@ test("automatic proposals render as three divided open desktop columns", () => {
   assert.match(css, /\.financial-reconciliation-automation-item\s*\{[^}]*background:\s*transparent[^}]*\}/);
 });
 
-test("automatic proposal desktop dividers follow the second grid column with multiple destinations", () => {
-  assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*\.financial-reconciliation-automation-item:nth-child\(even\)\s*\{[^}]*border-left:\s*1px solid var\(--line\)[^}]*\}/);
-  assert.doesNotMatch(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*\.financial-reconciliation-automation-item\s*\+\s*\.financial-reconciliation-automation-item\s*\{[^}]*border-left:\s*1px solid var\(--line\)[^}]*\}/);
+test("automatic proposal desktop keeps every destination and candidate group in the third column", () => {
+  assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*:first-child\s*\{[^}]*grid-column:\s*1[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*:not\(:first-child\)\s*\{[^}]*grid-column:\s*2[^}]*border-left:\s*1px solid var\(--line\)[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*:not\(:first-child\):not\(:nth-child\(2\)\)\s*\{[^}]*border-top:\s*1px solid var\(--line\)[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-candidate-group\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*border:\s*0[^}]*background:\s*transparent[^}]*\}/);
 });
 
 test("automatic proposal dividers become section separators on narrow screens", () => {
@@ -456,7 +458,8 @@ test("automatic proposal dividers become section separators on narrow screens", 
 
   assert.match(narrowCss, /\.financial-reconciliation-automation-proposal\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*\}/);
   assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-meta\s*\{[^}]*border-right:\s*0[^}]*border-bottom:\s*1px solid var\(--line\)[^}]*\}/);
-  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-records\s*>\s*\.financial-reconciliation-automation-item\s*\+\s*\.financial-reconciliation-automation-item\s*\{[^}]*border-left:\s*0[^}]*border-top:\s*1px solid var\(--line\)[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-records\s*>\s*:first-child\s*,\s*\.financial-reconciliation-automation-proposal-records\s*>\s*:not\(:first-child\)\s*\{[^}]*grid-column:\s*1[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-records\s*>\s*:not\(:first-child\)\s*\{[^}]*border-left:\s*0[^}]*border-top:\s*1px solid var\(--line\)[^}]*\}/);
 });
 
 test("workbench rule snapshots keep only valid unique signed sources", () => {
