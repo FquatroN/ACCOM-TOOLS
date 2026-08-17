@@ -182,6 +182,8 @@ function scheduledRun(overrides = {}) {
     scope: "rule",
     status: "ready",
     actor: SCHEDULE_ACTOR,
+    clientRequestId: null,
+    scheduledSlot: "2026-08-15",
     batchId: BATCH_ID,
     batchRuleKey: AUTOMATIC_RULE_KEY,
     batchRulePosition: 1,
@@ -194,6 +196,8 @@ function scheduledRun(overrides = {}) {
     analysisErrorAt: null,
     analysisComplete: true,
     analysisCompletedAt: "2026-08-15T02:00:01.000Z",
+    counts: { bases: 1, proposed: 0, ambiguous: 0, skipped: 0 },
+    startedAt: "2026-08-15T02:00:00.000Z",
     finishedAt: null,
     definitions: [{ ruleKey: AUTOMATIC_RULE_KEY, priority: 1 }],
     proposals: [],
@@ -300,6 +304,38 @@ function fourRuleSettings({
   });
 }
 
+function amountOnlyScheduledDefinition(ruleKey, priority) {
+  const bank = ruleKey === BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY;
+  return {
+    ruleKey,
+    ruleVersion: 1,
+    displayName: bank
+      ? "Financial Documents to CGD Bank Account – AMOUNT ONLY"
+      : "Financial Documents to CGD Credit Card – AMOUNT ONLY",
+    priority,
+    differenceAllowed: 0,
+    maxDifferenceDays: 1,
+    destinationSourceType: bank ? "import_cgd_extrato_ordem" : "import_cgd_cartao_credito",
+    definition: {
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: [bank ? "import_cgd_extrato_ordem" : "import_cgd_cartao_credito"],
+      baseEligibility: {
+        payment: {
+          operator: "exact_text_equal",
+          value: bank ? "Banco" : "Visa",
+          caseSensitive: true,
+          trim: false,
+        },
+      },
+      matchingMode: "amount_only_one_to_one",
+      fixedDifferenceAllowed: 0,
+      maxDifferenceDays: { minimum: 0, maximum: 90, default: 1 },
+      maxDestinationRecords: 1,
+    },
+    operator: "+",
+  };
+}
+
 function fourRuleRpcSettings({
   amountOnlyDifferenceAllowedCents = 0,
   bankStatementAmountOnlyDifferenceAllowedCents = amountOnlyDifferenceAllowedCents,
@@ -351,6 +387,161 @@ function fourRuleRpcSettings({
       },
     ],
     ...overrides,
+  };
+}
+
+function productionSettingsRules() {
+  return [
+    {
+      ruleKey: BANK_STATEMENT_RULE_KEY,
+      ruleVersion: BANK_STATEMENT_RULE_VERSION,
+      displayName: "Financial Documents to CGD Bank Statement",
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: ["import_cgd_extrato_ordem"],
+      logicDescription: "Payment must equal exactly Banco. A bank candidate must match at least one of three OR identity branches: compact document-number containment, document-description similarity, or supplier-to-bank-description word similarity. A base record is executable only when exactly one complete destination combination is valid; multiple combinations are reported as ambiguous and are never selected automatically.",
+      definition: {
+        baseSourceType: "financial_documents",
+        destinationSourceTypes: ["import_cgd_extrato_ordem"],
+        baseEligibility: { payment: { operator: "exact_text_equal", value: "Banco", caseSensitive: true, trim: false } },
+        identityBranches: {
+          document_number: { algorithm: "compact_containment" },
+          description_similarity: { algorithm: "similarity" },
+          supplier_similarity: { algorithm: "word_similarity" },
+        },
+        documentNumberMinimumCompactLength: 4,
+        descriptionSimilarityThreshold: 0.60,
+        supplierWordSimilarityThreshold: 0.70,
+        maxDestinationRecords: 4,
+        maxIdentityCandidatesPerBase: 12,
+      },
+      enabled: true,
+      allowManualExecution: true,
+      includeInScheduledBatch: true,
+      differenceAllowed: 1.25,
+      maxDifferenceDays: 7,
+      priority: 1,
+      updatedBy: "admin@example.com",
+      updatedAt: "2026-08-17T09:00:00.000Z",
+    },
+    {
+      ruleKey: CREDIT_CARD_RULE_KEY,
+      ruleVersion: CREDIT_CARD_RULE_VERSION,
+      displayName: "Financial Documents to CGD Credit Card",
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: ["import_cgd_cartao_credito"],
+      logicDescription: "Payment must equal exactly Visa. Each credit-card candidate must satisfy invoice containment, description similarity, or supplier word similarity. Exactly one one-to-four-record amount combination is executable.",
+      definition: {
+        baseEligibility: { payment: { operator: "exact_text_equal", value: "Visa", caseSensitive: true, trim: false } },
+        identityBranches: {
+          document_number: { algorithm: "symmetric_compact_containment" },
+          description_similarity: { algorithm: "similarity" },
+          supplier_similarity: { algorithm: "word_similarity" },
+        },
+        documentNumberMinimumCompactLength: 4,
+        descriptionSimilarityThreshold: 0.55,
+        supplierWordSimilarityThreshold: 0.60,
+        maxDestinationRecords: 4,
+        maxIdentityCandidatesPerBase: 12,
+      },
+      enabled: true,
+      allowManualExecution: false,
+      includeInScheduledBatch: true,
+      differenceAllowed: 0,
+      maxDifferenceDays: 10,
+      priority: 2,
+      updatedBy: "admin@example.com",
+      updatedAt: "2026-08-17T09:00:01.000Z",
+    },
+    {
+      ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+      ruleVersion: BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
+      displayName: "Financial Documents to CGD Bank Account – AMOUNT ONLY",
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: ["import_cgd_extrato_ordem"],
+      logicDescription: "Payment must equal exactly Banco. Exactly one CGD Bank Account destination record must make the signed amounts sum to zero within the inclusive configured date window; identity fields and similarity are not used.",
+      definition: {
+        baseSourceType: "financial_documents",
+        destinationSourceTypes: ["import_cgd_extrato_ordem"],
+        baseEligibility: { payment: { operator: "exact_text_equal", value: "Banco", caseSensitive: true, trim: false } },
+        matchingMode: "amount_only_one_to_one",
+        fixedDifferenceAllowed: 0,
+        maxDifferenceDays: { minimum: 0, maximum: 90, default: 1 },
+        maxDestinationRecords: 1,
+      },
+      enabled: false,
+      allowManualExecution: false,
+      includeInScheduledBatch: false,
+      differenceAllowed: 0,
+      maxDifferenceDays: 1,
+      priority: 3,
+      updatedBy: "",
+      updatedAt: "2026-08-17T09:00:02.000Z",
+    },
+    {
+      ruleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+      ruleVersion: CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
+      displayName: "Financial Documents to CGD Credit Card – AMOUNT ONLY",
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: ["import_cgd_cartao_credito"],
+      logicDescription: "Payment must equal exactly Visa. Exactly one CGD Credit Card destination record must make the signed amounts sum to zero within the inclusive configured date window; identity fields and similarity are not used.",
+      definition: {
+        baseSourceType: "financial_documents",
+        destinationSourceTypes: ["import_cgd_cartao_credito"],
+        baseEligibility: { payment: { operator: "exact_text_equal", value: "Visa", caseSensitive: true, trim: false } },
+        matchingMode: "amount_only_one_to_one",
+        fixedDifferenceAllowed: 0,
+        maxDifferenceDays: { minimum: 0, maximum: 90, default: 1 },
+        maxDestinationRecords: 1,
+      },
+      enabled: false,
+      allowManualExecution: false,
+      includeInScheduledBatch: false,
+      differenceAllowed: 0,
+      maxDifferenceDays: 1,
+      priority: 4,
+      updatedBy: "",
+      updatedAt: "2026-08-17T09:00:03.000Z",
+    },
+  ];
+}
+
+function productionSettingsRpcResult(ruleCount) {
+  return {
+    schedule: {
+      enabled: true,
+      timeOfDay: "02:15",
+      timeZone: AUTOMATIC_TIME_ZONE,
+      updatedBy: "admin@example.com",
+      updatedAt: "2026-08-17T09:00:04.000Z",
+    },
+    rules: productionSettingsRules().slice(0, ruleCount),
+    last_scheduled_batch: {
+      id: BATCH_ID,
+      scheduledSlot: "2026-08-17",
+      status: "partial",
+      counts: {
+        ruleCount,
+        childCount: ruleCount,
+        completedChildren: ruleCount - 1,
+        partialChildren: 0,
+        failedChildren: 1,
+        unfinishedChildren: 0,
+      },
+      ruleCount,
+      childCount: ruleCount,
+      startedAt: "2026-08-17T02:15:00.000Z",
+      finishedAt: "2026-08-17T02:19:00.000Z",
+      updatedAt: "2026-08-17T02:19:00.000Z",
+    },
+  };
+}
+
+function expectedPublicSettings(ruleCount) {
+  const rpcResult = productionSettingsRpcResult(ruleCount);
+  return {
+    schedule: rpcResult.schedule,
+    rules: rpcResult.rules,
+    lastScheduledBatch: rpcResult.last_scheduled_batch,
   };
 }
 
@@ -1214,42 +1405,115 @@ test("failed scheduled child returns 200 and the next heartbeat can claim the ne
   assert.equal(secondResponse.body.rulePosition, 2);
 });
 
-test("scheduled heartbeat accepts a four-rule batch and handles exactly one child per request", async () => {
-  const orderedRules = [
-    BANK_STATEMENT_RULE_KEY,
-    CREDIT_CARD_RULE_KEY,
-    BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
-    CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
-  ];
-  const runs = orderedRules.map((ruleKey, index) => scheduledRun({
-    runId: uuidFor(720 + index),
-    batchRuleKey: ruleKey,
-    batchRulePosition: index + 1,
+test("scheduled heartbeat finishes one resumed amount-only child before the next heartbeat claims position four", async () => {
+  const amountOnlyRunId = uuidFor(722);
+  const amountOnlyProposalId = uuidFor(724);
+  const amountOnlyBaseId = uuidFor(725);
+  const amountOnlyDefinition = amountOnlyScheduledDefinition(BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, 3);
+  const proposed = {
+    id: amountOnlyProposalId,
+    runId: amountOnlyRunId,
+    ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    ruleVersion: 1,
+    baseSourceType: "financial_documents",
+    baseSourceId: amountOnlyBaseId,
+    baseSourceDate: "2026-08-14",
+    baseSnapshot: { payment: "Banco", amount: 42.5 },
+    items: [{ sourceType: "import_cgd_extrato_ordem", sourceId: uuidFor(726), amount: -42.5 }],
+    evidence: { matchingMode: "amount_only_one_to_one" },
+    candidateGroups: [{ sourceId: uuidFor(726), amount: -42.5 }],
+    calculatedDifference: 0,
+    allowedDifference: 0,
+    status: "proposed",
+    reason: null,
+    signature: "amount-only-proposal-signature",
+    reconciliationId: null,
+    createdAt: "2026-08-15T02:02:01.000Z",
+    updatedAt: "2026-08-15T02:02:01.000Z",
+  };
+  const analyzingRun = scheduledRun({
+    runId: amountOnlyRunId,
+    batchRuleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    batchRulePosition: 3,
     batchRuleCount: 4,
-    definitions: [{ ruleKey, priority: index + 1 }],
-    status: index === 2 ? "failed" : "completed",
-    ...(index === 2 ? {
-      analysisComplete: false,
-      analysisCompletedAt: null,
-      analysisErrorCode: "analysis_continuation_failed",
-      analysisErrorAt: `2026-08-15T02:0${index}:01.000Z`,
-    } : {}),
-    finishedAt: `2026-08-15T02:0${index}:01.000Z`,
-  }));
+    status: "analyzing",
+    definitions: [amountOnlyDefinition],
+    counts: { bases: 0, proposed: 0, ambiguous: 0, skipped: 0 },
+    analysisCursorDate: "2026-08-13",
+    analysisCursorId: uuidFor(727),
+    analysisProcessed: 25,
+    analysisTotal: 26,
+    analysisComplete: false,
+    analysisCompletedAt: null,
+    proposals: [],
+  });
+  const readyRun = scheduledRun({
+    ...analyzingRun,
+    status: "ready",
+    counts: { bases: 1, proposed: 1, ambiguous: 0, skipped: 0 },
+    analysisCursorDate: null,
+    analysisCursorId: null,
+    analysisProcessed: 26,
+    analysisTotal: 26,
+    analysisComplete: true,
+    analysisCompletedAt: "2026-08-15T02:02:02.000Z",
+    proposals: [proposed],
+  });
+  const runningRun = scheduledRun({
+    ...readyRun,
+    status: "running",
+    counts: { bases: 1, proposed: 0, ambiguous: 0, skipped: 0, completed: 1 },
+    proposals: [{
+      ...proposed,
+      status: "completed",
+      reconciliationId: uuidFor(728),
+      updatedAt: "2026-08-15T02:02:03.000Z",
+    }],
+  });
+  const completedRun = scheduledRun({
+    ...runningRun,
+    status: "completed",
+    finishedAt: "2026-08-15T02:02:04.000Z",
+  });
+  const nextRun = scheduledRun({
+    runId: uuidFor(723),
+    batchRuleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+    batchRulePosition: 4,
+    batchRuleCount: 4,
+    status: "completed",
+    definitions: [amountOnlyScheduledDefinition(CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, 4)],
+    counts: { bases: 0, proposed: 0, ambiguous: 0, skipped: 0 },
+    analysisProcessed: 0,
+    analysisTotal: 0,
+    finishedAt: "2026-08-15T02:03:01.000Z",
+  });
   let heartbeat = 0;
-  const claimCalls = [];
+  const calls = [];
   const responses = [];
 
   await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
-    restQuery: async (resource) => {
-      if (resource !== "rpc/claim_financial_reconciliation_automatic_schedule") {
-        throw new Error(`Unexpected RPC ${resource}`);
+    restQuery: async (resource, options) => {
+      calls.push({ heartbeat, resource, body: options.body });
+      if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+        return heartbeat === 0
+          ? scheduledClaim(analyzingRun, { resumed: true })
+          : scheduledClaim(nextRun, { resumed: false });
       }
-      claimCalls.push(heartbeat);
-      return scheduledClaim(runs[heartbeat], { resumed: heartbeat === 0 });
+      if (resource === "rpc/continue_financial_reconciliation_automatic_analysis") return readyRun;
+      if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+        return {
+          proposalId: amountOnlyProposalId,
+          runId: amountOnlyRunId,
+          status: "completed",
+          reconciliationId: uuidFor(728),
+        };
+      }
+      if (resource === "rpc/get_financial_reconciliation_automatic_run") return runningRun;
+      if (resource === "rpc/finish_financial_reconciliation_automatic_run") return completedRun;
+      throw new Error(`Unexpected RPC ${resource}`);
     },
   }), async (handler) => {
-    for (heartbeat = 0; heartbeat < runs.length; heartbeat += 1) {
+    for (heartbeat = 0; heartbeat < 2; heartbeat += 1) {
       const response = responseRecorder();
       await withCronEnvironment(`2026-08-15T02:0${heartbeat}:00.000Z`, async () => {
         await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
@@ -1258,24 +1522,88 @@ test("scheduled heartbeat accepts a four-rule batch and handles exactly one chil
     }
   });
 
-  assert.deepEqual(claimCalls, [0, 1, 2, 3]);
-  assert.deepEqual(responses.map((response) => ({
-    statusCode: response.statusCode,
-    batchId: response.body.batchId,
-    ruleKey: response.body.ruleKey,
-    rulePosition: response.body.rulePosition,
-    ruleCount: response.body.ruleCount,
-    status: response.body.status,
-    hasMore: response.body.hasMore,
-  })), orderedRules.map((ruleKey, index) => ({
-    statusCode: 200,
-    batchId: BATCH_ID,
-    ruleKey,
-    rulePosition: index + 1,
-    ruleCount: 4,
-    status: index === 2 ? "failed" : "completed",
-    hasMore: false,
-  })));
+  assert.deepEqual(calls, [
+    {
+      heartbeat: 0,
+      resource: "rpc/claim_financial_reconciliation_automatic_schedule",
+      body: { p_now: "2026-08-15T02:00:00.000Z", p_actor: SCHEDULE_ACTOR },
+    },
+    {
+      heartbeat: 0,
+      resource: "rpc/continue_financial_reconciliation_automatic_analysis",
+      body: { p_run_id: amountOnlyRunId, p_actor: SCHEDULE_ACTOR },
+    },
+    {
+      heartbeat: 0,
+      resource: "rpc/execute_financial_reconciliation_automatic_proposal",
+      body: { p_proposal_id: amountOnlyProposalId, p_actor: SCHEDULE_ACTOR },
+    },
+    {
+      heartbeat: 0,
+      resource: "rpc/get_financial_reconciliation_automatic_run",
+      body: { p_run_id: amountOnlyRunId },
+    },
+    {
+      heartbeat: 0,
+      resource: "rpc/finish_financial_reconciliation_automatic_run",
+      body: { p_run_id: amountOnlyRunId },
+    },
+    {
+      heartbeat: 1,
+      resource: "rpc/claim_financial_reconciliation_automatic_schedule",
+      body: { p_now: "2026-08-15T02:01:00.000Z", p_actor: SCHEDULE_ACTOR },
+    },
+  ]);
+  assert.deepEqual(responses.map((response) => response.body), [
+    {
+      ok: true,
+      claimed: true,
+      resumed: true,
+      batchId: BATCH_ID,
+      ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+      rulePosition: 3,
+      ruleCount: 4,
+      runId: amountOnlyRunId,
+      status: "completed",
+      counts: {
+        bases: 1,
+        proposed: 0,
+        ambiguous: 0,
+        skipped: 0,
+        deselected: 0,
+        executing: 0,
+        completed: 1,
+        stale: 0,
+        failed: 0,
+      },
+      attemptedCount: 1,
+      hasMore: false,
+    },
+    {
+      ok: true,
+      claimed: true,
+      resumed: false,
+      batchId: BATCH_ID,
+      ruleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+      rulePosition: 4,
+      ruleCount: 4,
+      runId: uuidFor(723),
+      status: "completed",
+      counts: {
+        bases: 0,
+        proposed: 0,
+        ambiguous: 0,
+        skipped: 0,
+        deselected: 0,
+        executing: 0,
+        completed: 0,
+        stale: 0,
+        failed: 0,
+      },
+      attemptedCount: 0,
+      hasMore: false,
+    },
+  ]);
 });
 
 test("scheduled heartbeat fails closed on malformed parent or one-rule child metadata", async () => {
@@ -1972,87 +2300,40 @@ test("automation RPC errors expose safe client statuses", () => {
   }
 });
 
-test("automation settings GET authorizes and calls only the settings RPC", async () => {
+test("automation settings GET preserves complete pre- and post-migration RPC responses", async () => {
   const authorizations = [];
   const calls = [];
-  const response = responseRecorder();
-  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
-    requireFeature: async (_request, area, feature) => {
-      authorizations.push({ area, feature });
-      return {
-        user: { email: "admin@example.com", id: "admin-1" },
-        access: { profile: { id: "admin-profile" } },
-      };
-    },
-    restQuery: async (resource, options) => {
-      calls.push({ resource, options });
-      return {
-        schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
-        rules: [
-          { rule_key: AUTOMATIC_RULE_KEY, rule_version: 2, diagnostic: "hidden" },
-          { rule_key: CREDIT_CARD_RULE_KEY, rule_version: 1 },
-        ],
-        last_scheduled_batch: {
-          id: BATCH_ID,
-          status: "partial",
-          error_detail: "hidden batch detail",
-        },
-      };
-    },
-  }), async (handler) => {
-    await handler({ method: "GET" }, response);
-  });
+  for (const [label, ruleCount] of [["pre-migration", 2], ["post-migration", 4]]) {
+    const response = responseRecorder();
+    await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+      requireFeature: async (_request, area, feature) => {
+        authorizations.push({ label, area, feature });
+        return {
+          user: { email: "admin@example.com", id: "admin-1" },
+          access: { profile: { id: "admin-profile" } },
+        };
+      },
+      restQuery: async (resource, options) => {
+        calls.push({ label, resource, options });
+        return productionSettingsRpcResult(ruleCount);
+      },
+    }), async (handler) => {
+      await handler({ method: "GET" }, response);
+    });
 
-  assert.deepEqual(authorizations, [{ area: "settings", feature: "financial-reconciliation" }]);
-  assert.deepEqual(calls, [{
+    assert.equal(response.statusCode, 200, label);
+    assert.deepEqual(response.body, expectedPublicSettings(ruleCount), label);
+  }
+
+  assert.deepEqual(authorizations, [
+    { label: "pre-migration", area: "settings", feature: "financial-reconciliation" },
+    { label: "post-migration", area: "settings", feature: "financial-reconciliation" },
+  ]);
+  assert.deepEqual(calls, ["pre-migration", "post-migration"].map((label) => ({
+    label,
     resource: "rpc/get_financial_reconciliation_automation_settings",
     options: { method: "POST", body: {} },
-  }]);
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, {
-    schedule: { enabled: true, timeOfDay: "02:15", timeZone: AUTOMATIC_TIME_ZONE },
-    rules: [
-      { ruleKey: AUTOMATIC_RULE_KEY, ruleVersion: 2 },
-      { ruleKey: CREDIT_CARD_RULE_KEY, ruleVersion: 1 },
-    ],
-    lastScheduledBatch: { id: BATCH_ID, status: "partial" },
-  });
-});
-
-test("automation settings GET maps the post-migration four-rule catalog", async () => {
-  const response = responseRecorder();
-  const rpcRules = [
-    [BANK_STATEMENT_RULE_KEY, BANK_STATEMENT_RULE_VERSION],
-    [CREDIT_CARD_RULE_KEY, CREDIT_CARD_RULE_VERSION],
-    [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION],
-    [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION],
-  ].map(([ruleKey, ruleVersion], index) => ({
-    rule_key: ruleKey,
-    rule_version: ruleVersion,
-    enabled: index < 2,
-    allow_manual_execution: index === 0,
-    include_in_scheduled_batch: false,
-    difference_allowed: index === 0 ? "1.25" : "0.00",
-    max_difference_days: index < 2 ? 10 : 1,
-    priority: index + 1,
-  }));
-  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
-    restQuery: async () => ({ rules: rpcRules }),
-  }), async (handler) => {
-    await handler({ method: "GET" }, response);
-  });
-
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body.rules.map(({ ruleKey, ruleVersion, priority }) => ({
-    ruleKey,
-    ruleVersion,
-    priority,
-  })), [
-    { ruleKey: BANK_STATEMENT_RULE_KEY, ruleVersion: 2, priority: 1 },
-    { ruleKey: CREDIT_CARD_RULE_KEY, ruleVersion: 1, priority: 2 },
-    { ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, ruleVersion: 1, priority: 3 },
-    { ruleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, ruleVersion: 1, priority: 4 },
-  ]);
+  })));
 });
 
 test("automation settings has no action that creates an analysis run", async () => {
@@ -2075,9 +2356,10 @@ test("automation settings has no action that creates an analysis run", async () 
   assert.equal(rpcCalled, false);
 });
 
-test("automation settings PUT normalizes the complete payload and actor into one replacement RPC", async () => {
+test("automation settings PUT normalizes the complete two-rule payload and preserves the complete RPC response", async () => {
   const calls = [];
   const response = responseRecorder();
+  const input = managedSettings({ rules: [managedSettings().rules[0], creditCardRule] });
   await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
     requireFeature: async () => ({
       user: { email: " admin@example.com ", id: "admin-1" },
@@ -2085,10 +2367,10 @@ test("automation settings PUT normalizes the complete payload and actor into one
     }),
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
-      return { schedule: { time_of_day: "02:15" }, rules: [{ rule_key: AUTOMATIC_RULE_KEY }] };
+      return productionSettingsRpcResult(2);
     },
   }), async (handler) => {
-    await handler({ method: "PUT", body: managedSettings() }, response);
+    await handler({ method: "PUT", body: input }, response);
   });
 
   assert.deepEqual(calls, [{
@@ -2097,25 +2379,34 @@ test("automation settings PUT normalizes the complete payload and actor into one
       method: "POST",
       body: {
         p_schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
-        p_rules: [{
-          rule_key: AUTOMATIC_RULE_KEY,
-          rule_version: 2,
-          enabled: true,
-          allow_manual_execution: true,
-          include_in_scheduled_batch: false,
-          difference_allowed: "1.25",
-          max_difference_days: 7,
-          priority: 1,
-        }],
+        p_rules: [
+          {
+            rule_key: AUTOMATIC_RULE_KEY,
+            rule_version: 2,
+            enabled: true,
+            allow_manual_execution: true,
+            include_in_scheduled_batch: false,
+            difference_allowed: "1.25",
+            max_difference_days: 7,
+            priority: 1,
+          },
+          {
+            rule_key: CREDIT_CARD_RULE_KEY,
+            rule_version: 1,
+            enabled: false,
+            allow_manual_execution: false,
+            include_in_scheduled_batch: false,
+            difference_allowed: "0.00",
+            max_difference_days: 10,
+            priority: 2,
+          },
+        ],
         p_actor: "admin@example.com",
       },
     },
   }]);
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, {
-    schedule: { timeOfDay: "02:15" },
-    rules: [{ ruleKey: AUTOMATIC_RULE_KEY }],
-  });
+  assert.deepEqual(response.body, expectedPublicSettings(2));
 });
 
 test("automation settings PUT supports pre-migration two-rule and post-migration four-rule catalogs", async () => {
@@ -2128,7 +2419,7 @@ test("automation settings PUT supports pre-migration two-rule and post-migration
     await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
       restQuery: async (resource, options) => {
         calls.push({ resource, options });
-        return { rules: options.body.p_rules };
+        return productionSettingsRpcResult(settings.rules.length);
       },
     }), async (handler) => {
       await handler({ method: "PUT", body: settings }, response);
@@ -2142,6 +2433,7 @@ test("automation settings PUT supports pre-migration two-rule and post-migration
       settings.rules.map(({ ruleKey, ruleVersion }) => [ruleKey, ruleVersion]),
       label,
     );
+    assert.deepEqual(response.body, expectedPublicSettings(settings.rules.length), label);
   }
 });
 
