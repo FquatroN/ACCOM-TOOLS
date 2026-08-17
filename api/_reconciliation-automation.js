@@ -4,10 +4,20 @@ const BANK_STATEMENT_RULE_KEY = "financial_documents_cgd_bank_statement";
 const BANK_STATEMENT_RULE_VERSION = 2;
 const CREDIT_CARD_RULE_KEY = "financial_documents_cgd_credit_card";
 const CREDIT_CARD_RULE_VERSION = 1;
+const BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY = "financial_documents_cgd_bank_statement_amount_only";
+const BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION = 1;
+const CREDIT_CARD_AMOUNT_ONLY_RULE_KEY = "financial_documents_cgd_credit_card_amount_only";
+const CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION = 1;
 const AUTOMATIC_RULE_VERSIONS = Object.freeze({
   [BANK_STATEMENT_RULE_KEY]: BANK_STATEMENT_RULE_VERSION,
   [CREDIT_CARD_RULE_KEY]: CREDIT_CARD_RULE_VERSION,
+  [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY]: BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
+  [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY]: CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
 });
+const AMOUNT_ONLY_RULE_KEYS = Object.freeze(new Set([
+  BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+  CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+]));
 const AUTOMATIC_RULE_KEY = BANK_STATEMENT_RULE_KEY;
 const AUTOMATIC_RULE_VERSION = BANK_STATEMENT_RULE_VERSION;
 const AUTOMATIC_TIME_ZONE = "Europe/Lisbon";
@@ -150,6 +160,10 @@ function normalizeRuleVersion(value, ruleKey) {
   return value;
 }
 
+function isAmountOnlyRuleKey(ruleKey) {
+  return AMOUNT_ONLY_RULE_KEYS.has(ruleKey);
+}
+
 function normalizeSchedule(value) {
   const schedule = requirePlainObject(value, "Schedule");
   requireOnlyKeys(schedule, EDITABLE_SCHEDULE_FIELDS, "Schedule");
@@ -169,13 +183,17 @@ function normalizeManagedRule(value) {
     }
   }
   const ruleKey = normalizeRuleKey(rule.ruleKey);
+  const differenceAllowedCents = moneyToCents(rule.differenceAllowed, "Difference allowed");
+  if (isAmountOnlyRuleKey(ruleKey) && differenceAllowedCents !== 0) {
+    throw inputError("Amount-only rules require a zero difference allowed.");
+  }
   return {
     ruleKey,
     ruleVersion: normalizeRuleVersion(rule.ruleVersion, ruleKey),
     enabled: requireBoolean(rule.enabled, "Rule enabled"),
     allowManualExecution: requireBoolean(rule.allowManualExecution, "Allow manual execution"),
     includeInScheduledBatch: requireBoolean(rule.includeInScheduledBatch, "Include in scheduled batch"),
-    differenceAllowedCents: moneyToCents(rule.differenceAllowed, "Difference allowed"),
+    differenceAllowedCents,
     maxDifferenceDays: requireInteger(rule.maxDifferenceDays, "Max difference days", 0, 90),
     priority: requireInteger(rule.priority, "Priority", 1),
   };
@@ -287,13 +305,17 @@ function normalizeRpcSettings(settings) {
       "priority",
     ]), "Automation rule");
     const ruleKey = normalizeRuleKey(input.ruleKey);
+    const differenceAllowedCents = requireInteger(input.differenceAllowedCents, "Difference allowed cents", 0);
+    if (isAmountOnlyRuleKey(ruleKey) && differenceAllowedCents !== 0) {
+      throw inputError("Amount-only rules require a zero difference allowed.");
+    }
     const normalized = {
       ruleKey,
       ruleVersion: normalizeRuleVersion(input.ruleVersion, ruleKey),
       enabled: requireBoolean(input.enabled, "Rule enabled"),
       allowManualExecution: requireBoolean(input.allowManualExecution, "Allow manual execution"),
       includeInScheduledBatch: requireBoolean(input.includeInScheduledBatch, "Include in scheduled batch"),
-      differenceAllowedCents: requireInteger(input.differenceAllowedCents, "Difference allowed cents", 0),
+      differenceAllowedCents,
       maxDifferenceDays: requireInteger(input.maxDifferenceDays, "Max difference days", 0, 90),
       priority: requireInteger(input.priority, "Priority", 1),
     };
@@ -357,18 +379,25 @@ module.exports = {
   AUTOMATIC_RULE_VERSION,
   AUTOMATIC_TIME_ZONE,
   AUTOMATIC_RULE_VERSIONS,
+  AMOUNT_ONLY_RULE_KEYS,
   AUTOMATION_ACTIONS,
+  BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+  BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   BANK_STATEMENT_RULE_KEY,
   BANK_STATEMENT_RULE_VERSION,
+  CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+  CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
   CREDIT_CARD_RULE_KEY,
   CREDIT_CARD_RULE_VERSION,
   SOURCE_TYPES,
+  isAmountOnlyRuleKey,
   isCronRequest,
   normalizeAnalyzePayload,
   normalizeAutomationAction,
   normalizeAutomationSettingsPayload,
   normalizeContinueAnalysisPayload,
   normalizeExecutePayload,
+  normalizeRpcSettings,
   normalizeRuleKey,
   normalizeRuleVersion,
   normalizeSourceType,

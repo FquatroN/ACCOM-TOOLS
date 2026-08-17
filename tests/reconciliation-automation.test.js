@@ -7,16 +7,22 @@ const {
   AUTOMATIC_RULE_KEY,
   AUTOMATIC_RULE_VERSION,
   AUTOMATIC_TIME_ZONE,
+  BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+  BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   BANK_STATEMENT_RULE_KEY,
   BANK_STATEMENT_RULE_VERSION,
+  CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+  CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
   CREDIT_CARD_RULE_KEY,
   CREDIT_CARD_RULE_VERSION,
+  isAmountOnlyRuleKey,
   isCronRequest,
   normalizeAnalyzePayload,
   normalizeAutomationAction,
   normalizeAutomationSettingsPayload,
   normalizeContinueAnalysisPayload,
   normalizeExecutePayload,
+  normalizeRpcSettings,
   normalizeRuleVersion,
   toAutomationPublicResult,
   toAutomationSettingsRpcPayload,
@@ -252,6 +258,85 @@ const creditCardRule = {
   priority: 2,
 };
 
+function fourRuleSettings({ amountOnlyDifferenceAllowed = "0.00", ...overrides } = {}) {
+  return managedSettings({
+    rules: [
+      managedSettings().rules[0],
+      creditCardRule,
+      {
+        ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+        ruleVersion: BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
+        enabled: false,
+        allowManualExecution: false,
+        includeInScheduledBatch: false,
+        differenceAllowed: amountOnlyDifferenceAllowed,
+        maxDifferenceDays: 1,
+        priority: 3,
+      },
+      {
+        ruleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+        ruleVersion: CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
+        enabled: false,
+        allowManualExecution: false,
+        includeInScheduledBatch: false,
+        differenceAllowed: amountOnlyDifferenceAllowed,
+        maxDifferenceDays: 1,
+        priority: 4,
+      },
+    ],
+    ...overrides,
+  });
+}
+
+function fourRuleRpcSettings({ amountOnlyDifferenceAllowedCents = 0, ...overrides } = {}) {
+  return {
+    schedule: { enabled: true, timeOfDay: "02:15", timeZone: AUTOMATIC_TIME_ZONE },
+    rules: [
+      {
+        ruleKey: BANK_STATEMENT_RULE_KEY,
+        ruleVersion: BANK_STATEMENT_RULE_VERSION,
+        enabled: true,
+        allowManualExecution: true,
+        includeInScheduledBatch: false,
+        differenceAllowedCents: 125,
+        maxDifferenceDays: 7,
+        priority: 1,
+      },
+      {
+        ruleKey: CREDIT_CARD_RULE_KEY,
+        ruleVersion: CREDIT_CARD_RULE_VERSION,
+        enabled: false,
+        allowManualExecution: false,
+        includeInScheduledBatch: false,
+        differenceAllowedCents: 0,
+        maxDifferenceDays: 10,
+        priority: 2,
+      },
+      {
+        ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+        ruleVersion: BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
+        enabled: false,
+        allowManualExecution: false,
+        includeInScheduledBatch: false,
+        differenceAllowedCents: amountOnlyDifferenceAllowedCents,
+        maxDifferenceDays: 1,
+        priority: 3,
+      },
+      {
+        ruleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+        ruleVersion: CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
+        enabled: false,
+        allowManualExecution: false,
+        includeInScheduledBatch: false,
+        differenceAllowedCents: amountOnlyDifferenceAllowedCents,
+        maxDifferenceDays: 1,
+        priority: 4,
+      },
+    ],
+    ...overrides,
+  };
+}
+
 test("managed settings accept the two explicit rule/version pairs", () => {
   const input = managedSettings({
     rules: [managedSettings().rules[0], creditCardRule],
@@ -267,6 +352,40 @@ test("managed settings accept the two explicit rule/version pairs", () => {
     ...input,
     rules: [{ ...creditCardRule, ruleVersion: 2 }],
   }), /rule version/i);
+});
+
+test("managed automation accepts the four explicit key/version pairs", () => {
+  const normalized = normalizeAutomationSettingsPayload(fourRuleSettings());
+  assert.deepEqual(normalized.rules.map(({ ruleKey, ruleVersion }) => [ruleKey, ruleVersion]), [
+    [BANK_STATEMENT_RULE_KEY, 2],
+    [CREDIT_CARD_RULE_KEY, 1],
+    [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, 1],
+    [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, 1],
+  ]);
+  assert.equal(isAmountOnlyRuleKey(BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY), true);
+  assert.equal(isAmountOnlyRuleKey(CREDIT_CARD_RULE_KEY), false);
+
+  assert.throws(() => normalizeAutomationSettingsPayload(fourRuleSettings({
+    rules: [{ ...fourRuleSettings().rules[2], ruleVersion: 2 }],
+  })), /rule version/i);
+  assert.throws(() => normalizeAutomationSettingsPayload(fourRuleSettings({
+    rules: [{ ...fourRuleSettings().rules[2], ruleKey: `${BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY}_injected` }],
+  })), /rule key/i);
+  assert.throws(() => normalizeAutomationSettingsPayload(fourRuleSettings({
+    rules: [
+      ...fourRuleSettings().rules.slice(0, 3),
+      { ...fourRuleSettings().rules[2], priority: 4 },
+    ],
+  })), /duplicate rule key/i);
+});
+
+test("amount-only tolerance is fixed at zero in both settings shapes", () => {
+  assert.throws(() => normalizeAutomationSettingsPayload(fourRuleSettings({
+    amountOnlyDifferenceAllowed: "0.01",
+  })), /amount-only.*zero/i);
+  assert.throws(() => normalizeRpcSettings(fourRuleRpcSettings({
+    amountOnlyDifferenceAllowedCents: 1,
+  })), /amount-only.*zero/i);
 });
 
 test("rule-version validation rejects an unknown key even with an undefined version", () => {
@@ -288,6 +407,28 @@ test("manual analysis accepts exactly one allowlisted rule and has no batch acti
     clientRequestId: REQUEST_ID,
   }), /exactly one/i);
   assert.throws(() => normalizeAutomationAction("analyze_batch"), /automation action/i);
+});
+
+test("two-key manual analysis rejects before any RPC", async () => {
+  let rpcCalled = false;
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => {
+      rpcCalled = true;
+      return {};
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: {
+        action: "analyze_rule",
+        ruleKeys: [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, CREDIT_CARD_AMOUNT_ONLY_RULE_KEY],
+        clientRequestId: REQUEST_ID,
+      },
+    }, response);
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(rpcCalled, false);
 });
 
 test("batch lifecycle keys map without leaking diagnostic keys", () => {
