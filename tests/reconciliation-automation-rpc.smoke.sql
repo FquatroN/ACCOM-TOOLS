@@ -5669,12 +5669,16 @@ declare
   v_retry jsonb;
   v_cross_midnight jsonb;
   v_second jsonb;
+  v_third jsonb;
+  v_fourth jsonb;
   v_complete jsonb;
   v_complete_retry jsonb;
   v_tomorrow jsonb;
   v_batch_id uuid;
   v_first_run_id uuid;
   v_second_run_id uuid;
+  v_third_run_id uuid;
+  v_fourth_run_id uuid;
   v_tomorrow_batch_id uuid;
   v_snapshot jsonb;
   v_counts jsonb;
@@ -5686,14 +5690,23 @@ begin
   set enabled = true,
       include_in_scheduled_batch = true,
       difference_allowed = case config.rule_key
-        when 'financial_documents_cgd_bank_statement' then 0.10 else 0.20 end,
+        when 'financial_documents_cgd_bank_statement' then 0.10
+        when 'financial_documents_cgd_credit_card' then 0.20
+        else 0 end,
       max_difference_days = case config.rule_key
-        when 'financial_documents_cgd_bank_statement' then 10 else 11 end,
+        when 'financial_documents_cgd_bank_statement' then 10
+        when 'financial_documents_cgd_credit_card' then 11
+        else 1 end,
       priority = case config.rule_key
-        when 'financial_documents_cgd_bank_statement' then 1 else 2 end
+        when 'financial_documents_cgd_bank_statement' then 1
+        when 'financial_documents_cgd_credit_card' then 2
+        when 'financial_documents_cgd_bank_statement_amount_only' then 3
+        else 4 end
   where config.rule_key in (
     'financial_documents_cgd_bank_statement',
-    'financial_documents_cgd_credit_card'
+    'financial_documents_cgd_credit_card',
+    'financial_documents_cgd_bank_statement_amount_only',
+    'financial_documents_cgd_credit_card_amount_only'
   );
 
   v_first := public.claim_financial_reconciliation_automatic_schedule(
@@ -5708,14 +5721,14 @@ begin
   if not (v_first->>'claimed')::boolean
     or (v_first->>'resumed')::boolean
     or v_first->>'batchRulePosition' <> '1'
-    or v_first->>'batchRuleCount' <> '2'
+    or v_first->>'batchRuleCount' <> '4'
     or v_first#>>'{run,scope}' <> 'rule'
     or v_first#>>'{run,batchId}' <> v_batch_id::text
     or v_first#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_bank_statement'
     or v_first#>>'{run,batchRulePosition}' <> '1'
-    or v_first#>>'{run,batchRuleCount}' <> '2'
+    or v_first#>>'{run,batchRuleCount}' <> '4'
     or jsonb_array_length(v_first#>'{run,definitions}') <> 1
-    or jsonb_array_length(v_snapshot) <> 2
+    or jsonb_array_length(v_snapshot) <> 4
     or v_snapshot#>>'{0,ruleKey}' <> 'financial_documents_cgd_bank_statement'
     or v_snapshot#>>'{0,ruleVersion}' <> '2'
     or v_snapshot#>>'{0,destinationSourceType}' <> 'import_cgd_extrato_ordem'
@@ -5731,8 +5744,24 @@ begin
     or v_snapshot#>>'{1,priority}' <> '2'
     or v_snapshot#>>'{1,differenceAllowed}' <> '0.20'
     or v_snapshot#>>'{1,maxDifferenceDays}' <> '11'
-    or jsonb_typeof(v_snapshot#>'{1,definition}') <> 'object' then
-    raise exception 'Scheduled batch did not snapshot both managed rules in deterministic order.';
+    or jsonb_typeof(v_snapshot#>'{1,definition}') <> 'object'
+    or v_snapshot#>>'{2,ruleKey}' <> 'financial_documents_cgd_bank_statement_amount_only'
+    or v_snapshot#>>'{2,ruleVersion}' <> '1'
+    or v_snapshot#>>'{2,destinationSourceType}' <> 'import_cgd_extrato_ordem'
+    or v_snapshot#>>'{2,operator}' <> '+'
+    or v_snapshot#>>'{2,priority}' <> '3'
+    or v_snapshot#>>'{2,differenceAllowed}' <> '0.00'
+    or v_snapshot#>>'{2,maxDifferenceDays}' <> '1'
+    or jsonb_typeof(v_snapshot#>'{2,definition}') <> 'object'
+    or v_snapshot#>>'{3,ruleKey}' <> 'financial_documents_cgd_credit_card_amount_only'
+    or v_snapshot#>>'{3,ruleVersion}' <> '1'
+    or v_snapshot#>>'{3,destinationSourceType}' <> 'import_cgd_cartao_credito'
+    or v_snapshot#>>'{3,operator}' <> '+'
+    or v_snapshot#>>'{3,priority}' <> '4'
+    or v_snapshot#>>'{3,differenceAllowed}' <> '0.00'
+    or v_snapshot#>>'{3,maxDifferenceDays}' <> '1'
+    or jsonb_typeof(v_snapshot#>'{3,definition}') <> 'object' then
+    raise exception 'Scheduled batch did not snapshot all four managed rules in deterministic order.';
   end if;
 
   select count(*) into v_proposal_count
@@ -5766,14 +5795,24 @@ begin
   set constraints financial_reconciliation_automatic_rule_configs_priority_key deferred;
   update public.financial_reconciliation_automatic_rule_configs config
   set difference_allowed = case config.rule_key
-        when 'financial_documents_cgd_credit_card' then 0.30 else 0.40 end,
+        when 'financial_documents_cgd_credit_card' then 0.30
+        when 'financial_documents_cgd_bank_statement' then 0.40
+        else 0 end,
       max_difference_days = case config.rule_key
-        when 'financial_documents_cgd_credit_card' then 12 else 13 end,
+        when 'financial_documents_cgd_credit_card_amount_only' then 2
+        when 'financial_documents_cgd_bank_statement_amount_only' then 3
+        when 'financial_documents_cgd_credit_card' then 12
+        else 13 end,
       priority = case config.rule_key
-        when 'financial_documents_cgd_credit_card' then 1 else 2 end
+        when 'financial_documents_cgd_credit_card_amount_only' then 1
+        when 'financial_documents_cgd_bank_statement_amount_only' then 2
+        when 'financial_documents_cgd_credit_card' then 3
+        else 4 end
   where config.rule_key in (
     'financial_documents_cgd_bank_statement',
-    'financial_documents_cgd_credit_card'
+    'financial_documents_cgd_credit_card',
+    'financial_documents_cgd_bank_statement_amount_only',
+    'financial_documents_cgd_credit_card_amount_only'
   );
   if (select batch.rule_snapshot from public.financial_reconciliation_automatic_batches batch
       where batch.id = v_batch_id) is distinct from v_snapshot then
@@ -5807,6 +5846,44 @@ begin
       finished_at = now(),
       updated_at = now()
   where id = v_second_run_id;
+  v_third := public.claim_financial_reconciliation_automatic_schedule(
+    '2094-01-02 00:32:00+00', 'smoke:scheduled-batch'
+  );
+  v_third_run_id := (v_third#>>'{run,runId}')::uuid;
+  if (v_third->>'resumed')::boolean
+    or v_third->>'batchRulePosition' <> '3'
+    or v_third#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_bank_statement_amount_only'
+    or (select count(*) from public.financial_reconciliation_automatic_runs
+        where batch_id = v_batch_id) <> 3 then
+    raise exception 'Scheduled batch started a later child before the third rule became current.';
+  end if;
+
+  update public.financial_reconciliation_automatic_runs
+  set status = 'completed',
+      analysis_completed_at = coalesce(analysis_completed_at, now()),
+      counts = '{"bases":0,"completed":0,"failed":0}'::jsonb,
+      finished_at = now(),
+      updated_at = now()
+  where id = v_third_run_id;
+  v_fourth := public.claim_financial_reconciliation_automatic_schedule(
+    '2094-01-02 00:33:00+00', 'smoke:scheduled-batch'
+  );
+  v_fourth_run_id := (v_fourth#>>'{run,runId}')::uuid;
+  if (v_fourth->>'resumed')::boolean
+    or v_fourth->>'batchRulePosition' <> '4'
+    or v_fourth#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_credit_card_amount_only'
+    or (select count(*) from public.financial_reconciliation_automatic_runs
+        where batch_id = v_batch_id) <> 4 then
+    raise exception 'Scheduled batch started a later child before the fourth rule became current.';
+  end if;
+
+  update public.financial_reconciliation_automatic_runs
+  set status = 'completed',
+      analysis_completed_at = coalesce(analysis_completed_at, now()),
+      counts = '{"bases":0,"completed":0,"failed":0}'::jsonb,
+      finished_at = now(),
+      updated_at = now()
+  where id = v_fourth_run_id;
   v_complete := public.claim_financial_reconciliation_automatic_schedule(
     '2094-01-01 02:00:00+00', 'smoke:scheduled-batch'
   );
@@ -5829,13 +5906,13 @@ begin
   );
   v_tomorrow_batch_id := (v_tomorrow->>'batchId')::uuid;
   if v_tomorrow_batch_id = v_batch_id
-    or v_tomorrow#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_credit_card'
+    or v_tomorrow#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_credit_card_amount_only'
     or (select batch.rule_snapshot#>>'{0,priority}'
         from public.financial_reconciliation_automatic_batches batch
         where batch.id = v_tomorrow_batch_id) <> '1'
     or (select batch.rule_snapshot#>>'{0,differenceAllowed}'
         from public.financial_reconciliation_automatic_batches batch
-        where batch.id = v_tomorrow_batch_id) <> '0.30' then
+        where batch.id = v_tomorrow_batch_id) <> '0.00' then
     raise exception 'Tomorrow scheduled batch did not use the changed settings snapshot.';
   end if;
 end $$;
@@ -5845,10 +5922,14 @@ do $$
 declare
   v_first jsonb;
   v_second jsonb;
+  v_third jsonb;
+  v_fourth jsonb;
   v_complete jsonb;
   v_batch_id uuid;
   v_first_run_id uuid;
   v_second_run_id uuid;
+  v_third_run_id uuid;
+  v_fourth_run_id uuid;
   v_settings jsonb;
 begin
   v_first := public.claim_financial_reconciliation_automatic_schedule(
@@ -5856,6 +5937,13 @@ begin
   );
   v_batch_id := (v_first->>'batchId')::uuid;
   v_first_run_id := (v_first#>>'{run,runId}')::uuid;
+  if not (v_first->>'resumed')::boolean
+    or v_first#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_credit_card_amount_only'
+    or v_first->>'batchRulePosition' <> '1'
+    or (select count(*) from public.financial_reconciliation_automatic_runs
+        where batch_id = v_batch_id) <> 1 then
+    raise exception 'Configured amount-only child was not resumed alone before failure.';
+  end if;
   update public.financial_reconciliation_automatic_runs
   set status = 'failed',
       error_summary = 'internal scheduled fixture failure',
@@ -5864,15 +5952,25 @@ begin
       finished_at = now(),
       updated_at = now()
   where id = v_first_run_id;
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_runs run
+    where run.id = v_first_run_id
+      and run.status = 'failed'
+      and run.analysis_error_code = 'analysis_continuation_failed'
+      and run.finished_at is not null
+  ) then
+    raise exception 'Failed amount-only scheduled child did not persist a terminal failure.';
+  end if;
 
   v_second := public.claim_financial_reconciliation_automatic_schedule(
     '2094-01-02 01:02:00+00', 'smoke:scheduled-batch'
   );
   v_second_run_id := (v_second#>>'{run,runId}')::uuid;
   if v_second->>'batchId' <> v_batch_id::text
-    or v_second#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_bank_statement'
+    or v_second#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_bank_statement_amount_only'
     or v_second->>'batchRulePosition' <> '2' then
-    raise exception 'A failed scheduled child blocked the next snapshotted rule.';
+    raise exception 'A failed amount-only scheduled child blocked the next snapshotted rule.';
   end if;
 
   update public.financial_reconciliation_automatic_runs
@@ -5882,8 +5980,42 @@ begin
       finished_at = now(),
       updated_at = now()
   where id = v_second_run_id;
-  v_complete := public.claim_financial_reconciliation_automatic_schedule(
+  v_third := public.claim_financial_reconciliation_automatic_schedule(
     '2094-01-02 01:03:00+00', 'smoke:scheduled-batch'
+  );
+  v_third_run_id := (v_third#>>'{run,runId}')::uuid;
+  if v_third->>'batchId' <> v_batch_id::text
+    or v_third#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_credit_card'
+    or v_third->>'batchRulePosition' <> '3' then
+    raise exception 'The configured third scheduled child was not selected.';
+  end if;
+  update public.financial_reconciliation_automatic_runs
+  set status = 'completed',
+      analysis_completed_at = coalesce(analysis_completed_at, now()),
+      counts = '{"bases":0,"completed":0,"failed":0}'::jsonb,
+      finished_at = now(),
+      updated_at = now()
+  where id = v_third_run_id;
+
+  v_fourth := public.claim_financial_reconciliation_automatic_schedule(
+    '2094-01-02 01:04:00+00', 'smoke:scheduled-batch'
+  );
+  v_fourth_run_id := (v_fourth#>>'{run,runId}')::uuid;
+  if v_fourth->>'batchId' <> v_batch_id::text
+    or v_fourth#>>'{run,batchRuleKey}' <> 'financial_documents_cgd_bank_statement'
+    or v_fourth->>'batchRulePosition' <> '4' then
+    raise exception 'The configured fourth scheduled child was not selected.';
+  end if;
+  update public.financial_reconciliation_automatic_runs
+  set status = 'completed',
+      analysis_completed_at = coalesce(analysis_completed_at, now()),
+      counts = '{"bases":0,"completed":0,"failed":0}'::jsonb,
+      finished_at = now(),
+      updated_at = now()
+  where id = v_fourth_run_id;
+
+  v_complete := public.claim_financial_reconciliation_automatic_schedule(
+    '2094-01-02 01:05:00+00', 'smoke:scheduled-batch'
   );
   if v_complete->>'reason' <> 'batch_complete'
     or not exists (
@@ -5891,7 +6023,7 @@ begin
       from public.financial_reconciliation_automatic_batches batch
       where batch.id = v_batch_id
         and batch.status = 'partial'
-        and batch.counts @> '{"ruleCount":2,"childCount":2,"completedChildren":1,"failedChildren":1}'::jsonb
+        and batch.counts @> '{"ruleCount":4,"childCount":4,"completedChildren":3,"failedChildren":1}'::jsonb
     ) then
     raise exception 'Mixed scheduled child outcomes did not produce a terminal partial batch.';
   end if;
@@ -5904,6 +6036,28 @@ begin
     or v_settings::text like '%analysis_continuation_failed%' then
     raise exception 'Settings did not expose the safe latest scheduled batch aggregate.';
   end if;
+
+  set constraints financial_reconciliation_automatic_rule_configs_priority_key deferred;
+  update public.financial_reconciliation_automatic_rule_configs config
+  set enabled = config.rule_key in (
+        'financial_documents_cgd_bank_statement',
+        'financial_documents_cgd_credit_card'
+      ),
+      include_in_scheduled_batch = config.rule_key in (
+        'financial_documents_cgd_bank_statement',
+        'financial_documents_cgd_credit_card'
+      ),
+      priority = case config.rule_key
+        when 'financial_documents_cgd_bank_statement' then 1
+        when 'financial_documents_cgd_credit_card' then 2
+        when 'financial_documents_cgd_bank_statement_amount_only' then 3
+        else 4 end
+  where config.rule_key in (
+    'financial_documents_cgd_bank_statement',
+    'financial_documents_cgd_credit_card',
+    'financial_documents_cgd_bank_statement_amount_only',
+    'financial_documents_cgd_credit_card_amount_only'
+  );
 end $$;
 
 -- equal scheduled priorities use the rule-key tie-breaker while Settings rejects duplicates

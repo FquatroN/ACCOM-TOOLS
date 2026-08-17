@@ -1214,6 +1214,70 @@ test("failed scheduled child returns 200 and the next heartbeat can claim the ne
   assert.equal(secondResponse.body.rulePosition, 2);
 });
 
+test("scheduled heartbeat accepts a four-rule batch and handles exactly one child per request", async () => {
+  const orderedRules = [
+    BANK_STATEMENT_RULE_KEY,
+    CREDIT_CARD_RULE_KEY,
+    BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+  ];
+  const runs = orderedRules.map((ruleKey, index) => scheduledRun({
+    runId: uuidFor(720 + index),
+    batchRuleKey: ruleKey,
+    batchRulePosition: index + 1,
+    batchRuleCount: 4,
+    definitions: [{ ruleKey, priority: index + 1 }],
+    status: index === 2 ? "failed" : "completed",
+    ...(index === 2 ? {
+      analysisComplete: false,
+      analysisCompletedAt: null,
+      analysisErrorCode: "analysis_continuation_failed",
+      analysisErrorAt: `2026-08-15T02:0${index}:01.000Z`,
+    } : {}),
+    finishedAt: `2026-08-15T02:0${index}:01.000Z`,
+  }));
+  let heartbeat = 0;
+  const claimCalls = [];
+  const responses = [];
+
+  await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource) => {
+      if (resource !== "rpc/claim_financial_reconciliation_automatic_schedule") {
+        throw new Error(`Unexpected RPC ${resource}`);
+      }
+      claimCalls.push(heartbeat);
+      return scheduledClaim(runs[heartbeat], { resumed: heartbeat === 0 });
+    },
+  }), async (handler) => {
+    for (heartbeat = 0; heartbeat < runs.length; heartbeat += 1) {
+      const response = responseRecorder();
+      await withCronEnvironment(`2026-08-15T02:0${heartbeat}:00.000Z`, async () => {
+        await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+      });
+      responses.push(response);
+    }
+  });
+
+  assert.deepEqual(claimCalls, [0, 1, 2, 3]);
+  assert.deepEqual(responses.map((response) => ({
+    statusCode: response.statusCode,
+    batchId: response.body.batchId,
+    ruleKey: response.body.ruleKey,
+    rulePosition: response.body.rulePosition,
+    ruleCount: response.body.ruleCount,
+    status: response.body.status,
+    hasMore: response.body.hasMore,
+  })), orderedRules.map((ruleKey, index) => ({
+    statusCode: 200,
+    batchId: BATCH_ID,
+    ruleKey,
+    rulePosition: index + 1,
+    ruleCount: 4,
+    status: index === 2 ? "failed" : "completed",
+    hasMore: false,
+  })));
+});
+
 test("scheduled heartbeat fails closed on malformed parent or one-rule child metadata", async () => {
   const proposal = {
     id: uuidFor(704),
@@ -1955,6 +2019,42 @@ test("automation settings GET authorizes and calls only the settings RPC", async
   });
 });
 
+test("automation settings GET maps the post-migration four-rule catalog", async () => {
+  const response = responseRecorder();
+  const rpcRules = [
+    [BANK_STATEMENT_RULE_KEY, BANK_STATEMENT_RULE_VERSION],
+    [CREDIT_CARD_RULE_KEY, CREDIT_CARD_RULE_VERSION],
+    [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION],
+    [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION],
+  ].map(([ruleKey, ruleVersion], index) => ({
+    rule_key: ruleKey,
+    rule_version: ruleVersion,
+    enabled: index < 2,
+    allow_manual_execution: index === 0,
+    include_in_scheduled_batch: false,
+    difference_allowed: index === 0 ? "1.25" : "0.00",
+    max_difference_days: index < 2 ? 10 : 1,
+    priority: index + 1,
+  }));
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => ({ rules: rpcRules }),
+  }), async (handler) => {
+    await handler({ method: "GET" }, response);
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.rules.map(({ ruleKey, ruleVersion, priority }) => ({
+    ruleKey,
+    ruleVersion,
+    priority,
+  })), [
+    { ruleKey: BANK_STATEMENT_RULE_KEY, ruleVersion: 2, priority: 1 },
+    { ruleKey: CREDIT_CARD_RULE_KEY, ruleVersion: 1, priority: 2 },
+    { ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, ruleVersion: 1, priority: 3 },
+    { ruleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, ruleVersion: 1, priority: 4 },
+  ]);
+});
+
 test("automation settings has no action that creates an analysis run", async () => {
   let rpcCalled = false;
   const response = responseRecorder();
@@ -2018,6 +2118,53 @@ test("automation settings PUT normalizes the complete payload and actor into one
   });
 });
 
+test("automation settings PUT supports pre-migration two-rule and post-migration four-rule catalogs", async () => {
+  for (const [label, settings] of [
+    ["pre-migration", managedSettings({ rules: [managedSettings().rules[0], creditCardRule] })],
+    ["post-migration", fourRuleSettings()],
+  ]) {
+    const calls = [];
+    const response = responseRecorder();
+    await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        return { rules: options.body.p_rules };
+      },
+    }), async (handler) => {
+      await handler({ method: "PUT", body: settings }, response);
+    });
+
+    assert.equal(response.statusCode, 200, label);
+    assert.equal(calls.length, 1, label);
+    assert.equal(calls[0].resource, "rpc/replace_financial_reconciliation_automation_settings", label);
+    assert.deepEqual(
+      calls[0].options.body.p_rules.map(({ rule_key, rule_version }) => [rule_key, rule_version]),
+      settings.rules.map(({ ruleKey, ruleVersion }) => [ruleKey, ruleVersion]),
+      label,
+    );
+  }
+});
+
+test("automation settings PUT rejects nonzero amount-only tolerance before replacement RPC", async () => {
+  let rpcCalled = false;
+  const response = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => {
+      rpcCalled = true;
+      return {};
+    },
+  }), async (handler) => {
+    await handler({
+      method: "PUT",
+      body: fourRuleSettings({ bankStatementAmountOnlyDifferenceAllowed: "0.01" }),
+    }, response);
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(rpcCalled, false);
+  assert.match(response.body.error, /amount-only.*zero/i);
+});
+
 test("manual automation GET authorizes app access and validates the run detail RPC", async () => {
   const authorizations = [];
   const calls = [];
@@ -2060,7 +2207,7 @@ test("manual automation GET authorizes app access and validates the run detail R
   assert.equal(invalidRpcCalled, false);
 });
 
-test("manual automation GET exposes only the app-authorized enabled manual rule catalog", async () => {
+test("manual automation GET exposes only enabled manual rules from the workbench catalog", async () => {
   const authorizations = [];
   const calls = [];
   const response = responseRecorder();
@@ -2090,10 +2237,28 @@ test("manual automation GET exposes only the app-authorized enabled manual rule 
             rule_key: CREDIT_CARD_RULE_KEY,
             rule_version: 1,
             display_name: "Financial Documents to CGD Credit Card",
-            enabled: true,
+            enabled: false,
             allow_manual_execution: true,
             difference_allowed: "0.00",
             max_difference_days: 10,
+          },
+          {
+            rule_key: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+            rule_version: 1,
+            display_name: "Financial Documents to CGD Bank Statement (Amount Only)",
+            enabled: true,
+            allow_manual_execution: false,
+            difference_allowed: "0.00",
+            max_difference_days: 1,
+          },
+          {
+            rule_key: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+            rule_version: 1,
+            display_name: "Financial Documents to CGD Credit Card (Amount Only)",
+            enabled: true,
+            allow_manual_execution: true,
+            difference_allowed: "0.00",
+            max_difference_days: 1,
           },
         ],
       };
@@ -2120,13 +2285,13 @@ test("manual automation GET exposes only the app-authorized enabled manual rule 
         maxDifferenceDays: 7,
       },
       {
-        ruleKey: CREDIT_CARD_RULE_KEY,
+        ruleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
         ruleVersion: 1,
-        displayName: "Financial Documents to CGD Credit Card",
+        displayName: "Financial Documents to CGD Credit Card (Amount Only)",
         enabled: true,
         allowManualExecution: true,
         differenceAllowed: "0.00",
-        maxDifferenceDays: 10,
+        maxDifferenceDays: 1,
       },
     ],
   });
@@ -2190,44 +2355,64 @@ test("manual active-run lookup and continuation bind the authenticated actor", a
   assert.equal(invalidRpcCalled, false);
 });
 
-test("analyze_rule authorizes app access and sends exactly one selected Credit Card rule", async () => {
-  const authorizations = [];
-  const calls = [];
+test("analyze_rule sends exactly one selected rule for each amount-only key/version", async () => {
+  for (const [ruleKey, ruleVersion] of [
+    [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION],
+    [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION],
+  ]) {
+    const calls = [];
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        return { run_id: RUN_ID, status: "ready", definitions: [{ rule_key: ruleKey, rule_version: ruleVersion }] };
+      },
+    }), async (handler) => {
+      await handler({
+        method: "POST",
+        body: { action: "analyze_rule", ruleKeys: [ruleKey], clientRequestId: REQUEST_ID },
+      }, response);
+    });
+
+    assert.equal(response.statusCode, 200, ruleKey);
+    assert.deepEqual(calls, [{
+      resource: "rpc/create_financial_reconciliation_automatic_analysis",
+      options: {
+        method: "POST",
+        body: {
+          p_rule_keys: [ruleKey],
+          p_mode: "manual_rule",
+          p_actor: "user@example.com",
+          p_client_request_id: REQUEST_ID,
+        },
+      },
+    }], ruleKey);
+    assert.deepEqual(response.body.definitions, [{ ruleKey, ruleVersion }], ruleKey);
+  }
+});
+
+test("analyze_rule rejects an unknown fifth rule before analysis RPC", async () => {
+  let rpcCalled = false;
   const response = responseRecorder();
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
-    requireFeature: async (_request, area, feature) => {
-      authorizations.push({ area, feature });
-      return {
-        user: { email: "user@example.com", id: "user-1" },
-        access: { profile: { id: "profile-1" } },
-      };
-    },
-    restQuery: async (resource, options) => {
-      calls.push({ resource, options });
-      return { run_id: RUN_ID, status: "ready" };
+    restQuery: async () => {
+      rpcCalled = true;
+      return {};
     },
   }), async (handler) => {
     await handler({
       method: "POST",
-      body: { action: "analyze_rule", ruleKeys: [CREDIT_CARD_RULE_KEY], clientRequestId: REQUEST_ID },
+      body: {
+        action: "analyze_rule",
+        ruleKeys: ["financial_documents_cgd_cash_amount_only"],
+        clientRequestId: REQUEST_ID,
+      },
     }, response);
   });
 
-  assert.deepEqual(authorizations, [{ area: "app", feature: "financial-reconciliation" }]);
-  assert.deepEqual(calls, [{
-    resource: "rpc/create_financial_reconciliation_automatic_analysis",
-    options: {
-      method: "POST",
-      body: {
-        p_rule_keys: [CREDIT_CARD_RULE_KEY],
-        p_mode: "manual_rule",
-        p_actor: "user@example.com",
-        p_client_request_id: REQUEST_ID,
-      },
-    },
-  }]);
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, { runId: RUN_ID, status: "ready" });
+  assert.equal(response.statusCode, 400);
+  assert.equal(rpcCalled, false);
+  assert.match(response.body.error, /rule key/i);
 });
 
 test("analyze_batch returns 400 before any RPC", async () => {

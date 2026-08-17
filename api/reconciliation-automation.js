@@ -188,7 +188,13 @@ module.exports = async function handler(req, res) {
           method: "POST",
           body,
         });
-        return res.status(200).json(toAutomationPublicResult(result));
+        const publicResult = toAutomationPublicResult(result);
+        if (view === "rules" && Array.isArray(publicResult?.rules)) {
+          publicResult.rules = publicResult.rules.filter(
+            (rule) => rule?.enabled === true && rule?.allowManualExecution === true,
+          );
+        }
+        return res.status(200).json(publicResult);
       }
       const runId = normalizeRunId(req.query?.run_id);
       const run = await restQuery("rpc/get_financial_reconciliation_automatic_run", {
