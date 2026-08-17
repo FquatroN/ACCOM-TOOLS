@@ -21299,7 +21299,7 @@ const FINANCIAL_RECONCILIATION_SOURCES = Object.freeze({
 });
 
 const FINANCIAL_RECONCILIATION_FILTER_FIELDS = Object.freeze({
-  financial_documents: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "supplier", "payment", "category"],
+  financial_documents: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "payment", "category"],
   import_fdm_accounts: ["dateFrom", "dateTo", "amountMin", "amountMax", "description", "account", "category"],
   import_cgd_cartao_credito: ["dateFrom", "dateTo", "amountMin", "amountMax", "description"],
   import_cgd_extrato_ordem: ["dateFrom", "dateTo", "amountMin", "amountMax", "description"],
@@ -22543,13 +22543,14 @@ function renderFinancialReconciliationSourceControls() {
   }
 }
 
-function financialReconciliationFilterFieldMarkup(field, value, optionValues = null) {
+function financialReconciliationFilterFieldMarkup(field, value, optionValues = null, sourceType = "") {
   const labels = {
     dateFrom: "Date from", dateTo: "Date to", amountMin: "Amount from",
     amountMax: "Amount to", description: "Description", supplier: "Supplier Search",
     payment: "Payment", account: "Account", category: "Category",
   };
-  const label = labels[field] || field;
+  const combinedSearch = field === "description" && clean(sourceType) === "financial_documents";
+  const label = combinedSearch ? "Description / Supplier Search" : labels[field] || field;
   const normalizedValue = clean(value);
   if (Array.isArray(optionValues)) {
     const allLabels = { payment: "All payments", account: "All accounts", category: "All categories" };
@@ -22567,7 +22568,9 @@ function financialReconciliationFilterFieldMarkup(field, value, optionValues = n
   const type = isDate ? "date" : isAmount ? "number" : "search";
   const min = isDate ? ' min="2026-01-01"' : "";
   const step = isAmount ? ' step="0.01"' : "";
-  const placeholder = field === "description" ? ' placeholder="Search description"' : "";
+  const placeholder = combinedSearch
+    ? ' placeholder="Search description or supplier"'
+    : field === "description" ? ' placeholder="Search description"' : "";
   const renderedValue = field === "dateFrom" ? (normalizedValue || "2026-01-01") : normalizedValue;
   return `<label class="financial-reconciliation-filter-${escape(field)}">${escape(label)}<input type="${type}" data-financial-reconciliation-filter="${escape(field)}" value="${escape(renderedValue)}"${min}${step}${placeholder} /></label>`;
 }
@@ -22586,6 +22589,7 @@ function renderFinancialReconciliationFilters() {
       field,
       filters[field],
       hasOptions ? filterOptions[field] : null,
+      workspace.sourceConfig?.sourceType || current.candidateSourceType,
     );
   }).join("");
   if (els.financialReconciliationDynamicFilters) els.financialReconciliationDynamicFilters.innerHTML = fieldMarkup;

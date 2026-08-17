@@ -43,6 +43,16 @@ const filterLovMigration = fs.existsSync(filterLovMigrationPath)
   ? fs.readFileSync(filterLovMigrationPath, "utf8")
   : "";
 
+const combinedSearchMigrationPath = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-17-financial-reconciliation-combined-search.sql",
+);
+const combinedSearchMigration = fs.existsSync(combinedSearchMigrationPath)
+  ? fs.readFileSync(combinedSearchMigrationPath, "utf8")
+  : "";
+
 test("workspace filter LOV migration preserves the RPC while adding source metadata", () => {
   assert.match(filterLovMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
   assert.match(filterLovMigration, /'filterOptions',v_filter_options/);
@@ -81,6 +91,29 @@ test("workspace filter LOV migration preserves the RPC while adding source metad
   assert.match(rpcSmoke, /FDM LOVs did not include ineligible, out-of-date, and locked values/);
   assert.match(rpcSmoke, /Workspace RPC security definer or search path is incorrect/);
   assert.match(rpcSmoke, /Workspace RPC permissions are not service-role-only/);
+});
+
+test("combined search migration broadens only Financial Documents text search", () => {
+  assert.match(combinedSearchMigration, /pg_get_functiondef\('public\.get_financial_reconciliation_workspace\(uuid,text,jsonb,integer,integer\)'::regprocedure\)/);
+  assert.match(combinedSearchMigration, /p_source_type = 'financial_documents'[\s\S]*s\.supplier ilike[\s\S]*s\.supplier_nif ilike/);
+  assert.match(combinedSearchMigration, /jsonb_build_array\('dateFrom','dateTo','amountMin','amountMax','description','payment','category'\)/);
+  assert.match(combinedSearchMigration, /definition := replace\(definition, old_filter_fields, new_filter_fields\)/);
+  assert.match(
+    combinedSearchMigration,
+    /if old_description_count = 2 and new_description_count = 0[\s\S]*old_filter_fields_count = 1 and new_filter_fields_count = 0 then[\s\S]*elsif old_description_count = 0 and new_description_count = 2[\s\S]*old_filter_fields_count = 0 and new_filter_fields_count = 1 then[\s\S]*else[\s\S]*raise exception 'Unexpected reconciliation workspace function definition; could not install combined search\.'/,
+  );
+
+  const rpcSmoke = fs.readFileSync(path.join(__dirname, "reconciliation-rpc.smoke.sql"), "utf8");
+  assert.equal(
+    (rpcSmoke.match(/2026-08-17-financial-reconciliation-combined-search\.sql/g) || []).length,
+    2,
+  );
+  assert.match(rpcSmoke, /Combined Search did not match Description/);
+  assert.match(rpcSmoke, /Combined Search did not match Supplier Name/);
+  assert.match(rpcSmoke, /Combined Search did not match Supplier NIF/);
+  assert.match(rpcSmoke, /Combined Search returned unrelated candidates/);
+  assert.match(rpcSmoke, /FDM Description Search was not case-insensitive/);
+  assert.match(rpcSmoke, /FDM Description Search incorrectly matched its Supplier projection/);
 });
 
 test("history source-summary migration safely enriches the workspace function", () => {

@@ -889,7 +889,7 @@ test("manual reconciliation renders source LOVs and escapes every option", () =>
   }
 });
 
-test("manual reconciliation keeps supplier as a labeled search input without source options", () => {
+test("manual reconciliation combines Financial Documents description and supplier search", () => {
   const financialReconciliationFilterFieldMarkup = new Function(
     "clean",
     "escape",
@@ -898,9 +898,13 @@ test("manual reconciliation keeps supplier as a labeled search input without sou
     (value) => String(value ?? "").trim(),
     (value) => String(value),
   );
-  const markup = financialReconciliationFilterFieldMarkup("supplier", "Acme");
-  assert.match(markup, /^<label class="financial-reconciliation-filter-supplier">Supplier Search<input type="search"/);
-  assert.doesNotMatch(markup, /<select/);
+  const combined = financialReconciliationFilterFieldMarkup("description", "Acme", null, "financial_documents");
+  const ordinary = financialReconciliationFilterFieldMarkup("description", "guest", null, "import_fdm_accounts");
+
+  assert.match(combined, /^<label class="financial-reconciliation-filter-description">Description \/ Supplier Search<input type="search"/);
+  assert.match(combined, /placeholder="Search description or supplier"/);
+  assert.match(ordinary, /^<label class="financial-reconciliation-filter-description">Description<input type="search"/);
+  assert.match(ordinary, /placeholder="Search description"/);
 });
 
 test("manual reconciliation normalizes source filter options without resorting them", () => {
@@ -928,8 +932,8 @@ test("manual reconciliation request filters omit stale Financial Documents accou
       dateTo: "",
       amountMin: "",
       amountMax: "",
-      description: "",
-      supplier: "",
+      description: "EDP",
+      supplier: "stale-supplier",
       payment: "Visa",
       account: "stale-account",
       category: "Food",
@@ -953,8 +957,7 @@ test("manual reconciliation request filters omit stale Financial Documents accou
     dateTo: "",
     amountMin: "",
     amountMax: "",
-    description: "",
-    supplier: "",
+    description: "EDP",
     payment: "Visa",
     category: "Food",
   });
@@ -963,7 +966,7 @@ test("manual reconciliation request filters omit stale Financial Documents accou
     dateTo: "",
     amountMin: "",
     amountMax: "",
-    description: "",
+    description: "EDP",
     account: "stale-account",
     category: "Food",
   });
@@ -998,7 +1001,8 @@ test("manual reconciliation renders declared LOVs as selects in the dynamic filt
   const current = {
     workspace: {
       sourceConfig: {
-        filterFields: ["payment", "category", "supplier"],
+        sourceType: "financial_documents",
+        filterFields: ["description", "payment", "category"],
         filterOptions: { payment: ["Visa"], category: [] },
       },
     },
@@ -1025,10 +1029,11 @@ test("manual reconciliation renders declared LOVs as selects in the dynamic filt
   renderFinancialReconciliationFilters();
 
   const markup = els.financialReconciliationDynamicFilters.innerHTML;
+  assert.match(markup, /financial-reconciliation-filter-description">Description \/ Supplier Search<input type="search"/);
+  assert.match(markup, /placeholder="Search description or supplier"/);
   assert.match(markup, /financial-reconciliation-filter-payment">Payment<select data-financial-reconciliation-filter="payment"><option value="">All payments<\/option><option value="Visa">Visa<\/option><\/select>/);
   assert.match(markup, /financial-reconciliation-filter-category">Category<select data-financial-reconciliation-filter="category"><option value="">All categories<\/option><\/select>/);
-  assert.match(markup, /financial-reconciliation-filter-supplier">Supplier Search<input type="search"/);
-  assert.doesNotMatch(markup, /financial-reconciliation-filter-supplier">Supplier Search<select/);
+  assert.doesNotMatch(markup, /financial-reconciliation-filter-supplier/);
 });
 
 test("reconciliation item details order date supplier and description", () => {

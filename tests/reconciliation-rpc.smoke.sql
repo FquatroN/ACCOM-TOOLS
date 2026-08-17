@@ -22,6 +22,8 @@ insert into financial_reconciliations (
 \ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-workspace-filter-lovs.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-workspace-filter-lovs.sql
+\ir ../supabase-migrations/2026-08-17-financial-reconciliation-combined-search.sql
+\ir ../supabase-migrations/2026-08-17-financial-reconciliation-combined-search.sql
 do $$ declare doc_id uuid:=gen_random_uuid(); bank_id uuid:=gen_random_uuid(); fdm_bank_id uuid:=gen_random_uuid(); card_id uuid:=gen_random_uuid(); fdm_id uuid:=gen_random_uuid(); old_doc_id uuid := '00000000-0000-0000-0000-000000000101'; same_date_low_id uuid := '00000000-0000-0000-0000-000000000102'; same_date_high_id uuid := '00000000-0000-0000-0000-000000000103'; new_doc_id uuid := '00000000-0000-0000-0000-000000000104'; lov_locked_document_id uuid := gen_random_uuid(); lov_locked_fdm_id uuid := gen_random_uuid(); candidate_ids uuid[]; r jsonb; rid uuid; fdm_rid uuid; v_rules jsonb; v_before jsonb; v_invalid jsonb; v_rejected boolean; history_rid uuid := gen_random_uuid(); history_row jsonb; history_source_ids text[]; history_card_item_id uuid := gen_random_uuid();
 begin
   if not coalesce((
@@ -208,14 +210,14 @@ begin
 
   insert into import_fdm_accounts(
     id, import_batch, account, date_time_raw, event_date,
-    category, amount, invoice_flag, description
+    category, amount, invoice_flag, description, guest
   ) values
     (gen_random_uuid(), 'smoke', '  LOV Main Account  ', '2026-03-01', '2026-03-01',
-     '  LOV Purchases  ', -11, true, 'lov fdm fixture'),
+     '  LOV Purchases  ', -11, true, 'lov fdm fixture', 'LOV FDM Supplier Only'),
     (gen_random_uuid(), 'smoke', 'LOV Main Account', '2026-03-02', '2026-03-02',
-     'LOV Purchases', -12, true, 'lov fdm duplicate fixture'),
+     'LOV Purchases', -12, true, 'lov fdm duplicate fixture', 'Other FDM Supplier'),
     (gen_random_uuid(), 'smoke', ' ', '2026-03-03', '2026-03-03',
-     '', -13, true, 'lov fdm blank fixture');
+     '', -13, true, 'lov fdm blank fixture', 'Blank FDM Supplier');
 
   insert into import_fdm_accounts(
     id, import_batch, account, date_time_raw, event_date,
@@ -240,7 +242,7 @@ begin
     1, 50
   );
   if r->'sourceConfig'->'filterFields' is distinct from
-     '["dateFrom","dateTo","amountMin","amountMax","description","supplier","payment","category"]'::jsonb then
+     '["dateFrom","dateTo","amountMin","amountMax","description","payment","category"]'::jsonb then
     raise exception 'Financial Documents filter fields are invalid: %', r->'sourceConfig'->'filterFields';
   end if;
   if (select count(*) from jsonb_array_elements_text(r->'sourceConfig'->'filterOptions'->'payment') value where value = 'LOV Visa') <> 1
@@ -264,6 +266,45 @@ begin
   if jsonb_array_length(r->'candidates') <> 1
      or r->'candidates'->0->>'supplier' <> 'LOV Supplier Name' then
     raise exception 'Supplier Search did not match Supplier Name.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'financial_documents',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-03","description":"lov supplier-name fixture"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 1
+     or r->'candidates'->0->>'description' <> 'lov supplier-name fixture' then
+    raise exception 'Combined Search did not match Description.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'financial_documents',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-03","description":"lov supplier name"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 1
+     or r->'candidates'->0->>'supplier' <> 'LOV Supplier Name' then
+    raise exception 'Combined Search did not match Supplier Name.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'financial_documents',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-03","description":"pt-lov-search"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 1
+     or r->'candidates'->0->>'supplier_nif' <> 'PT-LOV-SEARCH' then
+    raise exception 'Combined Search did not match Supplier NIF.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'financial_documents',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-03","description":"NO-COMBINED-SEARCH-MATCH"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 0 then
+    raise exception 'Combined Search returned unrelated candidates.';
   end if;
 
   r := public.get_financial_reconciliation_workspace(
@@ -346,6 +387,25 @@ begin
   if jsonb_array_length(r->'candidates') <> 1
      or r->'candidates'->0->>'description' <> 'lov fdm fixture' then
     raise exception 'FDM category filter did not match trimmed stored data.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'import_fdm_accounts',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-01","description":"LOV FDM FIXTURE"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 1
+     or r->'candidates'->0->>'description' <> 'lov fdm fixture' then
+    raise exception 'FDM Description Search was not case-insensitive.';
+  end if;
+
+  r := public.get_financial_reconciliation_workspace(
+    null, 'import_fdm_accounts',
+    '{"dateFrom":"2026-03-01","dateTo":"2026-03-01","description":"LOV FDM Supplier Only"}'::jsonb,
+    1, 50
+  );
+  if jsonb_array_length(r->'candidates') <> 0 then
+    raise exception 'FDM Description Search incorrectly matched its Supplier projection.';
   end if;
 
   r := public.get_financial_reconciliation_workspace(
