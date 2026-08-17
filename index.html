@@ -18,7 +18,7 @@
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script defer src="recent20.js?v=20260416-reviews-expedia"></script>
-    <script defer src="app-main.js?v=20260816-review-source-counts"></script>
+    <script defer src="app-main.js?v=20260817-financial-bi-dif-analysis"></script>
   </head>
   <body style="visibility: hidden">
     <main id="app-shell" class="app-layout">
@@ -4395,6 +4395,7 @@
                 <button id="financial-bi-tab-bank-statement" type="button" class="ghost">Bank Statement</button>
                 <button id="financial-bi-tab-cash-analysis" type="button" class="ghost">Cash Analysis</button>
                 <button id="financial-bi-tab-utilities" type="button" class="ghost">Utilities</button>
+                <button id="financial-bi-tab-dif-analysis" type="button" class="ghost">Dif Analysis</button>
               </div>
             </div>
           </section>
@@ -4556,6 +4557,25 @@
               </section>
             </div>
             <p id="financial-bi-utilities-status" class="auth-status"></p>
+          </section>
+
+          <section id="financial-bi-panel-dif-analysis" class="card" hidden>
+            <div class="bar">
+              <h2>Dif Analysis</h2>
+              <div class="actions"><p id="financial-bi-dif-analysis-count">0 months</p></div>
+            </div>
+            <div class="grid filters guests-bi-filters financial-bi-items-revenue-filters">
+              <label>
+                Year From
+                <select id="financial-bi-dif-analysis-year-from"></select>
+              </label>
+              <label>
+                Year To
+                <select id="financial-bi-dif-analysis-year-to"></select>
+              </label>
+            </div>
+            <div id="financial-bi-dif-analysis-cards" class="financial-bi-dif-analysis-grid"></div>
+            <p id="financial-bi-dif-analysis-status" class="auth-status"></p>
           </section>
 
           <section id="sales-bi-panel-sales" class="card" hidden>

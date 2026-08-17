@@ -1435,6 +1435,15 @@ const state = {
   financialBiUtilitiesYearFrom: "",
   financialBiUtilitiesYearTo: "",
   financialBiUtilitiesExpandedYears: {},
+  financialBiDifAnalysisLoaded: false,
+  financialBiDifAnalysisLoading: false,
+  financialBiDifAnalysisLoadPromise: null,
+  financialBiDifAnalysisRequestKey: "",
+  financialBiDifAnalysisRequestToken: 0,
+  financialBiDifAnalysisRows: [],
+  financialBiDifAnalysisYearFrom: "",
+  financialBiDifAnalysisYearTo: "",
+  financialBiDifAnalysisExpandedYears: {},
   financialBiItemsRevenueLoaded: false,
   financialBiItemsRevenueLoading: false,
   financialBiItemsRevenueLoadPromise: null,
@@ -1814,6 +1823,7 @@ const els = {
   financialBiTabBankStatement: document.getElementById("financial-bi-tab-bank-statement"),
   financialBiTabCashAnalysis: document.getElementById("financial-bi-tab-cash-analysis"),
   financialBiTabUtilities: document.getElementById("financial-bi-tab-utilities"),
+  financialBiTabDifAnalysis: document.getElementById("financial-bi-tab-dif-analysis"),
   salesBiTabSales: document.getElementById("sales-bi-tab-sales"),
   salesBiTabItemsRevenue: document.getElementById("sales-bi-tab-items-revenue"),
   financialBiResultsTitle: document.getElementById("financial-bi-results-title"),
@@ -1862,6 +1872,12 @@ const els = {
   financialBiUtilitiesAverageRows: document.getElementById("financial-bi-utilities-average-rows"),
   financialBiUtilitiesAverageTotals: document.getElementById("financial-bi-utilities-average-totals"),
   financialBiUtilitiesStatus: document.getElementById("financial-bi-utilities-status"),
+  financialBiDifAnalysisPanel: document.getElementById("financial-bi-panel-dif-analysis"),
+  financialBiDifAnalysisYearFrom: document.getElementById("financial-bi-dif-analysis-year-from"),
+  financialBiDifAnalysisYearTo: document.getElementById("financial-bi-dif-analysis-year-to"),
+  financialBiDifAnalysisCount: document.getElementById("financial-bi-dif-analysis-count"),
+  financialBiDifAnalysisCards: document.getElementById("financial-bi-dif-analysis-cards"),
+  financialBiDifAnalysisStatus: document.getElementById("financial-bi-dif-analysis-status"),
   financialBiItemsRevenuePanel: document.getElementById("financial-bi-panel-items-revenue"),
   financialBiItemsRevenueYearFrom: document.getElementById("financial-bi-items-revenue-year-from"),
   financialBiItemsRevenueYearTo: document.getElementById("financial-bi-items-revenue-year-to"),
@@ -2749,6 +2765,7 @@ function bindEvents() {
   els.financialBiTabBankStatement?.addEventListener("click", () => setFinancialBiTab("bank-statement"));
   els.financialBiTabCashAnalysis?.addEventListener("click", () => setFinancialBiTab("cash-analysis"));
   els.financialBiTabUtilities?.addEventListener("click", () => setFinancialBiTab("utilities"));
+  els.financialBiTabDifAnalysis?.addEventListener("click", () => setFinancialBiTab("dif-analysis"));
   els.financialBiFilterYearFrom?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterYearTo?.addEventListener("change", onFinancialBiFilterChange);
   els.financialBiFilterCc?.addEventListener("change", onFinancialBiFilterChange);
@@ -2768,6 +2785,9 @@ function bindEvents() {
   els.financialBiUtilitiesYearTo?.addEventListener("change", onFinancialBiUtilitiesFilterChange);
   els.financialBiUtilitiesSumRows?.addEventListener("click", onFinancialBiUtilitiesRowsClick);
   els.financialBiUtilitiesAverageRows?.addEventListener("click", onFinancialBiUtilitiesRowsClick);
+  els.financialBiDifAnalysisYearFrom?.addEventListener("change", onFinancialBiDifAnalysisFilterChange);
+  els.financialBiDifAnalysisYearTo?.addEventListener("change", onFinancialBiDifAnalysisFilterChange);
+  els.financialBiDifAnalysisCards?.addEventListener("click", onFinancialBiDifAnalysisCardsClick);
   els.financialBiItemsRevenueYearFrom?.addEventListener("change", onFinancialBiItemsRevenueFilterChange);
   els.financialBiItemsRevenueYearTo?.addEventListener("change", onFinancialBiItemsRevenueFilterChange);
   els.financialBiItemsRevenueNespressoRows?.addEventListener("click", onFinancialBiItemsRevenueRowsClick);
@@ -23881,6 +23901,7 @@ function currentFinancialBiTab() {
   if (state.financialBiTab === "bank-statement") return "bank-statement";
   if (state.financialBiTab === "cash-analysis") return "cash-analysis";
   if (state.financialBiTab === "utilities") return "utilities";
+  if (state.financialBiTab === "dif-analysis") return "dif-analysis";
   return "book-sales";
 }
 
@@ -23890,11 +23911,12 @@ function financialBiTabLabel() {
   if (currentFinancialBiTab() === "bank-statement") return "Bank Statement";
   if (currentFinancialBiTab() === "cash-analysis") return "Cash Analysis";
   if (currentFinancialBiTab() === "utilities") return "Utilities";
+  if (currentFinancialBiTab() === "dif-analysis") return "Dif Analysis";
   return "Results (Book&Sales)";
 }
 
 function setFinancialBiTab(tab) {
-  const nextTab = tab === "fdm-accounts" || tab === "income-book-vs-accounts" || tab === "bank-statement" || tab === "cash-analysis" || tab === "utilities" ? tab : "book-sales";
+  const nextTab = tab === "fdm-accounts" || tab === "income-book-vs-accounts" || tab === "bank-statement" || tab === "cash-analysis" || tab === "utilities" || tab === "dif-analysis" ? tab : "book-sales";
   if (currentFinancialBiTab() === nextTab) {
     renderFinancialBi();
     return;
@@ -23913,6 +23935,7 @@ function setFinancialBiTab(tab) {
   else if (nextTab === "bank-statement") loadFinancialBiBankStatementData({ silent: true });
   else if (nextTab === "cash-analysis") loadFinancialBiCashAnalysisData({ silent: true });
   else if (nextTab === "utilities") loadFinancialBiUtilitiesData({ silent: true });
+  else if (nextTab === "dif-analysis") loadFinancialBiDifAnalysisData({ silent: true });
   else loadFinancialBiData({ silent: true });
 }
 
@@ -24346,6 +24369,13 @@ async function ensureFinancialBiData() {
     const requestUrl = buildFinancialBiUtilitiesUrl();
     if (!state.financialBiUtilitiesLoaded || state.financialBiUtilitiesRequestKey !== requestUrl) {
       await loadFinancialBiUtilitiesData({ silent: true });
+    }
+    return;
+  }
+  if (currentFinancialBiTab() === "dif-analysis") {
+    const requestUrl = buildFinancialBiDifAnalysisUrl();
+    if (!state.financialBiDifAnalysisLoaded || state.financialBiDifAnalysisRequestKey !== requestUrl) {
+      await loadFinancialBiDifAnalysisData({ silent: true });
     }
     return;
   }
@@ -25543,6 +25573,171 @@ function renderFinancialBiItemsRevenue() {
   });
 }
 
+function financialBiDifAnalysisAvailableYears() {
+  const currentYear = new Date().getFullYear();
+  const defaults = Array.from({ length: currentYear - 1999 }, (_, index) => 2000 + index);
+  return [...new Set([
+    ...defaults,
+    ...(state.financialBiDifAnalysisRows || []).map((row) => Number(row?.year || 0)).filter((year) => year > 0),
+  ])].sort((left, right) => left - right);
+}
+
+function initializeFinancialBiDifAnalysisFilters() {
+  const currentYear = new Date().getFullYear();
+  if (!clean(state.financialBiDifAnalysisYearFrom)) state.financialBiDifAnalysisYearFrom = String(currentYear - 5);
+  if (!clean(state.financialBiDifAnalysisYearTo)) state.financialBiDifAnalysisYearTo = String(currentYear);
+}
+
+function currentFinancialBiDifAnalysisYearRange() {
+  initializeFinancialBiDifAnalysisFilters();
+  const years = financialBiDifAnalysisAvailableYears();
+  const rawFrom = Number.parseInt(state.financialBiDifAnalysisYearFrom, 10);
+  const rawTo = Number.parseInt(state.financialBiDifAnalysisYearTo, 10);
+  const from = Number.isFinite(rawFrom) ? rawFrom : years[0];
+  const to = Number.isFinite(rawTo) ? rawTo : years[years.length - 1];
+  return from <= to ? { from, to } : { from: to, to: from };
+}
+
+function buildFinancialBiDifAnalysisUrl() {
+  const { from, to } = currentFinancialBiDifAnalysisYearRange();
+  return `/api/financial-bi-dif-analysis?yearFrom=${encodeURIComponent(from)}&yearTo=${encodeURIComponent(to)}`;
+}
+
+function setFinancialBiDifAnalysisStatus(message, type = "") {
+  if (!els.financialBiDifAnalysisStatus) return;
+  els.financialBiDifAnalysisStatus.textContent = message || "";
+  els.financialBiDifAnalysisStatus.classList.toggle("error", type === "error");
+}
+
+async function loadFinancialBiDifAnalysisData({ silent = false } = {}) {
+  const requestUrl = buildFinancialBiDifAnalysisUrl();
+  if (state.financialBiDifAnalysisLoadPromise && state.financialBiDifAnalysisRequestKey === requestUrl) return state.financialBiDifAnalysisLoadPromise;
+  state.financialBiDifAnalysisRequestKey = requestUrl;
+  const requestToken = Number(state.financialBiDifAnalysisRequestToken || 0) + 1;
+  state.financialBiDifAnalysisRequestToken = requestToken;
+  state.financialBiDifAnalysisLoading = true;
+  const loadPromise = api(requestUrl)
+    .then((result) => {
+      if (requestToken !== state.financialBiDifAnalysisRequestToken) return;
+      state.financialBiDifAnalysisRows = Array.isArray(result?.rows) ? result.rows : [];
+      state.financialBiDifAnalysisLoaded = true;
+      renderFinancialBi();
+      if (!silent) setFinancialBiDifAnalysisStatus("Difference analysis loaded.");
+    })
+    .catch((error) => {
+      if (requestToken !== state.financialBiDifAnalysisRequestToken) return;
+      if (!state.financialBiDifAnalysisLoaded) state.financialBiDifAnalysisRows = [];
+      renderFinancialBi();
+      setFinancialBiDifAnalysisStatus(`Failed to load Difference analysis: ${error.message}`, "error");
+    })
+    .finally(() => {
+      if (requestToken !== state.financialBiDifAnalysisRequestToken) return;
+      state.financialBiDifAnalysisLoading = false;
+      state.financialBiDifAnalysisLoadPromise = null;
+    });
+  state.financialBiDifAnalysisLoadPromise = loadPromise;
+  return loadPromise;
+}
+
+function onFinancialBiDifAnalysisFilterChange() {
+  state.financialBiDifAnalysisYearFrom = clean(els.financialBiDifAnalysisYearFrom?.value);
+  state.financialBiDifAnalysisYearTo = clean(els.financialBiDifAnalysisYearTo?.value);
+  loadFinancialBiDifAnalysisData({ silent: true });
+}
+
+function onFinancialBiDifAnalysisCardsClick(event) {
+  const button = event.target.closest("[data-financial-bi-dif-analysis-toggle-year]");
+  const year = clean(button?.dataset.financialBiDifAnalysisToggleYear);
+  const analysis = clean(button?.dataset.financialBiDifAnalysisAnalysis);
+  if (!year || !analysis) return;
+  const key = `${analysis}:${year}`;
+  state.financialBiDifAnalysisExpandedYears = {
+    ...(state.financialBiDifAnalysisExpandedYears || {}),
+    [key]: !state.financialBiDifAnalysisExpandedYears?.[key],
+  };
+  renderFinancialBiDifAnalysis();
+}
+
+function financialBiDifAnalysisNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function sumFinancialBiDifAnalysisRows(rows) {
+  const totals = (Array.isArray(rows) ? rows : []).reduce((result, row) => {
+    result.fdmAmount += financialBiDifAnalysisNumber(row?.fdmAmount);
+    result.extratoAmount += financialBiDifAnalysisNumber(row?.extratoAmount);
+    return result;
+  }, { fdmAmount: 0, extratoAmount: 0 });
+  return { ...totals, difference: totals.fdmAmount - totals.extratoAmount };
+}
+
+function financialBiDifAnalysisCells(row) {
+  const fdmAmount = financialBiDifAnalysisNumber(row?.fdmAmount);
+  const extratoAmount = financialBiDifAnalysisNumber(row?.extratoAmount);
+  const difference = fdmAmount - extratoAmount;
+  const percentage = Math.abs(fdmAmount) >= 0.005 ? (difference / fdmAmount) * 100 : null;
+  const differenceClass = difference > 0 ? "financial-bi-cash-positive" : difference < 0 ? "financial-bi-cash-negative" : "";
+  const percentageLabel = percentage === null ? "-" : `${percentage > 0 ? "+" : ""}${percentage.toFixed(1)}%`;
+  return `<td>${escape(formatMoney(fdmAmount))}</td>
+    <td>${escape(formatMoney(extratoAmount))}</td>
+    <td class="${differenceClass}">${escape(formatMoney(difference))} <small class="financial-bi-dif-percent">(${escape(percentageLabel)})</small></td>`;
+}
+
+function renderFinancialBiDifAnalysis() {
+  initializeFinancialBiDifAnalysisFilters();
+  const years = financialBiDifAnalysisAvailableYears();
+  const options = years.map((year) => `<option value="${escape(String(year))}">${escape(String(year))}</option>`).join("");
+  if (els.financialBiDifAnalysisYearFrom) {
+    els.financialBiDifAnalysisYearFrom.innerHTML = options;
+    els.financialBiDifAnalysisYearFrom.value = state.financialBiDifAnalysisYearFrom;
+  }
+  if (els.financialBiDifAnalysisYearTo) {
+    els.financialBiDifAnalysisYearTo.innerHTML = options;
+    els.financialBiDifAnalysisYearTo.value = state.financialBiDifAnalysisYearTo;
+  }
+  const { from, to } = currentFinancialBiDifAnalysisYearRange();
+  const rows = (state.financialBiDifAnalysisRows || [])
+    .filter((row) => Number(row?.year || 0) >= from && Number(row?.year || 0) <= to)
+    .sort((left, right) => Number(right?.year || 0) - Number(left?.year || 0) || Number(right?.month || 0) - Number(left?.month || 0));
+  const monthCount = new Set(rows.map((row) => clean(row?.yearMonth || `${row?.year}-${row?.month}`))).size;
+  if (els.financialBiDifAnalysisCount) els.financialBiDifAnalysisCount.textContent = `${monthCount} month${monthCount === 1 ? "" : "s"}`;
+  if (!els.financialBiDifAnalysisCards) return;
+  const analyses = [
+    { key: "tpa", label: "TPA Analysis", fdmLabel: "FDM_Card", extratoLabel: "Extrato POS" },
+    { key: "adyen", label: "Adyen Analysis", fdmLabel: "FDM_Adyen", extratoLabel: "Extrato Adyen" },
+    { key: "vrbo", label: "VRBO Analysis", fdmLabel: "FDM_VRBO", extratoLabel: "Extrato VRBO" },
+    { key: "hw_cruz_direct", label: "HW/ Cruz Direct Analysis", fdmLabel: "FDM_HW CRUZ", extratoLabel: "Extrato HW CRUZ" },
+  ];
+  els.financialBiDifAnalysisCards.innerHTML = analyses.map(({ key: analysis, label, fdmLabel, extratoLabel }) => {
+    const analysisRows = rows.filter((row) => clean(row?.analysis).toLowerCase() === analysis);
+    const yearGroups = new Map();
+    analysisRows.forEach((row) => {
+      const year = Number(row?.year || 0);
+      if (!yearGroups.has(year)) yearGroups.set(year, []);
+      yearGroups.get(year).push(row);
+    });
+    const body = yearGroups.size
+      ? Array.from(yearGroups.entries()).map(([year, months]) => {
+        const expandedKey = `${analysis}:${year}`;
+        const expanded = !!state.financialBiDifAnalysisExpandedYears?.[expandedKey];
+        const monthRows = expanded
+          ? months.map((row) => `<tr><td class="financial-bi-month-cell">${escape(String(Number(row?.month || 0)))}</td>${financialBiDifAnalysisCells(row)}</tr>`).join("")
+          : "";
+        return `<tr class="financial-bi-year-row"><td><button type="button" class="financial-bi-year-toggle" data-financial-bi-dif-analysis-toggle-year="${escape(String(year))}" data-financial-bi-dif-analysis-analysis="${escape(analysis)}">${expanded ? "-" : "+"}</button> ${escape(String(year))}</td>${financialBiDifAnalysisCells(sumFinancialBiDifAnalysisRows(months))}</tr>${monthRows}`;
+      }).join("")
+      : `<tr><td colspan="4" class="empty">No ${escape(label)} data found.</td></tr>`;
+    return `<section class="financial-bi-dif-analysis-card">
+      <h3>${escape(label)}</h3>
+      <div class="financial-bi-dif-analysis-wrap"><table class="financial-bi-dif-analysis-table">
+        <thead><tr><th>Year / Month</th><th>${escape(fdmLabel)}</th><th>${escape(extratoLabel)}</th><th>Difference</th></tr></thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr><td>Total</td>${financialBiDifAnalysisCells(sumFinancialBiDifAnalysisRows(analysisRows))}</tr></tfoot>
+      </table></div>
+    </section>`;
+  }).join("");
+}
+
 function renderSalesBi() {
   const resultsPanel = document.getElementById("financial-bi-panel-results");
   if (resultsPanel) resultsPanel.hidden = true;
@@ -25550,6 +25745,7 @@ function renderSalesBi() {
   if (els.financialBiBankStatementPanel) els.financialBiBankStatementPanel.hidden = true;
   if (els.financialBiCashAnalysisPanel) els.financialBiCashAnalysisPanel.hidden = true;
   if (els.financialBiUtilitiesPanel) els.financialBiUtilitiesPanel.hidden = true;
+  if (els.financialBiDifAnalysisPanel) els.financialBiDifAnalysisPanel.hidden = true;
   const isSales = currentSalesBiTab() === "sales";
   if (els.salesBiTabSales) {
     els.salesBiTabSales.classList.toggle("active-tab", isSales);
@@ -25570,9 +25766,11 @@ function renderFinancialBi() {
   const isBankStatement = currentFinancialBiTab() === "bank-statement";
   const isCashAnalysis = currentFinancialBiTab() === "cash-analysis";
   const isUtilities = currentFinancialBiTab() === "utilities";
+  const isDifAnalysis = currentFinancialBiTab() === "dif-analysis";
   if (els.financialBiBankStatementPanel) els.financialBiBankStatementPanel.hidden = !isBankStatement;
   if (els.financialBiCashAnalysisPanel) els.financialBiCashAnalysisPanel.hidden = !isCashAnalysis;
   if (els.financialBiUtilitiesPanel) els.financialBiUtilitiesPanel.hidden = !isUtilities;
+  if (els.financialBiDifAnalysisPanel) els.financialBiDifAnalysisPanel.hidden = !isDifAnalysis;
   if (els.financialBiItemsRevenuePanel) els.financialBiItemsRevenuePanel.hidden = true;
   if (els.financialBiIncomeBookVsAccountsPanel) els.financialBiIncomeBookVsAccountsPanel.hidden = !isIncomeBookVsAccounts;
   if (els.financialBiTabIncomeBookVsAccounts) {
@@ -25591,7 +25789,11 @@ function renderFinancialBi() {
     els.financialBiTabUtilities.classList.toggle("active-tab", isUtilities);
     els.financialBiTabUtilities.classList.toggle("ghost", !isUtilities);
   }
-  if (isIncomeBookVsAccounts || isBankStatement || isCashAnalysis || isUtilities) {
+  if (els.financialBiTabDifAnalysis) {
+    els.financialBiTabDifAnalysis.classList.toggle("active-tab", isDifAnalysis);
+    els.financialBiTabDifAnalysis.classList.toggle("ghost", !isDifAnalysis);
+  }
+  if (isIncomeBookVsAccounts || isBankStatement || isCashAnalysis || isUtilities || isDifAnalysis) {
     if (els.financialBiTabResults) {
       els.financialBiTabResults.classList.remove("active-tab");
       els.financialBiTabResults.classList.add("ghost");
@@ -25624,12 +25826,17 @@ function renderFinancialBi() {
       els.financialBiTabUtilities.classList.remove("active-tab");
       els.financialBiTabUtilities.classList.add("ghost");
     }
+    if (!isDifAnalysis && els.financialBiTabDifAnalysis) {
+      els.financialBiTabDifAnalysis.classList.remove("active-tab");
+      els.financialBiTabDifAnalysis.classList.add("ghost");
+    }
     const resultsPanel = document.getElementById("financial-bi-panel-results");
     if (resultsPanel) resultsPanel.hidden = true;
     if (isIncomeBookVsAccounts) renderFinancialBiIncomeBookVsAccounts();
     else if (isBankStatement) renderFinancialBiBankStatement();
     else if (isCashAnalysis) renderFinancialBiCashAnalysis();
-    else renderFinancialBiUtilities();
+    else if (isUtilities) renderFinancialBiUtilities();
+    else renderFinancialBiDifAnalysis();
     return;
   }
   const resultsPanel = document.getElementById("financial-bi-panel-results");
