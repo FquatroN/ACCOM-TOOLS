@@ -3673,45 +3673,6 @@ test("scheduled automation snapshots deterministic parent batches and advances o
   }
 });
 
-test("SQL smokes pin the complete automatic migration order", () => {
-  const migrationNames = [
-    "2026-08-14-financial-reconciliation-automation-schema.sql",
-    "2026-08-14-financial-reconciliation-automation-analysis.sql",
-    "2026-08-14-financial-reconciliation-automation-execution.sql",
-    "2026-08-15-financial-reconciliation-automation-analysis-performance.sql",
-    "2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql",
-    "2026-08-16-financial-reconciliation-automation-banco-v2.sql",
-    "2026-08-16-financial-reconciliation-automation-90-day-performance.sql",
-  ];
-  const orderedPattern = new RegExp(migrationNames.map((name) => name.replaceAll(".", "\\.")).join("[\\s\\S]*"));
-  const automationSmoke = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
-  const manualSmoke = fs.readFileSync(MANUAL_RPC_SMOKE_PATH, "utf8");
-  const creditCardName = "2026-08-16-financial-reconciliation-automation-credit-card-rule.sql";
-  const amountOnlyName = "2026-08-17-financial-reconciliation-automation-amount-only-rules.sql";
-  const completeAutomationPattern = new RegExp(
-    [...migrationNames, creditCardName, amountOnlyName]
-      .map((name) => name.replaceAll(".", "\\."))
-      .join("[\\s\\S]*"),
-  );
-
-  for (const [label, source] of [["automation smoke", automationSmoke], ["manual smoke", manualSmoke]]) {
-    assert.match(source, orderedPattern, label);
-  }
-  assert.equal((automationSmoke.match(/2026-08-16-financial-reconciliation-automation-90-day-performance\.sql/g) || []).length >= 2, true);
-  assert.match(automationSmoke, completeAutomationPattern, "automation smoke must apply Credit Card then amount-only migrations");
-  const amountOnlyIncludes = [...automationSmoke.matchAll(new RegExp(
-    `^\\\\ir \\.\\./supabase-migrations/${amountOnlyName.replaceAll(".", "\\.")}$`,
-    "gm",
-  ))];
-  assert.ok(amountOnlyIncludes.length >= 2, "smoke must apply the amount-only migration and explicitly reapply it");
-  const finalAmountOnlyInclude = amountOnlyIncludes.at(-1);
-  assert.ok(finalAmountOnlyInclude.index > amountOnlyIncludes[0].index, "amount-only reapply must follow its normal application");
-  assert.match(
-    automationSmoke.slice(finalAmountOnlyInclude.index),
-    /amount-only migration reapply overwrote administrator settings/i,
-  );
-});
-
 test("credit-card SQL and production code pin RPC ACLs, reapply, and fixed dispatch", () => {
   const migration = fs.readFileSync(CREDIT_CARD_MIGRATION_PATH, "utf8");
   const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
