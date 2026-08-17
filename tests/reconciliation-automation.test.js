@@ -419,6 +419,8 @@ test("amount-only database migration is loadable for transactional contract cove
     "financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids",
     "financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids",
     "financial_reconciliation_finalize_automatic_analysis",
+    "financial_reconciliation_automatic_lock_destination_items",
+    "execute_financial_reconciliation_automatic_proposal",
   ]) {
     assert.ok(
       migration.includes(`create or replace function public.${functionName}(`),

@@ -2632,6 +2632,952 @@ begin
                and '72000000-0000-0000-0000-000000000007'::uuid;
 end $$;
 
+create or replace function pg_temp.make_task4_amount_only_run(
+  p_rule_key text,
+  p_actor text,
+  p_client_request_id uuid
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_run jsonb;
+  v_run_id uuid;
+  v_guard integer := 0;
+begin
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true,
+      allow_manual_execution = true,
+      include_in_scheduled_batch = false,
+      difference_allowed = 0,
+      max_difference_days = 10
+  where rule_key = p_rule_key;
+
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array[p_rule_key], 'manual_rule', p_actor, p_client_request_id
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  while not coalesce((v_run->>'analysisComplete')::boolean, false) loop
+    v_guard := v_guard + 1;
+    if v_guard > 100 then
+      raise exception 'Task 4 amount-only analysis did not finish.';
+    end if;
+    v_run := public.continue_financial_reconciliation_automatic_analysis(v_run_id, p_actor);
+  end loop;
+  return v_run_id;
+end $$;
+
+do $$
+begin
+  if has_function_privilege(
+      'anon',
+      'public.financial_reconciliation_execute_identity_proposal(uuid,text)',
+      'EXECUTE'
+    )
+    or has_function_privilege(
+      'authenticated',
+      'public.financial_reconciliation_execute_identity_proposal(uuid,text)',
+      'EXECUTE'
+    )
+    or has_function_privilege(
+      'service_role',
+      'public.financial_reconciliation_execute_identity_proposal(uuid,text)',
+      'EXECUTE'
+    )
+    or not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[]) @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid =
+        'public.financial_reconciliation_execute_identity_proposal(uuid,text)'::regprocedure
+    ) then
+    raise exception 'The preserved identity execution body is directly exposed or unsafe.';
+  end if;
+end $$;
+
+-- amount-only execution creates one exact reconciliation with immutable evidence
+-- amount-only repeated execution is idempotent
+do $$
+declare
+  v_kind text;
+  v_index integer := 0;
+  v_rule_key text;
+  v_source_type text;
+  v_payment text;
+  v_document_id uuid;
+  v_destination_id uuid;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_reconciliation_id uuid;
+  v_result jsonb;
+  v_repeated jsonb;
+  v_rule_snapshot jsonb;
+  v_base_snapshot jsonb;
+  v_destination_snapshots jsonb;
+  v_evidence jsonb;
+  v_signature text;
+  v_item_count integer;
+  v_audit_count integer;
+  v_expected_trigger text;
+  v_claim jsonb;
+  v_run jsonb;
+  v_guard integer;
+begin
+  foreach v_kind in array array['bank', 'card'] loop
+    v_index := v_index + 1;
+    v_rule_key := case v_kind
+      when 'bank' then 'financial_documents_cgd_bank_statement_amount_only'
+      else 'financial_documents_cgd_credit_card_amount_only' end;
+    v_source_type := case v_kind
+      when 'bank' then 'import_cgd_extrato_ordem'
+      else 'import_cgd_cartao_credito' end;
+    v_payment := case v_kind when 'bank' then 'Banco' else 'Visa' end;
+    v_document_id := ('8a000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_destination_id := ('8b000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+
+    update public.financial_reconciliation_source_rules
+    set operator = '+'
+    where base_source_type = 'financial_documents'
+      and matching_source_type = v_source_type;
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, payment, amount, fat
+    ) values (
+      v_document_id, date '2160-01-10' + v_index,
+      'AMOUNT-EXEC-' || v_kind, 'identity deliberately unrelated', '',
+      v_payment, 811 + v_index, 'S'
+    );
+    if v_kind = 'bank' then
+      insert into public.import_cgd_extrato_ordem (
+        id, import_batch, row_key, data, descritivo, montante
+      ) values (
+        v_destination_id, 'smoke-amount-task4', 'amount-exec-bank',
+        date '2160-01-10' + v_index, 'unrelated bank text', -(811 + v_index)
+      );
+    else
+      insert into public.import_cgd_cartao_credito (
+        id, import_batch, row_key, data, descricao, debito
+      ) values (
+        v_destination_id, 'smoke-amount-task4', 'amount-exec-card',
+        date '2160-01-10' + v_index, 'unrelated card text', 811 + v_index
+      );
+    end if;
+
+    if v_kind = 'bank' then
+      v_run_id := pg_temp.make_task4_amount_only_run(
+        v_rule_key, 'smoke:amount-execute-' || v_kind,
+        ('8c000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+      );
+    else
+      update public.financial_reconciliation_automatic_rule_configs
+      set include_in_scheduled_batch = false;
+      update public.financial_reconciliation_automatic_rule_configs
+      set enabled = true,
+          allow_manual_execution = false,
+          include_in_scheduled_batch = true,
+          difference_allowed = 0,
+          max_difference_days = 10
+      where rule_key = v_rule_key;
+      update public.financial_reconciliation_automatic_schedule
+      set enabled = true,
+          time_of_day = time '00:00',
+          time_zone = 'Europe/Lisbon'
+      where id = true;
+      v_claim := public.claim_financial_reconciliation_automatic_schedule(
+        '2080-01-12 01:00:00+00', 'smoke:amount-execute-card'
+      );
+      if not coalesce((v_claim->>'claimed')::boolean, false)
+        or coalesce((v_claim->>'resumed')::boolean, true)
+        or v_claim#>>'{run,batchRuleKey}' <> v_rule_key then
+        raise exception 'Amount-only card fixture did not claim an authentic scheduled child: %', v_claim;
+      end if;
+      v_run := v_claim->'run';
+      v_run_id := (v_run->>'runId')::uuid;
+      v_guard := 0;
+      while not coalesce((v_run->>'analysisComplete')::boolean, false) loop
+        v_guard := v_guard + 1;
+        if v_guard > 100 then
+          raise exception 'Scheduled amount-only card analysis did not finish.';
+        end if;
+        v_run := public.continue_financial_reconciliation_automatic_analysis(
+          v_run_id, 'smoke:amount-execute-card'
+        );
+      end loop;
+    end if;
+    select proposal.id, proposal.base_snapshot, proposal.items,
+           proposal.evidence, proposal.signature, run.definition_config_snapshot->0
+    into strict v_proposal_id, v_base_snapshot, v_destination_snapshots,
+                v_evidence, v_signature, v_rule_snapshot
+    from public.financial_reconciliation_automatic_proposals proposal
+    join public.financial_reconciliation_automatic_runs run on run.id = proposal.run_id
+    where proposal.run_id = v_run_id
+      and proposal.base_source_id = v_document_id
+      and proposal.status = 'proposed';
+    if jsonb_array_length(v_destination_snapshots) <> 1
+      or v_destination_snapshots#>>'{0,sourceId}' <> v_destination_id::text then
+      raise exception 'Amount-only % success fixture was not exactly one-to-one.', v_kind;
+    end if;
+
+    v_expected_trigger := case v_kind when 'bank' then 'manual' else 'scheduled' end;
+
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_proposal_id, 'smoke:amount-execute-' || v_kind
+    );
+    v_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+    if v_result is distinct from jsonb_build_object(
+        'proposalId', v_proposal_id,
+        'runId', v_run_id,
+        'status', 'completed',
+        'reconciliationId', v_reconciliation_id
+      )
+      or v_reconciliation_id is null
+      or not exists (
+        select 1
+        from public.financial_reconciliations reconciliation
+        where reconciliation.id = v_reconciliation_id
+          and reconciliation.status = 'complete'
+          and reconciliation.completion_type = 'normal'
+          and reconciliation.difference_amount = 0
+          and reconciliation.origin = 'automatic'
+          and reconciliation.automatic_trigger = v_expected_trigger
+          and reconciliation.automatic_rule_key = v_rule_key
+          and reconciliation.automatic_rule_version = 1
+          and reconciliation.automatic_run_id = v_run_id
+          and reconciliation.automatic_proposal_id = v_proposal_id
+          and reconciliation.matching_source_rules @> jsonb_build_array(jsonb_build_object(
+            'sourceType', v_source_type, 'operator', '+'
+          ))
+      )
+      or (select count(*) from public.financial_reconciliation_items item
+          where item.reconciliation_id = v_reconciliation_id) <> 2
+      or (select count(*) from public.financial_reconciliation_items item
+          where item.reconciliation_id = v_reconciliation_id
+            and item.source_type = 'financial_documents'
+            and item.source_id = v_document_id) <> 1
+      or (select count(*) from public.financial_reconciliation_items item
+          where item.reconciliation_id = v_reconciliation_id
+            and item.source_type = v_source_type
+            and item.source_id = v_destination_id) <> 1 then
+      raise exception 'Amount-only % execution did not create one exact automatic reconciliation.', v_kind;
+    end if;
+
+    if not exists (
+      select 1
+      from public.financial_reconciliation_audit audit
+      where audit.reconciliation_id = v_reconciliation_id
+        and audit.action = 'automatic_complete'
+        and audit.metadata @> jsonb_build_object(
+          'ruleSnapshot', jsonb_build_object(
+            'ruleKey', v_rule_key,
+            'ruleVersion', 1,
+            'definition', v_rule_snapshot->'definition'
+          ),
+          'configSnapshot', jsonb_build_object(
+            'differenceAllowed', 0,
+            'maxDifferenceDays', 10,
+            'priority', (v_rule_snapshot->>'priority')::integer
+          ),
+          'operatorSnapshot', jsonb_build_object(v_source_type, '+'),
+          'baseSnapshot', v_base_snapshot,
+          'destinationSnapshots', v_destination_snapshots,
+          'identityEvidence', v_evidence,
+          'proposalSignature', v_signature,
+          'trigger', v_expected_trigger,
+          'runId', v_run_id,
+          'proposalId', v_proposal_id,
+          'tolerance', 0,
+          'calculatedDifference', 0
+        )
+    ) or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = v_proposal_id
+        and proposal.status = 'completed'
+        and proposal.reconciliation_id = v_reconciliation_id
+        and proposal.base_snapshot = v_base_snapshot
+        and proposal.items = v_destination_snapshots
+        and proposal.evidence = v_evidence
+        and proposal.signature = v_signature
+        and proposal.calculated_difference = 0
+    ) then
+      raise exception 'Amount-only % immutable audit or proposal evidence changed.', v_kind;
+    end if;
+
+    select count(*) into v_item_count
+    from public.financial_reconciliation_items item
+    where item.reconciliation_id = v_reconciliation_id;
+    select count(*) into v_audit_count
+    from public.financial_reconciliation_audit audit
+    where audit.reconciliation_id = v_reconciliation_id;
+    v_repeated := public.execute_financial_reconciliation_automatic_proposal(
+      v_proposal_id, 'smoke:amount-execute-' || v_kind
+    );
+    if v_repeated is distinct from v_result
+      or (select count(*) from public.financial_reconciliations reconciliation
+          where reconciliation.automatic_proposal_id = v_proposal_id) <> 1
+      or (select count(*) from public.financial_reconciliation_items item
+          where item.reconciliation_id = v_reconciliation_id) <> v_item_count
+      or (select count(*) from public.financial_reconciliation_audit audit
+          where audit.reconciliation_id = v_reconciliation_id) <> v_audit_count then
+      raise exception 'Repeated amount-only % execution was not idempotent.', v_kind;
+    end if;
+    if v_kind = 'card' then
+      v_run := public.finish_financial_reconciliation_automatic_run(v_run_id);
+      if v_run->>'status' <> 'completed' then
+        raise exception 'Scheduled amount-only card child did not finish cleanly: %', v_run;
+      end if;
+    end if;
+  end loop;
+end $$;
+
+-- amount-only execution fails closed on rule config source item and lock drift
+do $$
+declare
+  v_kinds text[] := array[
+    'payment', 'base_amount', 'base_date', 'destination_amount',
+    'destination_date', 'window', 'definition', 'rule_version',
+    'operator', 'item_count', 'snapshot_tolerance', 'locked'
+  ];
+  v_source_kind text;
+  v_kind text;
+  v_index integer := 0;
+  v_rule_key text;
+  v_source_type text;
+  v_payment text;
+  v_document_id uuid;
+  v_destination_id uuid;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_lock_id uuid;
+  v_original_definition jsonb;
+  v_result jsonb;
+begin
+  foreach v_source_kind in array array['bank', 'card'] loop
+    v_rule_key := case v_source_kind
+      when 'bank' then 'financial_documents_cgd_bank_statement_amount_only'
+      else 'financial_documents_cgd_credit_card_amount_only' end;
+    v_source_type := case v_source_kind
+      when 'bank' then 'import_cgd_extrato_ordem'
+      else 'import_cgd_cartao_credito' end;
+    v_payment := case v_source_kind when 'bank' then 'Banco' else 'Visa' end;
+    select definition into strict v_original_definition
+    from public.financial_reconciliation_automatic_rule_definitions
+    where rule_key = v_rule_key and version = 1;
+
+    foreach v_kind in array v_kinds loop
+      v_index := v_index + 1;
+      v_document_id := ('8d000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+      v_destination_id := ('8e000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+      v_lock_id := null;
+
+      update public.financial_reconciliation_source_rules
+      set operator = '+'
+      where base_source_type = 'financial_documents'
+        and matching_source_type = v_source_type;
+      insert into public.financial_documents (
+        id, document_date, doc_number, description, supplier_name, payment, amount, fat
+      ) values (
+        v_document_id, date '2161-01-01' + v_index,
+        'AMOUNT-STALE-' || v_index, '', '', v_payment, 830 + v_index, 'S'
+      );
+      if v_source_kind = 'bank' then
+        insert into public.import_cgd_extrato_ordem (
+          id, import_batch, row_key, data, descritivo, montante
+        ) values (
+          v_destination_id, 'smoke-amount-stale', 'amount-stale-' || v_index,
+          date '2161-01-11' + v_index, '', -(830 + v_index)
+        );
+      else
+        insert into public.import_cgd_cartao_credito (
+          id, import_batch, row_key, data, descricao, debito
+        ) values (
+          v_destination_id, 'smoke-amount-stale', 'amount-stale-' || v_index,
+          date '2161-01-11' + v_index, '', 830 + v_index
+        );
+      end if;
+
+      v_run_id := pg_temp.make_task4_amount_only_run(
+        v_rule_key, 'smoke:amount-stale-' || v_source_kind || '-' || v_kind,
+        ('8f000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+      );
+      select proposal.id into strict v_proposal_id
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = v_document_id
+        and proposal.status = 'proposed';
+
+      if v_kind = 'payment' then
+        update public.financial_documents set payment = upper(v_payment) where id = v_document_id;
+      elsif v_kind = 'base_amount' then
+        update public.financial_documents set amount = amount + 1 where id = v_document_id;
+      elsif v_kind = 'base_date' then
+        update public.financial_documents set document_date = document_date + 1 where id = v_document_id;
+      elsif v_kind = 'destination_amount' and v_source_kind = 'bank' then
+        update public.import_cgd_extrato_ordem set montante = montante - 1 where id = v_destination_id;
+      elsif v_kind = 'destination_amount' then
+        update public.import_cgd_cartao_credito set debito = debito + 1 where id = v_destination_id;
+      elsif v_kind = 'destination_date' and v_source_kind = 'bank' then
+        update public.import_cgd_extrato_ordem set data = data + 1 where id = v_destination_id;
+      elsif v_kind = 'destination_date' then
+        update public.import_cgd_cartao_credito set data = data + 1 where id = v_destination_id;
+      elsif v_kind = 'window' then
+        update public.financial_reconciliation_automatic_rule_configs
+        set max_difference_days = 9 where rule_key = v_rule_key;
+      elsif v_kind = 'definition' then
+        update public.financial_reconciliation_automatic_rule_definitions
+        set definition = definition || '{"task4ExecutionDrift":true}'::jsonb
+        where rule_key = v_rule_key and version = 1;
+      elsif v_kind = 'rule_version' then
+        update public.financial_reconciliation_automatic_runs
+        set definition_config_snapshot = jsonb_set(
+          definition_config_snapshot, '{0,ruleVersion}', '2'::jsonb
+        ) where id = v_run_id;
+      elsif v_kind = 'operator' then
+        update public.financial_reconciliation_source_rules
+        set operator = '-'
+        where base_source_type = 'financial_documents'
+          and matching_source_type = v_source_type;
+      elsif v_kind = 'item_count' then
+        update public.financial_reconciliation_automatic_proposals
+        set items = items || items where id = v_proposal_id;
+      elsif v_kind = 'snapshot_tolerance' then
+        update public.financial_reconciliation_automatic_runs
+        set definition_config_snapshot = jsonb_set(
+          definition_config_snapshot, '{0,differenceAllowed}', '1'::jsonb
+        ) where id = v_run_id;
+        update public.financial_reconciliation_automatic_proposals
+        set allowed_difference = 1 where id = v_proposal_id;
+      elsif v_kind = 'locked' then
+        v_result := public.financial_reconciliation_action(
+          'start', 'smoke:amount-destination-lock', null,
+          v_source_type, v_destination_id, null
+        );
+        v_lock_id := (v_result#>>'{reconciliation,id}')::uuid;
+      end if;
+
+      v_result := public.execute_financial_reconciliation_automatic_proposal(
+        v_proposal_id, 'smoke:amount-stale-' || v_source_kind || '-' || v_kind
+      );
+      if v_result->>'status' <> 'stale'
+        or v_result->>'reason' not in (
+          'rule_version_changed', 'rule_snapshot_changed', 'operator_changed',
+          'tolerance_changed', 'source_snapshot_changed', 'combination_changed',
+          'proposal_evidence_changed'
+        )
+        or jsonb_object_length(v_result) <> 4
+        or v_result ?| array['error', 'errorDetail', 'detail', 'message']
+        or not exists (
+          select 1
+          from public.financial_reconciliation_automatic_proposals proposal
+          where proposal.id = v_proposal_id
+            and proposal.status = 'stale'
+            and proposal.reconciliation_id is null
+        )
+        or exists (
+          select 1
+          from public.financial_reconciliations reconciliation
+          where reconciliation.automatic_proposal_id = v_proposal_id
+        ) then
+        raise exception 'Amount-only % stale path % did not fail closed: %',
+          v_source_kind, v_kind, v_result;
+      end if;
+
+      if v_kind = 'window' then
+        update public.financial_reconciliation_automatic_rule_configs
+        set max_difference_days = 10 where rule_key = v_rule_key;
+      elsif v_kind = 'definition' then
+        update public.financial_reconciliation_automatic_rule_definitions
+        set definition = v_original_definition
+        where rule_key = v_rule_key and version = 1;
+      elsif v_kind = 'operator' then
+        update public.financial_reconciliation_source_rules
+        set operator = '+'
+        where base_source_type = 'financial_documents'
+          and matching_source_type = v_source_type;
+      elsif v_kind = 'locked' then
+        perform public.financial_reconciliation_action(
+          'delete', 'smoke:amount-destination-lock', v_lock_id, null, null, null
+        );
+      end if;
+    end loop;
+  end loop;
+end $$;
+
+-- competing amount-only proposals cannot consume the same destination
+do $$
+declare
+  v_kind text;
+  v_index integer := 0;
+  v_rule_key text;
+  v_source_type text;
+  v_payment text;
+  v_first_document_id uuid;
+  v_second_document_id uuid;
+  v_destination_id uuid;
+  v_first_run_id uuid;
+  v_second_run_id uuid;
+  v_first_proposal_id uuid;
+  v_second_proposal_id uuid;
+  v_first_result jsonb;
+  v_second_result jsonb;
+begin
+  foreach v_kind in array array['bank', 'card'] loop
+    v_index := v_index + 1;
+    v_rule_key := case v_kind
+      when 'bank' then 'financial_documents_cgd_bank_statement_amount_only'
+      else 'financial_documents_cgd_credit_card_amount_only' end;
+    v_source_type := case v_kind
+      when 'bank' then 'import_cgd_extrato_ordem'
+      else 'import_cgd_cartao_credito' end;
+    v_payment := case v_kind when 'bank' then 'Banco' else 'Visa' end;
+    v_first_document_id := ('9a000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_second_document_id := ('9b000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_destination_id := ('9c000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+
+    update public.financial_reconciliation_source_rules
+    set operator = '+'
+    where base_source_type = 'financial_documents'
+      and matching_source_type = v_source_type;
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, payment, amount, fat
+    ) values (
+      v_first_document_id, date '2162-01-10' + v_index,
+      'AMOUNT-COMPETE-A-' || v_kind, '', '', v_payment, 920 + v_index, 'S'
+    );
+    if v_kind = 'bank' then
+      insert into public.import_cgd_extrato_ordem (
+        id, import_batch, row_key, data, descritivo, montante
+      ) values (
+        v_destination_id, 'smoke-amount-compete', 'amount-compete-bank',
+        date '2162-01-10' + v_index, '', -(920 + v_index)
+      );
+    else
+      insert into public.import_cgd_cartao_credito (
+        id, import_batch, row_key, data, descricao, debito
+      ) values (
+        v_destination_id, 'smoke-amount-compete', 'amount-compete-card',
+        date '2162-01-10' + v_index, '', 920 + v_index
+      );
+    end if;
+
+    v_first_run_id := pg_temp.make_task4_amount_only_run(
+      v_rule_key, 'smoke:amount-compete-first-' || v_kind,
+      ('9d000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+    );
+    select id into strict v_first_proposal_id
+    from public.financial_reconciliation_automatic_proposals
+    where run_id = v_first_run_id
+      and base_source_id = v_first_document_id
+      and status = 'proposed';
+
+    update public.financial_documents
+    set payment = 'smoke:hidden-from-second-analysis'
+    where id = v_first_document_id;
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, payment, amount, fat
+    ) values (
+      v_second_document_id, date '2162-01-10' + v_index,
+      'AMOUNT-COMPETE-B-' || v_kind, '', '', v_payment, 920 + v_index, 'S'
+    );
+    v_second_run_id := pg_temp.make_task4_amount_only_run(
+      v_rule_key, 'smoke:amount-compete-second-' || v_kind,
+      ('9e000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+    );
+    select id into strict v_second_proposal_id
+    from public.financial_reconciliation_automatic_proposals
+    where run_id = v_second_run_id
+      and base_source_id = v_second_document_id
+      and status = 'proposed';
+    update public.financial_documents set payment = v_payment where id = v_first_document_id;
+
+    v_first_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_first_proposal_id, 'smoke:amount-compete-first-' || v_kind
+    );
+    v_second_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_second_proposal_id, 'smoke:amount-compete-second-' || v_kind
+    );
+    if v_first_result->>'status' <> 'completed'
+      or v_second_result->>'status' <> 'stale'
+      or jsonb_object_length(v_second_result) <> 4
+      or (select count(*)
+          from public.financial_reconciliation_items item
+          where item.source_type = v_source_type
+            and item.source_id = v_destination_id) <> 1
+      or (select count(*)
+          from public.financial_reconciliations reconciliation
+          where reconciliation.automatic_proposal_id in (
+            v_first_proposal_id, v_second_proposal_id
+          )) <> 1 then
+      raise exception 'Competing amount-only % proposals consumed one destination more than once.', v_kind;
+    end if;
+  end loop;
+end $$;
+
+-- amount-only ambiguous and candidate-limit proposals cannot execute
+do $$
+declare
+  v_kind text;
+  v_case text;
+  v_index integer := 0;
+  v_destination_index integer;
+  v_destination_count integer;
+  v_rule_key text;
+  v_payment text;
+  v_document_id uuid;
+  v_destination_id uuid;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_status text;
+  v_reason text;
+  v_rejected boolean;
+begin
+  foreach v_kind in array array['bank', 'card'] loop
+    v_rule_key := case v_kind
+      when 'bank' then 'financial_documents_cgd_bank_statement_amount_only'
+      else 'financial_documents_cgd_credit_card_amount_only' end;
+    v_payment := case v_kind when 'bank' then 'Banco' else 'Visa' end;
+    foreach v_case in array array['ambiguous', 'candidate_limit'] loop
+      v_index := v_index + 1;
+      v_destination_count := case v_case when 'ambiguous' then 2 else 13 end;
+      v_document_id := ('aa000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+      insert into public.financial_documents (
+        id, document_date, doc_number, description, supplier_name, payment, amount, fat
+      ) values (
+        v_document_id, date '2163-01-01' + v_index,
+        'AMOUNT-NONEXEC-' || v_kind || '-' || v_case,
+        '', '', v_payment, 950 + v_index, 'S'
+      );
+      for v_destination_index in 1..v_destination_count loop
+        v_destination_id := (
+          'ab000000-0000-' || lpad(v_index::text, 4, '0') || '-0000-'
+          || lpad(v_destination_index::text, 12, '0')
+        )::uuid;
+        if v_kind = 'bank' then
+          insert into public.import_cgd_extrato_ordem (
+            id, import_batch, row_key, data, descritivo, montante
+          ) values (
+            v_destination_id, 'smoke-amount-nonexec',
+            'amount-nonexec-' || v_kind || '-' || v_case || '-' || v_destination_index,
+            date '2163-01-01' + v_index, '', -(950 + v_index)
+          );
+        else
+          insert into public.import_cgd_cartao_credito (
+            id, import_batch, row_key, data, descricao, debito
+          ) values (
+            v_destination_id, 'smoke-amount-nonexec',
+            'amount-nonexec-' || v_kind || '-' || v_case || '-' || v_destination_index,
+            date '2163-01-01' + v_index, '', 950 + v_index
+          );
+        end if;
+      end loop;
+
+      v_run_id := pg_temp.make_task4_amount_only_run(
+        v_rule_key, 'smoke:amount-nonexec-' || v_kind || '-' || v_case,
+        ('ac000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+      );
+      select proposal.id, proposal.status, proposal.reason
+      into strict v_proposal_id, v_status, v_reason
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = v_document_id;
+      if v_status <> 'ambiguous'
+        or v_reason <> case v_case
+          when 'ambiguous' then 'multiple_combinations'
+          else 'candidate_limit' end then
+        raise exception 'Amount-only % % fixture had unexpected lifecycle %/%',
+          v_kind, v_case, v_status, v_reason;
+      end if;
+
+      v_rejected := false;
+      begin
+        perform public.execute_financial_reconciliation_automatic_proposal(
+          v_proposal_id, 'smoke:amount-nonexec-' || v_kind || '-' || v_case
+        );
+      exception when others then
+        if sqlerrm like 'Automation proposal with status ambiguous cannot be executed.%' then
+          v_rejected := true;
+        else
+          raise;
+        end if;
+      end;
+      if not v_rejected or exists (
+        select 1
+        from public.financial_reconciliations reconciliation
+        where reconciliation.automatic_proposal_id = v_proposal_id
+      ) then
+        raise exception 'Amount-only % % proposal was executable.', v_kind, v_case;
+      end if;
+    end loop;
+  end loop;
+end $$;
+
+-- amount-only post-write verification rolls back a changed completion snapshot
+create or replace function pg_temp.tamper_task4_amount_only_completion()
+returns trigger language plpgsql as $$
+begin
+  if new.status = 'complete'
+    and new.automatic_rule_key = 'financial_documents_cgd_bank_statement_amount_only'
+    and exists (
+      select 1
+      from public.financial_reconciliation_automatic_runs run
+      where run.id = new.automatic_run_id
+        and run.actor like 'smoke:amount-postwrite-%'
+    ) then
+    new.matching_source_rules := new.matching_source_rules || jsonb_build_array(
+      jsonb_build_object('sourceType', 'import_fdm_accounts', 'operator', '+')
+    );
+  end if;
+  return new;
+end $$;
+
+create or replace function pg_temp.tamper_task4_amount_only_item_snapshot()
+returns trigger language plpgsql as $$
+begin
+  if new.action = 'automatic_complete'
+    and new.actor = 'smoke:amount-postwrite-card' then
+    update public.financial_reconciliation_items
+    set amount_snapshot = amount_snapshot + 1
+    where reconciliation_id = new.reconciliation_id
+      and source_type = 'import_cgd_cartao_credito';
+  end if;
+  return new;
+end $$;
+
+create trigger reconciliation_task4_amount_only_postwrite_smoke
+  before update on public.financial_reconciliations
+  for each row execute function pg_temp.tamper_task4_amount_only_completion();
+
+create trigger reconciliation_task4_amount_only_postwrite_item_smoke
+  before insert on public.financial_reconciliation_audit
+  for each row execute function pg_temp.tamper_task4_amount_only_item_snapshot();
+
+do $$
+declare
+  v_kind text;
+  v_index integer := 0;
+  v_rule_key text;
+  v_source_type text;
+  v_payment text;
+  v_document_id uuid;
+  v_destination_id uuid;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_result jsonb;
+begin
+  foreach v_kind in array array['bank', 'card'] loop
+    v_index := v_index + 1;
+    v_rule_key := case v_kind
+      when 'bank' then 'financial_documents_cgd_bank_statement_amount_only'
+      else 'financial_documents_cgd_credit_card_amount_only' end;
+    v_source_type := case v_kind
+      when 'bank' then 'import_cgd_extrato_ordem'
+      else 'import_cgd_cartao_credito' end;
+    v_payment := case v_kind when 'bank' then 'Banco' else 'Visa' end;
+    v_document_id := ('c0000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_destination_id := ('c1000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, payment, amount, fat
+    ) values (
+      v_document_id, date '2163-06-10' + v_index,
+      'AMOUNT-POSTWRITE-' || v_kind, '', '', v_payment, 970 + v_index, 'S'
+    );
+    if v_kind = 'bank' then
+      insert into public.import_cgd_extrato_ordem (
+        id, import_batch, row_key, data, descritivo, montante
+      ) values (
+        v_destination_id, 'smoke-amount-postwrite', 'amount-postwrite-bank',
+        date '2163-06-10' + v_index, '', -(970 + v_index)
+      );
+    else
+      insert into public.import_cgd_cartao_credito (
+        id, import_batch, row_key, data, descricao, debito
+      ) values (
+        v_destination_id, 'smoke-amount-postwrite', 'amount-postwrite-card',
+        date '2163-06-10' + v_index, '', 970 + v_index
+      );
+    end if;
+
+    v_run_id := pg_temp.make_task4_amount_only_run(
+      v_rule_key, 'smoke:amount-postwrite-' || v_kind,
+      ('c2000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+    );
+    select id into strict v_proposal_id
+    from public.financial_reconciliation_automatic_proposals
+    where run_id = v_run_id
+      and base_source_id = v_document_id
+      and status = 'proposed';
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_proposal_id, 'smoke:amount-postwrite-' || v_kind
+    );
+    if v_result is distinct from jsonb_build_object(
+        'proposalId', v_proposal_id,
+        'runId', v_run_id,
+        'status', 'stale',
+        'reason', 'source_snapshot_changed'
+      )
+      or exists (
+        select 1 from public.financial_reconciliations reconciliation
+        where reconciliation.automatic_proposal_id = v_proposal_id
+      )
+      or exists (
+        select 1 from public.financial_reconciliation_items item
+        where (item.source_type = 'financial_documents' and item.source_id = v_document_id)
+           or (item.source_type = v_source_type and item.source_id = v_destination_id)
+      )
+      or not exists (
+        select 1 from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = v_proposal_id
+          and proposal.status = 'stale'
+          and proposal.reason = 'source_snapshot_changed'
+          and proposal.reconciliation_id is null
+          and proposal.error = ''
+          and proposal.error_detail = ''
+      ) then
+      raise exception 'Amount-only % post-write verification did not roll back changed state.', v_kind;
+    end if;
+  end loop;
+end $$;
+
+drop trigger reconciliation_task4_amount_only_postwrite_smoke
+  on public.financial_reconciliations;
+drop trigger reconciliation_task4_amount_only_postwrite_item_smoke
+  on public.financial_reconciliation_audit;
+
+-- amount-only post-write failure rolls back and later proposals remain isolated
+-- amount-only failure results are sanitized
+create or replace function pg_temp.reject_task4_amount_only_audit()
+returns trigger language plpgsql as $$
+begin
+  if new.action = 'automatic_complete'
+    and new.actor like 'smoke:amount-rollback-%' then
+    raise exception 'Smoke forced amount-only audit failure.';
+  end if;
+  return new;
+end $$;
+
+create trigger reconciliation_task4_amount_only_rollback_smoke
+  before insert on public.financial_reconciliation_audit
+  for each row execute function pg_temp.reject_task4_amount_only_audit();
+
+do $$
+declare
+  v_kind text;
+  v_index integer := 0;
+  v_rule_key text;
+  v_source_type text;
+  v_payment text;
+  v_document_id uuid;
+  v_later_document_id uuid;
+  v_destination_id uuid;
+  v_later_destination_id uuid;
+  v_run_id uuid;
+  v_later_run_id uuid;
+  v_proposal_id uuid;
+  v_later_proposal_id uuid;
+  v_result jsonb;
+begin
+  foreach v_kind in array array['bank', 'card'] loop
+    v_index := v_index + 1;
+    v_rule_key := case v_kind
+      when 'bank' then 'financial_documents_cgd_bank_statement_amount_only'
+      else 'financial_documents_cgd_credit_card_amount_only' end;
+    v_source_type := case v_kind
+      when 'bank' then 'import_cgd_extrato_ordem'
+      else 'import_cgd_cartao_credito' end;
+    v_payment := case v_kind when 'bank' then 'Banco' else 'Visa' end;
+    v_document_id := ('bd000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_later_document_id := ('bd100000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_destination_id := ('be000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_later_destination_id := ('be100000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, payment, amount, fat
+    ) values
+      (v_document_id, date '2164-01-10' + v_index,
+       'AMOUNT-ROLLBACK-' || v_kind, '', '', v_payment, 980 + v_index, 'S'),
+      (v_later_document_id, date '2164-02-10' + v_index,
+       'AMOUNT-LATER-' || v_kind, '', '', v_payment, 990 + v_index, 'S');
+    if v_kind = 'bank' then
+      insert into public.import_cgd_extrato_ordem (
+        id, import_batch, row_key, data, descritivo, montante
+      ) values
+        (v_destination_id, 'smoke-amount-rollback', 'amount-rollback-bank',
+         date '2164-01-10' + v_index, '', -(980 + v_index)),
+        (v_later_destination_id, 'smoke-amount-rollback', 'amount-later-bank',
+         date '2164-02-10' + v_index, '', -(990 + v_index));
+    else
+      insert into public.import_cgd_cartao_credito (
+        id, import_batch, row_key, data, descricao, debito
+      ) values
+        (v_destination_id, 'smoke-amount-rollback', 'amount-rollback-card',
+         date '2164-01-10' + v_index, '', 980 + v_index),
+        (v_later_destination_id, 'smoke-amount-rollback', 'amount-later-card',
+         date '2164-02-10' + v_index, '', 990 + v_index);
+    end if;
+
+    v_run_id := pg_temp.make_task4_amount_only_run(
+      v_rule_key, 'smoke:amount-rollback-run-' || v_kind,
+      ('bf000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+    );
+    select id into strict v_proposal_id
+    from public.financial_reconciliation_automatic_proposals
+    where run_id = v_run_id
+      and base_source_id = v_document_id
+      and status = 'proposed';
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_proposal_id, 'smoke:amount-rollback-' || v_kind
+    );
+    if v_result is distinct from jsonb_build_object(
+        'proposalId', v_proposal_id,
+        'runId', v_run_id,
+        'status', 'failed',
+        'reason', 'execution_failed'
+      )
+      or exists (
+        select 1 from public.financial_reconciliations reconciliation
+        where reconciliation.automatic_proposal_id = v_proposal_id
+      )
+      or exists (
+        select 1 from public.financial_reconciliation_items item
+        where (item.source_type = 'financial_documents' and item.source_id = v_document_id)
+           or (item.source_type = v_source_type and item.source_id = v_destination_id)
+      )
+      or not exists (
+        select 1 from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = v_proposal_id
+          and proposal.status = 'failed'
+          and proposal.reason = 'execution_failed'
+          and proposal.error = 'Automatic reconciliation execution failed.'
+          and proposal.reconciliation_id is null
+      ) then
+      raise exception 'Amount-only % post-write failure was not isolated and sanitized.', v_kind;
+    end if;
+
+    v_later_run_id := pg_temp.make_task4_amount_only_run(
+      v_rule_key, 'smoke:amount-later-run-' || v_kind,
+      ('bf100000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+    );
+    select id into strict v_later_proposal_id
+    from public.financial_reconciliation_automatic_proposals
+    where run_id = v_later_run_id
+      and base_source_id = v_later_document_id
+      and status = 'proposed';
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_later_proposal_id, 'smoke:amount-later-' || v_kind
+    );
+    if v_result->>'status' <> 'completed' then
+      raise exception 'Later amount-only % proposal was blocked by a rolled-back failure.', v_kind;
+    end if;
+  end loop;
+end $$;
+
+drop trigger reconciliation_task4_amount_only_rollback_smoke
+  on public.financial_reconciliation_audit;
+
+update public.financial_documents
+set payment = 'smoke:task4-amount-execution-covered'
+where doc_number like 'AMOUNT-%';
+
 -- amount-only candidate-limit overlap remains authoritative beyond bounded evidence
 do $$
 declare
