@@ -2695,7 +2695,8 @@ begin
   end if;
 end $$;
 
--- amount-only execution creates one exact reconciliation with immutable evidence
+-- amount-only execution under the normal three-rule source catalog creates one
+-- exact reconciliation with immutable evidence and preserves the full snapshot
 -- amount-only repeated execution is idempotent
 do $$
 declare
@@ -2722,7 +2723,22 @@ declare
   v_claim jsonb;
   v_run jsonb;
   v_guard integer;
+  v_expected_matching_source_rules jsonb := '[
+    {"sourceType":"import_cgd_cartao_credito","operator":"+"},
+    {"sourceType":"import_cgd_extrato_ordem","operator":"+"},
+    {"sourceType":"import_fdm_accounts","operator":"+"}
+  ]'::jsonb;
 begin
+  if (select coalesce(jsonb_agg(jsonb_build_object(
+        'sourceType', source_rule.matching_source_type,
+        'operator', source_rule.operator
+      ) order by source_rule.matching_source_type), '[]'::jsonb)
+      from public.financial_reconciliation_source_rules source_rule
+      where source_rule.base_source_type = 'financial_documents')
+      is distinct from v_expected_matching_source_rules then
+    raise exception 'Amount-only success fixture does not have the normal three-rule source catalog.';
+  end if;
+
   foreach v_kind in array array['bank', 'card'] loop
     v_index := v_index + 1;
     v_rule_key := case v_kind
@@ -2843,9 +2859,7 @@ begin
           and reconciliation.automatic_rule_version = 1
           and reconciliation.automatic_run_id = v_run_id
           and reconciliation.automatic_proposal_id = v_proposal_id
-          and reconciliation.matching_source_rules @> jsonb_build_array(jsonb_build_object(
-            'sourceType', v_source_type, 'operator', '+'
-          ))
+          and reconciliation.matching_source_rules = v_expected_matching_source_rules
       )
       or (select count(*) from public.financial_reconciliation_items item
           where item.reconciliation_id = v_reconciliation_id) <> 2
@@ -2925,6 +2939,91 @@ begin
       if v_run->>'status' <> 'completed' then
         raise exception 'Scheduled amount-only card child did not finish cleanly: %', v_run;
       end if;
+    end if;
+  end loop;
+end $$;
+
+-- oversized integer snapshot fields become sanitized stale results without writes
+do $$
+declare
+  v_fields text[] := array['ruleVersion', 'maxDifferenceDays', 'priority'];
+  v_field text;
+  v_index integer := 0;
+  v_document_id uuid;
+  v_destination_id uuid;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_result jsonb;
+begin
+  foreach v_field in array v_fields loop
+    v_index := v_index + 1;
+    v_document_id := ('a1000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+    v_destination_id := ('a2000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid;
+
+    insert into public.financial_documents (
+      id, document_date, doc_number, description, supplier_name, payment, amount, fat
+    ) values (
+      v_document_id, date '2160-06-01' + v_index,
+      'AMOUNT-OVERSIZED-' || v_field, '', '', 'Banco', 98700 + v_index, 'S'
+    );
+    insert into public.import_cgd_extrato_ordem (
+      id, import_batch, row_key, data, descritivo, montante
+    ) values (
+      v_destination_id, 'smoke-amount-oversized', 'amount-oversized-' || v_index,
+      date '2160-06-01' + v_index, '', -(98700 + v_index)
+    );
+
+    v_run_id := pg_temp.make_task4_amount_only_run(
+      'financial_documents_cgd_bank_statement_amount_only',
+      'smoke:amount-oversized-' || v_field,
+      ('a3000000-0000-0000-0000-' || lpad(v_index::text, 12, '0'))::uuid
+    );
+    select proposal.id into strict v_proposal_id
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.base_source_id = v_document_id
+      and proposal.status = 'proposed';
+
+    update public.financial_reconciliation_automatic_runs
+    set definition_config_snapshot = jsonb_set(
+      definition_config_snapshot,
+      array['0', v_field],
+      '2147483648'::jsonb
+    )
+    where id = v_run_id;
+
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_proposal_id, 'smoke:amount-oversized-' || v_field
+    );
+    if v_result is distinct from jsonb_build_object(
+        'proposalId', v_proposal_id,
+        'runId', v_run_id,
+        'status', 'stale',
+        'reason', 'rule_snapshot_changed'
+      )
+      or not exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = v_proposal_id
+          and proposal.status = 'stale'
+          and proposal.reason = 'rule_snapshot_changed'
+          and proposal.reconciliation_id is null
+          and proposal.completed_at is null
+          and proposal.error = ''
+          and proposal.error_detail = ''
+      )
+      or exists (
+        select 1
+        from public.financial_reconciliations reconciliation
+        where reconciliation.automatic_proposal_id = v_proposal_id
+      )
+      or exists (
+        select 1
+        from public.financial_reconciliation_audit audit
+        where audit.metadata->>'proposalId' = v_proposal_id::text
+      ) then
+      raise exception 'Oversized % snapshot was not sanitized as stale: %',
+        v_field, v_result;
     end if;
   end loop;
 end $$;

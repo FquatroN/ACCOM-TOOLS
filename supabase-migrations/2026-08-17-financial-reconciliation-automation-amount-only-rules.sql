@@ -1254,6 +1254,9 @@ declare
   v_current_max_difference_days integer;
   v_current_priority integer;
   v_current_operator text;
+  v_snapshot_rule_version integer;
+  v_snapshot_max_difference_days integer;
+  v_snapshot_priority integer;
   v_locked_destination_count integer;
   v_base record;
   v_combination record;
@@ -1263,7 +1266,9 @@ declare
   v_reconciliation_id uuid;
   v_actual_item_count integer;
   v_expected_matching_source_rule jsonb;
-  v_actual_matching_source_rule jsonb;
+  v_expected_matching_source_rules jsonb;
+  v_actual_matching_source_rules jsonb;
+  v_selected_matching_source_rule_count integer;
   v_actual_difference numeric;
   v_failure_message text;
   v_failure_detail text;
@@ -1393,8 +1398,37 @@ begin
       'status', 'stale', 'reason', 'rule_snapshot_changed'
     );
   end if;
-  if (v_rule_snapshot->>'ruleVersion')::integer <> v_proposal.rule_version
-    or (v_rule_snapshot->>'maxDifferenceDays')::integer not between 0 and 90 then
+  if length(v_rule_snapshot->>'ruleVersion') > 10
+    or length(v_rule_snapshot->>'maxDifferenceDays') > 10
+    or length(v_rule_snapshot->>'priority') > 10 then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'rule_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'rule_snapshot_changed'
+    );
+  end if;
+  if (v_rule_snapshot->>'ruleVersion')::bigint not between 1 and 2147483647
+    or (v_rule_snapshot->>'maxDifferenceDays')::bigint not between 0 and 90
+    or (v_rule_snapshot->>'priority')::bigint not between 1 and 2147483647 then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'rule_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'rule_snapshot_changed'
+    );
+  end if;
+  v_snapshot_rule_version := (v_rule_snapshot->>'ruleVersion')::integer;
+  v_snapshot_max_difference_days :=
+    (v_rule_snapshot->>'maxDifferenceDays')::integer;
+  v_snapshot_priority := (v_rule_snapshot->>'priority')::integer;
+  if v_snapshot_rule_version <> v_proposal.rule_version then
     update public.financial_reconciliation_automatic_proposals
     set status = 'stale', reason = 'rule_snapshot_changed',
         reconciliation_id = null, completed_at = null,
@@ -1479,8 +1513,8 @@ begin
     or v_current_destination_source_types is distinct from jsonb_build_array(v_destination_source_type)
     or v_current_difference_allowed is distinct from 0::numeric
     or v_current_max_difference_days is distinct from
-      (v_rule_snapshot->>'maxDifferenceDays')::integer
-    or v_current_priority is distinct from (v_rule_snapshot->>'priority')::integer then
+      v_snapshot_max_difference_days
+    or v_current_priority is distinct from v_snapshot_priority then
     update public.financial_reconciliation_automatic_proposals
     set status = 'stale', reason = 'rule_snapshot_changed',
         reconciliation_id = null, completed_at = null,
@@ -1562,7 +1596,7 @@ begin
     v_proposal.rule_key,
     v_proposal.rule_version,
     0,
-    (v_rule_snapshot->>'maxDifferenceDays')::integer,
+    v_snapshot_max_difference_days,
     v_proposal.base_source_id
   ) candidates;
   if not found
@@ -1643,6 +1677,31 @@ begin
       raise exception 'Automatic reconciliation start returned no reconciliation.';
     end if;
 
+    v_expected_matching_source_rule := jsonb_build_object(
+      'sourceType', v_destination_source_type,
+      'operator', '+'
+    );
+    select reconciliation.matching_source_rules
+    into v_expected_matching_source_rules
+    from public.financial_reconciliations reconciliation
+    where reconciliation.id = v_reconciliation_id;
+    if not found
+      or jsonb_typeof(v_expected_matching_source_rules) is distinct from 'array' then
+      raise exception 'Automatic reconciliation lifecycle snapshots changed after revalidation.';
+    end if;
+    select count(*)
+    into v_selected_matching_source_rule_count
+    from jsonb_array_elements(v_expected_matching_source_rules) matching_rule(value)
+    where matching_rule.value->>'sourceType' = v_destination_source_type;
+    if v_selected_matching_source_rule_count <> 1
+      or not exists (
+        select 1
+        from jsonb_array_elements(v_expected_matching_source_rules) matching_rule(value)
+        where matching_rule.value = v_expected_matching_source_rule
+      ) then
+      raise exception 'Automatic reconciliation lifecycle snapshots changed after revalidation.';
+    end if;
+
     perform public.financial_reconciliation_action(
       'add_item', p_actor, v_reconciliation_id,
       v_destination_source_type,
@@ -1684,18 +1743,12 @@ begin
       raise exception 'Automatic reconciliation lifecycle snapshots changed after revalidation.';
     end if;
 
-    v_expected_matching_source_rule := jsonb_build_object(
-      'sourceType', v_destination_source_type,
-      'operator', '+'
-    );
-    select matching_rule.value, reconciliation.difference_amount
-    into v_actual_matching_source_rule, v_actual_difference
+    select reconciliation.matching_source_rules, reconciliation.difference_amount
+    into v_actual_matching_source_rules, v_actual_difference
     from public.financial_reconciliations reconciliation
-    join lateral jsonb_array_elements(reconciliation.matching_source_rules) matching_rule(value)
-      on matching_rule.value->>'sourceType' = v_destination_source_type
     where reconciliation.id = v_reconciliation_id;
     if not found
-      or v_actual_matching_source_rule is distinct from v_expected_matching_source_rule
+      or v_actual_matching_source_rules is distinct from v_expected_matching_source_rules
       or v_actual_difference is distinct from 0::numeric then
       raise exception 'Automatic reconciliation lifecycle snapshots changed after revalidation.';
     end if;
@@ -1730,8 +1783,8 @@ begin
         ),
         'configSnapshot', jsonb_build_object(
           'differenceAllowed', 0,
-          'maxDifferenceDays', (v_rule_snapshot->>'maxDifferenceDays')::integer,
-          'priority', (v_rule_snapshot->>'priority')::integer
+          'maxDifferenceDays', v_snapshot_max_difference_days,
+          'priority', v_snapshot_priority
         ),
         'operatorSnapshot', jsonb_build_object(v_destination_source_type, '+'),
         'baseSnapshot', v_proposal.base_snapshot,
@@ -1759,9 +1812,7 @@ begin
         and reconciliation.automatic_rule_version = v_proposal.rule_version
         and reconciliation.automatic_run_id = v_run.id
         and reconciliation.automatic_proposal_id = v_proposal.id
-        and reconciliation.matching_source_rules = jsonb_build_array(
-          v_expected_matching_source_rule
-        )
+        and reconciliation.matching_source_rules = v_expected_matching_source_rules
     ) or (select count(*)
           from public.financial_reconciliation_items item
           where item.reconciliation_id = v_reconciliation_id) <> 2
