@@ -415,13 +415,14 @@ test("amount-only database migration is loadable for transactional contract cove
   assert.equal(fs.existsSync(AMOUNT_ONLY_MIGRATION_PATH), true, "amount-only migration must exist");
   const migration = fs.readFileSync(AMOUNT_ONLY_MIGRATION_PATH, "utf8");
   assert.ok(migration.length > 0);
-  for (const adapter of [
+  for (const functionName of [
     "financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids",
     "financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids",
+    "financial_reconciliation_finalize_automatic_analysis",
   ]) {
     assert.ok(
-      migration.includes(`create or replace function public.${adapter}(`),
-      `${adapter} must be installed for the transactional SQL behavior gate`,
+      migration.includes(`create or replace function public.${functionName}(`),
+      `${functionName} must be installed for the transactional SQL behavior gate`,
     );
   }
 });

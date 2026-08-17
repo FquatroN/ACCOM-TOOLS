@@ -584,7 +584,13 @@ begin
     and document.payment = v_contract->>'payment'
     and document.document_date is not null
     and document.document_date >= date '2026-01-01'
-    and document.amount is not null
+    and (
+      (p_rule_key, p_rule_version) not in (
+        ('financial_documents_cgd_bank_statement_amount_only', 1),
+        ('financial_documents_cgd_credit_card_amount_only', 1)
+      )
+      or document.amount is not null
+    )
     and (p_after_date is null or (document.document_date, document.id) > (p_after_date, p_after_id))
     and not exists (
       select 1 from public.financial_reconciliation_items item
@@ -619,7 +625,13 @@ begin
     and document.payment = v_contract->>'payment'
     and document.document_date is not null
     and document.document_date >= date '2026-01-01'
-    and document.amount is not null
+    and (
+      (p_rule_key, p_rule_version) not in (
+        ('financial_documents_cgd_bank_statement_amount_only', 1),
+        ('financial_documents_cgd_credit_card_amount_only', 1)
+      )
+      or document.amount is not null
+    )
     and not exists (
       select 1 from public.financial_reconciliation_items item
       where item.source_type = 'financial_documents' and item.source_id = document.id
@@ -692,6 +704,179 @@ as $$
     p_rule_key, p_rule_version, p_difference_allowed, p_max_difference_days,
     array[p_base_source_id]
   )
+$$;
+
+create or replace function public.financial_reconciliation_finalize_automatic_analysis(p_run_id uuid)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+begin
+  with display_source_usage as (
+    select
+      item->>'sourceType' as source_type,
+      item->>'sourceId' as source_id,
+      count(distinct proposal.base_source_id) as base_count
+    from public.financial_reconciliation_automatic_proposals proposal
+    join lateral (
+      select item.value as item
+      from jsonb_array_elements(proposal.items) item(value)
+      union all
+      select item.value as item
+      from jsonb_array_elements(proposal.candidate_groups) candidate_group(value)
+      join lateral jsonb_array_elements(
+        case
+          when jsonb_typeof(candidate_group.value) = 'array' then candidate_group.value
+          else jsonb_build_array(candidate_group.value)
+        end
+      ) item(value) on true
+    ) source_item on true
+    where proposal.run_id = p_run_id and proposal.status in ('proposed', 'ambiguous')
+    group by item->>'sourceType', item->>'sourceId'
+  ), display_overlapping as (
+    select distinct proposal.id
+    from public.financial_reconciliation_automatic_proposals proposal
+    join lateral (
+      select item.value as item
+      from jsonb_array_elements(proposal.items) item(value)
+      union all
+      select item.value as item
+      from jsonb_array_elements(proposal.candidate_groups) candidate_group(value)
+      join lateral jsonb_array_elements(
+        case
+          when jsonb_typeof(candidate_group.value) = 'array' then candidate_group.value
+          else jsonb_build_array(candidate_group.value)
+        end
+      ) item(value) on true
+    ) source_item on true
+    join display_source_usage usage
+      on usage.source_type = item->>'sourceType'
+     and usage.source_id = item->>'sourceId'
+    where proposal.run_id = p_run_id
+      and proposal.status in ('proposed', 'ambiguous')
+      and usage.base_count > 1
+  ), amount_only_memberships as (
+    select
+      proposal.id as proposal_id,
+      proposal.base_source_id,
+      'import_cgd_extrato_ordem'::text as source_type,
+      bank.id as source_id
+    from public.financial_reconciliation_automatic_proposals proposal
+    join public.financial_reconciliation_automatic_runs run
+      on run.id = proposal.run_id
+    cross join lateral jsonb_array_elements(run.definition_config_snapshot) snapshot(rule)
+    join public.import_cgd_extrato_ordem bank
+      on bank.montante = -(proposal.base_snapshot->>'amount')::numeric
+     and round(bank.montante * 100)::bigint =
+         -round((proposal.base_snapshot->>'amount')::numeric * 100)::bigint
+     and bank.data between
+         proposal.base_source_date - (snapshot.rule->>'maxDifferenceDays')::integer
+         and proposal.base_source_date + (snapshot.rule->>'maxDifferenceDays')::integer
+    where proposal.run_id = p_run_id
+      and proposal.rule_key = 'financial_documents_cgd_bank_statement_amount_only'
+      and proposal.rule_version = 1
+      and proposal.status in ('proposed', 'ambiguous')
+      and proposal.allowed_difference = 0
+      and snapshot.rule->>'ruleKey' = proposal.rule_key
+      and (snapshot.rule->>'ruleVersion')::integer = proposal.rule_version
+      and (snapshot.rule->>'differenceAllowed')::numeric = 0
+      and (snapshot.rule->>'maxDifferenceDays')::integer between 0 and 90
+      and bank.data is not null
+      and bank.data >= date '2026-01-01'
+      and bank.montante is not null
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items item
+        where item.source_type = 'import_cgd_extrato_ordem'
+          and item.source_id = bank.id
+      )
+    union all
+    select
+      proposal.id as proposal_id,
+      proposal.base_source_id,
+      'import_cgd_cartao_credito'::text as source_type,
+      card.id as source_id
+    from public.financial_reconciliation_automatic_proposals proposal
+    join public.financial_reconciliation_automatic_runs run
+      on run.id = proposal.run_id
+    cross join lateral jsonb_array_elements(run.definition_config_snapshot) snapshot(rule)
+    join public.import_cgd_cartao_credito card
+      on card.valor = -(proposal.base_snapshot->>'amount')::numeric
+     and round(card.valor * 100)::bigint =
+         -round((proposal.base_snapshot->>'amount')::numeric * 100)::bigint
+     and card.data between
+         proposal.base_source_date - (snapshot.rule->>'maxDifferenceDays')::integer
+         and proposal.base_source_date + (snapshot.rule->>'maxDifferenceDays')::integer
+    where proposal.run_id = p_run_id
+      and proposal.rule_key = 'financial_documents_cgd_credit_card_amount_only'
+      and proposal.rule_version = 1
+      and proposal.status in ('proposed', 'ambiguous')
+      and proposal.allowed_difference = 0
+      and snapshot.rule->>'ruleKey' = proposal.rule_key
+      and (snapshot.rule->>'ruleVersion')::integer = proposal.rule_version
+      and (snapshot.rule->>'differenceAllowed')::numeric = 0
+      and (snapshot.rule->>'maxDifferenceDays')::integer between 0 and 90
+      and card.data is not null
+      and card.data >= date '2026-01-01'
+      and card.valor is not null
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items item
+        where item.source_type = 'import_cgd_cartao_credito'
+          and item.source_id = card.id
+      )
+  ), amount_only_source_usage as (
+    select
+      membership.source_type,
+      membership.source_id,
+      count(distinct membership.base_source_id) as base_count
+    from amount_only_memberships membership
+    group by membership.source_type, membership.source_id
+  ), amount_only_overlapping as (
+    select distinct membership.proposal_id as id
+    from amount_only_memberships membership
+    join amount_only_source_usage usage
+      on usage.source_type = membership.source_type
+     and usage.source_id = membership.source_id
+    where usage.base_count > 1
+  ), overlapping as (
+    select id from display_overlapping
+    union
+    select id from amount_only_overlapping
+  )
+  update public.financial_reconciliation_automatic_proposals proposal
+  set status = 'ambiguous', reason = 'cross_base_overlap', updated_at = now()
+  where proposal.id in (select id from overlapping);
+
+  update public.financial_reconciliation_automatic_runs run
+  set status = case when exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id and proposal.status = 'proposed'
+      ) then 'ready' else 'completed' end,
+      finished_at = case when exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id and proposal.status = 'proposed'
+      ) then null else now() end,
+      analysis_completed_at = now(),
+      updated_at = now(),
+      analysis_error_code = null,
+      analysis_error_at = null,
+      counts = (
+        select jsonb_build_object(
+          'bases', count(distinct proposal.base_source_id),
+          'proposed', count(*) filter (where proposal.status = 'proposed'),
+          'ambiguous', count(*) filter (where proposal.status = 'ambiguous'),
+          'skipped', count(*) filter (where proposal.status = 'skipped')
+        )
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id
+      )
+  where run.id = p_run_id and run.analysis_completed_at is null;
+
+  return public.get_financial_reconciliation_automatic_run(p_run_id);
+end
 $$;
 
 create or replace function public.get_financial_reconciliation_automation_settings()
@@ -1016,6 +1201,8 @@ revoke all on function public.replace_financial_reconciliation_automation_settin
 revoke all on function public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])
   from public, anon, authenticated, service_role;
 revoke all on function public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_finalize_automatic_analysis(uuid)
   from public, anon, authenticated, service_role;
 
 grant execute on function public.get_financial_reconciliation_automation_settings()

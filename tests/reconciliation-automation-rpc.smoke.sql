@@ -2108,6 +2108,40 @@ begin
     raise exception 'Visa amount-only base paging/counting admitted a null amount or other ineligible base: %', v_card_base_ids;
   end if;
 
+  select coalesce(array_agg(page.id order by page.document_date, page.id), '{}'::uuid[])
+  into v_bank_base_ids
+  from public.financial_reconciliation_automatic_base_page(
+    'financial_documents_cgd_bank_statement', 2, null, null, 25
+  ) page
+  where page.id between '60000000-0000-0000-0000-000000000001'::uuid
+                    and '60000000-0000-0000-0000-000000000020'::uuid;
+  if v_bank_base_ids is distinct from array[
+      '60000000-0000-0000-0000-000000000001'::uuid,
+      '60000000-0000-0000-0000-000000000009'::uuid,
+      '60000000-0000-0000-0000-000000000020'::uuid
+    ] or public.financial_reconciliation_automatic_base_count(
+      'financial_documents_cgd_bank_statement', 2
+    ) <> 3 then
+    raise exception 'Banco identity base paging/counting no longer preserves legacy nullable-amount eligibility: %', v_bank_base_ids;
+  end if;
+
+  select coalesce(array_agg(page.id order by page.document_date, page.id), '{}'::uuid[])
+  into v_card_base_ids
+  from public.financial_reconciliation_automatic_base_page(
+    'financial_documents_cgd_credit_card', 1, null, null, 25
+  ) page
+  where page.id between '62000000-0000-0000-0000-000000000001'::uuid
+                    and '62000000-0000-0000-0000-000000000020'::uuid;
+  if v_card_base_ids is distinct from array[
+      '62000000-0000-0000-0000-000000000001'::uuid,
+      '62000000-0000-0000-0000-000000000009'::uuid,
+      '62000000-0000-0000-0000-000000000020'::uuid
+    ] or public.financial_reconciliation_automatic_base_count(
+      'financial_documents_cgd_credit_card', 1
+    ) <> 3 then
+    raise exception 'Visa identity base paging/counting no longer preserves legacy nullable-amount eligibility: %', v_card_base_ids;
+  end if;
+
   select candidates, candidate_count into strict v_candidate, v_candidate_count
   from public.financial_reconciliation_automatic_single_base_candidates(
     'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
@@ -2596,6 +2630,187 @@ begin
   set payment = 'smoke:card-amount-only-lifecycle-covered'
   where id between '72000000-0000-0000-0000-000000000001'::uuid
                and '72000000-0000-0000-0000-000000000007'::uuid;
+end $$;
+
+-- amount-only candidate-limit overlap remains authoritative beyond bounded evidence
+do $$
+declare
+  v_candidates jsonb;
+  v_candidate_count integer;
+  v_run jsonb;
+  v_run_id uuid;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, payment, amount, fat
+  ) values
+    ('80000000-0000-0000-0000-000000000001', date '2136-02-01', 'BANK-HIDDEN-OVERLAP-LIMIT', '', '', 'Banco', 206.00, 'S'),
+    ('80000000-0000-0000-0000-000000000002', date '2136-02-03', 'BANK-HIDDEN-OVERLAP-ONLY', '', '', 'Banco', 206.00, 'S'),
+    ('82000000-0000-0000-0000-000000000001', date '2136-02-01', 'CARD-HIDDEN-OVERLAP-LIMIT', '', '', 'Visa', 206.00, 'S'),
+    ('82000000-0000-0000-0000-000000000002', date '2136-02-03', 'CARD-HIDDEN-OVERLAP-ONLY', '', '', 'Visa', 206.00, 'S');
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  )
+  select
+    ('81000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+    'smoke-hidden-overlap', 'bank-hidden-overlap-private-' || series,
+    date '2136-01-31', '', -206.00
+  from generate_series(1, 12) series;
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    '81000000-0000-0000-0000-000000000999', 'smoke-hidden-overlap',
+    'bank-hidden-overlap-shared', date '2136-02-02', '', -206.00
+  );
+
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  )
+  select
+    ('83000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+    'smoke-hidden-overlap', 'card-hidden-overlap-private-' || series,
+    date '2136-01-31', '', 206.00
+  from generate_series(1, 12) series;
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values (
+    '83000000-0000-0000-0000-000000000999', 'smoke-hidden-overlap',
+    'card-hidden-overlap-shared', date '2136-02-02', '', 206.00
+  );
+
+  select candidates, candidate_count into strict v_candidates, v_candidate_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
+    array['80000000-0000-0000-0000-000000000001'::uuid]
+  );
+  if v_candidate_count <> 13
+    or jsonb_array_length(v_candidates) <> 12
+    or v_candidates @> jsonb_build_array(jsonb_build_object(
+      'sourceId', '81000000-0000-0000-0000-000000000999'
+    )) then
+    raise exception 'Banco hidden-overlap fixture did not place the shared destination beyond bounded evidence: %', v_candidates;
+  end if;
+  select candidates, candidate_count into strict v_candidates, v_candidate_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
+    array['80000000-0000-0000-0000-000000000002'::uuid]
+  );
+  if v_candidate_count <> 1
+    or v_candidates->0->>'sourceId' <> '81000000-0000-0000-0000-000000000999' then
+    raise exception 'Banco hidden-overlap fixture did not retain the shared destination as the second base sole candidate: %', v_candidates;
+  end if;
+
+  select candidates, candidate_count into strict v_candidates, v_candidate_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 1,
+    array['82000000-0000-0000-0000-000000000001'::uuid]
+  );
+  if v_candidate_count <> 13
+    or jsonb_array_length(v_candidates) <> 12
+    or v_candidates @> jsonb_build_array(jsonb_build_object(
+      'sourceId', '83000000-0000-0000-0000-000000000999'
+    )) then
+    raise exception 'Visa hidden-overlap fixture did not place the shared destination beyond bounded evidence: %', v_candidates;
+  end if;
+  select candidates, candidate_count into strict v_candidates, v_candidate_count
+  from public.financial_reconciliation_automatic_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 1,
+    array['82000000-0000-0000-0000-000000000002'::uuid]
+  );
+  if v_candidate_count <> 1
+    or v_candidates->0->>'sourceId' <> '83000000-0000-0000-0000-000000000999' then
+    raise exception 'Visa hidden-overlap fixture did not retain the shared destination as the second base sole candidate: %', v_candidates;
+  end if;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true,
+      allow_manual_execution = true,
+      include_in_scheduled_batch = false,
+      difference_allowed = 0,
+      max_difference_days = 1
+  where rule_key = 'financial_documents_cgd_bank_statement_amount_only';
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_bank_statement_amount_only'], 'manual_rule',
+    'smoke:bank-hidden-overlap', '84000000-0000-0000-0000-000000000001'
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  if v_run->>'status' <> 'completed'
+    or v_run#>>'{counts,bases}' <> '2'
+    or v_run#>>'{counts,proposed}' <> '0'
+    or v_run#>>'{counts,ambiguous}' <> '2'
+    or (select count(*) from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = v_run_id
+          and proposal.base_source_id in (
+            '80000000-0000-0000-0000-000000000001',
+            '80000000-0000-0000-0000-000000000002'
+          )
+          and proposal.status = 'ambiguous'
+          and proposal.reason = 'cross_base_overlap') <> 2
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '80000000-0000-0000-0000-000000000001'
+        and jsonb_array_length(proposal.candidate_groups) = 12
+        and not proposal.candidate_groups @> jsonb_build_array(jsonb_build_object(
+          'sourceId', '81000000-0000-0000-0000-000000000999'
+        ))
+    ) then
+    raise exception 'Banco hidden candidate-limit overlap did not make both bases non-executable while preserving bounded evidence: %', v_run;
+  end if;
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = false, allow_manual_execution = false
+  where rule_key = 'financial_documents_cgd_bank_statement_amount_only';
+  update public.financial_documents
+  set payment = 'smoke:bank-hidden-overlap-covered'
+  where id in (
+    '80000000-0000-0000-0000-000000000001',
+    '80000000-0000-0000-0000-000000000002'
+  );
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true,
+      allow_manual_execution = true,
+      include_in_scheduled_batch = false,
+      difference_allowed = 0,
+      max_difference_days = 1
+  where rule_key = 'financial_documents_cgd_credit_card_amount_only';
+  v_run := public.create_financial_reconciliation_automatic_analysis(
+    array['financial_documents_cgd_credit_card_amount_only'], 'manual_rule',
+    'smoke:card-hidden-overlap', '84000000-0000-0000-0000-000000000002'
+  );
+  v_run_id := (v_run->>'runId')::uuid;
+  if v_run->>'status' <> 'completed'
+    or v_run#>>'{counts,bases}' <> '2'
+    or v_run#>>'{counts,proposed}' <> '0'
+    or v_run#>>'{counts,ambiguous}' <> '2'
+    or (select count(*) from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = v_run_id
+          and proposal.base_source_id in (
+            '82000000-0000-0000-0000-000000000001',
+            '82000000-0000-0000-0000-000000000002'
+          )
+          and proposal.status = 'ambiguous'
+          and proposal.reason = 'cross_base_overlap') <> 2
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+        and proposal.base_source_id = '82000000-0000-0000-0000-000000000001'
+        and jsonb_array_length(proposal.candidate_groups) = 12
+        and not proposal.candidate_groups @> jsonb_build_array(jsonb_build_object(
+          'sourceId', '83000000-0000-0000-0000-000000000999'
+        ))
+    ) then
+    raise exception 'Visa hidden candidate-limit overlap did not make both bases non-executable while preserving bounded evidence: %', v_run;
+  end if;
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = false, allow_manual_execution = false
+  where rule_key = 'financial_documents_cgd_credit_card_amount_only';
+  update public.financial_documents
+  set payment = 'smoke:card-hidden-overlap-covered'
+  where id in (
+    '82000000-0000-0000-0000-000000000001',
+    '82000000-0000-0000-0000-000000000002'
+  );
 end $$;
 
 -- credit-card projection INSERT UPDATE ID-change DELETE and data_valor isolation
