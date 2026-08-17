@@ -371,6 +371,8 @@ function toClientDocument(row = {}) {
     uploadedAt: cleanText(row.uploaded_at || row.uploadedAt),
     ocrFields: row.ocr_fields && typeof row.ocr_fields === "object" ? row.ocr_fields : (row.ocrFields && typeof row.ocrFields === "object" ? row.ocrFields : {}),
     ocrRawText: cleanText(row.ocr_raw_text || row.ocrRawText),
+    reconciliationId: cleanText(row.reconciliation_id || row.reconciliationId),
+    reconciliationStatus: cleanText(row.reconciliation_status || row.reconciliationStatus),
     duplicateWarningMessage,
     history,
   };

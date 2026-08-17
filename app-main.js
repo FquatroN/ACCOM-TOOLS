@@ -18390,6 +18390,8 @@ function normalizeFinancialDocRowClient(input = {}) {
     uploadedAt: clean(input.uploadedAt || input.uploaded_at),
     ocrFields: input.ocrFields && typeof input.ocrFields === "object" ? input.ocrFields : (input.ocr_fields && typeof input.ocr_fields === "object" ? input.ocr_fields : {}),
     ocrRawText: clean(input.ocrRawText || input.ocr_raw_text),
+    reconciliationId: clean(input.reconciliationId || input.reconciliation_id),
+    reconciliationStatus: clean(input.reconciliationStatus || input.reconciliation_status),
     duplicateWarningMessage: hasDuplicateWarningOverride
       ? clean(input.duplicateWarningMessage || input.duplicate_warning_message)
       : latestFinancialDocDuplicateWarningMessage(history),
@@ -19422,6 +19424,17 @@ function financialDocFileIconButton(row) {
     : "-";
 }
 
+function financialDocReconciliationButton(row) {
+  const reconciliationId = clean(row?.reconciliationId || row?.reconciliation_id);
+  if (!reconciliationId) return "";
+  const status = clean(row?.reconciliationStatus || row?.reconciliation_status).toLowerCase();
+  const label = status === "complete" ? "Open completed reconciliation" : "Open reconciliation";
+  const statusClass = status === "complete"
+    ? " financial-doc-reconciliation-button--complete"
+    : " financial-doc-reconciliation-button--started";
+  return `<button type="button" class="ghost financial-doc-reconciliation-button${statusClass}" data-action="open-financial-doc-reconciliation" data-id="${escape(row.id)}" data-reconciliation-id="${escape(reconciliationId)}" title="${escape(label)}" aria-label="${escape(label)}">R</button>`;
+}
+
 function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachment = false, showDownload = false } = {}) {
   const dropId = isNew ? "new" : clean(rowId);
   const action = isNew ? "pick-financial-doc-inline-file" : "pick-financial-doc-row-file";
@@ -19468,6 +19481,7 @@ function buildFinancialDocTableRow(row) {
       <td><select data-financial-doc-field="status" data-id="${escape(row.id)}">${financialDocSelectMarkup("status", row.status || "Draft", { blank: false })}</select></td>
       <td>${fileCell}</td>
       <td class="row-actions center-cell">
+        ${financialDocReconciliationButton(row)}
         <button type="button" class="ghost" data-action="save-financial-doc-row" data-id="${escape(row.id)}">Save</button>
         <button type="button" class="ghost" data-action="cancel-financial-doc-row" data-id="${escape(row.id)}">Cancel</button>
       </td>
@@ -19490,6 +19504,7 @@ function buildFinancialDocTableRow(row) {
     <td>${escape(row.status || "-")}</td>
     <td>${fileCell}</td>
     <td class="row-actions center-cell">
+      ${financialDocReconciliationButton(row)}
       <button type="button" class="ghost" data-action="edit-financial-doc-row" data-id="${escape(row.id)}">Edit</button>
     </td>
   </tr>`;
@@ -27522,6 +27537,10 @@ function onFinancialDocTableAction(event) {
       openFinancialDocModal(id);
       return;
     }
+    if (action === "open-financial-doc-reconciliation") {
+      openFinancialDocReconciliation(clean(button.dataset.reconciliationId));
+      return;
+    }
     if (action === "pick-financial-doc-row-file") {
       triggerFinancialDocAttachmentPicker({ mode: "row-upload", id });
       return;
@@ -27562,6 +27581,25 @@ function onFinancialDocTableAction(event) {
   if (!row) return;
   if (clean(state.financialDocsEditingId) === clean(row.dataset.financialDocId)) return;
   openFinancialDocModal(clean(row.dataset.financialDocId));
+}
+
+async function openFinancialDocReconciliation(reconciliationId) {
+  const id = clean(reconciliationId);
+  if (!id) return;
+  if (!canAppFinancialReconciliation()) {
+    showToast("No reconciliation access.", "error");
+    return;
+  }
+  const current = financialReconciliationState();
+  current.activeTab = "manual";
+  current.candidateSourceType = "financial_documents";
+  current.page = 1;
+  current.selectedReconciliationId = id;
+  current.workspace = normalizeFinancialReconciliationWorkspace({
+    reconciliation: { id, base_source_type: "financial_documents" },
+  });
+  current.loaded = false;
+  await setView("financial-reconciliation", { financialReconciliationTab: "manual" });
 }
 
 function onFinancialDocTableChange(event) {

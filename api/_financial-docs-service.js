@@ -437,8 +437,18 @@ async function listFinancialDocuments(filters = {}) {
   const rows = await restQuery(buildFinancialDocumentsListPath(filters), { method: "GET" });
   if (!Array.isArray(rows) || !rows.length) return [];
   const ids = rows.map((row) => cleanText(row.id)).filter(Boolean);
-  const warningRows = ids.length
-    ? await restQuery(`financial_document_history?select=document_id,action_type,message,created_at&action_type=in.(duplicate_warning,duplicate_warning_resolved)&document_id=in.(${ids.map((id) => encodeURIComponent(id)).join(",")})&order=created_at.desc`, { method: "GET" })
+  const sourceIds = ids.map((id) => encodeURIComponent(id)).join(",");
+  const [warningRows, reconciliationItems] = ids.length
+    ? await Promise.all([
+      restQuery(`financial_document_history?select=document_id,action_type,message,created_at&action_type=in.(duplicate_warning,duplicate_warning_resolved)&document_id=in.(${sourceIds})&order=created_at.desc`, { method: "GET" }),
+      restQuery(`financial_reconciliation_items?select=source_id,reconciliation_id&source_type=eq.financial_documents&source_id=in.(${sourceIds})`, { method: "GET" }),
+    ])
+    : [[], []];
+  const reconciliationIds = [...new Set((Array.isArray(reconciliationItems) ? reconciliationItems : [])
+    .map((item) => cleanText(item.reconciliation_id || item.reconciliationId))
+    .filter(Boolean))];
+  const reconciliationRows = reconciliationIds.length
+    ? await restQuery(`financial_reconciliations?select=id,status&deleted_at=is.null&id=in.(${reconciliationIds.map((id) => encodeURIComponent(id)).join(",")})`, { method: "GET" })
     : [];
   const historyByDocumentId = new Map();
   (Array.isArray(warningRows) ? warningRows : []).forEach((item) => {
@@ -447,8 +457,17 @@ async function listFinancialDocuments(filters = {}) {
     if (!historyByDocumentId.has(documentId)) historyByDocumentId.set(documentId, []);
     historyByDocumentId.get(documentId).push(item);
   });
+  const reconciliationById = new Map((Array.isArray(reconciliationRows) ? reconciliationRows : []).map((item) => [cleanText(item.id), item]));
+  const reconciliationByDocumentId = new Map();
+  (Array.isArray(reconciliationItems) ? reconciliationItems : []).forEach((item) => {
+    const reconciliation = reconciliationById.get(cleanText(item.reconciliation_id || item.reconciliationId));
+    const documentId = cleanText(item.source_id || item.sourceId);
+    if (documentId && reconciliation) reconciliationByDocumentId.set(documentId, reconciliation);
+  });
   return rows.map((row) => toClientDocument({
     ...row,
+    reconciliation_id: reconciliationByDocumentId.get(cleanText(row.id))?.id || "",
+    reconciliation_status: reconciliationByDocumentId.get(cleanText(row.id))?.status || "",
     duplicate_warning_message: latestDuplicateWarningMessage(historyByDocumentId.get(cleanText(row.id)) || []),
   }));
 }
