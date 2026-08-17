@@ -25584,7 +25584,7 @@ function financialBiDifAnalysisAvailableYears() {
 
 function initializeFinancialBiDifAnalysisFilters() {
   const currentYear = new Date().getFullYear();
-  if (!clean(state.financialBiDifAnalysisYearFrom)) state.financialBiDifAnalysisYearFrom = String(currentYear - 5);
+  if (!clean(state.financialBiDifAnalysisYearFrom)) state.financialBiDifAnalysisYearFrom = String(currentYear - 1);
   if (!clean(state.financialBiDifAnalysisYearTo)) state.financialBiDifAnalysisYearTo = String(currentYear);
 }
 

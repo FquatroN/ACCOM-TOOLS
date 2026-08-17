@@ -1,5 +1,5 @@
 create or replace function public.get_bi_financial_dif_analysis(
-  p_year_from integer default extract(year from current_date)::integer - 5,
+  p_year_from integer default extract(year from current_date)::integer - 1,
   p_year_to integer default extract(year from current_date)::integer
 )
 returns table (
@@ -16,8 +16,8 @@ stable
 as $$
 with bounds as (
   select
-    make_date(least(coalesce(p_year_from, extract(year from current_date)::integer - 5), coalesce(p_year_to, extract(year from current_date)::integer)), 1, 1) as date_from,
-    make_date(greatest(coalesce(p_year_from, extract(year from current_date)::integer - 5), coalesce(p_year_to, extract(year from current_date)::integer)) + 1, 1, 1) as date_to
+    make_date(least(coalesce(p_year_from, extract(year from current_date)::integer - 1), coalesce(p_year_to, extract(year from current_date)::integer)), 1, 1) as date_from,
+    make_date(greatest(coalesce(p_year_from, extract(year from current_date)::integer - 1), coalesce(p_year_to, extract(year from current_date)::integer)) + 1, 1, 1) as date_to
 ),
 analyses(analysis) as (
   values ('tpa'), ('adyen'), ('vrbo'), ('hw_cruz_direct')
@@ -114,7 +114,7 @@ order by months.analysis, months.month_start;
 $$;
 
 create or replace function public.get_bi_financial_dif_analysis_payload(
-  p_year_from integer default extract(year from current_date)::integer - 5,
+  p_year_from integer default extract(year from current_date)::integer - 1,
   p_year_to integer default extract(year from current_date)::integer
 )
 returns table (rows jsonb)

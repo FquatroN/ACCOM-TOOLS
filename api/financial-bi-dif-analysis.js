@@ -18,7 +18,7 @@ function filtersFor(req) {
   const query = req.query || {};
   const rawFrom = Array.isArray(query.yearFrom) ? query.yearFrom[0] : query.yearFrom;
   const rawTo = Array.isArray(query.yearTo) ? query.yearTo[0] : query.yearTo;
-  const from = parseYear(rawFrom, currentYear - 5);
+  const from = parseYear(rawFrom, currentYear - 1);
   const to = parseYear(rawTo, currentYear);
   return { yearFrom: Math.min(from, to), yearTo: Math.max(from, to) };
 }
