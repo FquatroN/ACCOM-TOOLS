@@ -436,9 +436,14 @@ test("late Settings Automatic handoff focus respects the tab selected while data
 
 test("automatic proposals render as three divided open desktop columns", () => {
   assert.match(css, /\.financial-reconciliation-workbench-automation-proposals\s*\{[^}]*gap:\s*0;[^}]*border-top:\s*1px solid var\(--border\)[^}]*\}/);
-  assert.match(css, /\.financial-reconciliation-automation-proposal\s*\{[^}]*grid-template-columns:\s*minmax\([^;]+\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--border\)[^}]*border-left:\s*4px solid var\(--brand\)[^}]*border-radius:\s*0[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal\s*\{[^}]*grid-template-columns:\s*minmax\([^;]+\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--border\)[^}]*border-left:\s*4px solid var\(--brand\)[^}]*border-radius:\s*0[^}]*background:\s*transparent[^}]*\}/);
   assert.match(css, /\.financial-reconciliation-automation-proposal-meta\s*\{[^}]*border-right:\s*1px solid var\(--border\)[^}]*background:\s*transparent[^}]*\}/);
-  assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*\.financial-reconciliation-automation-item\s*\+\s*\.financial-reconciliation-automation-item\s*\{[^}]*border-left:\s*1px solid var\(--border\)[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-item\s*\{[^}]*background:\s*transparent[^}]*\}/);
+});
+
+test("automatic proposal desktop dividers follow the second grid column with multiple destinations", () => {
+  assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*\.financial-reconciliation-automation-item:nth-child\(even\)\s*\{[^}]*border-left:\s*1px solid var\(--border\)[^}]*\}/);
+  assert.doesNotMatch(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*\.financial-reconciliation-automation-item\s*\+\s*\.financial-reconciliation-automation-item\s*\{[^}]*border-left:\s*1px solid var\(--border\)[^}]*\}/);
 });
 
 test("automatic proposal dividers become section separators on narrow screens", () => {

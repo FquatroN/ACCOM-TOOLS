@@ -6882,7 +6882,7 @@ button[id^="close-settings"] {
   background: transparent;
 }
 
-.financial-reconciliation-automation-proposal-records > .financial-reconciliation-automation-item + .financial-reconciliation-automation-item {
+.financial-reconciliation-automation-proposal-records > .financial-reconciliation-automation-item:nth-child(even) {
   border-left: 1px solid var(--border);
 }
 
