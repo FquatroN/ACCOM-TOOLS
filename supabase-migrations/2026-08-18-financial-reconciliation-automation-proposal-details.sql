@@ -260,7 +260,13 @@ as $$
   order by base_date, base_id
 $$;
 
-with eligible as materialized (
+do $migration$
+begin
+  alter table public.financial_reconciliation_automatic_proposals
+    disable trigger financial_reconciliation_automatic_proposal_snapshot_immutable;
+
+  begin
+    with eligible as materialized (
   select
     proposal.id,
     proposal.base_snapshot,
@@ -372,18 +378,28 @@ with eligible as materialized (
   join enriched_items on enriched_items.id = eligible.id
   join enriched_candidate_groups on enriched_candidate_groups.id = eligible.id
 )
-update public.financial_reconciliation_automatic_proposals proposal
-set base_snapshot = enriched.base_snapshot,
-    items = enriched.items,
-    candidate_groups = enriched.candidate_groups,
-    updated_at = now()
-from enriched
-where proposal.id = enriched.id
-  and (
-    proposal.base_snapshot is distinct from enriched.base_snapshot
-    or proposal.items is distinct from enriched.items
-    or proposal.candidate_groups is distinct from enriched.candidate_groups
-  );
+    update public.financial_reconciliation_automatic_proposals proposal
+    set base_snapshot = enriched.base_snapshot,
+        items = enriched.items,
+        candidate_groups = enriched.candidate_groups,
+        updated_at = now()
+    from enriched
+    where proposal.id = enriched.id
+      and (
+        proposal.base_snapshot is distinct from enriched.base_snapshot
+        or proposal.items is distinct from enriched.items
+        or proposal.candidate_groups is distinct from enriched.candidate_groups
+      );
+  exception when others then
+    alter table public.financial_reconciliation_automatic_proposals
+      enable trigger financial_reconciliation_automatic_proposal_snapshot_immutable;
+    raise;
+  end;
+
+  alter table public.financial_reconciliation_automatic_proposals
+    enable trigger financial_reconciliation_automatic_proposal_snapshot_immutable;
+end
+$migration$;
 
 revoke all on function public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])
   from public, anon, authenticated;

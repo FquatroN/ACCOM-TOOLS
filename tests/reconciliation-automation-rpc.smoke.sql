@@ -6570,6 +6570,22 @@ where audit.id = '81000000-0000-0000-0000-000000000401';
 
 \ir ../supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger trigger_row
+    where trigger_row.tgrelid =
+        'public.financial_reconciliation_automatic_proposals'::regclass
+      and trigger_row.tgname =
+        'financial_reconciliation_automatic_proposal_snapshot_immutable'
+      and not trigger_row.tgisinternal
+      and trigger_row.tgenabled = 'O'
+  ) then
+    raise exception 'Proposal-detail migration did not restore the immutable base-snapshot trigger.';
+  end if;
+end $$;
+
 create temporary table automatic_proposal_detail_after_first as
 select proposal.id as proposal_id, to_jsonb(proposal) as proposal_json
 from public.financial_reconciliation_automatic_proposals proposal
@@ -6620,6 +6636,19 @@ declare
   v_result jsonb;
   v_signature text;
 begin
+  if not exists (
+    select 1
+    from pg_trigger trigger_row
+    where trigger_row.tgrelid =
+        'public.financial_reconciliation_automatic_proposals'::regclass
+      and trigger_row.tgname =
+        'financial_reconciliation_automatic_proposal_snapshot_immutable'
+      and not trigger_row.tgisinternal
+      and trigger_row.tgenabled = 'O'
+  ) then
+    raise exception 'Proposal-detail migration reapply did not restore the immutable base-snapshot trigger.';
+  end if;
+
   if exists (
     select 1
     from automatic_proposal_detail_baseline baseline
