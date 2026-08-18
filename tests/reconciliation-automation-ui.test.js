@@ -1850,6 +1850,69 @@ test("proposal markup starts executable rows selected and audits every ambiguous
   assert.match(compactMarkup, /Record ID<\/summary><code>document-&lt;one&gt;<\/code>/);
 });
 
+test("amount-only proposal details render supplier metadata only for the financial document base", () => {
+  const proposalMarkup = compileWorkbenchProposalMarkup();
+  const proposal = {
+    id: WORKBENCH_PROPOSAL_1,
+    ruleKey: "financial_documents_cgd_bank_statement_amount_only",
+    ruleVersion: 1,
+    status: "proposed",
+    baseSnapshot: {
+      sourceType: "financial_documents",
+      sourceId: "document-details",
+      sourceDate: "2026-01-13",
+      docNumber: "FT <2026/17>",
+      description: "Base <description>",
+      supplierName: "Supplier & Sons",
+      supplierNif: "PT<500123456>",
+      amount: 12.5,
+    },
+    items: [{
+      sourceType: "import_cgd_extrato_ordem",
+      sourceId: "bank-details",
+      sourceDate: "2026-01-13",
+      description: "Bank <description>",
+      supplierName: "Must not display",
+      supplierNif: "Must not display NIF",
+      amount: -12.5,
+      evidence: {},
+    }],
+    candidateGroups: [],
+    calculatedDifference: 0,
+    allowedDifference: 0,
+  };
+
+  const markup = proposalMarkup(proposal, workbenchRun([proposal]), managedRules(), new Set([WORKBENCH_PROPOSAL_1]), false);
+
+  assert.match(markup, /Document FT &lt;2026\/17&gt;/);
+  assert.match(markup, /Supplier Supplier &amp; Sons/);
+  assert.match(markup, /Supplier NIF PT&lt;500123456&gt;/);
+  assert.match(markup, /Base &lt;description&gt;/);
+  assert.match(markup, /Bank &lt;description&gt;/);
+  assert.doesNotMatch(markup, /Must not display/);
+  assert.doesNotMatch(markup, /<description>/);
+
+  const ambiguous = {
+    ...proposal,
+    status: "ambiguous",
+    items: [
+      { ...proposal.items[0], sourceId: "bank-destination-1", description: "Destination <one>" },
+      { ...proposal.items[0], sourceId: "bank-destination-2", description: "Destination <two>" },
+    ],
+    candidateGroups: [
+      [{ ...proposal.items[0], sourceId: "bank-candidate-1", description: "Candidate <one>" }],
+      [{ ...proposal.items[0], sourceId: "bank-candidate-2", description: "Candidate <two>" }],
+    ],
+  };
+  const ambiguousMarkup = proposalMarkup(ambiguous, workbenchRun([ambiguous]), managedRules(), new Set(), false);
+  const destinationColumn = ambiguousMarkup.match(/(<article class="financial-reconciliation-automation-item">[\s\S]*?<strong>Destination 1<\/strong>[\s\S]*?<\/article>[\s\S]*?<article class="financial-reconciliation-automation-item">[\s\S]*?<strong>Destination 2<\/strong>[\s\S]*?<\/article>)/)?.[1] || "";
+
+  assert.match(destinationColumn, /Destination &lt;one&gt;/);
+  assert.match(destinationColumn, /Destination &lt;two&gt;/);
+  assert.doesNotMatch(destinationColumn, /Candidate &lt;one&gt;|Candidate &lt;two&gt;/);
+  assert.match(ambiguousMarkup, /Candidate group 1[\s\S]*Candidate &lt;one&gt;[\s\S]*Candidate group 2[\s\S]*Candidate &lt;two&gt;/);
+});
+
 test("scheduled-only batch proposals use the immutable friendly rule name", () => {
   const proposalMarkup = compileWorkbenchProposalMarkup();
   const proposal = {

@@ -22238,18 +22238,22 @@ function financialReconciliationAutomationIdentityEvidenceMarkup(evidence) {
 
 function financialReconciliationAutomationItemMarkup(item, label, operator = "") {
   const value = item && typeof item === "object" ? item : {};
-  const supplier = clean(value.supplierName ?? value.supplier);
-  const documentNumber = clean(value.docNumber ?? value.documentNumber);
+  const sourceType = clean(value.sourceType);
+  const isFinancialDocument = sourceType === "financial_documents";
+  const supplier = isFinancialDocument ? clean(value.supplierName ?? value.supplier) : "";
+  const supplierNif = isFinancialDocument ? clean(value.supplierNif ?? value.supplier_nif) : "";
+  const documentNumber = isFinancialDocument ? clean(value.docNumber ?? value.documentNumber) : "";
   const sourceId = clean(value.sourceId) || "-";
   const meta = [
     formatDateOnly(value.sourceDate) || "-",
     documentNumber ? `Document ${documentNumber}` : "",
     supplier ? `Supplier ${supplier}` : "",
+    supplierNif ? `Supplier NIF ${supplierNif}` : "",
   ].filter(Boolean);
   const amount = formatMoney(Number(value.amount || 0));
   return `<article class="financial-reconciliation-automation-item">
     <div class="financial-reconciliation-automation-item-head">
-      <span><strong>${escape(label)}</strong><small>${escape(financialReconciliationSourceLabel(clean(value.sourceType)) || "Unknown source")}</small></span>
+      <span><strong>${escape(label)}</strong><small>${escape(financialReconciliationSourceLabel(sourceType) || "Unknown source")}</small></span>
       <strong class="financial-reconciliation-automation-item-amount">${operator ? `<span class="financial-reconciliation-automation-item-operator">${escape(operator)}</span> ` : ""}${escape(amount)}</strong>
     </div>
     <p class="financial-reconciliation-automation-item-meta">${meta.map((entry) => `<span>${escape(entry)}</span>`).join("")}</p>
