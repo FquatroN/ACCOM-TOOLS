@@ -6221,6 +6221,11 @@ declare
   v_card_candidate_count integer;
   v_card_combination record;
   v_card_evidence jsonb;
+  v_preserve_base_snapshot jsonb;
+  v_preserve_candidates jsonb;
+  v_preserve_candidate_count integer;
+  v_preserve_combination record;
+  v_preserve_evidence jsonb;
 begin
   insert into public.financial_documents (
     id, document_date, doc_number, description, supplier_name, supplier_nif,
@@ -6235,14 +6240,35 @@ begin
       '81000000-0000-0000-0000-000000000002', date '2145-01-11',
       'FT <DETAIL/1>', 'Base & detail', 'Supplier <Detail>', 'PT500000001',
       'Visa', 412.00, 'S'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000003', date '2145-01-13',
+      'FT <PRESERVE/1>', 'Base preserve original', 'Supplier preserve original', '',
+      'Banco', 413.00, 'S'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000004', date '2145-01-14',
+      'FT <CANDIDATE/1>', 'Candidate base original', 'Candidate supplier original',
+      'PT500000004', 'Banco', 414.00, 'S'
     );
 
   insert into public.import_cgd_extrato_ordem (
     id, import_batch, row_key, data, descritivo, montante
-  ) values (
-    '81000000-0000-0000-0000-000000000011', 'smoke-proposal-details',
-    'smoke-proposal-details-bank', date '2145-01-10', 'Bank <detail>', -411.00
-  );
+  ) values
+    (
+      '81000000-0000-0000-0000-000000000011', 'smoke-proposal-details',
+      'smoke-proposal-details-bank', date '2145-01-10', 'Bank <detail>', -411.00
+    ),
+    (
+      '81000000-0000-0000-0000-000000000013', 'smoke-proposal-details',
+      'smoke-proposal-details-preserve', date '2145-01-13',
+      'Bank preserve original', -413.00
+    ),
+    (
+      '81000000-0000-0000-0000-000000000014', 'smoke-proposal-details',
+      'smoke-proposal-details-candidate', date '2145-01-14',
+      'Candidate preserve original', -414.00
+    );
 
   insert into public.import_cgd_cartao_credito (
     id, import_batch, row_key, data, descricao, debito
@@ -6337,6 +6363,27 @@ begin
   into v_card_evidence
   from jsonb_array_elements(v_card_combination.items) with ordinality item(value, ordinality);
 
+  select base_snapshot, candidates, candidate_count
+  into strict v_preserve_base_snapshot, v_preserve_candidates, v_preserve_candidate_count
+  from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0,
+    (v_bank_rule_snapshot->>'maxDifferenceDays')::integer,
+    array['81000000-0000-0000-0000-000000000003'::uuid]
+  );
+  if v_preserve_candidate_count <> 1
+    or v_preserve_base_snapshot ?| array['docNumber','description','supplierName','supplierNif']
+    or v_preserve_candidates->0 ? 'description' then
+    raise exception 'The reapply-preservation fixture did not begin with the legacy minimal snapshot.';
+  end if;
+  select * into strict v_preserve_combination
+  from public.financial_reconciliation_automatic_build_combinations(
+    v_preserve_base_snapshot, v_preserve_candidates,
+    '{"import_cgd_extrato_ordem":"+"}'::jsonb, 0, 1
+  );
+  select coalesce(jsonb_agg(item.value->'evidence' order by item.ordinality), '[]'::jsonb)
+  into v_preserve_evidence
+  from jsonb_array_elements(v_preserve_combination.items) with ordinality item(value, ordinality);
+
   insert into public.financial_reconciliation_automatic_runs (
     id, trigger, scope, status, actor, client_request_id,
     definition_config_snapshot, analysis_completed_at, finished_at
@@ -6369,6 +6416,26 @@ begin
     (
       '81000000-0000-0000-0000-000000000106', 'manual', 'rule', 'ready',
       'smoke:proposal-details-missing', '81000000-0000-0000-0000-000000000116',
+      '[]'::jsonb, now(), null
+    ),
+    (
+      '81000000-0000-0000-0000-000000000107', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-preserve', '81000000-0000-0000-0000-000000000117',
+      jsonb_build_array(v_bank_rule_snapshot), now(), null
+    ),
+    (
+      '81000000-0000-0000-0000-000000000108', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-completed-open', '81000000-0000-0000-0000-000000000118',
+      '[]'::jsonb, now(), null
+    ),
+    (
+      '81000000-0000-0000-0000-000000000109', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-wrong-base-type', '81000000-0000-0000-0000-000000000119',
+      '[]'::jsonb, now(), null
+    ),
+    (
+      '81000000-0000-0000-0000-000000000110', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-preserve-candidate', '81000000-0000-0000-0000-000000000120',
       '[]'::jsonb, now(), null
     );
 
@@ -6529,6 +6596,72 @@ begin
       )),
       0, 0, 'proposed', '', 'proposal-details-missing',
       null, null, '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000207',
+      '81000000-0000-0000-0000-000000000107',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000003',
+      date '2145-01-13',
+      v_preserve_base_snapshot || jsonb_build_object('supplierNif', 'null'::jsonb),
+      v_preserve_combination.items, v_preserve_evidence, '[]'::jsonb,
+      v_preserve_combination.calculated_difference, 0, 'proposed', '',
+      v_preserve_combination.signature, null, null, '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000208',
+      '81000000-0000-0000-0000-000000000108',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000001',
+      date '2145-01-10',
+      jsonb_build_object(
+        'sourceType', 'financial_documents',
+        'sourceId', '81000000-0000-0000-0000-000000000001',
+        'sourceDate', '2145-01-10', 'amount', 411.00,
+        'futureBaseKey', 'keep-completed-open'
+      ),
+      v_bank_combination.items, v_bank_evidence, '[]'::jsonb,
+      0, 0, 'completed', '', 'proposal-details-completed-open',
+      '81000000-0000-0000-0000-000000000301', now(), '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000209',
+      '81000000-0000-0000-0000-000000000109',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000001',
+      date '2145-01-10',
+      jsonb_build_object(
+        'sourceType', 'future_financial_documents_adapter',
+        'sourceId', '81000000-0000-0000-0000-000000000001',
+        'sourceDate', '2145-01-10', 'amount', 411.00,
+        'futureBaseKey', 'keep-wrong-base-type'
+      ),
+      '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+      0, 0, 'proposed', '', 'proposal-details-wrong-base-type',
+      null, null, '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000210',
+      '81000000-0000-0000-0000-000000000110',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000004',
+      date '2145-01-14',
+      jsonb_build_object(
+        'sourceType', 'financial_documents',
+        'sourceId', '81000000-0000-0000-0000-000000000004',
+        'sourceDate', '2145-01-14', 'amount', 414.00,
+        'futureBaseKey', 'keep-candidate-preservation'
+      ),
+      '[]'::jsonb, '[{"proposalEvidence":"keep-candidate-preservation"}]'::jsonb,
+      jsonb_build_array(jsonb_build_object(
+        'sourceType', 'import_cgd_extrato_ordem',
+        'sourceId', '81000000-0000-0000-0000-000000000014',
+        'sourceDate', '2145-01-14', 'amount', -414.00,
+        'evidence', jsonb_build_object('marker', 'preserve-candidate'),
+        'futureItemKey', 'keep-preserve-candidate'
+      )),
+      0, 0, 'ambiguous', 'candidate_limit', 'proposal-details-preserve-candidate',
+      null, null, '2000-01-01 00:00:00+00'
     );
 
   insert into public.financial_reconciliation_audit (
@@ -6558,7 +6691,11 @@ from (values
   ('nested', '81000000-0000-0000-0000-000000000203'::uuid),
   ('card', '81000000-0000-0000-0000-000000000204'::uuid),
   ('completed', '81000000-0000-0000-0000-000000000205'::uuid),
-  ('missing', '81000000-0000-0000-0000-000000000206'::uuid)
+  ('missing', '81000000-0000-0000-0000-000000000206'::uuid),
+  ('preserve-reapply', '81000000-0000-0000-0000-000000000207'::uuid),
+  ('completed-open', '81000000-0000-0000-0000-000000000208'::uuid),
+  ('wrong-base-type', '81000000-0000-0000-0000-000000000209'::uuid),
+  ('preserve-candidate', '81000000-0000-0000-0000-000000000210'::uuid)
 ) fixture(fixture_name, proposal_id)
 join public.financial_reconciliation_automatic_proposals proposal
   on proposal.id = fixture.proposal_id;
@@ -6595,8 +6732,27 @@ where proposal.id in (
   '81000000-0000-0000-0000-000000000203',
   '81000000-0000-0000-0000-000000000204',
   '81000000-0000-0000-0000-000000000205',
-  '81000000-0000-0000-0000-000000000206'
+  '81000000-0000-0000-0000-000000000206',
+  '81000000-0000-0000-0000-000000000207',
+  '81000000-0000-0000-0000-000000000208',
+  '81000000-0000-0000-0000-000000000209',
+  '81000000-0000-0000-0000-000000000210'
 );
+
+update public.financial_documents
+set doc_number = 'FT <PRESERVE/CHANGED>',
+    description = 'Base preserve changed',
+    supplier_name = 'Supplier preserve changed',
+    supplier_nif = 'PT500000003'
+where id = '81000000-0000-0000-0000-000000000003';
+
+update public.import_cgd_extrato_ordem
+set descritivo = 'Bank preserve changed'
+where id = '81000000-0000-0000-0000-000000000013';
+
+update public.import_cgd_extrato_ordem
+set descritivo = 'Candidate preserve changed'
+where id = '81000000-0000-0000-0000-000000000014';
 
 create or replace function pg_temp.reject_automatic_proposal_detail_reapply_update()
 returns trigger
@@ -6616,7 +6772,11 @@ when (old.id in (
   '81000000-0000-0000-0000-000000000203',
   '81000000-0000-0000-0000-000000000204',
   '81000000-0000-0000-0000-000000000205',
-  '81000000-0000-0000-0000-000000000206'
+  '81000000-0000-0000-0000-000000000206',
+  '81000000-0000-0000-0000-000000000207',
+  '81000000-0000-0000-0000-000000000208',
+  '81000000-0000-0000-0000-000000000209',
+  '81000000-0000-0000-0000-000000000210'
 ))
 execute function pg_temp.reject_automatic_proposal_detail_reapply_update();
 
@@ -6744,15 +6904,47 @@ begin
     raise exception 'Unfinished unique Credit Card proposal did not preserve and enrich its legacy snapshots.';
   end if;
 
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    join automatic_proposal_detail_after_first first_apply
+      on first_apply.proposal_id = proposal.id
+    where proposal.id = '81000000-0000-0000-0000-000000000207'
+      and proposal.base_snapshot->>'docNumber' = 'FT <PRESERVE/1>'
+      and proposal.base_snapshot->>'description' = 'Base preserve original'
+      and proposal.base_snapshot->>'supplierName' = 'Supplier preserve original'
+      and proposal.base_snapshot ? 'supplierNif'
+      and proposal.base_snapshot->'supplierNif' = 'null'::jsonb
+      and proposal.items->0->>'description' = 'Bank preserve original'
+      and to_jsonb(proposal) is not distinct from first_apply.proposal_json
+  ) then
+    raise exception 'Migration reapply overwrote an existing base/item display key or its JSON null.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    join automatic_proposal_detail_after_first first_apply
+      on first_apply.proposal_id = proposal.id
+    where proposal.id = '81000000-0000-0000-0000-000000000210'
+      and proposal.candidate_groups->0->>'description' = 'Candidate preserve original'
+      and proposal.candidate_groups#>>'{0,evidence,marker}' = 'preserve-candidate'
+      and to_jsonb(proposal) is not distinct from first_apply.proposal_json
+  ) then
+    raise exception 'Migration reapply overwrote an existing candidate display key or timestamp.';
+  end if;
+
   if exists (
     select 1
     from automatic_proposal_detail_baseline baseline
     join public.financial_reconciliation_automatic_proposals proposal
       on proposal.id = baseline.proposal_id
-    where baseline.fixture_name in ('completed', 'missing')
+    where baseline.fixture_name in (
+      'completed', 'missing', 'completed-open', 'wrong-base-type'
+    )
       and to_jsonb(proposal) is distinct from baseline.proposal_json
   ) then
-    raise exception 'Completed or missing-source proposal JSON changed during the backfill.';
+    raise exception 'Protected completed, missing-source, or wrong-base-type proposal JSON changed during the backfill.';
   end if;
 
   if exists (
@@ -6847,6 +7039,23 @@ begin
         and proposal.reconciliation_id is not null
     ) then
     raise exception 'Backfilled unique Credit Card proposal became stale instead of completing: %', v_result;
+  end if;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    '81000000-0000-0000-0000-000000000207', 'smoke:proposal-details-reapply-stale'
+  );
+  if v_result->>'status' <> 'stale'
+    or v_result->>'reason' <> 'source_snapshot_changed'
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = '81000000-0000-0000-0000-000000000207'
+        and proposal.status = 'stale'
+        and proposal.reason = 'source_snapshot_changed'
+        and proposal.reconciliation_id is null
+        and proposal.completed_at is null
+    ) then
+    raise exception 'Migration reapply masked changed-source stale semantics: %', v_result;
   end if;
 end $$;
 

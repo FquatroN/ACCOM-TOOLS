@@ -278,6 +278,9 @@ begin
       'financial_documents_cgd_credit_card_amount_only'
     )
     and proposal.rule_version = 1
+    and proposal.status <> 'completed'
+    and proposal.reconciliation_id is null
+    and proposal.completed_at is null
     and exists (
       select 1
       from public.financial_reconciliation_automatic_runs run
@@ -288,14 +291,15 @@ begin
   select
     eligible.id,
     coalesce((
-      select eligible.base_snapshot || jsonb_build_object(
+      select jsonb_build_object(
         'docNumber', document.doc_number,
         'description', document.description,
         'supplierName', document.supplier_name,
         'supplierNif', document.supplier_nif
-      )
+      ) || eligible.base_snapshot
       from public.financial_documents document
-      where document.id::text = eligible.base_snapshot->>'sourceId'
+      where eligible.base_snapshot->>'sourceType' = 'financial_documents'
+        and document.id::text = eligible.base_snapshot->>'sourceId'
     ), eligible.base_snapshot) as base_snapshot
   from eligible
 ), enriched_items as (
@@ -305,12 +309,12 @@ begin
       select jsonb_agg(
         case item.value->>'sourceType'
           when 'import_cgd_extrato_ordem' then coalesce((
-            select item.value || jsonb_build_object('description', bank.descritivo)
+            select jsonb_build_object('description', bank.descritivo) || item.value
             from public.import_cgd_extrato_ordem bank
             where bank.id::text = item.value->>'sourceId'
           ), item.value)
           when 'import_cgd_cartao_credito' then coalesce((
-            select item.value || jsonb_build_object('description', card.descricao)
+            select jsonb_build_object('description', card.descricao) || item.value
             from public.import_cgd_cartao_credito card
             where card.id::text = item.value->>'sourceId'
           ), item.value)
@@ -331,12 +335,12 @@ begin
             select jsonb_agg(
               case nested_item.value->>'sourceType'
                 when 'import_cgd_extrato_ordem' then coalesce((
-                  select nested_item.value || jsonb_build_object('description', bank.descritivo)
+                  select jsonb_build_object('description', bank.descritivo) || nested_item.value
                   from public.import_cgd_extrato_ordem bank
                   where bank.id::text = nested_item.value->>'sourceId'
                 ), nested_item.value)
                 when 'import_cgd_cartao_credito' then coalesce((
-                  select nested_item.value || jsonb_build_object('description', card.descricao)
+                  select jsonb_build_object('description', card.descricao) || nested_item.value
                   from public.import_cgd_cartao_credito card
                   where card.id::text = nested_item.value->>'sourceId'
                 ), nested_item.value)
@@ -349,12 +353,12 @@ begin
           ), '[]'::jsonb)
           else case candidate_group.value->>'sourceType'
             when 'import_cgd_extrato_ordem' then coalesce((
-              select candidate_group.value || jsonb_build_object('description', bank.descritivo)
+              select jsonb_build_object('description', bank.descritivo) || candidate_group.value
               from public.import_cgd_extrato_ordem bank
               where bank.id::text = candidate_group.value->>'sourceId'
             ), candidate_group.value)
             when 'import_cgd_cartao_credito' then coalesce((
-              select candidate_group.value || jsonb_build_object('description', card.descricao)
+              select jsonb_build_object('description', card.descricao) || candidate_group.value
               from public.import_cgd_cartao_credito card
               where card.id::text = candidate_group.value->>'sourceId'
             ), candidate_group.value)
