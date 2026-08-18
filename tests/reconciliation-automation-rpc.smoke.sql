@@ -6206,6 +6206,621 @@ begin
   end if;
 end $$;
 
+-- amount-only proposal display details enrich future snapshots and only unfinished legacy rows
+do $$
+declare
+  v_bank_rule_snapshot jsonb;
+  v_card_rule_snapshot jsonb;
+  v_bank_base_snapshot jsonb;
+  v_bank_candidates jsonb;
+  v_bank_candidate_count integer;
+  v_bank_combination record;
+  v_bank_evidence jsonb;
+  v_card_base_snapshot jsonb;
+  v_card_candidates jsonb;
+  v_card_candidate_count integer;
+  v_card_combination record;
+  v_card_evidence jsonb;
+begin
+  insert into public.financial_documents (
+    id, document_date, doc_number, description, supplier_name, supplier_nif,
+    payment, amount, fat
+  ) values
+    (
+      '81000000-0000-0000-0000-000000000001', date '2145-01-10',
+      'FT <DETAIL/1>', 'Base & detail', 'Supplier <Detail>', 'PT500000001',
+      'Banco', 411.00, 'S'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000002', date '2145-01-11',
+      'FT <DETAIL/1>', 'Base & detail', 'Supplier <Detail>', 'PT500000001',
+      'Visa', 412.00, 'S'
+    );
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    '81000000-0000-0000-0000-000000000011', 'smoke-proposal-details',
+    'smoke-proposal-details-bank', date '2145-01-10', 'Bank <detail>', -411.00
+  );
+
+  insert into public.import_cgd_cartao_credito (
+    id, import_batch, row_key, data, descricao, debito
+  ) values (
+    '81000000-0000-0000-0000-000000000012', 'smoke-proposal-details',
+    'smoke-proposal-details-card', date '2145-01-11', 'Card & detail', 412.00
+  );
+
+  select jsonb_build_object(
+    'ruleKey', config.rule_key,
+    'ruleVersion', config.rule_version,
+    'displayName', definition.display_name,
+    'priority', config.priority,
+    'differenceAllowed', config.difference_allowed,
+    'maxDifferenceDays', config.max_difference_days,
+    'destinationSourceType', 'import_cgd_extrato_ordem',
+    'definition', definition.definition,
+    'operator', source_rule.operator
+  )
+  into strict v_bank_rule_snapshot
+  from public.financial_reconciliation_automatic_rule_configs config
+  join public.financial_reconciliation_automatic_rule_definitions definition
+    on definition.rule_key = config.rule_key
+   and definition.version = config.rule_version
+  join public.financial_reconciliation_source_rules source_rule
+    on source_rule.base_source_type = definition.base_source_type
+   and source_rule.matching_source_type = 'import_cgd_extrato_ordem'
+  where config.rule_key = 'financial_documents_cgd_bank_statement_amount_only'
+    and config.rule_version = 1;
+
+  select jsonb_build_object(
+    'ruleKey', config.rule_key,
+    'ruleVersion', config.rule_version,
+    'displayName', definition.display_name,
+    'priority', config.priority,
+    'differenceAllowed', config.difference_allowed,
+    'maxDifferenceDays', config.max_difference_days,
+    'destinationSourceType', 'import_cgd_cartao_credito',
+    'definition', definition.definition,
+    'operator', source_rule.operator
+  )
+  into strict v_card_rule_snapshot
+  from public.financial_reconciliation_automatic_rule_configs config
+  join public.financial_reconciliation_automatic_rule_definitions definition
+    on definition.rule_key = config.rule_key
+   and definition.version = config.rule_version
+  join public.financial_reconciliation_source_rules source_rule
+    on source_rule.base_source_type = definition.base_source_type
+   and source_rule.matching_source_type = 'import_cgd_cartao_credito'
+  where config.rule_key = 'financial_documents_cgd_credit_card_amount_only'
+    and config.rule_version = 1;
+
+  select base_snapshot, candidates, candidate_count
+  into strict v_bank_base_snapshot, v_bank_candidates, v_bank_candidate_count
+  from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0,
+    (v_bank_rule_snapshot->>'maxDifferenceDays')::integer,
+    array['81000000-0000-0000-0000-000000000001'::uuid]
+  );
+  if v_bank_candidate_count <> 1
+    or v_bank_base_snapshot ?| array['docNumber','description','supplierName','supplierNif']
+    or v_bank_candidates->0 ? 'description' then
+    raise exception 'The Bank proposal-detail fixture did not begin with the legacy minimal snapshot.';
+  end if;
+  select * into strict v_bank_combination
+  from public.financial_reconciliation_automatic_build_combinations(
+    v_bank_base_snapshot, v_bank_candidates,
+    '{"import_cgd_extrato_ordem":"+"}'::jsonb, 0, 1
+  );
+  select coalesce(jsonb_agg(item.value->'evidence' order by item.ordinality), '[]'::jsonb)
+  into v_bank_evidence
+  from jsonb_array_elements(v_bank_combination.items) with ordinality item(value, ordinality);
+
+  select base_snapshot, candidates, candidate_count
+  into strict v_card_base_snapshot, v_card_candidates, v_card_candidate_count
+  from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0,
+    (v_card_rule_snapshot->>'maxDifferenceDays')::integer,
+    array['81000000-0000-0000-0000-000000000002'::uuid]
+  );
+  if v_card_candidate_count <> 1
+    or v_card_base_snapshot ?| array['docNumber','description','supplierName','supplierNif']
+    or v_card_candidates->0 ? 'description' then
+    raise exception 'The Credit Card proposal-detail fixture did not begin with the legacy minimal snapshot.';
+  end if;
+  select * into strict v_card_combination
+  from public.financial_reconciliation_automatic_build_combinations(
+    v_card_base_snapshot, v_card_candidates,
+    '{"import_cgd_cartao_credito":"+"}'::jsonb, 0, 1
+  );
+  select coalesce(jsonb_agg(item.value->'evidence' order by item.ordinality), '[]'::jsonb)
+  into v_card_evidence
+  from jsonb_array_elements(v_card_combination.items) with ordinality item(value, ordinality);
+
+  insert into public.financial_reconciliation_automatic_runs (
+    id, trigger, scope, status, actor, client_request_id,
+    definition_config_snapshot, analysis_completed_at, finished_at
+  ) values
+    (
+      '81000000-0000-0000-0000-000000000101', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-bank', '81000000-0000-0000-0000-000000000111',
+      jsonb_build_array(v_bank_rule_snapshot), now(), null
+    ),
+    (
+      '81000000-0000-0000-0000-000000000102', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-flat', '81000000-0000-0000-0000-000000000112',
+      '[]'::jsonb, now(), null
+    ),
+    (
+      '81000000-0000-0000-0000-000000000103', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-nested', '81000000-0000-0000-0000-000000000113',
+      '[]'::jsonb, now(), null
+    ),
+    (
+      '81000000-0000-0000-0000-000000000104', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-card', '81000000-0000-0000-0000-000000000114',
+      jsonb_build_array(v_card_rule_snapshot), now(), null
+    ),
+    (
+      '81000000-0000-0000-0000-000000000105', 'manual', 'rule', 'completed',
+      'smoke:proposal-details-completed', '81000000-0000-0000-0000-000000000115',
+      '[]'::jsonb, now(), now()
+    ),
+    (
+      '81000000-0000-0000-0000-000000000106', 'manual', 'rule', 'ready',
+      'smoke:proposal-details-missing', '81000000-0000-0000-0000-000000000116',
+      '[]'::jsonb, now(), null
+    );
+
+  insert into public.financial_reconciliations (
+    id, status, base_source_type, matching_source_types, completion_type,
+    created_by, completed_by, completed_at
+  ) values (
+    '81000000-0000-0000-0000-000000000301', 'complete',
+    'financial_documents', '["import_cgd_extrato_ordem"]'::jsonb, 'normal',
+    'smoke:proposal-details-completed', 'smoke:proposal-details-completed', now()
+  );
+
+  insert into public.financial_reconciliation_automatic_proposals (
+    id, run_id, rule_key, rule_version, base_source_type, base_source_id,
+    base_source_date, base_snapshot, items, evidence, candidate_groups,
+    calculated_difference, allowed_difference, status, reason, signature,
+    reconciliation_id, completed_at, updated_at
+  ) values
+    (
+      '81000000-0000-0000-0000-000000000201',
+      '81000000-0000-0000-0000-000000000101',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000001',
+      date '2145-01-10', v_bank_base_snapshot,
+      v_bank_combination.items, v_bank_evidence, '[]'::jsonb,
+      v_bank_combination.calculated_difference, 0, 'proposed', '',
+      v_bank_combination.signature, null, null, '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000202',
+      '81000000-0000-0000-0000-000000000102',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000001',
+      date '2145-01-10',
+      jsonb_build_object(
+        'sourceType', 'financial_documents',
+        'sourceId', '81000000-0000-0000-0000-000000000001',
+        'sourceDate', '2145-01-10', 'amount', 411.00,
+        'futureBaseKey', 'keep-flat'
+      ),
+      '[]'::jsonb,
+      '[{"proposalEvidence":"keep-flat"}]'::jsonb,
+      jsonb_build_array(
+        jsonb_build_object(
+          'sourceType', 'import_cgd_extrato_ordem',
+          'sourceId', '81000000-0000-0000-0000-000000000011',
+          'sourceDate', '2145-01-10', 'amount', -411.00,
+          'evidence', jsonb_build_object('marker', 'flat-first'),
+          'futureItemKey', 'keep-flat-first'
+        ),
+        jsonb_build_object(
+          'sourceType', 'future_destination_type',
+          'sourceId', '81000000-0000-0000-0000-000000000091',
+          'sourceDate', '2145-01-12', 'amount', -1,
+          'evidence', jsonb_build_object('marker', 'flat-second'),
+          'futureItemKey', 'keep-flat-second'
+        )
+      ),
+      0, 0, 'ambiguous', 'candidate_limit', 'proposal-details-flat',
+      null, null, '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000203',
+      '81000000-0000-0000-0000-000000000103',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000001',
+      date '2145-01-10',
+      jsonb_build_object(
+        'sourceType', 'financial_documents',
+        'sourceId', '81000000-0000-0000-0000-000000000001',
+        'sourceDate', '2145-01-10', 'amount', 411.00,
+        'futureBaseKey', 'keep-nested'
+      ),
+      '[]'::jsonb,
+      '[{"proposalEvidence":"keep-nested"}]'::jsonb,
+      jsonb_build_array(
+        jsonb_build_array(
+          jsonb_build_object(
+            'sourceType', 'import_cgd_extrato_ordem',
+            'sourceId', '81000000-0000-0000-0000-000000000011',
+            'sourceDate', '2145-01-10', 'amount', -411.00,
+            'evidence', jsonb_build_object('marker', 'nested-first'),
+            'futureItemKey', 'keep-nested-first'
+          ),
+          jsonb_build_object(
+            'sourceType', 'import_cgd_extrato_ordem',
+            'sourceId', 'not-a-uuid',
+            'sourceDate', '2145-01-10', 'amount', -411.00,
+            'evidence', jsonb_build_object('marker', 'nested-malformed'),
+            'futureItemKey', 'keep-nested-malformed'
+          )
+        ),
+        jsonb_build_array(
+          jsonb_build_object(
+            'sourceType', 'future_destination_type',
+            'sourceId', '81000000-0000-0000-0000-000000000092',
+            'sourceDate', '2145-01-13', 'amount', -2,
+            'evidence', jsonb_build_object('marker', 'nested-second-group'),
+            'futureItemKey', 'keep-nested-second-group'
+          )
+        )
+      ),
+      0, 0, 'ambiguous', 'multiple_combinations', 'proposal-details-nested',
+      null, null, '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000204',
+      '81000000-0000-0000-0000-000000000104',
+      'financial_documents_cgd_credit_card_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000002',
+      date '2145-01-11', v_card_base_snapshot,
+      v_card_combination.items, v_card_evidence, '[]'::jsonb,
+      v_card_combination.calculated_difference, 0, 'proposed', '',
+      v_card_combination.signature, null, null, '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000205',
+      '81000000-0000-0000-0000-000000000105',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000001',
+      date '2145-01-10',
+      jsonb_build_object(
+        'sourceType', 'financial_documents',
+        'sourceId', '81000000-0000-0000-0000-000000000001',
+        'sourceDate', '2145-01-10', 'amount', 411.00,
+        'futureBaseKey', 'keep-completed'
+      ),
+      v_bank_combination.items, v_bank_evidence, '[]'::jsonb,
+      0, 0, 'completed', '', 'proposal-details-completed',
+      '81000000-0000-0000-0000-000000000301', now(), '2000-01-01 00:00:00+00'
+    ),
+    (
+      '81000000-0000-0000-0000-000000000206',
+      '81000000-0000-0000-0000-000000000106',
+      'financial_documents_cgd_bank_statement_amount_only', 1,
+      'financial_documents', '81000000-0000-0000-0000-000000000099',
+      date '2145-01-12',
+      jsonb_build_object(
+        'sourceType', 'financial_documents',
+        'sourceId', '81000000-0000-0000-0000-000000000099',
+        'sourceDate', '2145-01-12', 'amount', 499.00,
+        'futureBaseKey', 'keep-missing'
+      ),
+      jsonb_build_array(jsonb_build_object(
+        'sourceType', 'import_cgd_extrato_ordem',
+        'sourceId', '81000000-0000-0000-0000-000000000098',
+        'sourceDate', '2145-01-12', 'amount', -499.00,
+        'evidence', jsonb_build_object('marker', 'missing-item'),
+        'futureItemKey', 'keep-missing-item'
+      )),
+      '[{"proposalEvidence":"keep-missing"}]'::jsonb,
+      jsonb_build_array(jsonb_build_object(
+        'sourceType', 'import_cgd_extrato_ordem',
+        'sourceId', '81000000-0000-0000-0000-000000000098',
+        'sourceDate', '2145-01-12', 'amount', -499.00,
+        'evidence', jsonb_build_object('marker', 'missing-candidate'),
+        'futureItemKey', 'keep-missing-candidate'
+      )),
+      0, 0, 'proposed', '', 'proposal-details-missing',
+      null, null, '2000-01-01 00:00:00+00'
+    );
+
+  insert into public.financial_reconciliation_audit (
+    id, reconciliation_id, action, actor, comment, difference_amount, metadata
+  )
+  select
+    '81000000-0000-0000-0000-000000000401',
+    '81000000-0000-0000-0000-000000000301',
+    'complete', 'smoke:proposal-details-completed',
+    'Completed proposal snapshots must remain immutable.', 0,
+    jsonb_build_object(
+      'baseSnapshot', proposal.base_snapshot,
+      'items', proposal.items,
+      'evidence', proposal.evidence,
+      'candidateGroups', proposal.candidate_groups,
+      'futureAuditKey', 'keep-audit'
+    )
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = '81000000-0000-0000-0000-000000000205';
+end $$;
+
+create temporary table automatic_proposal_detail_baseline as
+select fixture.fixture_name, proposal.id as proposal_id, to_jsonb(proposal) as proposal_json
+from (values
+  ('bank', '81000000-0000-0000-0000-000000000201'::uuid),
+  ('flat', '81000000-0000-0000-0000-000000000202'::uuid),
+  ('nested', '81000000-0000-0000-0000-000000000203'::uuid),
+  ('card', '81000000-0000-0000-0000-000000000204'::uuid),
+  ('completed', '81000000-0000-0000-0000-000000000205'::uuid),
+  ('missing', '81000000-0000-0000-0000-000000000206'::uuid)
+) fixture(fixture_name, proposal_id)
+join public.financial_reconciliation_automatic_proposals proposal
+  on proposal.id = fixture.proposal_id;
+
+create temporary table automatic_proposal_detail_audit_baseline as
+select audit.id as audit_id, audit.metadata
+from public.financial_reconciliation_audit audit
+where audit.id = '81000000-0000-0000-0000-000000000401';
+
+\ir ../supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql
+
+create temporary table automatic_proposal_detail_after_first as
+select proposal.id as proposal_id, to_jsonb(proposal) as proposal_json
+from public.financial_reconciliation_automatic_proposals proposal
+where proposal.id in (
+  '81000000-0000-0000-0000-000000000201',
+  '81000000-0000-0000-0000-000000000202',
+  '81000000-0000-0000-0000-000000000203',
+  '81000000-0000-0000-0000-000000000204',
+  '81000000-0000-0000-0000-000000000205',
+  '81000000-0000-0000-0000-000000000206'
+);
+
+create or replace function pg_temp.reject_automatic_proposal_detail_reapply_update()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'Proposal-detail migration reapply updated fixture proposal %.', old.id;
+end
+$$;
+
+create trigger automatic_proposal_detail_reapply_guard
+before update on public.financial_reconciliation_automatic_proposals
+for each row
+when (old.id in (
+  '81000000-0000-0000-0000-000000000201',
+  '81000000-0000-0000-0000-000000000202',
+  '81000000-0000-0000-0000-000000000203',
+  '81000000-0000-0000-0000-000000000204',
+  '81000000-0000-0000-0000-000000000205',
+  '81000000-0000-0000-0000-000000000206'
+))
+execute function pg_temp.reject_automatic_proposal_detail_reapply_update();
+
+\ir ../supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql
+
+drop trigger automatic_proposal_detail_reapply_guard
+  on public.financial_reconciliation_automatic_proposals;
+
+do $$
+declare
+  v_bank_base_snapshot jsonb;
+  v_bank_candidates jsonb;
+  v_bank_candidate_count integer;
+  v_card_base_snapshot jsonb;
+  v_card_candidates jsonb;
+  v_card_candidate_count integer;
+  v_result jsonb;
+  v_signature text;
+begin
+  if exists (
+    select 1
+    from automatic_proposal_detail_baseline baseline
+    join public.financial_reconciliation_automatic_proposals proposal
+      on proposal.id = baseline.proposal_id
+    where baseline.fixture_name in ('bank', 'flat', 'nested', 'card')
+      and (
+        (proposal.base_snapshot - array['docNumber','description','supplierName','supplierNif'])
+          is distinct from
+        ((baseline.proposal_json->'base_snapshot') - array['docNumber','description','supplierName','supplierNif'])
+        or proposal.evidence is distinct from baseline.proposal_json->'evidence'
+        or proposal.updated_at is not distinct from
+          (baseline.proposal_json->>'updated_at')::timestamptz
+      )
+  ) then
+    raise exception 'Unfinished proposal enrichment changed unrelated base JSON, evidence, or no-op timestamps.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    join automatic_proposal_detail_baseline baseline on baseline.proposal_id = proposal.id
+    where baseline.fixture_name = 'bank'
+      and proposal.base_snapshot->>'docNumber' = 'FT <DETAIL/1>'
+      and proposal.base_snapshot->>'description' = 'Base & detail'
+      and proposal.base_snapshot->>'supplierName' = 'Supplier <Detail>'
+      and proposal.base_snapshot->>'supplierNif' = 'PT500000001'
+      and proposal.items->0->>'description' = 'Bank <detail>'
+      and (proposal.items->0 - 'description')
+        is not distinct from (baseline.proposal_json#>'{items,0}')
+      and proposal.candidate_groups = baseline.proposal_json->'candidate_groups'
+  ) then
+    raise exception 'Unfinished unique Bank proposal did not preserve and enrich its legacy snapshots.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    join automatic_proposal_detail_baseline baseline on baseline.proposal_id = proposal.id
+    where baseline.fixture_name = 'flat'
+      and proposal.base_snapshot->>'docNumber' = 'FT <DETAIL/1>'
+      and proposal.base_snapshot->>'description' = 'Base & detail'
+      and proposal.base_snapshot->>'supplierName' = 'Supplier <Detail>'
+      and proposal.base_snapshot->>'supplierNif' = 'PT500000001'
+      and proposal.candidate_groups->0->>'description' = 'Bank <detail>'
+      and proposal.candidate_groups#>>'{0,evidence,marker}' = 'flat-first'
+      and proposal.candidate_groups#>>'{1,evidence,marker}' = 'flat-second'
+      and (proposal.candidate_groups->0 - 'description')
+        is not distinct from (baseline.proposal_json#>'{candidate_groups,0}')
+      and proposal.candidate_groups->1
+        is not distinct from (baseline.proposal_json#>'{candidate_groups,1}')
+      and proposal.items = baseline.proposal_json->'items'
+  ) then
+    raise exception 'Flat candidate_limit groups lost ordering, future keys, or Bank details.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    join automatic_proposal_detail_baseline baseline on baseline.proposal_id = proposal.id
+    where baseline.fixture_name = 'nested'
+      and proposal.base_snapshot->>'docNumber' = 'FT <DETAIL/1>'
+      and proposal.candidate_groups->0->0->>'description' = 'Bank <detail>'
+      and proposal.candidate_groups#>>'{0,0,evidence,marker}' = 'nested-first'
+      and proposal.candidate_groups#>>'{0,1,evidence,marker}' = 'nested-malformed'
+      and proposal.candidate_groups#>>'{1,0,evidence,marker}' = 'nested-second-group'
+      and (proposal.candidate_groups->0->0 - 'description')
+        is not distinct from (baseline.proposal_json#>'{candidate_groups,0,0}')
+      and proposal.candidate_groups->0->1
+        is not distinct from (baseline.proposal_json#>'{candidate_groups,0,1}')
+      and proposal.candidate_groups->1
+        is not distinct from (baseline.proposal_json#>'{candidate_groups,1}')
+      and jsonb_array_length(proposal.candidate_groups) = 2
+      and jsonb_array_length(proposal.candidate_groups->0) = 2
+  ) then
+    raise exception 'Nested multiple_combinations groups lost shape, ordering, or missing-source behavior.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    join automatic_proposal_detail_baseline baseline on baseline.proposal_id = proposal.id
+    where baseline.fixture_name = 'card'
+      and proposal.base_snapshot->>'docNumber' = 'FT <DETAIL/1>'
+      and proposal.base_snapshot->>'description' = 'Base & detail'
+      and proposal.base_snapshot->>'supplierName' = 'Supplier <Detail>'
+      and proposal.base_snapshot->>'supplierNif' = 'PT500000001'
+      and proposal.items->0->>'description' = 'Card & detail'
+      and (proposal.items->0 - 'description')
+        is not distinct from (baseline.proposal_json#>'{items,0}')
+      and proposal.candidate_groups = baseline.proposal_json->'candidate_groups'
+  ) then
+    raise exception 'Unfinished unique Credit Card proposal did not preserve and enrich its legacy snapshots.';
+  end if;
+
+  if exists (
+    select 1
+    from automatic_proposal_detail_baseline baseline
+    join public.financial_reconciliation_automatic_proposals proposal
+      on proposal.id = baseline.proposal_id
+    where baseline.fixture_name in ('completed', 'missing')
+      and to_jsonb(proposal) is distinct from baseline.proposal_json
+  ) then
+    raise exception 'Completed or missing-source proposal JSON changed during the backfill.';
+  end if;
+
+  if exists (
+    select 1
+    from automatic_proposal_detail_audit_baseline baseline
+    join public.financial_reconciliation_audit audit on audit.id = baseline.audit_id
+    where audit.metadata is distinct from baseline.metadata
+  ) then
+    raise exception 'Completed reconciliation audit metadata changed during the backfill.';
+  end if;
+
+  if exists (
+    select 1
+    from automatic_proposal_detail_after_first first_apply
+    join public.financial_reconciliation_automatic_proposals proposal
+      on proposal.id = first_apply.proposal_id
+    where to_jsonb(proposal) is distinct from first_apply.proposal_json
+  ) then
+    raise exception 'Proposal-detail migration reapply was not a JSON no-op.';
+  end if;
+
+  foreach v_signature in array array[
+    'public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])',
+    'public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(text,integer,numeric,integer,uuid[])'
+  ] loop
+    if not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[]) @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    )
+      or has_function_privilege('anon', v_signature, 'EXECUTE')
+      or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+      or not has_function_privilege('service_role', v_signature, 'EXECUTE') then
+      raise exception 'Proposal-detail adapter security changed for %.', v_signature;
+    end if;
+  end loop;
+
+  select base_snapshot, candidates, candidate_count
+  into strict v_bank_base_snapshot, v_bank_candidates, v_bank_candidate_count
+  from public.financial_reconciliation_automatic_bank_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_bank_statement_amount_only', 1, 0, 1,
+    array['81000000-0000-0000-0000-000000000001'::uuid]
+  );
+  if v_bank_candidate_count <> 1
+    or v_bank_base_snapshot->>'docNumber' <> 'FT <DETAIL/1>'
+    or v_bank_base_snapshot->>'description' <> 'Base & detail'
+    or v_bank_base_snapshot->>'supplierName' <> 'Supplier <Detail>'
+    or v_bank_base_snapshot->>'supplierNif' <> 'PT500000001'
+    or v_bank_candidates->0->>'description' <> 'Bank <detail>' then
+    raise exception 'New Bank amount-only snapshots do not contain the proposal display details.';
+  end if;
+
+  select base_snapshot, candidates, candidate_count
+  into strict v_card_base_snapshot, v_card_candidates, v_card_candidate_count
+  from public.financial_reconciliation_automatic_credit_card_amount_only_candidates_for_base_ids(
+    'financial_documents_cgd_credit_card_amount_only', 1, 0, 1,
+    array['81000000-0000-0000-0000-000000000002'::uuid]
+  );
+  if v_card_candidate_count <> 1
+    or v_card_base_snapshot->>'docNumber' <> 'FT <DETAIL/1>'
+    or v_card_base_snapshot->>'description' <> 'Base & detail'
+    or v_card_base_snapshot->>'supplierName' <> 'Supplier <Detail>'
+    or v_card_base_snapshot->>'supplierNif' <> 'PT500000001'
+    or v_card_candidates->0->>'description' <> 'Card & detail' then
+    raise exception 'New Credit Card amount-only snapshots do not contain the proposal display details.';
+  end if;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    '81000000-0000-0000-0000-000000000201', 'smoke:proposal-details-execute'
+  );
+  if v_result->>'status' <> 'completed'
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = '81000000-0000-0000-0000-000000000201'
+        and proposal.status = 'completed'
+        and proposal.reconciliation_id is not null
+    ) then
+    raise exception 'Backfilled unique Bank proposal became stale instead of completing: %', v_result;
+  end if;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    '81000000-0000-0000-0000-000000000204', 'smoke:proposal-details-execute'
+  );
+  if v_result->>'status' <> 'completed'
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = '81000000-0000-0000-0000-000000000204'
+        and proposal.status = 'completed'
+        and proposal.reconciliation_id is not null
+    ) then
+    raise exception 'Backfilled unique Credit Card proposal became stale instead of completing: %', v_result;
+  end if;
+end $$;
+
 do $$
 declare
   v_candidates jsonb;
