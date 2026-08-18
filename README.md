@@ -53,6 +53,7 @@ migrations in this exact order:
 7. `supabase-migrations/2026-08-16-financial-reconciliation-automation-90-day-performance.sql`
 8. `supabase-migrations/2026-08-16-financial-reconciliation-automation-credit-card-rule.sql`
 9. `supabase-migrations/2026-08-17-financial-reconciliation-automation-amount-only-rules.sql`
+10. `supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql`
 
 If the database is already current through Banco v2, apply migrations 7 and 8
 and then migration 9 in that order. If it is already current through the
@@ -61,6 +62,7 @@ current through the Credit Card migration, apply only migration 9. The Credit
 Card and amount-only migrations are reapply-safe: they verify immutable managed
 definitions without overwriting saved administrator flags, editable day window,
 or priority. The supported **Max difference in days** range is 0-90 days.
+Installations current through migration 9 apply only migration 10.
 
 ### Amount-only rollout sequence
 
@@ -99,9 +101,55 @@ database. The smoke rolls back its fixtures, applies migration 9 once in normal
 order and once as an explicit reapply, and must complete cleanly on both
 invocations before enabling the new rules.
 
+### Proposal details migration 10 rollout
+
+Publish compatibility-tolerant application code **before** applying migration 10.
+Supabase migrations are a manual database operation; Vercel deploys the
+application and invokes the scheduled HTTP endpoint, but does **not** apply SQL
+migrations. In the Supabase SQL Editor, run migration 10 after the preceding
+migrations. With a controlled disposable or development database and `psql`,
+the equivalent manual apply and explicit reapply are:
+
+```powershell
+psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql
+psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql
+```
+
+Migration 10 immediately enriches unfinished amount-only proposals with their
+source display details. It leaves completed history and audit snapshots
+unchanged, and it does not infer supplier data for CGD Bank Statement or CGD
+Credit Card records.
+
+After applying migration 10, run the transaction-safe database smoke suite
+twice against the disposable or development database. The smoke rolls back its
+fixtures, applies migration 10 once in normal order and once as an explicit
+reapply, and must complete cleanly on both invocations before continuing
+automatic execution:
+
+```powershell
+psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f tests/reconciliation-automation-rpc.smoke.sql
+psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f tests/reconciliation-automation-rpc.smoke.sql
+```
+
 The SQL smoke and the protected authenticated-browser scenarios below are
 mandatory rollout gates. Use a disposable or development environment for their
 fixtures and manual execution checks.
+
+For migration 10, use an authenticated browser session to verify all of the
+following before continuing automatic execution:
+
+1. Analyze the Bank amount-only rule. In column two, confirm the Financial
+   Documents base record displays its document number, supplier name, supplier
+   NIF, and description.
+2. In column three, confirm every Bank destination and ambiguous candidate
+   description displays without a supplier label.
+3. Repeat the two display checks for the Credit Card amount-only rule.
+4. Open an unfinished pre-migration run and confirm migration 10 enriches it
+   immediately; execute a backfilled unfinished unique proposal and confirm it
+   completes rather than becoming stale.
+5. Open completed history and confirm its prior audit snapshot is unchanged.
+6. Verify desktop three-column and narrow stacked layouts, with escaped
+   punctuation in every detail field.
 
 1. Confirm pre-migration Settings loads safely with the two existing rules.
 2. After migration, confirm Settings lists four rules, both amount-only rules
