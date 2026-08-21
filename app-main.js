@@ -1257,6 +1257,11 @@ const state = {
   financialDocsAttachment: null,
   financialDocsFilePickerTarget: null,
   financialDocsModalOpen: false,
+  financialDocsModalOrigin: "",
+  financialDocsModalPendingView: "",
+  financialDocsModalRequestToken: 0,
+  financialDocsModalReturnFocus: null,
+  financialDocsPreviewRequestToken: 0,
   financialDocEntitiesModalOpen: false,
   financialDocsImportModalOpen: false,
   financialDocsRulesDraft: [],
@@ -1711,6 +1716,7 @@ const els = {
   financialDocsEntityNameList: document.getElementById("financial-docs-entity-name-list"),
   financialDocsEntityNifList: document.getElementById("financial-docs-entity-nif-list"),
   financialDocsModal: document.getElementById("financial-docs-modal"),
+  financialDocsModalDialog: document.getElementById("financial-docs-modal-dialog"),
   financialDocsModalTitle: document.getElementById("financial-docs-modal-title"),
   financialDocsModalStatus: document.getElementById("financial-docs-modal-status"),
   financialDocsDelete: document.getElementById("financial-docs-delete"),
@@ -3702,7 +3708,14 @@ async function setView(view, options = {}) {
     state.maintenanceEditingId = "";
     state.maintenanceEditDraft = null;
   }
-  if (view !== "financial-docs" && state.financialDocsModalOpen) {
+  if (state.financialDocsModalPendingView && view !== state.financialDocsModalPendingView) {
+    state.financialDocsModalRequestToken += 1;
+    state.financialDocsModalPendingView = "";
+  }
+  const financialDocsModalView = state.financialDocsModalOrigin === "financial-reconciliation"
+    ? "financial-reconciliation"
+    : "financial-docs";
+  if (view !== financialDocsModalView && state.financialDocsModalOpen) {
     closeFinancialDocModal();
   }
   if (view !== "financial-docs" && state.financialDocEntitiesModalOpen) {
@@ -22636,7 +22649,11 @@ function renderFinancialReconciliationCandidates() {
     ? workspace.candidates.map((row) => {
       const optional = extraColumns.map(({ key }) => `<td class="financial-reconciliation-detail">${escape(clean(row[key]) || "-")}</td>`);
       const disabled = reconciliation ? (!started ? "disabled" : "") : (!canStart ? "disabled" : "");
-      return `<tr><td class="financial-reconciliation-action"><button type="button" class="ghost" data-financial-reconciliation-row-action="${reconciliation ? "add" : "start"}" data-source-id="${escape(row.id)}" data-source-type="${escape(sourceType)}" ${disabled}>${actionLabel}</button></td><td class="financial-reconciliation-date">${escape(formatDateOnly(row.source_date) || "-")}</td><td class="financial-reconciliation-description">${escape(clean(row.description) || "-")}</td>${optional.join("")}<td class="financial-reconciliation-amount">${escape(formatMoney(Number(row.amount || 0)))}</td><td class="financial-reconciliation-status-cell">${financialReconciliationStatusMarkup("not-started")}</td></tr>`;
+      const description = clean(row.description) || "-";
+      const descriptionMarkup = sourceType === "financial_documents" && canAppFinancialDocs() && clean(row.id)
+        ? `<button type="button" class="financial-reconciliation-description-link" data-financial-reconciliation-open-financial-doc="${escape(clean(row.id))}">${escape(description)}</button>`
+        : escape(description);
+      return `<tr><td class="financial-reconciliation-action"><button type="button" class="ghost" data-financial-reconciliation-row-action="${reconciliation ? "add" : "start"}" data-source-id="${escape(row.id)}" data-source-type="${escape(sourceType)}" ${disabled}>${actionLabel}</button></td><td class="financial-reconciliation-date">${escape(formatDateOnly(row.source_date) || "-")}</td><td class="financial-reconciliation-description">${descriptionMarkup}</td>${optional.join("")}<td class="financial-reconciliation-amount">${escape(formatMoney(Number(row.amount || 0)))}</td><td class="financial-reconciliation-status-cell">${financialReconciliationStatusMarkup("not-started")}</td></tr>`;
     }).join("")
     : `<tr><td colspan="${extraColumns.length + 5}" class="empty">No eligible unlocked ${escape(financialReconciliationSourceLabel(sourceType).toLowerCase())} records match these filters.</td></tr>`;
   if (els.financialReconciliationCount) {
@@ -22900,7 +22917,16 @@ async function runFinancialReconciliationAction(payload) {
 }
 
 function onFinancialReconciliationRowsClick(event) {
-  const button = event.target instanceof HTMLElement ? event.target.closest("button[data-financial-reconciliation-row-action]") : null;
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  const financialDocumentLink = target?.closest("[data-financial-reconciliation-open-financial-doc]");
+  if (financialDocumentLink) {
+    const financialDocumentId = clean(financialDocumentLink.dataset.financialReconciliationOpenFinancialDoc);
+    if (financialDocumentId && canAppFinancialDocs()) {
+      openFinancialDocModal(financialDocumentId, { origin: "financial-reconciliation" });
+    }
+    return;
+  }
+  const button = target?.closest("button[data-financial-reconciliation-row-action]");
   if (!button || button.disabled) return;
   const action = clean(button.dataset.financialReconciliationRowAction);
   const sourceId = clean(button.dataset.sourceId);
@@ -26977,8 +27003,17 @@ function renderFinancialDocEditor() {
   renderFinancialDocHistory();
 }
 
-async function renderFinancialDocPreview() {
-  if (!els.financialDocsPreview) return;
+async function renderFinancialDocPreview(options = {}) {
+  if (!els.financialDocsPreview) return true;
+  const requestToken = Number(options.requestToken ?? state.financialDocsModalRequestToken);
+  const documentId = clean(options.documentId ?? state.financialDocsDraft?.id);
+  const previewRequestToken = Number(state.financialDocsPreviewRequestToken || 0) + 1;
+  state.financialDocsPreviewRequestToken = previewRequestToken;
+  const isCurrentPreview = () => state.financialDocsModalOpen
+    && requestToken === state.financialDocsModalRequestToken
+    && previewRequestToken === state.financialDocsPreviewRequestToken
+    && documentId === clean(state.financialDocsDraft?.id);
+  if (!isCurrentPreview()) return false;
   revokeFinancialDocPreviewUrl();
   const draft = state.financialDocsDraft || emptyFinancialDocDraft();
   els.financialDocsPreview.innerHTML = '<div class="muted">No document preview available.</div>';
@@ -26990,11 +27025,12 @@ async function renderFinancialDocPreview() {
     } else {
       els.financialDocsPreview.innerHTML = `<iframe class="financial-docs-preview-frame" src="${escape(state.financialDocsPreviewUrl)}" title="Document preview"></iframe>`;
     }
-    return;
+    return true;
   }
-  if (!clean(draft.driveFileId)) return;
+  if (!clean(draft.driveFileId)) return true;
   try {
     const blob = await apiBlob(`/api/financial-docs-file?id=${encodeURIComponent(draft.id)}`);
+    if (!isCurrentPreview()) return false;
     state.financialDocsPreviewUrl = URL.createObjectURL(blob);
     const mime = clean(blob.type || draft.mimeType);
     if (mime.startsWith("image/")) {
@@ -27002,8 +27038,11 @@ async function renderFinancialDocPreview() {
     } else {
       els.financialDocsPreview.innerHTML = `<iframe class="financial-docs-preview-frame" src="${escape(state.financialDocsPreviewUrl)}" title="Document preview"></iframe>`;
     }
+    return true;
   } catch (error) {
+    if (!isCurrentPreview()) return false;
     els.financialDocsPreview.innerHTML = `<div class="muted">${escape(error.message)}</div>`;
+    return true;
   }
 }
 
@@ -27014,27 +27053,54 @@ async function loadFinancialDocDetail(id) {
 }
 
 async function openFinancialDocModal(id = "", options = {}) {
+  const { seedRow = null, preserveAttachment = false, origin = "" } = options || {};
+  const requestedOrigin = clean(origin) === "financial-reconciliation" ? "financial-reconciliation" : "";
+  const requestedView = requestedOrigin || "financial-docs";
+  const requestToken = state.financialDocsModalRequestToken + 1;
+  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  state.financialDocsModalRequestToken = requestToken;
+  state.financialDocsModalPendingView = requestedView;
   try {
-    const { seedRow = null, preserveAttachment = false } = options || {};
     setFinancialDocsModalStatus("");
     setFinancialDocsDuplicateWarning("");
-    if (!preserveAttachment) state.financialDocsAttachment = null;
-    state.financialDocsLastOpenedId = clean(id);
-    state.financialDocsDraft = clean(id)
+    const draft = clean(id)
       ? await loadFinancialDocDetail(id)
       : normalizeFinancialDocRowClient(seedRow || emptyFinancialDocDraft());
+    if (requestToken !== state.financialDocsModalRequestToken) return false;
+    if (state.currentView !== requestedView) {
+      state.financialDocsModalPendingView = "";
+      return false;
+    }
+    state.financialDocsModalPendingView = "";
+    if (!preserveAttachment) state.financialDocsAttachment = null;
+    state.financialDocsLastOpenedId = clean(id);
+    state.financialDocsDraft = draft;
+    state.financialDocsModalOrigin = requestedOrigin;
+    state.financialDocsModalReturnFocus = returnFocus;
     state.financialDocsModalOpen = true;
     if (els.financialDocsModal) els.financialDocsModal.hidden = false;
     syncFinancialDocModalBodyState();
     renderFinancialDocEditor();
-    await renderFinancialDocPreview();
+    els.financialDocsModalDialog?.focus();
+    await renderFinancialDocPreview({ requestToken, documentId: clean(draft.id) });
+    return requestToken === state.financialDocsModalRequestToken
+      && state.financialDocsModalOpen
+      && state.currentView === requestedView;
   } catch (error) {
+    if (requestToken !== state.financialDocsModalRequestToken) return false;
+    state.financialDocsModalPendingView = "";
     showToast(`Could not load financial document: ${error.message}`, "error");
+    return false;
   }
 }
 
 function closeFinancialDocModal() {
+  const returnFocus = state.financialDocsModalReturnFocus;
+  state.financialDocsModalRequestToken += 1;
+  state.financialDocsModalPendingView = "";
   state.financialDocsModalOpen = false;
+  state.financialDocsModalOrigin = "";
+  state.financialDocsModalReturnFocus = null;
   setFinancialDocsDuplicateWarning("");
   if (state.financialDocsAttachment?.previewUrl) {
     try {
@@ -27047,6 +27113,7 @@ function closeFinancialDocModal() {
   revokeFinancialDocPreviewUrl();
   if (els.financialDocsModal) els.financialDocsModal.hidden = true;
   syncFinancialDocModalBodyState();
+  if (returnFocus?.isConnected && typeof returnFocus.focus === "function") returnFocus.focus();
 }
 
 function financialDocDraftFromInputs() {
@@ -27287,7 +27354,13 @@ async function refreshFinancialDocEntitiesAfterSave() {
   if (state.financialDocsModalOpen) renderFinancialDocEditor();
 }
 
+async function refreshFinancialReconciliationAfterFinancialDocMutation(origin = state.financialDocsModalOrigin) {
+  if (clean(origin) !== "financial-reconciliation") return false;
+  return loadFinancialReconciliationWorkspace({ silent: true });
+}
+
 async function saveFinancialDoc() {
+  const modalOrigin = state.financialDocsModalOrigin;
   const rawDraft = financialDocDraftFromInputs();
   const draft = clean(rawDraft.id)
     ? rawDraft
@@ -27337,6 +27410,7 @@ async function saveFinancialDoc() {
     renderFinancialDocs();
     renderFinancialDocEditor();
     await renderFinancialDocPreview();
+    await refreshFinancialReconciliationAfterFinancialDocMutation(modalOrigin);
     setFinancialDocsModalStatus("Document saved.");
     setFinancialDocsStatus("Financial document saved.");
     showToast("Financial document saved.", "success");
@@ -27439,6 +27513,7 @@ async function deleteFinancialDoc(id, options = {}) {
   if (!confirmed) return;
   setFinancialDocsStatus("Deleting...");
   if (options.fromModal) setFinancialDocsModalStatus("Deleting...");
+  const modalOrigin = options.fromModal ? state.financialDocsModalOrigin : "";
   try {
     await api(`/api/financial-docs?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     state.financialDocsRows = state.financialDocsRows.filter((item) => item.id !== id);
@@ -27446,6 +27521,7 @@ async function deleteFinancialDoc(id, options = {}) {
     if (clean(state.financialDocsLastOpenedId) === clean(id)) state.financialDocsLastOpenedId = "";
     if (options.fromModal) closeFinancialDocModal();
     renderFinancialDocs();
+    await refreshFinancialReconciliationAfterFinancialDocMutation(modalOrigin);
     setFinancialDocsStatus("");
     showToast("Financial document deleted.", "success");
   } catch (error) {

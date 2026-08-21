@@ -6740,6 +6740,32 @@ button[id^="close-settings"] {
   min-width: 15rem;
 }
 
+.financial-reconciliation-description-link {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: .14rem;
+  cursor: pointer;
+}
+
+.financial-reconciliation-description-link:hover {
+  background: transparent;
+  color: var(--brand-2);
+}
+
+.financial-reconciliation-description-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 65%, white);
+  outline-offset: 2px;
+  border-radius: .12rem;
+}
+
 .financial-reconciliation-status {
   display: inline-flex;
   align-items: center;

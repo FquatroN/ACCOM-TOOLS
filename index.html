@@ -3503,9 +3503,10 @@
           <input id="financial-docs-import-input" class="sr-only-file" type="file" multiple accept=".txt,.csv,.tsv,.xlsx,.xls,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
           <datalist id="financial-docs-entity-name-list"></datalist>
           <datalist id="financial-docs-entity-nif-list"></datalist>
+        </section>
 
           <section id="financial-docs-modal" class="modal-backdrop" hidden>
-            <section class="card modal-card financial-docs-modal-card">
+            <section id="financial-docs-modal-dialog" class="card modal-card financial-docs-modal-card" role="dialog" aria-modal="true" aria-labelledby="financial-docs-modal-title" tabindex="-1">
               <div class="bar">
                 <h2 id="financial-docs-modal-title">Financial Document</h2>
                 <div class="actions">
@@ -3741,8 +3742,6 @@
               </section>
             </section>
           </section>
-        </section>
-
         <section id="view-import-data" class="view" hidden>
           <section class="feature-title import-data-title-row">
             <h2>Import Data</h2>
