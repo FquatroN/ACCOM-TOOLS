@@ -9,6 +9,7 @@ const supabasePath = require.resolve("../api/_supabase");
 const migration = fs.readFileSync(path.join(root, "supabase-migrations", "2026-08-11-financial-reconciliation-source-rules.sql"), "utf8");
 const workspaceFilterFixPath = path.join(root, "supabase-migrations", "2026-08-11-financial-reconciliation-source-rules-workspace-filter-fix.sql");
 const actionOverloadFixPath = path.join(root, "supabase-migrations", "2026-08-12-financial-reconciliation-action-overload-fix.sql");
+const safeDeleteFixPath = path.join(root, "supabase-migrations", "2026-08-21-financial-reconciliation-source-rules-safe-delete.sql");
 
 function responseRecorder() {
   return {
@@ -246,4 +247,21 @@ test("source-rules migration removes the obsolete action overload", () => {
   const actionOverloadFix = fs.readFileSync(actionOverloadFixPath, "utf8");
   assert.match(actionOverloadFix, new RegExp(`drop function if exists public\\.${oldSignature.replace(/[()[\].+*?^$\\|]/g, "\\$&")};`));
   assert.match(actionOverloadFix, /notify pgrst, 'reload schema';/);
+});
+
+test("source-rule replacement migration uses a scoped delete accepted by database safety guards", () => {
+  assert.ok(fs.existsSync(safeDeleteFixPath), "a forward migration should repair the deployed replacement RPC");
+  const safeDeleteFix = fs.readFileSync(safeDeleteFixPath, "utf8");
+  assert.match(
+    safeDeleteFix,
+    /delete from public\.financial_reconciliation_source_rules\s+where base_source_type in \(/,
+  );
+  assert.doesNotMatch(
+    safeDeleteFix,
+    /delete from public\.financial_reconciliation_source_rules\s*;/,
+  );
+  assert.match(
+    safeDeleteFix,
+    /grant execute on function public\.replace_financial_reconciliation_source_rules\(jsonb\) to service_role;/,
+  );
 });

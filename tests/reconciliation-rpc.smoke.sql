@@ -9,6 +9,8 @@ insert into financial_reconciliations (
   'smoke-legacy-backfill-' || txid_current()
 );
 \ir ../supabase-migrations/2026-08-11-financial-reconciliation-source-rules.sql
+\ir ../supabase-migrations/2026-08-21-financial-reconciliation-source-rules-safe-delete.sql
+\ir ../supabase-migrations/2026-08-21-financial-reconciliation-source-rules-safe-delete.sql
 \ir ../supabase-migrations/2026-08-12-financial-reconciliation-oldest-first-candidates.sql
 \ir ../supabase-migrations/2026-08-12-financial-reconciliation-oldest-first-candidates.sql
 \ir ../supabase-migrations/2026-08-12-financial-reconciliation-history-source-summary.sql
