@@ -155,6 +155,7 @@ ${appFunctionSource("clean")}
 ${appFunctionSource("canApp")}
 ${appFunctionSource("canAppFinancialDocs")}
 ${appFunctionSource("canAppImportData")}
+${appFunctionSource("canAppBankAccounts")}
 ${appFunctionSource("canAppFinancialReconciliation")}
 ${appFunctionSource("canUseGuestsBi")}
 ${appFunctionSource("canUseBookingsBi")}
