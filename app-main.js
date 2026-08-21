@@ -17,7 +17,7 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "financial-reconciliation", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "bank-accounts", "financial-reconciliation", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
 const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "financial-reconciliation", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
@@ -845,6 +845,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Backoffice", kind: "app", key: "backoffice" },
   { label: "App: Financial Documents", kind: "app", key: "financial-docs" },
   { label: "App: Import Data", kind: "app", key: "import-data" },
+  { label: "App: Bank Accounts", kind: "app", key: "bank-accounts" },
   { label: "App: Business Intelligence", kind: "app", key: "business-intelligence" },
   { label: "App: Guests BI", kind: "app", key: "guests-bi" },
   { label: "App: Bookings BI", kind: "app", key: "bookings-bi" },
@@ -1303,6 +1304,15 @@ const state = {
   importDataSourceMode: "",
   importDataEditingId: "",
   importDataEditDraft: null,
+  bankAccountsRows: [],
+  bankAccountsLoaded: false,
+  bankAccountsLoading: false,
+  bankAccountsTruncated: false,
+  bankAccountsSource: "cgd-extrato",
+  bankAccountsFilters: { dateFrom: "", dateTo: "", description: "" },
+  bankAccountsDateSort: "desc",
+  bankAccountsRequestToken: 0,
+  bankAccountsSearchTimer: 0,
   financialReconciliation: {
     activeTab: "manual",
     loaded: false,
@@ -1508,6 +1518,7 @@ const els = {
   navCommunications: document.getElementById("nav-communications"),
   navFinancialDocs: document.getElementById("nav-financial-docs"),
   navImportData: document.getElementById("nav-import-data"),
+  navBankAccounts: document.getElementById("nav-bank-accounts"),
   navFinancialReconciliation: document.getElementById("nav-financial-reconciliation"),
   navGuestsBi: document.getElementById("nav-guests-bi"),
   navBookingsBi: document.getElementById("nav-bookings-bi"),
@@ -1531,6 +1542,7 @@ const els = {
   viewCommunications: document.getElementById("view-communications"),
   viewFinancialDocs: document.getElementById("view-financial-docs"),
   viewImportData: document.getElementById("view-import-data"),
+  viewBankAccounts: document.getElementById("view-bank-accounts"),
   viewFinancialReconciliation: document.getElementById("view-financial-reconciliation"),
   viewGuestsBi: document.getElementById("view-guests-bi"),
   viewBookingsBi: document.getElementById("view-bookings-bi"),
@@ -2017,6 +2029,15 @@ const els = {
   importDataViewHead: document.getElementById("import-data-view-head"),
   importDataRows: document.getElementById("import-data-rows"),
   importDataInput: document.getElementById("import-data-input"),
+  bankAccountsSource: document.getElementById("bank-accounts-source"),
+  bankAccountsDateFrom: document.getElementById("bank-accounts-date-from"),
+  bankAccountsDateTo: document.getElementById("bank-accounts-date-to"),
+  bankAccountsDescription: document.getElementById("bank-accounts-description"),
+  bankAccountsStatus: document.getElementById("bank-accounts-status"),
+  bankAccountsRecordsTitle: document.getElementById("bank-accounts-records-title"),
+  bankAccountsCount: document.getElementById("bank-accounts-count"),
+  bankAccountsHead: document.getElementById("bank-accounts-head"),
+  bankAccountsRows: document.getElementById("bank-accounts-rows"),
   importDataSaveSettings: document.getElementById("import-data-save-settings"),
   importDataSettingsBody: document.getElementById("import-data-settings-body"),
   importDataSettingsStatus: document.getElementById("import-data-settings-status"),
@@ -2611,7 +2632,7 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
-  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : "financial-reconciliation";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : canAppBankAccounts() ? "bank-accounts" : "financial-reconciliation";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : "sales-bi";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
@@ -2655,6 +2676,12 @@ function bindEvents() {
   els.navCommunications.addEventListener("click", () => setView("communications"));
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.navImportData?.addEventListener("click", () => setView("import-data"));
+  els.navBankAccounts?.addEventListener("click", () => setView("bank-accounts"));
+  els.bankAccountsSource?.addEventListener("change", onBankAccountsSourceChange);
+  els.bankAccountsDateFrom?.addEventListener("change", onBankAccountsFilterChange);
+  els.bankAccountsDateTo?.addEventListener("change", onBankAccountsFilterChange);
+  els.bankAccountsDescription?.addEventListener("input", onBankAccountsDescriptionInput);
+  els.bankAccountsHead?.addEventListener("click", onBankAccountsHeaderClick);
   els.navFinancialReconciliation?.addEventListener("click", () => setView("financial-reconciliation"));
   els.financialReconciliationManualTab?.addEventListener("click", () => setFinancialReconciliationTab("manual"));
   els.financialReconciliationAutomaticTab?.addEventListener("click", () => setFinancialReconciliationTab("automatic"));
@@ -3454,7 +3481,7 @@ function canSettings(feature) {
 }
 
 function canUseBackoffice() {
-  return canApp("backoffice") && (canApp("financial-docs") || canApp("import-data") || canApp("financial-reconciliation"));
+  return canApp("backoffice") && (canApp("financial-docs") || canApp("import-data") || canApp("bank-accounts") || canApp("financial-reconciliation"));
 }
 
 function canAppFinancialDocs() {
@@ -3463,6 +3490,10 @@ function canAppFinancialDocs() {
 
 function canAppImportData() {
   return canApp("backoffice") && canApp("import-data");
+}
+
+function canAppBankAccounts() {
+  return canApp("backoffice") && canApp("bank-accounts");
 }
 
 function canAppFinancialReconciliation() {
@@ -3560,6 +3591,9 @@ function applyInitialRouteFromUrl() {
     if (view === "import-data" && canAppImportData()) {
       state.currentView = "import-data";
     }
+    if (view === "bank-accounts" && canAppBankAccounts()) {
+      state.currentView = "bank-accounts";
+    }
     if (view === "financial-reconciliation" && canAppFinancialReconciliation()) {
       state.currentView = "financial-reconciliation";
     }
@@ -3610,6 +3644,9 @@ function syncAppRoute() {
     } else if (state.currentView === "import-data") {
       url.searchParams.set("view", "import-data");
       url.searchParams.delete("service");
+    } else if (state.currentView === "bank-accounts") {
+      url.searchParams.set("view", "bank-accounts");
+      url.searchParams.delete("service");
     } else if (state.currentView === "financial-reconciliation") {
       url.searchParams.set("view", "financial-reconciliation");
       url.searchParams.delete("service");
@@ -3641,6 +3678,7 @@ async function setView(view, options = {}) {
   if (view === "settings" && !state.access.settingsFeatures.length) return showToast("No settings access.", "error");
   if (view === "financial-docs" && !canAppFinancialDocs()) return showToast("No financial documents access.", "error");
   if (view === "import-data" && !canAppImportData()) return showToast("No import data access.", "error");
+  if (view === "bank-accounts" && !canAppBankAccounts()) return showToast("No bank accounts access.", "error");
   if (view === "financial-reconciliation" && !canAppFinancialReconciliation()) return showToast("No reconciliation access.", "error");
   if (view === "financial-reconciliation") {
     state.financialReconciliation.activeTab = financialReconciliationEntryTab(options);
@@ -3661,7 +3699,7 @@ async function setView(view, options = {}) {
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
-  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "financial-reconciliation" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi" && state.currentView !== "financial-bi" && state.currentView !== "sales-bi") {
+  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "bank-accounts" && state.currentView !== "financial-reconciliation" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi" && state.currentView !== "financial-bi" && state.currentView !== "sales-bi") {
     state.lastMainView = state.currentView;
   }
   const previousView = state.currentView;
@@ -3771,6 +3809,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "import-data") {
     await ensureImportDataData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "bank-accounts") {
+    await ensureBankAccountsData();
     renderSettingsSection();
     render();
     return;
@@ -4297,6 +4341,7 @@ function renderLayout() {
   const comm = state.currentView === "communications";
   const financialDocs = state.currentView === "financial-docs";
   const importData = state.currentView === "import-data";
+  const bankAccounts = state.currentView === "bank-accounts";
   const financialReconciliation = state.currentView === "financial-reconciliation";
   const guestsBi = state.currentView === "guests-bi";
   const bookingsBi = state.currentView === "bookings-bi";
@@ -4316,12 +4361,13 @@ function renderLayout() {
   const bakery = state.currentView === "bakery";
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
-  const backofficeMode = financialDocs || importData || financialReconciliation || backofficeSettings || importDataSettings;
+  const backofficeMode = financialDocs || importData || bankAccounts || financialReconciliation || backofficeSettings || importDataSettings;
   const businessIntelligenceMode = guestsBi || bookingsBi || financialBi || salesBi;
   const workspaceMode = backofficeMode || businessIntelligenceMode;
   const canComm = canApp("communications");
   const canFinancialDocs = canAppFinancialDocs();
   const canImportData = canAppImportData();
+  const canBankAccounts = canAppBankAccounts();
   const canFinancialReconciliation = canAppFinancialReconciliation();
   const canGuestsBi = canUseGuestsBi();
   const canBookingsBi = canUseBookingsBi();
@@ -4346,6 +4392,7 @@ function renderLayout() {
   els.navCommunications.classList.toggle("active", comm);
   els.navFinancialDocs?.classList.toggle("active", financialDocs);
   els.navImportData?.classList.toggle("active", importData);
+  els.navBankAccounts?.classList.toggle("active", bankAccounts);
   els.navFinancialReconciliation?.classList.toggle("active", financialReconciliation);
   els.navGuestsBi?.classList.toggle("active", guestsBi);
   els.navBookingsBi?.classList.toggle("active", bookingsBi);
@@ -4365,6 +4412,7 @@ function renderLayout() {
   els.navCommunications.hidden = !canComm;
   if (els.navFinancialDocs) els.navFinancialDocs.hidden = !canFinancialDocs;
   if (els.navImportData) els.navImportData.hidden = !canImportData;
+  if (els.navBankAccounts) els.navBankAccounts.hidden = !canBankAccounts;
   if (els.navFinancialReconciliation) els.navFinancialReconciliation.hidden = !canFinancialReconciliation;
   if (els.navGuestsBi) els.navGuestsBi.hidden = !canGuestsBi;
   if (els.navBookingsBi) els.navBookingsBi.hidden = !canBookingsBi;
@@ -4406,6 +4454,7 @@ function renderLayout() {
   els.viewCommunications.hidden = !comm;
   if (els.viewFinancialDocs) els.viewFinancialDocs.hidden = !financialDocs;
   if (els.viewImportData) els.viewImportData.hidden = !importData;
+  if (els.viewBankAccounts) els.viewBankAccounts.hidden = !bankAccounts;
   if (els.viewFinancialReconciliation) els.viewFinancialReconciliation.hidden = !financialReconciliation;
   if (els.viewGuestsBi) els.viewGuestsBi.hidden = !guestsBi;
   if (els.viewBookingsBi) els.viewBookingsBi.hidden = !bookingsBi;
@@ -4864,6 +4913,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-backoffice="${id}"]`)?.checked) appFeatures.push("backoffice");
   if (els.profilesBody.querySelector(`[data-profile-app-financial-docs="${id}"]`)?.checked) appFeatures.push("financial-docs");
   if (els.profilesBody.querySelector(`[data-profile-app-import-data="${id}"]`)?.checked) appFeatures.push("import-data");
+  if (els.profilesBody.querySelector(`[data-profile-app-bank-accounts="${id}"]`)?.checked) appFeatures.push("bank-accounts");
   if (els.profilesBody.querySelector(`[data-profile-app-business-intelligence="${id}"]`)?.checked) appFeatures.push("business-intelligence");
   if (els.profilesBody.querySelector(`[data-profile-app-guests-bi="${id}"]`)?.checked) appFeatures.push("guests-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-bookings-bi="${id}"]`)?.checked) appFeatures.push("bookings-bi");
@@ -19618,7 +19668,7 @@ function isBackofficeSettingsContext() {
 }
 
 function onLogoHomeClick() {
-  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "financial-reconciliation" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi" || state.currentView === "sales-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
+  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "bank-accounts" || state.currentView === "financial-reconciliation" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi" || state.currentView === "sales-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
   }
@@ -19653,7 +19703,7 @@ function openBackofficeHome() {
     showToast("No backoffice access.", "error");
     return;
   }
-  setView(canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : "financial-reconciliation");
+  setView(canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : canAppBankAccounts() ? "bank-accounts" : "financial-reconciliation");
 }
 
 function openBusinessIntelligenceHome() {
@@ -19687,6 +19737,7 @@ function reconciliationSettingsAppDestination() {
   if (canAppFinancialReconciliation()) return "financial-reconciliation";
   if (canAppFinancialDocs()) return "financial-docs";
   if (canAppImportData()) return "import-data";
+  if (canAppBankAccounts()) return "bank-accounts";
   const mainView = preferredMainAppView();
   if (mainView) return mainView;
   if (canUseGuestsBi()) return "guests-bi";
@@ -21302,6 +21353,164 @@ function renderImportData() {
   updateImportDataSourceSummary();
   renderImportDataPreviewRows();
   renderImportDataRows();
+}
+
+const BANK_ACCOUNTS_SOURCES = Object.freeze({
+  "cgd-extrato": {
+    label: "CGD Extrato",
+    columns: [
+      { key: "data", label: "Data", type: "date", sortable: true },
+      { key: "data_valor", label: "Data Valor", type: "date" },
+      { key: "descritivo", label: "Description", type: "text" },
+      { key: "montante", label: "Montante", type: "money" },
+      { key: "saldo", label: "Saldo", type: "money" },
+    ],
+  },
+  "cartao-credito": {
+    label: "Cartao Credito",
+    columns: [
+      { key: "data", label: "Data", type: "date", sortable: true },
+      { key: "data_valor", label: "Data Valor", type: "date" },
+      { key: "descricao", label: "Description", type: "text" },
+      { key: "debito", label: "Debito", type: "money" },
+      { key: "credito", label: "Credito", type: "money" },
+      { key: "valor", label: "Valor", type: "money" },
+    ],
+  },
+});
+
+function bankAccountsSourceConfig(source = state.bankAccountsSource) {
+  return BANK_ACCOUNTS_SOURCES[clean(source)] || BANK_ACCOUNTS_SOURCES["cgd-extrato"];
+}
+
+function setBankAccountsStatus(message = "", tone = "") {
+  if (!els.bankAccountsStatus) return;
+  els.bankAccountsStatus.textContent = message;
+  els.bankAccountsStatus.classList.toggle("status-error", tone === "error");
+}
+
+function currentBankAccountsFilters() {
+  return {
+    dateFrom: clean(els.bankAccountsDateFrom?.value || state.bankAccountsFilters.dateFrom),
+    dateTo: clean(els.bankAccountsDateTo?.value || state.bankAccountsFilters.dateTo),
+    description: clean(els.bankAccountsDescription?.value || state.bankAccountsFilters.description),
+  };
+}
+
+function buildBankAccountsRowsUrl() {
+  const filters = currentBankAccountsFilters();
+  const params = new URLSearchParams({
+    source: state.bankAccountsSource,
+    sort: state.bankAccountsDateSort,
+  });
+  if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+  if (filters.dateTo) params.set("date_to", filters.dateTo);
+  if (filters.description) params.set("description", filters.description);
+  return `/api/bank-accounts?${params.toString()}`;
+}
+
+async function loadBankAccountsRows({ silent = false } = {}) {
+  const requestToken = ++state.bankAccountsRequestToken;
+  state.bankAccountsLoading = true;
+  if (!silent) setBankAccountsStatus("Loading records...");
+  try {
+    const result = await api(buildBankAccountsRowsUrl());
+    if (requestToken !== state.bankAccountsRequestToken) return;
+    state.bankAccountsRows = Array.isArray(result?.rows) ? result.rows : [];
+    state.bankAccountsLoaded = true;
+    state.bankAccountsLoading = false;
+    state.bankAccountsTruncated = Boolean(result?.truncated);
+    renderBankAccounts();
+    if (!silent) setBankAccountsStatus(result?.truncated ? "Showing the first 500 matching records." : "Records loaded.");
+  } catch (error) {
+    if (requestToken !== state.bankAccountsRequestToken) return;
+    state.bankAccountsRows = [];
+    state.bankAccountsLoaded = false;
+    state.bankAccountsLoading = false;
+    state.bankAccountsTruncated = false;
+    renderBankAccounts();
+    setBankAccountsStatus(`Failed to load records: ${error.message}`, "error");
+  }
+}
+
+async function ensureBankAccountsData() {
+  if (!state.bankAccountsLoaded && canAppBankAccounts()) {
+    await loadBankAccountsRows({ silent: true });
+  }
+}
+
+function onBankAccountsSourceChange() {
+  const source = clean(els.bankAccountsSource?.value);
+  state.bankAccountsSource = BANK_ACCOUNTS_SOURCES[source] ? source : "cgd-extrato";
+  state.bankAccountsRows = [];
+  state.bankAccountsLoaded = false;
+  state.bankAccountsTruncated = false;
+  loadBankAccountsRows({ silent: true }).catch(() => {});
+  renderBankAccounts();
+}
+
+function onBankAccountsFilterChange() {
+  state.bankAccountsFilters = currentBankAccountsFilters();
+  loadBankAccountsRows({ silent: true }).catch(() => {});
+}
+
+function onBankAccountsDescriptionInput() {
+  state.bankAccountsFilters = currentBankAccountsFilters();
+  window.clearTimeout(state.bankAccountsSearchTimer);
+  state.bankAccountsSearchTimer = window.setTimeout(() => {
+    loadBankAccountsRows({ silent: true }).catch(() => {});
+  }, 350);
+}
+
+function onBankAccountsHeaderClick(event) {
+  const button = event.target instanceof HTMLElement ? event.target.closest("[data-bank-accounts-sort-date]") : null;
+  if (!button) return;
+  state.bankAccountsDateSort = state.bankAccountsDateSort === "asc" ? "desc" : "asc";
+  loadBankAccountsRows({ silent: true }).catch(() => {});
+  renderBankAccounts();
+}
+
+function renderBankAccountsCell(row, column) {
+  const value = row?.[column.key];
+  if (column.type === "date") return escape(formatDateOnly(value) || "-");
+  if (column.type === "money") {
+    if (value === null || value === undefined || clean(value) === "") return "-";
+    return escape(formatMoney(Number(value)));
+  }
+  return escape(clean(value) || "-");
+}
+
+function renderBankAccounts() {
+  const config = bankAccountsSourceConfig();
+  const columns = config.columns;
+  if (els.bankAccountsSource) els.bankAccountsSource.value = state.bankAccountsSource;
+  if (els.bankAccountsDateFrom) els.bankAccountsDateFrom.value = clean(state.bankAccountsFilters.dateFrom);
+  if (els.bankAccountsDateTo) els.bankAccountsDateTo.value = clean(state.bankAccountsFilters.dateTo);
+  if (els.bankAccountsDescription) els.bankAccountsDescription.value = clean(state.bankAccountsFilters.description);
+  if (els.bankAccountsRecordsTitle) els.bankAccountsRecordsTitle.textContent = config.label;
+  if (!canAppBankAccounts()) {
+    if (els.bankAccountsCount) els.bankAccountsCount.textContent = "0 rows";
+    if (els.bankAccountsHead) els.bankAccountsHead.innerHTML = `<tr>${columns.map((column) => `<th>${escape(column.label)}</th>`).join("")}</tr>`;
+    if (els.bankAccountsRows) els.bankAccountsRows.innerHTML = `<tr><td colspan="${columns.length}" class="empty">Your profile has no access to Bank Accounts.</td></tr>`;
+    return;
+  }
+  if (els.bankAccountsHead) {
+    els.bankAccountsHead.innerHTML = `<tr>${columns.map((column) => {
+      if (!column.sortable) return `<th>${escape(column.label)}</th>`;
+      const arrow = state.bankAccountsDateSort === "asc" ? "&uarr;" : "&darr;";
+      return `<th><button type="button" class="bank-accounts-sort-button" data-bank-accounts-sort-date>${escape(column.label)} ${arrow}</button></th>`;
+    }).join("")}</tr>`;
+  }
+  const rows = Array.isArray(state.bankAccountsRows) ? state.bankAccountsRows : [];
+  if (els.bankAccountsRows) {
+    els.bankAccountsRows.innerHTML = rows.length
+      ? rows.map((row) => `<tr>${columns.map((column) => `<td class="bank-accounts-${escape(column.key)}">${renderBankAccountsCell(row, column)}</td>`).join("")}</tr>`).join("")
+      : `<tr><td colspan="${columns.length}" class="empty">${state.bankAccountsLoading ? "Loading records..." : "No records found."}</td></tr>`;
+  }
+  if (els.bankAccountsCount) {
+    const suffix = state.bankAccountsTruncated ? " shown - refine filters to see more" : "";
+    els.bankAccountsCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}${suffix}`;
+  }
 }
 
 const FINANCIAL_RECONCILIATION_SOURCES = Object.freeze({
@@ -27822,6 +28031,10 @@ function render() {
   }
   if (state.currentView === "import-data") {
     renderImportData();
+    return;
+  }
+  if (state.currentView === "bank-accounts") {
+    renderBankAccounts();
     return;
   }
   if (state.currentView === "financial-reconciliation") {

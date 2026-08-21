@@ -7398,6 +7398,83 @@ button[id^="close-settings"] {
   font-size: 0.72rem;
 }
 
+.bank-accounts-filters {
+  grid-template-columns: minmax(10rem, 0.8fr) minmax(9rem, 0.7fr) minmax(9rem, 0.7fr) minmax(15rem, 2fr);
+  align-items: end;
+}
+
+.bank-accounts-description-filter {
+  min-width: 0;
+}
+
+.bank-accounts-table-wrap {
+  max-height: calc(100vh - 20rem);
+  min-height: 24rem;
+}
+
+.bank-accounts-table {
+  min-width: 52rem;
+}
+
+.bank-accounts-table th,
+.bank-accounts-table td {
+  font-size: 0.76rem;
+  padding: 0.34rem 0.46rem;
+  vertical-align: top;
+}
+
+.bank-accounts-table th {
+  white-space: nowrap;
+}
+
+.bank-accounts-sort-button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: inherit;
+}
+
+.bank-accounts-sort-button:hover,
+.bank-accounts-sort-button:focus-visible {
+  color: var(--brand);
+  background: transparent;
+}
+
+.bank-accounts-descritivo,
+.bank-accounts-descricao {
+  min-width: 18rem;
+  max-width: 42rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.bank-accounts-montante,
+.bank-accounts-saldo,
+.bank-accounts-debito,
+.bank-accounts-credito,
+.bank-accounts-valor {
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 800px) {
+  .bank-accounts-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bank-accounts-description-filter {
+    grid-column: 1 / -1;
+  }
+
+  .bank-accounts-table-wrap {
+    min-height: 18rem;
+  }
+}
+
 .financial-doc-import-validation--error {
   color: #b42318;
   font-weight: 600;
