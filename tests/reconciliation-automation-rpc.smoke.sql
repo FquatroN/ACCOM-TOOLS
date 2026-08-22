@@ -9766,57 +9766,93 @@ begin
 end
 $$;
 
--- Task 7 assertion guard: malformed or explicitly unclaimed retry responses
--- must enter the failure branch instead of reducing the IF predicate to null.
+-- Task 7 assertion guard: retry and new-child response contracts reject
+-- missing, unclaimed, cross-batch, cross-position, or terminal child metadata.
 do $$
 declare
   v_expected_run_id uuid := '00000000-0000-0000-0000-000000000001';
+  v_expected_batch_id uuid := '00000000-0000-0000-0000-000000000002';
+  v_expected_position integer := 2;
+  v_expected_resumed boolean;
+  v_valid_response jsonb;
   v_response jsonb;
   v_rejected boolean;
 begin
-  foreach v_response in array array[
-    '{}'::jsonb,
-    jsonb_build_object(
-      'claimed', false,
-      'resumed', true,
-      'run', jsonb_build_object('runId', v_expected_run_id)
-    ),
-    jsonb_build_object(
+  foreach v_expected_resumed in array array[true, false] loop
+    v_valid_response := jsonb_build_object(
       'claimed', true,
-      'resumed', false,
-      'run', jsonb_build_object('runId', v_expected_run_id)
-    ),
-    '{"claimed":true,"resumed":true,"run":{}}'::jsonb
-  ] loop
-    v_rejected := false;
-    begin
-      if (v_response->>'claimed')::boolean is distinct from true
-        or (v_response->>'resumed')::boolean is distinct from true
-        or v_response#>>'{run,runId}' is distinct from
-          v_expected_run_id::text then
-        raise check_violation using message =
-          'Task 7 retry response contract rejected malformed fixture.';
-      end if;
-    exception when check_violation then
-      v_rejected := true;
-    end;
+      'resumed', v_expected_resumed,
+      'batchId', v_expected_batch_id,
+      'batchRulePosition', v_expected_position,
+      'run', jsonb_build_object(
+        'runId', v_expected_run_id,
+        'status', 'analyzing',
+        'batchId', v_expected_batch_id,
+        'batchRulePosition', v_expected_position
+      )
+    );
 
-    if v_rejected is distinct from true then
-      raise exception 'Task 7 retry response assertions no longer fail closed: %.',
-        v_response;
+    foreach v_response in array array[
+      '{}'::jsonb,
+      jsonb_set(v_valid_response, '{claimed}', 'false'::jsonb),
+      v_valid_response - 'resumed',
+      v_valid_response - 'batchId',
+      jsonb_set(v_valid_response, '{batchRulePosition}', '99'::jsonb),
+      v_valid_response #- '{run,runId}',
+      jsonb_set(v_valid_response, '{run,status}', '"ready"'::jsonb),
+      jsonb_set(
+        v_valid_response,
+        '{run,batchId}',
+        '"00000000-0000-0000-0000-000000000099"'::jsonb
+      ),
+      jsonb_set(v_valid_response, '{run,batchRulePosition}', '99'::jsonb)
+    ] loop
+      v_rejected := false;
+      begin
+        if (v_response->>'claimed')::boolean is distinct from true
+          or (v_response->>'resumed')::boolean is distinct from
+            v_expected_resumed
+          or v_response->>'batchId' is distinct from
+            v_expected_batch_id::text
+          or (v_response->>'batchRulePosition')::integer is distinct from
+            v_expected_position
+          or v_response#>>'{run,runId}' is distinct from
+            v_expected_run_id::text
+          or v_response#>>'{run,status}' is distinct from 'analyzing'
+          or v_response#>>'{run,batchId}' is distinct from
+            v_expected_batch_id::text
+          or (v_response#>>'{run,batchRulePosition}')::integer is distinct from
+            v_expected_position then
+          raise check_violation using message =
+            'Task 7 child response contract rejected malformed fixture.';
+        end if;
+      exception when check_violation then
+        v_rejected := true;
+      end;
+
+      if v_rejected is distinct from true then
+        raise exception 'Task 7 child response assertions no longer fail closed: %.',
+          v_response;
+      end if;
+    end loop;
+
+    if (v_valid_response->>'claimed')::boolean is distinct from true
+      or (v_valid_response->>'resumed')::boolean is distinct from
+        v_expected_resumed
+      or v_valid_response->>'batchId' is distinct from
+        v_expected_batch_id::text
+      or (v_valid_response->>'batchRulePosition')::integer is distinct from
+        v_expected_position
+      or v_valid_response#>>'{run,runId}' is distinct from
+        v_expected_run_id::text
+      or v_valid_response#>>'{run,status}' is distinct from 'analyzing'
+      or v_valid_response#>>'{run,batchId}' is distinct from
+        v_expected_batch_id::text
+      or (v_valid_response#>>'{run,batchRulePosition}')::integer is distinct from
+        v_expected_position then
+      raise exception 'Task 7 child response assertion guard rejected a valid fixture.';
     end if;
   end loop;
-
-  v_response := jsonb_build_object(
-    'claimed', true,
-    'resumed', true,
-    'run', jsonb_build_object('runId', v_expected_run_id)
-  );
-  if (v_response->>'claimed')::boolean is distinct from true
-    or (v_response->>'resumed')::boolean is distinct from true
-    or v_response#>>'{run,runId}' is distinct from v_expected_run_id::text then
-    raise exception 'Task 7 retry response assertion guard rejected a valid fixture.';
-  end if;
 end
 $$;
 
@@ -9904,7 +9940,13 @@ begin
     );
     if (v_retry->>'claimed')::boolean is distinct from true
       or (v_retry->>'resumed')::boolean is distinct from true
+      or v_retry->>'batchId' is distinct from v_batch_id::text
+      or (v_retry->>'batchRulePosition')::integer is distinct from v_position
       or v_retry#>>'{run,runId}' is distinct from v_run_id::text
+      or v_retry#>>'{run,status}' is distinct from 'analyzing'
+      or v_retry#>>'{run,batchId}' is distinct from v_batch_id::text
+      or (v_retry#>>'{run,batchRulePosition}')::integer is distinct from
+        v_position
       or (select count(*)
           from public.financial_reconciliation_automatic_runs run
           where run.batch_id = v_batch_id) is distinct from v_position then
@@ -10056,7 +10098,12 @@ begin
   );
   if (v_retry->>'claimed')::boolean is distinct from true
     or (v_retry->>'resumed')::boolean is distinct from true
+    or v_retry->>'batchId' is distinct from v_batch_id::text
+    or (v_retry->>'batchRulePosition')::integer is distinct from 1
     or v_retry#>>'{run,runId}' is distinct from v_run_id::text
+    or v_retry#>>'{run,status}' is distinct from 'analyzing'
+    or v_retry#>>'{run,batchId}' is distinct from v_batch_id::text
+    or (v_retry#>>'{run,batchRulePosition}')::integer is distinct from 1
     or (select count(*)
         from public.financial_reconciliation_automatic_runs run
         where run.batch_id = v_batch_id) is distinct from 1 then
@@ -10122,7 +10169,12 @@ begin
   );
   if (v_retry->>'claimed')::boolean is distinct from true
     or (v_retry->>'resumed')::boolean is distinct from true
+    or v_retry->>'batchId' is distinct from v_batch_id::text
+    or (v_retry->>'batchRulePosition')::integer is distinct from 2
     or v_retry#>>'{run,runId}' is distinct from v_monthly_run_id::text
+    or v_retry#>>'{run,status}' is distinct from 'analyzing'
+    or v_retry#>>'{run,batchId}' is distinct from v_batch_id::text
+    or (v_retry#>>'{run,batchRulePosition}')::integer is distinct from 2
     or (select count(*)
         from public.financial_reconciliation_automatic_runs run
         where run.batch_id = v_batch_id) is distinct from v_runs_before
@@ -10156,8 +10208,14 @@ begin
     );
     if (v_cursor_retry->>'claimed')::boolean is distinct from true
       or (v_cursor_retry->>'resumed')::boolean is distinct from true
+      or v_cursor_retry->>'batchId' is distinct from v_batch_id::text
+      or (v_cursor_retry->>'batchRulePosition')::integer is distinct from 2
       or v_cursor_retry#>>'{run,runId}' is distinct from
         v_monthly_run_id::text
+      or v_cursor_retry#>>'{run,status}' is distinct from 'analyzing'
+      or v_cursor_retry#>>'{run,batchId}' is distinct from v_batch_id::text
+      or (v_cursor_retry#>>'{run,batchRulePosition}')::integer is distinct from
+        2
       or v_cursor_retry#>>'{run,analysisCursorDate}' is distinct from
         v_first_month.calendar_month::text
       or v_cursor_retry#>>'{run,analysisCursorId}' is distinct from
@@ -10186,16 +10244,25 @@ begin
         + make_interval(mins => v_position),
       'smoke:task7-five-rule-batch'
     );
-    v_run_id := (v_claim#>>'{run,runId}')::uuid;
-    if (v_claim->>'resumed')::boolean
-      or v_claim->>'batchId' <> v_batch_id::text
-      or (v_claim->>'batchRulePosition')::integer <> v_position
-      or (v_claim->>'batchRuleCount')::integer <> 5
-      or v_claim#>>'{run,batchRuleKey}' <>
+    select run.id into strict v_run_id
+    from public.financial_reconciliation_automatic_runs run
+    where run.batch_id = v_batch_id
+      and run.batch_rule_position = v_position;
+    if (v_claim->>'claimed')::boolean is distinct from true
+      or (v_claim->>'resumed')::boolean is distinct from false
+      or v_claim->>'batchId' is distinct from v_batch_id::text
+      or (v_claim->>'batchRulePosition')::integer is distinct from v_position
+      or (v_claim->>'batchRuleCount')::integer is distinct from 5
+      or v_claim#>>'{run,runId}' is distinct from v_run_id::text
+      or v_claim#>>'{run,status}' is distinct from 'analyzing'
+      or v_claim#>>'{run,batchId}' is distinct from v_batch_id::text
+      or (v_claim#>>'{run,batchRulePosition}')::integer is distinct from
+        v_position
+      or v_claim#>>'{run,batchRuleKey}' is distinct from
         v_expected_rules[v_position]
       or (select count(*)
           from public.financial_reconciliation_automatic_runs run
-          where run.batch_id = v_batch_id) <> v_position then
+          where run.batch_id = v_batch_id) is distinct from v_position then
       raise exception 'Task 7 failed monthly child did not advance to position %: %.',
         v_position, v_claim;
     end if;
