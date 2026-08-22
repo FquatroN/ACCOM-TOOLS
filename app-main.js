@@ -22956,6 +22956,12 @@ function financialReconciliationAutomationRefreshMemberGroup(proposalId, role) {
   }
   if (!restoreFocus) return;
   const nextSummary = details.querySelector(":scope > summary");
+  if (!details.open) {
+    membership.focusTarget = "summary";
+    membership.focusFallback = false;
+    nextSummary?.focus();
+    return;
+  }
   const requestedFocus = clean(membership.focusTarget);
   let nextFocus = nextSummary;
   if (requestedFocus === "load-more") {

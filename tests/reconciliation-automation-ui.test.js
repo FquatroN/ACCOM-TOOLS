@@ -1514,7 +1514,8 @@ function createMonthlyMemberDomFixture(proposal) {
     }
 
     focus() {
-      if (!this.disabled) document.activeElement = this;
+      const hiddenByClosedGroup = this.kind !== "summary" && this.owner?.open === false;
+      if (!this.disabled && !hiddenByClosedGroup) document.activeElement = this;
     }
 
     matches(selector) {
@@ -1615,10 +1616,12 @@ function compileMonthlyMembershipDomRuntime(current, api, fixture) {
      ${appFunctionSource("financialReconciliationAutomationMemberGroupContentsMarkup")}
      ${appFunctionSource("financialReconciliationAutomationRefreshMemberGroup")}
      ${appFunctionSource("loadFinancialReconciliationAutomationMembers").replace(/^function /, "async function ")}
+     ${appFunctionSource("onFinancialReconciliationAutomationMemberGroupToggle")}
      return {
        contents: financialReconciliationAutomationMemberGroupContentsMarkup,
        load: loadFinancialReconciliationAutomationMembers,
        refresh: financialReconciliationAutomationRefreshMemberGroup,
+       toggle: onFinancialReconciliationAutomationMemberGroupToggle,
      };`,
   )(
     () => current,
@@ -1752,6 +1755,86 @@ test("real append and error refresh preserve open member Record ID disclosures w
   assert.match(sourceState.error, /append failed/);
   assert.equal(fixture.destination.innerHTML, untouchedDestinationHtml);
   assert.equal(fixture.destination.setCount, untouchedDestinationSetCount);
+});
+
+function createCollapsedPendingMonthlyMemberScenario() {
+  const proposal = monthlyProposal({ summarySnapshot: { ...monthlyProposal().summarySnapshot, sourceCount: 3 } });
+  const sourceState = { role: "source", members: [monthlyMember("source", 1)], offset: 1, totalCount: 3, loaded: true, loading: false, error: "", open: true };
+  const destinationState = { role: "destination", members: [monthlyMember("destination", 1)], offset: 1, totalCount: 1, loaded: true, loading: false, error: "", open: true };
+  const current = { automation: { run: monthlyRun(proposal), memberships: {
+    [`${proposal.id}:source`]: sourceState,
+    [`${proposal.id}:destination`]: destinationState,
+  } } };
+  const fixture = createMonthlyMemberDomFixture(proposal);
+  let resolvePage;
+  let rejectPage;
+  const runtime = compileMonthlyMembershipDomRuntime(current, () => new Promise((resolve, reject) => {
+    resolvePage = resolve;
+    rejectPage = reject;
+  }), fixture);
+  fixture.source.innerHTML = runtime.contents(proposal.id, "source", proposal.summarySnapshot, sourceState);
+  fixture.destination.innerHTML = runtime.contents(proposal.id, "destination", proposal.summarySnapshot, destinationState);
+  fixture.source.records[0].open = true;
+  const untouchedDestinationHtml = fixture.destination.innerHTML;
+  const untouchedDestinationRecords = fixture.destination.records;
+  const untouchedDestinationSetCount = fixture.destination.setCount;
+
+  fixture.source.loadMore.focus();
+  const pending = runtime.load(proposal.id, "source");
+  assert.equal(fixture.document.activeElement, fixture.source.summary, "pending refresh moves focus from disabled Load more to the summary");
+  fixture.source.open = false;
+  runtime.toggle({ target: fixture.source });
+  assert.equal(sourceState.open, false, "the production toggle handler records the collapse while loading");
+
+  return {
+    current,
+    fixture,
+    pending,
+    proposal,
+    rejectPage,
+    resolvePage,
+    sourceState,
+    untouchedDestinationHtml,
+    untouchedDestinationRecords,
+    untouchedDestinationSetCount,
+  };
+}
+
+test("collapsed member group restores visible summary focus after a pending Load more succeeds", async () => {
+  const scenario = createCollapsedPendingMonthlyMemberScenario();
+  scenario.resolvePage({
+    runId: scenario.current.automation.run.runId,
+    proposalId: scenario.proposal.id,
+    role: "source",
+    offset: 1,
+    limit: 50,
+    totalCount: 3,
+    members: [monthlyMember("source", 2)],
+  });
+  await scenario.pending;
+
+  assert.equal(scenario.fixture.source.open, false);
+  assert.equal(scenario.fixture.document.activeElement, scenario.fixture.source.summary, "a closed group focuses its visible summary, never its hidden Load more");
+  assert.deepEqual(scenario.sourceState.members.map((member) => member.sourceId), ["source-001", "source-002"]);
+  assert.equal(scenario.fixture.source.records.find((record) => record.dataset.recordId === "source-001")?.open, true);
+  assert.equal(scenario.fixture.destination.innerHTML, scenario.untouchedDestinationHtml);
+  assert.equal(scenario.fixture.destination.records, scenario.untouchedDestinationRecords);
+  assert.equal(scenario.fixture.destination.setCount, scenario.untouchedDestinationSetCount);
+});
+
+test("collapsed member group restores visible summary focus after a pending Load more fails", async () => {
+  const scenario = createCollapsedPendingMonthlyMemberScenario();
+  scenario.rejectPage(new Error("append failed while collapsed"));
+  await scenario.pending;
+
+  assert.equal(scenario.fixture.source.open, false);
+  assert.equal(scenario.fixture.document.activeElement, scenario.fixture.source.summary, "an error refresh cannot leave focus in a closed disclosure");
+  assert.deepEqual(scenario.sourceState.members.map((member) => member.sourceId), ["source-001"]);
+  assert.match(scenario.sourceState.error, /append failed while collapsed/);
+  assert.equal(scenario.fixture.source.records.find((record) => record.dataset.recordId === "source-001")?.open, true);
+  assert.equal(scenario.fixture.destination.innerHTML, scenario.untouchedDestinationHtml);
+  assert.equal(scenario.fixture.destination.records, scenario.untouchedDestinationRecords);
+  assert.equal(scenario.fixture.destination.setCount, scenario.untouchedDestinationSetCount);
 });
 
 test("opening each monthly group starts only its own independent 50-row page", async () => {
