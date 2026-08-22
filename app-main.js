@@ -22566,7 +22566,7 @@ function financialReconciliationAutomationMonthlyMemberMarkup(member) {
       <strong class="financial-reconciliation-automation-item-amount">${escape(formatMoney(Number(value.amount || 0)))}</strong>
     </div>
     <p class="financial-reconciliation-automation-member-row-description">${escape(clean(value.description) || "-")}</p>
-    <details class="financial-reconciliation-automation-item-id"><summary>Record ID</summary><code>${escape(sourceId)}</code></details>
+    <details class="financial-reconciliation-automation-item-id" data-financial-reconciliation-automation-member-record-id="${escape(sourceId)}"><summary>Record ID</summary><code>${escape(sourceId)}</code></details>
   </article>`;
 }
 
@@ -22905,6 +22905,8 @@ function financialReconciliationAutomationMembershipState(automation, proposalId
       loading: false,
       error: "",
       open: false,
+      focusTarget: "",
+      focusFallback: false,
     };
   }
   return automation.memberships[key];
@@ -22923,8 +22925,61 @@ function financialReconciliationAutomationRefreshMemberGroup(proposalId, role) {
     .find((entry) => clean(entry.dataset?.proposalId) === id && clean(entry.dataset?.role) === memberRole);
   if (!details) return;
   const membership = financialReconciliationAutomationMembershipState(automation, id, memberRole);
+  const activeElement = typeof document === "object" ? document.activeElement : null;
+  const restoreFocus = Boolean(activeElement && details.contains(activeElement));
+  const currentSummary = details.querySelector(":scope > summary");
+  if (restoreFocus) {
+    if (activeElement.matches?.("[data-financial-reconciliation-automation-member-more]")) {
+      membership.focusTarget = "load-more";
+      membership.focusFallback = false;
+    } else {
+      const recordDetails = activeElement.closest?.("details.financial-reconciliation-automation-item-id");
+      const recordId = recordDetails && details.contains(recordDetails)
+        ? clean(recordDetails.dataset?.financialReconciliationAutomationMemberRecordId)
+        : "";
+      if (recordId) {
+        membership.focusTarget = `record:${recordId}`;
+        membership.focusFallback = false;
+      } else if (activeElement === currentSummary && membership.focusFallback !== true) {
+        membership.focusTarget = "summary";
+      }
+    }
+  }
+  const openRecordIds = new Set(Array.from(details.querySelectorAll("details.financial-reconciliation-automation-item-id[open]"))
+    .map((entry) => clean(entry.dataset?.financialReconciliationAutomationMemberRecordId))
+    .filter(Boolean));
   details.innerHTML = financialReconciliationAutomationMemberGroupContentsMarkup(id, memberRole, proposal.summarySnapshot, membership);
   details.open = membership.open === true;
+  const nextRecordDetails = Array.from(details.querySelectorAll("details.financial-reconciliation-automation-item-id"));
+  for (const entry of nextRecordDetails) {
+    entry.open = openRecordIds.has(clean(entry.dataset?.financialReconciliationAutomationMemberRecordId));
+  }
+  if (!restoreFocus) return;
+  const nextSummary = details.querySelector(":scope > summary");
+  const requestedFocus = clean(membership.focusTarget);
+  let nextFocus = nextSummary;
+  if (requestedFocus === "load-more") {
+    const loadMore = details.querySelector("[data-financial-reconciliation-automation-member-more]");
+    if (loadMore && !loadMore.disabled) {
+      nextFocus = loadMore;
+      membership.focusFallback = false;
+    } else if (loadMore) {
+      membership.focusFallback = true;
+    } else {
+      membership.focusTarget = "summary";
+      membership.focusFallback = false;
+    }
+  } else if (requestedFocus.startsWith("record:")) {
+    const requestedRecordId = requestedFocus.slice("record:".length);
+    const recordDetails = nextRecordDetails.find((entry) => clean(entry.dataset?.financialReconciliationAutomationMemberRecordId) === requestedRecordId);
+    nextFocus = recordDetails?.querySelector(":scope > summary") || nextSummary;
+    if (!recordDetails) membership.focusTarget = "summary";
+    membership.focusFallback = false;
+  } else {
+    membership.focusTarget = "summary";
+    membership.focusFallback = false;
+  }
+  nextFocus?.focus();
 }
 
 async function loadFinancialReconciliationAutomationMembers(proposalId, role) {

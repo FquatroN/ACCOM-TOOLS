@@ -1479,8 +1479,8 @@ test("loaded monthly members stay escaped and expose record IDs only in disclosu
   assert.match(markup, /source &lt;member 1&gt;/);
   assert.match(markup, /Credit &lt;Card&gt;/);
   assert.doesNotMatch(markup, /<member 1>|Credit <Card>/);
-  assert.match(markup, /<details class="financial-reconciliation-automation-item-id"><summary>Record ID<\/summary><code>source-001<\/code><\/details>/);
-  assert.match(markup, /<details class="financial-reconciliation-automation-item-id"><summary>Record ID<\/summary><code>destination-001<\/code><\/details>/);
+  assert.match(markup, /<details class="financial-reconciliation-automation-item-id"[^>]*data-financial-reconciliation-automation-member-record-id="source-001"[^>]*><summary>Record ID<\/summary><code>source-001<\/code><\/details>/);
+  assert.match(markup, /<details class="financial-reconciliation-automation-item-id"[^>]*data-financial-reconciliation-automation-member-record-id="destination-001"[^>]*><summary>Record ID<\/summary><code>destination-001<\/code><\/details>/);
 });
 
 function compileMonthlyMembershipLoader(current, api, refresh = () => {}) {
@@ -1501,6 +1501,258 @@ function compileMonthlyMembershipLoader(current, api, refresh = () => {}) {
     refresh,
   );
 }
+
+function createMonthlyMemberDomFixture(proposal) {
+  const document = { activeElement: null, body: { kind: "body" } };
+
+  class FocusNode {
+    constructor(kind, owner, { disabled = false, record = null } = {}) {
+      this.kind = kind;
+      this.owner = owner;
+      this.disabled = disabled;
+      this.record = record;
+    }
+
+    focus() {
+      if (!this.disabled) document.activeElement = this;
+    }
+
+    matches(selector) {
+      return this.kind === "load-more" && selector.includes("member-more");
+    }
+
+    closest(selector) {
+      return this.record && selector.includes("financial-reconciliation-automation-item-id") ? this.record : null;
+    }
+  }
+
+  class RecordDetails {
+    constructor(owner, sourceId) {
+      this.owner = owner;
+      this.dataset = { financialReconciliationAutomationMemberRecordId: sourceId, recordId: sourceId };
+      this.open = false;
+      this.summary = new FocusNode("record-summary", owner, { record: this });
+    }
+
+    querySelector(selector) {
+      return selector === ":scope > summary" || selector === "summary" ? this.summary : null;
+    }
+  }
+
+  class MemberDetails {
+    constructor(role) {
+      this.dataset = { proposalId: proposal.id, role };
+      this.open = true;
+      this.setCount = 0;
+      this._html = "";
+      this.summary = new FocusNode("summary", this);
+      this.loadMore = null;
+      this.records = [];
+    }
+
+    contains(node) {
+      return node?.owner === this;
+    }
+
+    matches(selector) {
+      return selector === "details[data-financial-reconciliation-automation-members]";
+    }
+
+    querySelector(selector) {
+      if (selector === ":scope > summary") return this.summary;
+      if (selector.includes("member-more")) return this.loadMore;
+      return null;
+    }
+
+    querySelectorAll(selector) {
+      if (selector.includes("financial-reconciliation-automation-item-id")) {
+        return selector.includes("[open]") ? this.records.filter((record) => record.open) : this.records;
+      }
+      return [];
+    }
+
+    get innerHTML() {
+      return this._html;
+    }
+
+    set innerHTML(value) {
+      if (this.contains(document.activeElement)) document.activeElement = document.body;
+      this.setCount += 1;
+      this._html = String(value);
+      this.summary = new FocusNode("summary", this);
+      const buttonTag = this._html.match(/<button[^>]*data-financial-reconciliation-automation-member-more[^>]*>/)?.[0] || "";
+      this.loadMore = buttonTag ? new FocusNode("load-more", this, { disabled: /\sdisabled(?:\s|>)/.test(buttonTag) }) : null;
+      const recordIds = [...this._html.matchAll(/<details class="financial-reconciliation-automation-item-id"[^>]*>[\s\S]*?<code>([^<]+)<\/code><\/details>/g)]
+        .map((match) => match[1]);
+      this.records = recordIds.map((sourceId) => new RecordDetails(this, sourceId));
+    }
+  }
+
+  const source = new MemberDetails("source");
+  const destination = new MemberDetails("destination");
+  const container = {
+    querySelectorAll(selector) {
+      return selector === "details[data-financial-reconciliation-automation-members]" ? [source, destination] : [];
+    },
+  };
+  return { document, els: { financialReconciliationWorkbenchAutomationProposals: container }, source, destination };
+}
+
+function compileMonthlyMembershipDomRuntime(current, api, fixture) {
+  return new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "escape",
+    "formatDateOnly",
+    "formatMoney",
+    "els",
+    "document",
+    `${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
+     ${appFunctionSource("financialReconciliationAutomationMembershipKey")}
+     ${appFunctionSource("financialReconciliationAutomationMembershipState")}
+     ${appFunctionSource("financialReconciliationAutomationMonthlyMemberMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationMemberGroupContentsMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationRefreshMemberGroup")}
+     ${appFunctionSource("loadFinancialReconciliationAutomationMembers").replace(/^function /, "async function ")}
+     return {
+       contents: financialReconciliationAutomationMemberGroupContentsMarkup,
+       load: loadFinancialReconciliationAutomationMembers,
+       refresh: financialReconciliationAutomationRefreshMemberGroup,
+     };`,
+  )(
+    () => current,
+    api,
+    (value) => String(value ?? "").trim(),
+    new Function(`${appFunctionSource("escape")}; return escape;`)(),
+    (value) => String(value || "").slice(0, 10),
+    (value) => `${Number(value).toFixed(2)} €`,
+    fixture.els,
+    fixture.document,
+  );
+}
+
+test("real member refresh keeps meaningful summary focus through opening, loading, and success", async () => {
+  const proposal = monthlyProposal({ summarySnapshot: { ...monthlyProposal().summarySnapshot, sourceCount: 1 } });
+  const current = { automation: { run: monthlyRun(proposal), memberships: {} } };
+  const fixture = createMonthlyMemberDomFixture(proposal);
+  let resolvePage;
+  const runtime = compileMonthlyMembershipDomRuntime(current, () => new Promise((resolve) => { resolvePage = resolve; }), fixture);
+  const membership = new Function(
+    "clean",
+    `${appFunctionSource("financialReconciliationAutomationMembershipKey")}
+     ${appFunctionSource("financialReconciliationAutomationMembershipState")}
+     return financialReconciliationAutomationMembershipState;`,
+  )((value) => String(value ?? "").trim())(current.automation, proposal.id, "source");
+  membership.open = true;
+  fixture.source.innerHTML = runtime.contents(proposal.id, "source", proposal.summarySnapshot, membership);
+  fixture.source.summary.focus();
+  const originalSummary = fixture.source.summary;
+
+  const pending = runtime.load(proposal.id, "source");
+  assert.equal(fixture.document.activeElement.kind, "summary");
+  assert.notEqual(fixture.document.activeElement, originalSummary, "the replacement summary receives focus after the pending refresh");
+  resolvePage({
+    runId: current.automation.run.runId,
+    proposalId: proposal.id,
+    role: "source",
+    offset: 0,
+    limit: 50,
+    totalCount: 1,
+    members: [monthlyMember("source", 1)],
+  });
+  await pending;
+  assert.equal(fixture.document.activeElement, fixture.source.summary);
+  assert.equal(fixture.source.open, true);
+});
+
+test("real Load more refresh restores its focus, falls back on the final page, and never rerenders destination", async () => {
+  const proposal = monthlyProposal({ summarySnapshot: { ...monthlyProposal().summarySnapshot, sourceCount: 73 } });
+  const initialMembers = Array.from({ length: 50 }, (_, index) => monthlyMember("source", index + 1));
+  const sourceState = { role: "source", members: initialMembers, offset: 50, totalCount: 73, loaded: true, loading: false, error: "", open: true };
+  const destinationState = { role: "destination", members: [monthlyMember("destination", 1)], offset: 1, totalCount: 52, loaded: true, loading: false, error: "", open: true };
+  const current = { automation: { run: monthlyRun(proposal), memberships: {
+    [`${proposal.id}:source`]: sourceState,
+    [`${proposal.id}:destination`]: destinationState,
+  } } };
+  const fixture = createMonthlyMemberDomFixture(proposal);
+  const resolvers = [];
+  const runtime = compileMonthlyMembershipDomRuntime(current, () => new Promise((resolve) => { resolvers.push(resolve); }), fixture);
+  fixture.source.innerHTML = runtime.contents(proposal.id, "source", proposal.summarySnapshot, sourceState);
+  fixture.destination.innerHTML = runtime.contents(proposal.id, "destination", proposal.summarySnapshot, destinationState);
+  const untouchedDestinationHtml = fixture.destination.innerHTML;
+  const untouchedDestinationRecords = fixture.destination.records;
+  const untouchedDestinationSetCount = fixture.destination.setCount;
+
+  fixture.source.loadMore.focus();
+  const append = runtime.load(proposal.id, "source");
+  assert.equal(fixture.document.activeElement, fixture.source.summary, "disabled pending Load more uses the group summary as a focus fallback");
+  resolvers.shift()({
+    runId: current.automation.run.runId,
+    proposalId: proposal.id,
+    role: "source",
+    offset: 50,
+    limit: 50,
+    totalCount: 73,
+    members: Array.from({ length: 10 }, (_, index) => monthlyMember("source", index + 51)),
+  });
+  await append;
+  assert.equal(fixture.document.activeElement, fixture.source.loadMore, "Load more regains focus while another page remains");
+
+  const finalPage = runtime.load(proposal.id, "source");
+  resolvers.shift()({
+    runId: current.automation.run.runId,
+    proposalId: proposal.id,
+    role: "source",
+    offset: 60,
+    limit: 50,
+    totalCount: 73,
+    members: Array.from({ length: 13 }, (_, index) => monthlyMember("source", index + 61)),
+  });
+  await finalPage;
+  assert.equal(fixture.source.loadMore, null);
+  assert.equal(fixture.document.activeElement, fixture.source.summary, "the final page moves focus to the remaining group summary");
+  assert.equal(fixture.destination.innerHTML, untouchedDestinationHtml);
+  assert.equal(fixture.destination.records, untouchedDestinationRecords);
+  assert.equal(fixture.destination.setCount, untouchedDestinationSetCount);
+});
+
+test("real append and error refresh preserve open member Record ID disclosures without touching the other role", async () => {
+  const proposal = monthlyProposal({ summarySnapshot: { ...monthlyProposal().summarySnapshot, sourceCount: 3 } });
+  const sourceState = { role: "source", members: [monthlyMember("source", 1)], offset: 1, totalCount: 3, loaded: true, loading: false, error: "", open: true };
+  const destinationState = { role: "destination", members: [monthlyMember("destination", 1)], offset: 1, totalCount: 1, loaded: true, loading: false, error: "", open: true };
+  const current = { automation: { run: monthlyRun(proposal), memberships: {
+    [`${proposal.id}:source`]: sourceState,
+    [`${proposal.id}:destination`]: destinationState,
+  } } };
+  const fixture = createMonthlyMemberDomFixture(proposal);
+  const outcomes = [];
+  const runtime = compileMonthlyMembershipDomRuntime(current, () => outcomes.shift(), fixture);
+  fixture.source.innerHTML = runtime.contents(proposal.id, "source", proposal.summarySnapshot, sourceState);
+  fixture.destination.innerHTML = runtime.contents(proposal.id, "destination", proposal.summarySnapshot, destinationState);
+  fixture.source.records[0].open = true;
+  const untouchedDestinationHtml = fixture.destination.innerHTML;
+  const untouchedDestinationSetCount = fixture.destination.setCount;
+
+  outcomes.push(Promise.resolve({
+    runId: current.automation.run.runId,
+    proposalId: proposal.id,
+    role: "source",
+    offset: 1,
+    limit: 50,
+    totalCount: 3,
+    members: [monthlyMember("source", 2)],
+  }));
+  await runtime.load(proposal.id, "source");
+  assert.equal(fixture.source.records.find((record) => record.dataset.recordId === "source-001")?.open, true);
+
+  outcomes.push(Promise.reject(new Error("append failed")));
+  await runtime.load(proposal.id, "source");
+  assert.equal(fixture.source.records.find((record) => record.dataset.recordId === "source-001")?.open, true);
+  assert.match(sourceState.error, /append failed/);
+  assert.equal(fixture.destination.innerHTML, untouchedDestinationHtml);
+  assert.equal(fixture.destination.setCount, untouchedDestinationSetCount);
+});
 
 test("opening each monthly group starts only its own independent 50-row page", async () => {
   const proposal = monthlyProposal();
