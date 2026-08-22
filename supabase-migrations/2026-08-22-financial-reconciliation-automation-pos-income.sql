@@ -372,6 +372,7 @@ declare
   v_actual_definition text;
   v_expected_type "char";
   v_expected_definition text;
+  v_foreign_key record;
 begin
   select count(*)
   into v_column_count
@@ -466,6 +467,53 @@ begin
     raise exception 'Installed POS income membership columns differ from the required contract.';
   end if;
 
+  select constraint_row.contype,
+         constraint_row.confrelid,
+         constraint_row.confdeltype,
+         constraint_row.confupdtype,
+         constraint_row.confmatchtype,
+         constraint_row.condeferrable,
+         constraint_row.condeferred,
+         constraint_row.convalidated,
+         constraint_row.conkey,
+         constraint_row.confkey
+  into v_foreign_key
+  from pg_constraint constraint_row
+  where constraint_row.conrelid =
+      'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+    and constraint_row.conname =
+      'fr_auto_proposal_memberships_proposal_fkey';
+
+  if not found
+    or v_foreign_key.contype is distinct from 'f'
+    or v_foreign_key.confrelid is distinct from
+      'public.financial_reconciliation_automatic_proposals'::regclass
+    or v_foreign_key.confdeltype is distinct from 'c'
+    or v_foreign_key.confupdtype is distinct from 'a'
+    or v_foreign_key.confmatchtype is distinct from 's'
+    or v_foreign_key.condeferrable is distinct from false
+    or v_foreign_key.condeferred is distinct from false
+    or v_foreign_key.convalidated is distinct from true
+    or v_foreign_key.conkey is distinct from array[
+      (select attribute_row.attnum
+       from pg_attribute attribute_row
+       where attribute_row.attrelid =
+           'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+         and attribute_row.attname = 'proposal_id'
+         and not attribute_row.attisdropped)
+    ]::smallint[]
+    or v_foreign_key.confkey is distinct from array[
+      (select attribute_row.attnum
+       from pg_attribute attribute_row
+       where attribute_row.attrelid =
+           'public.financial_reconciliation_automatic_proposals'::regclass
+         and attribute_row.attname = 'id'
+         and not attribute_row.attisdropped)
+    ]::smallint[] then
+    raise exception 'Installed POS income membership constraint % differs from the required definition.',
+      'fr_auto_proposal_memberships_proposal_fkey';
+  end if;
+
   create temporary table pos_income_memberships_expected (
     proposal_id uuid not null,
     role text not null,
@@ -478,10 +526,6 @@ begin
     account text not null default '',
     row_snapshot jsonb not null,
     created_at timestamptz not null default now(),
-    constraint pos_income_memberships_expected_proposal_fkey
-      foreign key (proposal_id)
-      references public.financial_reconciliation_automatic_proposals(id)
-      on delete cascade,
     constraint pos_income_memberships_expected_role_check
       check (role in ('source','destination')),
     constraint pos_income_memberships_expected_source_type_check
@@ -500,8 +544,6 @@ begin
 
   for v_constraint in
     select * from (values
-      ('fr_auto_proposal_memberships_proposal_fkey',
-       'pos_income_memberships_expected_proposal_fkey'),
       ('fr_auto_proposal_memberships_role_check',
        'pos_income_memberships_expected_role_check'),
       ('fr_auto_proposal_memberships_source_type_check',

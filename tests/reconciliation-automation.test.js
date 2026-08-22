@@ -93,6 +93,12 @@ const MEMBERS_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-a
 const CRON_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation-cron.js");
 const VERCEL_CONFIG_PATH = path.join(__dirname, "..", "vercel.json");
 const README_PATH = path.join(__dirname, "..", "README.md");
+const POS_INCOME_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-22-financial-reconciliation-automation-pos-income.sql",
+);
 const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
 const PROPOSAL_ID_2 = "00000000-0000-0000-0000-000000000004";
 const PROPOSAL_ID_3 = "00000000-0000-0000-0000-000000000005";
@@ -3823,6 +3829,36 @@ test("automation schema migration pins the managed catalog and execution provena
   assert.match(schemaMigration, /unique \(priority\) deferrable initially deferred/);
   assert.match(schemaMigration, /status in \('proposed','ambiguous','skipped','deselected','executing','completed','stale','failed'\)/);
   assert.match(schemaMigration, /financial_reconciliation_automatic_proposals_status_check[\s\S]*skipped/);
+});
+
+test("POS income migration never gives a temporary table a foreign key to a permanent table", () => {
+  const migration = fs.readFileSync(POS_INCOME_MIGRATION_PATH, "utf8");
+  const temporaryTableNames = new Set(
+    [...migration.matchAll(/create\s+temporary\s+table\s+([a-z0-9_]+)/gi)]
+      .map((match) => match[1].toLowerCase()),
+  );
+  const temporaryTableBlocks = [
+    ...migration.matchAll(
+      /create\s+temporary\s+table\s+([a-z0-9_]+)\s*\(([\s\S]*?)\)\s+on\s+commit\s+drop\s*;/gi,
+    ),
+  ];
+
+  assert.ok(temporaryTableBlocks.length > 0, "migration must retain its temporary schema checks");
+  for (const [, temporaryTableName, body] of temporaryTableBlocks) {
+    for (const reference of body.matchAll(/references\s+((?:[a-z0-9_]+\.)?[a-z0-9_]+)/gi)) {
+      const referencedTableName = reference[1].split(".").at(-1).toLowerCase();
+      assert.equal(
+        temporaryTableNames.has(referencedTableName),
+        true,
+        `temporary table ${temporaryTableName} illegally references permanent table ${reference[1]}`,
+      );
+    }
+  }
+
+  assert.match(migration, /fr_auto_proposal_memberships_proposal_fkey[\s\S]*confrelid/);
+  assert.match(migration, /confdeltype\s+is\s+distinct\s+from\s+'c'/);
+  assert.match(migration, /conkey\s+is\s+distinct\s+from/);
+  assert.match(migration, /confkey\s+is\s+distinct\s+from/);
 });
 
 test("automation analysis migration fixes deterministic matching, ambiguity, and RPC security contracts", () => {
