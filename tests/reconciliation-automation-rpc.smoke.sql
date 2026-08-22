@@ -9766,6 +9766,60 @@ begin
 end
 $$;
 
+-- Task 7 assertion guard: malformed or explicitly unclaimed retry responses
+-- must enter the failure branch instead of reducing the IF predicate to null.
+do $$
+declare
+  v_expected_run_id uuid := '00000000-0000-0000-0000-000000000001';
+  v_response jsonb;
+  v_rejected boolean;
+begin
+  foreach v_response in array array[
+    '{}'::jsonb,
+    jsonb_build_object(
+      'claimed', false,
+      'resumed', true,
+      'run', jsonb_build_object('runId', v_expected_run_id)
+    ),
+    jsonb_build_object(
+      'claimed', true,
+      'resumed', false,
+      'run', jsonb_build_object('runId', v_expected_run_id)
+    ),
+    '{"claimed":true,"resumed":true,"run":{}}'::jsonb
+  ] loop
+    v_rejected := false;
+    begin
+      if (v_response->>'claimed')::boolean is distinct from true
+        or (v_response->>'resumed')::boolean is distinct from true
+        or v_response#>>'{run,runId}' is distinct from
+          v_expected_run_id::text then
+        raise check_violation using message =
+          'Task 7 retry response contract rejected malformed fixture.';
+      end if;
+    exception when check_violation then
+      v_rejected := true;
+    end;
+
+    if v_rejected is distinct from true then
+      raise exception 'Task 7 retry response assertions no longer fail closed: %.',
+        v_response;
+    end if;
+  end loop;
+
+  v_response := jsonb_build_object(
+    'claimed', true,
+    'resumed', true,
+    'run', jsonb_build_object('runId', v_expected_run_id)
+  );
+  if (v_response->>'claimed')::boolean is distinct from true
+    or (v_response->>'resumed')::boolean is distinct from true
+    or v_response#>>'{run,runId}' is distinct from v_expected_run_id::text then
+    raise exception 'Task 7 retry response assertion guard rejected a valid fixture.';
+  end if;
+end
+$$;
+
 -- Task 7: the installed fifth rule stays out of unchanged four-rule batches
 -- until an administrator explicitly enables scheduled execution.
 do $$
@@ -9848,11 +9902,12 @@ begin
         + make_interval(mins => v_position),
       'smoke:task7-four-rule-batch'
     );
-    if not (v_retry->>'resumed')::boolean
-      or v_retry#>>'{run,runId}' <> v_run_id::text
+    if (v_retry->>'claimed')::boolean is distinct from true
+      or (v_retry->>'resumed')::boolean is distinct from true
+      or v_retry#>>'{run,runId}' is distinct from v_run_id::text
       or (select count(*)
           from public.financial_reconciliation_automatic_runs run
-          where run.batch_id = v_batch_id) <> v_position then
+          where run.batch_id = v_batch_id) is distinct from v_position then
       raise exception 'Task 7 four-rule retry duplicated child position %.',
         v_position;
     end if;
@@ -9869,8 +9924,9 @@ begin
   v_complete := public.claim_financial_reconciliation_automatic_schedule(
     '2095-01-01 02:00:00+00', 'smoke:task7-four-rule-batch'
   );
-  if v_complete->>'reason' <> 'batch_complete'
-    or v_complete->>'batchId' <> v_batch_id::text
+  if (v_complete->>'claimed')::boolean is distinct from false
+    or v_complete->>'reason' is distinct from 'batch_complete'
+    or v_complete->>'batchId' is distinct from v_batch_id::text
     or not exists (
       select 1
       from public.financial_reconciliation_automatic_batches batch
@@ -9880,10 +9936,10 @@ begin
     )
     or (select count(*)
         from public.financial_reconciliation_automatic_runs run
-        where run.batch_id = v_batch_id) <> 4
+        where run.batch_id = v_batch_id) is distinct from 4
     or (select count(distinct run.batch_rule_position)
         from public.financial_reconciliation_automatic_runs run
-        where run.batch_id = v_batch_id) <> 4 then
+        where run.batch_id = v_batch_id) is distinct from 4 then
     raise exception 'Task 7 disabled monthly rule no longer preserves the four-rule batch lifecycle.';
   end if;
 end
@@ -9998,11 +10054,12 @@ begin
   v_retry := public.claim_financial_reconciliation_automatic_schedule(
     '2095-01-02 01:01:00+00', 'smoke:task7-five-rule-batch'
   );
-  if not (v_retry->>'resumed')::boolean
-    or v_retry#>>'{run,runId}' <> v_run_id::text
+  if (v_retry->>'claimed')::boolean is distinct from true
+    or (v_retry->>'resumed')::boolean is distinct from true
+    or v_retry#>>'{run,runId}' is distinct from v_run_id::text
     or (select count(*)
         from public.financial_reconciliation_automatic_runs run
-        where run.batch_id = v_batch_id) <> 1 then
+        where run.batch_id = v_batch_id) is distinct from 1 then
     raise exception 'Task 7 retry duplicated the first five-rule child.';
   end if;
 
@@ -10063,17 +10120,19 @@ begin
   v_retry := public.claim_financial_reconciliation_automatic_schedule(
     '2095-01-03 00:31:00+00', 'smoke:task7-five-rule-batch'
   );
-  if not (v_retry->>'resumed')::boolean
-    or v_retry#>>'{run,runId}' <> v_monthly_run_id::text
+  if (v_retry->>'claimed')::boolean is distinct from true
+    or (v_retry->>'resumed')::boolean is distinct from true
+    or v_retry#>>'{run,runId}' is distinct from v_monthly_run_id::text
     or (select count(*)
         from public.financial_reconciliation_automatic_runs run
-        where run.batch_id = v_batch_id) <> v_runs_before
+        where run.batch_id = v_batch_id) is distinct from v_runs_before
     or (select count(*)
         from public.financial_reconciliation_automatic_proposals proposal
-        where proposal.run_id = v_monthly_run_id) <> v_proposals_before
+        where proposal.run_id = v_monthly_run_id) is distinct from
+      v_proposals_before
     or (select count(*)
         from public.financial_reconciliations reconciliation
-        where reconciliation.automatic_run_id = v_monthly_run_id) <>
+        where reconciliation.automatic_run_id = v_monthly_run_id) is distinct from
       v_reconciliations_before then
     raise exception 'Task 7 monthly retry duplicated batch, proposal, or reconciliation work.';
   end if;
@@ -10095,16 +10154,18 @@ begin
     v_cursor_retry := public.claim_financial_reconciliation_automatic_schedule(
       '2095-01-03 00:32:00+00', 'smoke:task7-five-rule-batch'
     );
-    if not (v_cursor_retry->>'resumed')::boolean
-      or v_cursor_retry#>>'{run,runId}' <> v_monthly_run_id::text
-      or v_cursor_retry#>>'{run,analysisCursorDate}' <>
+    if (v_cursor_retry->>'claimed')::boolean is distinct from true
+      or (v_cursor_retry->>'resumed')::boolean is distinct from true
+      or v_cursor_retry#>>'{run,runId}' is distinct from
+        v_monthly_run_id::text
+      or v_cursor_retry#>>'{run,analysisCursorDate}' is distinct from
         v_first_month.calendar_month::text
-      or v_cursor_retry#>>'{run,analysisCursorId}' <>
+      or v_cursor_retry#>>'{run,analysisCursorId}' is distinct from
         v_first_month.technical_base_source_id::text
-      or v_cursor_retry#>>'{run,analysisProcessed}' <> '1'
+      or v_cursor_retry#>>'{run,analysisProcessed}' is distinct from '1'
       or (select count(*)
           from public.financial_reconciliation_automatic_runs run
-          where run.batch_id = v_batch_id) <> 2 then
+          where run.batch_id = v_batch_id) is distinct from 2 then
       raise exception 'Task 7 monthly retry did not preserve the stable month cursor.';
     end if;
   end if;
@@ -10151,17 +10212,18 @@ begin
     '2095-01-03 01:00:00+00', 'smoke:task7-five-rule-batch'
   );
   v_settings := public.get_financial_reconciliation_automation_settings();
-  if v_complete->>'reason' <> 'batch_complete'
-    or v_complete->>'batchId' <> v_batch_id::text
+  if (v_complete->>'claimed')::boolean is distinct from false
+    or v_complete->>'reason' is distinct from 'batch_complete'
+    or v_complete->>'batchId' is distinct from v_batch_id::text
     or (select count(*)
         from public.financial_reconciliation_automatic_runs run
-        where run.batch_id = v_batch_id) <> 5
+        where run.batch_id = v_batch_id) is distinct from 5
     or (select count(distinct run.batch_rule_position)
         from public.financial_reconciliation_automatic_runs run
-        where run.batch_id = v_batch_id) <> 5
+        where run.batch_id = v_batch_id) is distinct from 5
     or (select count(distinct run.batch_rule_key)
         from public.financial_reconciliation_automatic_runs run
-        where run.batch_id = v_batch_id) <> 5
+        where run.batch_id = v_batch_id) is distinct from 5
     or not exists (
       select 1
       from public.financial_reconciliation_automatic_batches batch
@@ -10170,8 +10232,8 @@ begin
         and batch.rule_snapshot = v_snapshot
         and batch.counts @> '{"ruleCount":5,"childCount":5,"completedChildren":4,"failedChildren":1}'::jsonb
     )
-    or v_settings#>>'{last_scheduled_batch,id}' <> v_batch_id::text
-    or v_settings#>>'{last_scheduled_batch,status}' <> 'partial'
+    or v_settings#>>'{last_scheduled_batch,id}' is distinct from v_batch_id::text
+    or v_settings#>>'{last_scheduled_batch,status}' is distinct from 'partial'
     or v_settings::text like '%secret task7 monthly%' then
     raise exception 'Task 7 five-rule parent did not finish as a sanitized partial batch.';
   end if;
