@@ -8,6 +8,14 @@
 
 **Tech Stack:** PostgreSQL/Supabase migrations and RPCs, Vercel Node functions, browser JavaScript, HTML/CSS, Node's built-in test runner, transactional PostgreSQL smoke tests, authenticated browser verification, Git.
 
+> **Approved correction (2026-08-23):** The current managed contract is version
+> `2`. Its FDM destination predicate is `account = 'Credit Card' AND category IS
+> DISTINCT FROM 'TransferOutToAccount'`, so an exact `TransferOutToAccount` is
+> excluded and a `NULL` category remains eligible. Version `1` snapshots and
+> completed history remain immutable/readable. This correction supersedes the
+> version-1 destination-predicate references in the original execution steps
+> below.
+
 **Spec:** `docs/superpowers/specs/2026-08-22-card-payments-pos-income-automatic-reconciliation-design.md`
 
 ## Global Constraints

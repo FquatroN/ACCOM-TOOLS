@@ -22351,7 +22351,7 @@ function financialReconciliationAutomationProgressLabel(run) {
   const total = Math.max(processed, Number(run?.analysisTotal) || 0);
   const monthly = (Array.isArray(run?.definitions) ? run.definitions : []).some((definition) => (
     String(definition?.ruleKey ?? "").trim() === "cgd_bank_statement_fdm_credit_card_monthly_income"
-    && Number(definition?.ruleVersion) === 1
+    && [1, 2].includes(Number(definition?.ruleVersion))
   ));
   return `Analyzing ${processed} of ${total} ${monthly ? "months" : "records"}...`;
 }
@@ -22695,7 +22695,7 @@ function financialReconciliationAutomationVisibleProposals(run) {
       || (
         status === "ambiguous"
         && clean(proposal?.ruleKey) === "cgd_bank_statement_fdm_credit_card_monthly_income"
-        && Number(proposal?.ruleVersion) === 1
+        && [1, 2].includes(Number(proposal?.ruleVersion))
         && clean(proposal?.reason) === "monthly_difference_exceeded"
       );
   });

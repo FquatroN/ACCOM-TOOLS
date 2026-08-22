@@ -7229,6 +7229,7 @@ declare
     'matchingMode', 'monthly_aggregate',
     'sourceDescriptionPattern', '%POS VENDAS%',
     'destinationAccount', 'Credit Card',
+    'destinationExcludedCategory', 'TransferOutToAccount',
     'calendarGrouping', 'closed_month',
     'fixedMaxDifferenceDays', 31,
     'eligibilityFloor', '2026-01-01',
@@ -7238,18 +7239,18 @@ begin
   if (select count(*)
       from public.financial_reconciliation_automatic_rule_definitions
       where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-        and version = 1) <> 1
+        and version = 2) <> 1
     or not exists (
       select 1
       from public.financial_reconciliation_automatic_rule_definitions definition
       where definition.rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-        and definition.version = 1
+        and definition.version = 2
         and definition.display_name = 'Card Payments - POS - Income'
         and definition.base_source_type = 'import_cgd_extrato_ordem'
         and definition.destination_source_types = '["import_fdm_accounts"]'::jsonb
         and definition.definition = v_definition
     ) then
-    raise exception 'POS income immutable definition differs from the approved v1 literal.';
+    raise exception 'POS income immutable definition differs from the approved v2 literal.';
   end if;
 
   if not exists (
@@ -7257,7 +7258,7 @@ begin
     from public.financial_reconciliation_automatic_rule_configs config
     cross join pos_income_expected_priority expected
     where config.rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-      and config.rule_version = 1
+      and config.rule_version = 2
       and not config.enabled
       and not config.allow_manual_execution
       and not config.include_in_scheduled_batch
@@ -7345,7 +7346,7 @@ begin
     ) values (
       '82000000-0000-0000-0000-000000000003',
       '82000000-0000-0000-0000-000000000001',
-      'cgd_bank_statement_fdm_credit_card_monthly_income', 1,
+      'cgd_bank_statement_fdm_credit_card_monthly_income', 2,
       'import_cgd_extrato_ordem',
       '82000000-0000-0000-0000-000000000004', date '2026-01-01',
       '{}'::jsonb, 7500.00, 'smoke:pos-income:2026-01',
@@ -7618,7 +7619,7 @@ begin
   foreach v_index_name in array array[
     'financial_reconciliation_automatic_memberships_role_ordinal_idx',
     'import_cgd_extrato_ordem_pos_income_lock_idx',
-    'import_fdm_accounts_credit_card_lock_idx'
+    'import_fdm_accounts_credit_card_eligible_v2_lock_idx'
   ] loop
     if to_regclass('public.' || v_index_name) is null then
       raise exception 'POS income required index is missing: %.', v_index_name;
@@ -7692,7 +7693,7 @@ as $$
       where index_row.indexrelid in (
         'public.financial_reconciliation_automatic_memberships_role_ordinal_idx'::regclass,
         'public.import_cgd_extrato_ordem_pos_income_lock_idx'::regclass,
-        'public.import_fdm_accounts_credit_card_lock_idx'::regclass
+        'public.import_fdm_accounts_credit_card_eligible_v2_lock_idx'::regclass
       )
     ),
     'functions', (
@@ -7770,7 +7771,7 @@ begin
     select 1
     from public.financial_reconciliation_automatic_rule_configs config
     where config.rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-      and config.rule_version = 1
+      and config.rule_version = 2
       and config.enabled
       and config.allow_manual_execution
       and config.include_in_scheduled_batch
@@ -7875,7 +7876,7 @@ insert into public.import_fdm_accounts (
    'Credit Card', '2026-05-15', date '2026-05-15', 'POS income',
    10.00, 'destination-only'),
   ('84000000-0000-0000-0000-000000000060', 'smoke-pos-income-analysis',
-   'Credit Card', '2026-06-05', date '2026-06-05', 'POS income',
+   'Credit Card', '2026-06-05', date '2026-06-05', null,
    75.00, 'June eligible'),
   ('84000000-0000-0000-0000-000000000061', 'smoke-pos-income-analysis',
    'credit card', '2026-06-06', date '2026-06-06', 'POS income',
@@ -7886,6 +7887,9 @@ insert into public.import_fdm_accounts (
   ('84000000-0000-0000-0000-000000000063', 'smoke-pos-income-analysis',
    'Credit Card', '2026-06-08', date '2026-06-08', 'POS income',
    null, 'null amount'),
+  ('84000000-0000-0000-0000-000000000064', 'smoke-pos-income-analysis',
+   'Credit Card', '2026-06-09', date '2026-06-09', 'TransferOutToAccount',
+   999.00, 'excluded transfer-out category'),
   ('84000000-0000-0000-0000-000000000090', 'smoke-pos-income-analysis',
    'Credit Card', current_date::text,
    date_trunc('month', current_date)::date + 1, 'POS income',
@@ -7953,13 +7957,14 @@ declare
   v_signature text;
 begin
   v_contract := public.financial_reconciliation_automatic_rule_contract(
-    'cgd_bank_statement_fdm_credit_card_monthly_income', 1
+    'cgd_bank_statement_fdm_credit_card_monthly_income', 2
   );
   if v_contract is distinct from jsonb_build_object(
       'destinationSourceType', 'import_fdm_accounts',
       'matchingMode', 'monthly_aggregate',
       'sourceDescriptionPattern', '%POS VENDAS%',
       'destinationAccount', 'Credit Card',
+      'destinationExcludedCategory', 'TransferOutToAccount',
       'calendarGrouping', 'closed_month',
       'eligibilityFloor', '2026-01-01',
       'fixedMaxDifferenceDays', 31,
@@ -7983,7 +7988,7 @@ begin
     or v_june.destination_count <> 1
     or v_june.destination_total <> 75.00
     or v_june.calculated_difference <> 0.00 then
-    raise exception 'POS income null amounts changed June counts or totals: %',
+    raise exception 'POS income category exclusion or null eligibility changed June counts or totals: %',
       to_jsonb(v_june);
   end if;
 
@@ -8133,7 +8138,7 @@ set search_path = public, pg_temp
 as $$
 begin
   if new.rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-    and new.rule_version = 1
+    and new.rule_version = 2
     and new.grouping_key = '2026-06'
     and exists (
       select 1
@@ -9062,11 +9067,11 @@ begin
   select definition into strict v_definition
   from public.financial_reconciliation_automatic_rule_definitions
   where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-    and version = 1;
+    and version = 2;
   update public.financial_reconciliation_automatic_rule_definitions
   set definition = definition || '{"executionDrift":true}'::jsonb
   where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-    and version = 1;
+    and version = 2;
   perform pg_temp.pos_income_task4_assert_stale(
     '86100000-0000-0000-0000-000000000013',
     'rule_snapshot_changed'
@@ -9074,7 +9079,7 @@ begin
   update public.financial_reconciliation_automatic_rule_definitions
   set definition = v_definition
   where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-    and version = 1;
+    and version = 2;
 
   update public.financial_reconciliation_automatic_rule_configs
   set enabled = false
@@ -9438,7 +9443,7 @@ begin
           and reconciliation.automatic_trigger = 'manual'
           and reconciliation.automatic_rule_key =
             'cgd_bank_statement_fdm_credit_card_monthly_income'
-          and reconciliation.automatic_rule_version = 1
+          and reconciliation.automatic_rule_version = 2
           and reconciliation.automatic_run_id = v_case.run_id
           and reconciliation.automatic_proposal_id = v_case.proposal_id
           and reconciliation.matching_source_rules @> jsonb_build_array(
@@ -10073,7 +10078,7 @@ declare
     {"rule_key":"financial_documents_cgd_credit_card","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.20","max_difference_days":11,"priority":2},
     {"rule_key":"financial_documents_cgd_bank_statement_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":1,"priority":3},
     {"rule_key":"financial_documents_cgd_credit_card_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":1,"priority":4},
-    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":1,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"7500.00","max_difference_days":31,"priority":5}
+    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":2,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"7500.00","max_difference_days":31,"priority":5}
   ]'::jsonb;
   v_expected_rules text[] := array[
     'financial_documents_cgd_bank_statement',
@@ -10100,7 +10105,7 @@ begin
       from public.financial_reconciliation_automatic_rule_configs config
       where config.rule_key =
           'cgd_bank_statement_fdm_credit_card_monthly_income'
-        and config.rule_version = 1
+        and config.rule_version = 2
         and not config.enabled
         and not config.allow_manual_execution
         and not config.include_in_scheduled_batch
@@ -10201,7 +10206,7 @@ do $$
 declare
   v_rules jsonb := '[
     {"rule_key":"financial_documents_cgd_credit_card_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":1,"priority":1},
-    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":1,"enabled":true,"allow_manual_execution":false,"include_in_scheduled_batch":true,"difference_allowed":"7500.00","max_difference_days":31,"priority":2},
+    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":2,"enabled":true,"allow_manual_execution":false,"include_in_scheduled_batch":true,"difference_allowed":"7500.00","max_difference_days":31,"priority":2},
     {"rule_key":"financial_documents_cgd_bank_statement_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":1,"priority":3},
     {"rule_key":"financial_documents_cgd_credit_card","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.20","max_difference_days":11,"priority":4},
     {"rule_key":"financial_documents_cgd_bank_statement","rule_version":2,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.10","max_difference_days":10,"priority":5}
@@ -10211,7 +10216,7 @@ declare
     {"rule_key":"financial_documents_cgd_credit_card","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.30","max_difference_days":12,"priority":2},
     {"rule_key":"financial_documents_cgd_bank_statement_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":3,"priority":3},
     {"rule_key":"financial_documents_cgd_credit_card_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":2,"priority":4},
-    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":1,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"7000.00","max_difference_days":31,"priority":5}
+    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":2,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"7000.00","max_difference_days":31,"priority":5}
   ]'::jsonb;
   v_expected_rules text[] := array[
     'financial_documents_cgd_credit_card_amount_only',
@@ -10262,7 +10267,7 @@ begin
       from jsonb_array_elements(v_settings->'rules') rule(value)
       where rule.value->>'ruleKey' =
           'cgd_bank_statement_fdm_credit_card_monthly_income'
-        and rule.value->>'ruleVersion' = '1'
+        and rule.value->>'ruleVersion' = '2'
         and rule.value->>'includeInScheduledBatch' = 'true'
         and rule.value->>'priority' = '2'
         and rule.value->>'maxDifferenceDays' = '31'
@@ -10286,7 +10291,7 @@ begin
     or jsonb_array_length(v_snapshot) <> 5
     or v_snapshot#>>'{0,ruleKey}' <> v_expected_rules[1]
     or v_snapshot#>>'{1,ruleKey}' <> v_expected_rules[2]
-    or v_snapshot#>>'{1,ruleVersion}' <> '1'
+    or v_snapshot#>>'{1,ruleVersion}' <> '2'
     or v_snapshot#>>'{1,displayName}' <> 'Card Payments - POS - Income'
     or v_snapshot#>>'{1,priority}' <> '2'
     or v_snapshot#>>'{1,differenceAllowed}' <> '7500.00'

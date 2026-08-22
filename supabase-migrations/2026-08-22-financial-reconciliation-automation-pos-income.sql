@@ -7,19 +7,20 @@ declare
     'matchingMode', 'monthly_aggregate',
     'sourceDescriptionPattern', '%POS VENDAS%',
     'destinationAccount', 'Credit Card',
+    'destinationExcludedCategory', 'TransferOutToAccount',
     'calendarGrouping', 'closed_month',
     'fixedMaxDifferenceDays', 31,
     'eligibilityFloor', '2026-01-01',
     'requiresNonNullAmount', true
   );
-  v_logic text := 'Every unlocked CGD Bank Statement POS VENDAS record is reconciled against every unlocked FDM Credit Card record in the same closed calendar month; the difference is Bank Statement total minus FDM Accounts total.';
+  v_logic text := 'Every unlocked CGD Bank Statement POS VENDAS record is reconciled against every unlocked FDM Credit Card record in the same closed calendar month, except FDM records categorized as TransferOutToAccount; the difference is Bank Statement total minus FDM Accounts total.';
 begin
   insert into public.financial_reconciliation_automatic_rule_definitions (
     rule_key, version, display_name, base_source_type,
     destination_source_types, logic_description, definition
   ) values (
     'cgd_bank_statement_fdm_credit_card_monthly_income',
-    1,
+    2,
     'Card Payments - POS - Income',
     'import_cgd_extrato_ordem',
     '["import_fdm_accounts"]'::jsonb,
@@ -32,13 +33,13 @@ begin
       from public.financial_reconciliation_automatic_rule_definitions definition
       where definition.rule_key =
           'cgd_bank_statement_fdm_credit_card_monthly_income'
-        and definition.version = 1) <> 1
+        and definition.version = 2) <> 1
     or not exists (
       select 1
       from public.financial_reconciliation_automatic_rule_definitions definition
       where definition.rule_key =
           'cgd_bank_statement_fdm_credit_card_monthly_income'
-        and definition.version = 1
+        and definition.version = 2
         and definition.display_name = 'Card Payments - POS - Income'
         and definition.base_source_type = 'import_cgd_extrato_ordem'
         and definition.destination_source_types =
@@ -46,7 +47,7 @@ begin
         and definition.logic_description = v_logic
         and definition.definition = v_definition
     ) then
-    raise exception 'Installed POS income automatic reconciliation definition differs from the approved immutable v1 definition.';
+    raise exception 'Installed POS income automatic reconciliation definition differs from the approved immutable v2 definition.';
   end if;
 end
 $migration$;
@@ -74,19 +75,25 @@ begin
       max_difference_days, priority
     ) values (
       'cgd_bank_statement_fdm_credit_card_monthly_income',
-      1, false, false, false, 7500.00, 31, v_next_priority
+      2, false, false, false, 7500.00, 31, v_next_priority
     );
   end if;
+
+  update public.financial_reconciliation_automatic_rule_configs config
+  set rule_version = 2
+  where config.rule_key =
+      'cgd_bank_statement_fdm_credit_card_monthly_income'
+    and config.rule_version = 1;
 
   if not exists (
     select 1
     from public.financial_reconciliation_automatic_rule_configs config
     where config.rule_key =
         'cgd_bank_statement_fdm_credit_card_monthly_income'
-      and config.rule_version = 1
+      and config.rule_version = 2
       and config.max_difference_days = 31
   ) then
-    raise exception 'Installed POS income configuration requires rule version 1 and fixed 31-day display property.';
+    raise exception 'Installed POS income configuration requires rule version 2 and fixed 31-day display property.';
   end if;
 end
 $migration$;
@@ -595,9 +602,10 @@ create index if not exists import_cgd_extrato_ordem_pos_income_lock_idx
   on public.import_cgd_extrato_ordem (data, id)
   where descritivo ilike '%POS VENDAS%';
 
-create index if not exists import_fdm_accounts_credit_card_lock_idx
+create index if not exists import_fdm_accounts_credit_card_eligible_v2_lock_idx
   on public.import_fdm_accounts (event_date, id)
-  where account = 'Credit Card';
+  where account = 'Credit Card'
+    and category is distinct from 'TransferOutToAccount';
 
 do $migration$
 declare
@@ -625,11 +633,13 @@ begin
   create temporary table pos_income_fdm_index_expected (
     event_date date,
     id uuid,
-    account text
+    account text,
+    category text
   ) on commit drop;
   create index pos_income_fdm_index_expected_idx
     on pos_income_fdm_index_expected (event_date, id)
-    where account = 'Credit Card';
+    where account = 'Credit Card'
+      and category is distinct from 'TransferOutToAccount';
 
   for v_index in
     select * from (values
@@ -639,7 +649,7 @@ begin
       ('import_cgd_extrato_ordem_pos_income_lock_idx',
        'public.import_cgd_extrato_ordem',
        'pos_income_bank_index_expected_idx'),
-      ('import_fdm_accounts_credit_card_lock_idx',
+      ('import_fdm_accounts_credit_card_eligible_v2_lock_idx',
        'public.import_fdm_accounts',
        'pos_income_fdm_index_expected_idx')
     ) expected(index_name, table_name, expected_index_name)
@@ -931,12 +941,13 @@ as $$
       jsonb_build_object('payment','Visa','destinationSourceType','import_cgd_cartao_credito',
         'matchingMode','amount_only_one_to_one','maxDestinationRecords',1,'maxCandidates',12,
         'fixedDifferenceAllowed',0)
-    when p_rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income' and p_rule_version = 1 then
+    when p_rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income' and p_rule_version = 2 then
       jsonb_build_object(
         'destinationSourceType','import_fdm_accounts',
         'matchingMode','monthly_aggregate',
         'sourceDescriptionPattern','%POS VENDAS%',
         'destinationAccount','Credit Card',
+        'destinationExcludedCategory','TransferOutToAccount',
         'calendarGrouping','closed_month',
         'eligibilityFloor','2026-01-01',
         'fixedMaxDifferenceDays',31,
@@ -972,6 +983,7 @@ as $$
       and fdm.event_date < date_trunc('month', current_date)::date
       and fdm.amount is not null
       and fdm.account = 'Credit Card'
+      and fdm.category is distinct from 'TransferOutToAccount'
       and not exists (
         select 1
         from public.financial_reconciliation_items locked
@@ -1038,6 +1050,7 @@ begin
       and fdm.event_date < date_trunc('month', current_date)::date
       and fdm.amount is not null
       and fdm.account = 'Credit Card'
+      and fdm.category is distinct from 'TransferOutToAccount'
       and not exists (
         select 1
         from public.financial_reconciliation_items locked
@@ -1115,7 +1128,7 @@ declare
 begin
   if p_rule->>'ruleKey' is distinct from
       'cgd_bank_statement_fdm_credit_card_monthly_income'
-    or p_rule->>'ruleVersion' is distinct from '1'
+    or p_rule->>'ruleVersion' is distinct from '2'
     or p_rule->>'destinationSourceType' is distinct from 'import_fdm_accounts'
     or p_rule->>'operator' is distinct from '-'
     or p_rule->>'maxDifferenceDays' is distinct from '31'
@@ -1124,6 +1137,7 @@ begin
       'matchingMode', 'monthly_aggregate',
       'sourceDescriptionPattern', '%POS VENDAS%',
       'destinationAccount', 'Credit Card',
+      'destinationExcludedCategory', 'TransferOutToAccount',
       'calendarGrouping', 'closed_month',
       'fixedMaxDifferenceDays', 31,
       'eligibilityFloor', '2026-01-01',
@@ -1192,6 +1206,7 @@ begin
         and fdm.event_date < date_trunc('month', current_date)::date
         and fdm.amount is not null
         and fdm.account = 'Credit Card'
+        and fdm.category is distinct from 'TransferOutToAccount'
         and not exists (
           select 1
           from public.financial_reconciliation_items locked
@@ -1230,7 +1245,7 @@ begin
       v_signature := public.financial_reconciliation_extension_sha256(
         jsonb_build_object(
           'ruleKey', 'cgd_bank_statement_fdm_credit_card_monthly_income',
-          'ruleVersion', 1,
+          'ruleVersion', 2,
           'calendarMonth', v_month.calendar_month,
           'sourceIds', to_jsonb(v_source_ids),
           'destinationIds', to_jsonb(v_destination_ids),
@@ -1243,10 +1258,11 @@ begin
       );
       v_summary_snapshot := jsonb_build_object(
         'ruleKey', 'cgd_bank_statement_fdm_credit_card_monthly_income',
-        'ruleVersion', 1,
+        'ruleVersion', 2,
         'calendarMonth', v_month.calendar_month,
         'sourceDescriptionPattern', '%POS VENDAS%',
         'destinationAccount', 'Credit Card',
+        'destinationExcludedCategory', 'TransferOutToAccount',
         'operator', v_operator,
         'differenceAllowed', v_difference_allowed,
         'maxDifferenceDays', 31,
@@ -1268,7 +1284,7 @@ begin
         calculated_difference, allowed_difference, status, reason, signature,
         grouping_key, summary_snapshot
       ) values (
-        p_run_id, 'cgd_bank_statement_fdm_credit_card_monthly_income', 1,
+        p_run_id, 'cgd_bank_statement_fdm_credit_card_monthly_income', 2,
         'import_cgd_extrato_ordem', v_month.technical_base_source_id,
         v_month.technical_base_source_date, v_base_snapshot,
         v_month.calculated_difference, v_difference_allowed,
@@ -1285,7 +1301,7 @@ begin
         where proposal.run_id = p_run_id
           and proposal.rule_key =
             'cgd_bank_statement_fdm_credit_card_monthly_income'
-          and proposal.rule_version = 1
+          and proposal.rule_version = 2
           and proposal.base_source_type = 'import_cgd_extrato_ordem'
           and proposal.base_source_id = v_month.technical_base_source_id
           and proposal.signature = v_signature;
@@ -1371,6 +1387,7 @@ begin
             and fdm.event_date < date_trunc('month', current_date)::date
             and fdm.amount is not null
             and fdm.account = 'Credit Card'
+            and fdm.category is distinct from 'TransferOutToAccount'
             and not exists (
               select 1
               from public.financial_reconciliation_items locked
@@ -1510,7 +1527,7 @@ begin
 
     if v_rule->>'ruleKey' =
         'cgd_bank_statement_fdm_credit_card_monthly_income'
-      and (v_rule->>'ruleVersion')::integer = 1 then
+      and (v_rule->>'ruleVersion')::integer = 2 then
       return public.financial_reconciliation_continue_automatic_monthly_income(
         v_run.id,
         v_rule
@@ -1763,7 +1780,7 @@ begin
 
   if v_snapshot->0->>'ruleKey' =
       'cgd_bank_statement_fdm_credit_card_monthly_income'
-    and (v_snapshot->0->>'ruleVersion')::integer = 1 then
+    and (v_snapshot->0->>'ruleVersion')::integer = 2 then
     select public.financial_reconciliation_automatic_monthly_income_count()
     into v_total;
   else
@@ -1936,7 +1953,7 @@ begin
             or (
               proposal.rule_key =
                 'cgd_bank_statement_fdm_credit_card_monthly_income'
-              and proposal.rule_version = 1
+              and proposal.rule_version in (1, 2)
               and proposal.status = 'ambiguous'
               and proposal.reason = 'monthly_difference_exceeded'
             )
@@ -1951,7 +1968,7 @@ begin
             or (
               proposal.rule_key =
                 'cgd_bank_statement_fdm_credit_card_monthly_income'
-              and proposal.rule_version = 1
+              and proposal.rule_version in (1, 2)
               and proposal.status = 'ambiguous'
               and proposal.reason = 'monthly_difference_exceeded'
             )
@@ -2004,14 +2021,14 @@ begin
     'items', case
       when proposal.rule_key =
           'cgd_bank_statement_fdm_credit_card_monthly_income'
-        and proposal.rule_version = 1 then '[]'::jsonb
+        and proposal.rule_version in (1, 2) then '[]'::jsonb
       else proposal.items
     end,
     'evidence', proposal.evidence,
     'candidateGroups', case
       when proposal.rule_key =
           'cgd_bank_statement_fdm_credit_card_monthly_income'
-        and proposal.rule_version = 1 then '[]'::jsonb
+        and proposal.rule_version in (1, 2) then '[]'::jsonb
       else proposal.candidate_groups
     end,
     'groupingKey', proposal.grouping_key,
@@ -2233,7 +2250,7 @@ begin
   end if;
   if v_proposal.rule_key <>
       'cgd_bank_statement_fdm_credit_card_monthly_income'
-    or v_proposal.rule_version <> 1
+    or v_proposal.rule_version <> 2
     or v_proposal.base_source_type <> 'import_cgd_extrato_ordem' then
     update public.financial_reconciliation_automatic_proposals
     set status = 'stale', reason = 'rule_version_changed',
@@ -2333,6 +2350,7 @@ begin
       'matchingMode', 'monthly_aggregate',
       'sourceDescriptionPattern', '%POS VENDAS%',
       'destinationAccount', 'Credit Card',
+      'destinationExcludedCategory', 'TransferOutToAccount',
       'calendarGrouping', 'closed_month',
       'fixedMaxDifferenceDays', 31,
       'eligibilityFloor', '2026-01-01',
@@ -2377,6 +2395,7 @@ begin
       'matchingMode', 'monthly_aggregate',
       'sourceDescriptionPattern', '%POS VENDAS%',
       'destinationAccount', 'Credit Card',
+      'destinationExcludedCategory', 'TransferOutToAccount',
       'calendarGrouping', 'closed_month',
       'eligibilityFloor', '2026-01-01',
       'fixedMaxDifferenceDays', 31,
@@ -2444,11 +2463,13 @@ begin
       v_proposal.grouping_key || '-01'
     or v_proposal.summary_snapshot->>'ruleKey' is distinct from
       v_proposal.rule_key
-    or v_proposal.summary_snapshot->>'ruleVersion' is distinct from '1'
+    or v_proposal.summary_snapshot->>'ruleVersion' is distinct from '2'
     or v_proposal.summary_snapshot->>'sourceDescriptionPattern' is distinct from
       '%POS VENDAS%'
     or v_proposal.summary_snapshot->>'destinationAccount' is distinct from
       'Credit Card'
+    or v_proposal.summary_snapshot->>'destinationExcludedCategory' is distinct from
+      'TransferOutToAccount'
     or v_proposal.summary_snapshot->>'operator' is distinct from '-'
     or v_proposal.summary_snapshot->>'maxDifferenceDays' is distinct from '31'
     or coalesce(v_proposal.summary_snapshot->>'sourceCount', '') !~ '^[0-9]+$'
@@ -2530,6 +2551,7 @@ begin
     and fdm.event_date < date_trunc('month', current_date)::date
     and fdm.amount is not null
     and fdm.account = 'Credit Card'
+    and fdm.category is distinct from 'TransferOutToAccount'
     and not exists (
       select 1
       from public.financial_reconciliation_items locked
@@ -2633,6 +2655,7 @@ begin
       and fdm.event_date < date_trunc('month', current_date)::date
       and fdm.amount is not null
       and fdm.account = 'Credit Card'
+      and fdm.category is distinct from 'TransferOutToAccount'
       and not exists (
         select 1
         from public.financial_reconciliation_items locked
@@ -2684,6 +2707,7 @@ begin
       and fdm.event_date < date_trunc('month', current_date)::date
       and fdm.amount is not null
       and fdm.account = 'Credit Card'
+      and fdm.category is distinct from 'TransferOutToAccount'
       and not exists (
         select 1 from public.financial_reconciliation_items locked
         where locked.source_type = 'import_fdm_accounts'
@@ -3144,7 +3168,7 @@ begin
   end if;
 
   if v_rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
-    and v_rule_version = 1 then
+    and v_rule_version = 2 then
     return public.financial_reconciliation_execute_monthly_income_proposal(
       p_proposal_id, p_actor
     );
@@ -3219,7 +3243,7 @@ begin
     raise exception 'Automatic proposal members require a manual run.';
   end if;
   if v_run.rule_key <> 'cgd_bank_statement_fdm_credit_card_monthly_income'
-    or v_run.rule_version <> 1 then
+    or v_run.rule_version not in (1, 2) then
     raise exception 'Automation proposal does not use the monthly income rule.';
   end if;
   if v_run.finished_at is null and v_run.actor <> p_actor then
@@ -3381,7 +3405,7 @@ begin
       ('financial_documents_cgd_credit_card', 1),
       ('financial_documents_cgd_bank_statement_amount_only', 1),
       ('financial_documents_cgd_credit_card_amount_only', 1),
-      ('cgd_bank_statement_fdm_credit_card_monthly_income', 1)
+      ('cgd_bank_statement_fdm_credit_card_monthly_income', 2)
     )
   ) then
     raise exception 'Automatic rule/version is invalid.';
@@ -3445,7 +3469,7 @@ begin
       ('financial_documents_cgd_credit_card', 1),
       ('financial_documents_cgd_bank_statement_amount_only', 1),
       ('financial_documents_cgd_credit_card_amount_only', 1),
-      ('cgd_bank_statement_fdm_credit_card_monthly_income', 1)
+      ('cgd_bank_statement_fdm_credit_card_monthly_income', 2)
     )
   ) then
     raise exception
@@ -3635,7 +3659,7 @@ begin
           ('financial_documents_cgd_credit_card', 1),
           ('financial_documents_cgd_bank_statement_amount_only', 1),
           ('financial_documents_cgd_credit_card_amount_only', 1),
-          ('cgd_bank_statement_fdm_credit_card_monthly_income', 1)
+          ('cgd_bank_statement_fdm_credit_card_monthly_income', 2)
         )
         and (
           (config.rule_key =
@@ -3764,7 +3788,7 @@ begin
         ('financial_documents_cgd_credit_card', 1),
         ('financial_documents_cgd_bank_statement_amount_only', 1),
         ('financial_documents_cgd_credit_card_amount_only', 1),
-        ('cgd_bank_statement_fdm_credit_card_monthly_income', 1)
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2)
       ),
       false
     )
@@ -3796,7 +3820,7 @@ begin
 
   if v_selected_rule_key =
       'cgd_bank_statement_fdm_credit_card_monthly_income'
-    and v_selected_rule_version = 1 then
+    and v_selected_rule_version = 2 then
     select public.financial_reconciliation_automatic_monthly_income_count()
     into v_analysis_total;
   else

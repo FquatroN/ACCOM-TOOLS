@@ -89,12 +89,17 @@ function managedRules() {
 function monthlyIncomeRule(overrides = {}) {
   return {
     ruleKey: "cgd_bank_statement_fdm_credit_card_monthly_income",
-    ruleVersion: 1,
+    ruleVersion: 2,
     displayName: "Card Payments - POS - Income",
     baseSourceType: "import_cgd_extrato_ordem",
     destinationSourceTypes: ["import_fdm_accounts"],
-    logicDescription: "Closed months with <POS VENDAS> are compared to FDM Credit Card income.",
-    definition: { matchingMode: "monthly_aggregate", sourcePredicate: "<POS VENDAS>", destinationAccount: "Credit Card" },
+    logicDescription: "Closed months with <POS VENDAS> are compared to FDM Credit Card income, excluding TransferOutToAccount.",
+    definition: {
+      matchingMode: "monthly_aggregate",
+      sourceDescriptionPattern: "%POS VENDAS%",
+      destinationAccount: "Credit Card",
+      destinationExcludedCategory: "TransferOutToAccount",
+    },
     enabled: true,
     allowManualExecution: true,
     includeInScheduledBatch: false,
@@ -299,8 +304,8 @@ test("the fifth Settings card fixes 31 days while preserving escaped immutable m
   const card = markup.match(new RegExp(`<article[^>]*data-reconciliation-automation-rule-card="${rule.ruleKey}"[\\s\\S]*?<\\/article>`))?.[0] || "";
 
   assert.match(card, /Card Payments - POS - Income/);
-  assert.match(card, /Closed months with &lt;POS VENDAS&gt; are compared to FDM Credit Card income\./);
-  assert.match(card, /sourcePredicate[\s\S]*&lt;POS VENDAS&gt;[\s\S]*destinationAccount[\s\S]*Credit Card/);
+  assert.match(card, /Closed months with &lt;POS VENDAS&gt; are compared to FDM Credit Card income, excluding TransferOutToAccount\./);
+  assert.match(card, /sourceDescriptionPattern[\s\S]*%POS VENDAS%[\s\S]*destinationAccount[\s\S]*Credit Card[\s\S]*destinationExcludedCategory[\s\S]*TransferOutToAccount/);
   assert.match(card, /<output class="financial-reconciliation-automation-fixed-value" aria-label="Maximum difference in days, fixed">31 days<\/output>/);
   assert.doesNotMatch(card, /data-reconciliation-automation-rule-field="maxDifferenceDays"/);
   for (const field of ["enabled", "allowManualExecution", "includeInScheduledBatch", "differenceAllowed"]) {
@@ -322,7 +327,7 @@ test("monthly Settings serialization reasserts 31 after state tampering and pres
 
   assert.deepEqual(payload.rules, [{
     ruleKey: rule.ruleKey,
-    ruleVersion: 1,
+    ruleVersion: 2,
     enabled: false,
     allowManualExecution: false,
     includeInScheduledBatch: true,
@@ -1370,7 +1375,7 @@ function monthlyProposal(overrides = {}) {
   return {
     id: WORKBENCH_PROPOSAL_1,
     ruleKey: "cgd_bank_statement_fdm_credit_card_monthly_income",
-    ruleVersion: 1,
+    ruleVersion: 2,
     status: "proposed",
     reason: "",
     groupingKey: "fdm-credit-card:2026-07",
@@ -1434,7 +1439,7 @@ function monthlyRun(proposal) {
   const run = workbenchRun([proposal]);
   run.definitions = [{
     ruleKey: "cgd_bank_statement_fdm_credit_card_monthly_income",
-    ruleVersion: 1,
+    ruleVersion: 2,
     displayName: "Card Payments - POS - Income",
     operator: "-",
     differenceAllowed: "7500.00",
@@ -1473,7 +1478,7 @@ test("monthly proposal rendering uses exactly summary, source, and destination c
   assert.doesNotMatch(markup, /<details[^>]*\sopen(?:\s|>)/);
   assert.match(markup, /CGD Bank Statement \(#73; 12500\.25 €\)/);
   assert.match(markup, /FDM Accounts \(#52; 5000\.00 €\)/);
-  assert.match(markup, /Month 2026-07[\s\S]*Difference 7500\.25 €[\s\S]*Allowed 7500\.00 €[\s\S]*Card Payments - POS - Income[\s\S]*version 1/i);
+  assert.match(markup, /Month 2026-07[\s\S]*Difference 7500\.25 €[\s\S]*Allowed 7500\.00 €[\s\S]*Card Payments - POS - Income[\s\S]*version 2/i);
   assert.doesNotMatch(markup, /technical-base-must-not-render|fake-destination-must-not-render|Base record|Destination 1|financial-reconciliation-automation-proposal-records/);
   assert.match(markup, /data-financial-reconciliation-automation-proposal-id=/);
 });
@@ -1487,18 +1492,27 @@ test("monthly difference ambiguity renders an auditable reason without an execut
   assert.doesNotMatch(markup, /data-financial-reconciliation-automation-proposal-id=|Execute proposal/);
 });
 
-test("finished monthly ambiguous-only runs retain the reviewable aggregate proposal", () => {
+test("finished version 1 monthly ambiguous-only runs retain the reviewable aggregate proposal", () => {
   const visible = compileVisibleAutomationProposals();
   const proposalMarkup = compileMonthlyProposalMarkup();
   const proposal = monthlyProposal({
+    ruleVersion: 1,
     status: "ambiguous",
     reason: "monthly_difference_exceeded",
   });
   const run = monthlyRun(proposal);
+  run.definitions[0].ruleVersion = 1;
   run.finishedAt = "2026-08-16T10:00:00.000Z";
 
   assert.deepEqual(visible(run).map((entry) => entry.id), [proposal.id]);
-  const markup = proposalMarkup(proposal, run, [monthlyIncomeRule()], new Set(), false, {});
+  const markup = proposalMarkup(
+    proposal,
+    run,
+    [monthlyIncomeRule({ ruleVersion: 1 })],
+    new Set(),
+    false,
+    {},
+  );
   assert.match(markup, /Monthly difference exceeds the allowed tolerance/);
   assert.match(markup, /CGD Bank Statement \(#73;/);
   assert.match(markup, /FDM Accounts \(#52;/);

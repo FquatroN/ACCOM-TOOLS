@@ -14,12 +14,13 @@ The rule display name is **Card Payments - POS - Income**.
 The immutable rule definition is:
 
 - Rule key: `cgd_bank_statement_fdm_credit_card_monthly_income`
-- Version: `1`
+- Current version: `2` (version `1` snapshots remain readable and immutable)
 - Matching mode: `monthly_aggregate`
 - Base source: `import_cgd_extrato_ordem` (CGD Bank Statement)
 - Base predicate: `descritivo ILIKE '%POS VENDAS%'`
 - Destination source: `import_fdm_accounts` (FDM Accounts)
-- Destination predicate: `account = 'Credit Card'`
+- Destination predicate: `account = 'Credit Card' AND category IS DISTINCT FROM
+  'TransferOutToAccount'` (`NULL` category remains eligible)
 - Grouping: the same closed calendar month, using Bank Statement `data` and
   FDM Accounts `event_date`
 - Operator: the configured directional source rule
@@ -46,7 +47,8 @@ For each calendar month strictly earlier than the current calendar month:
 1. Collect every unlocked Bank Statement record on or after `2026-01-01` whose
    description contains `POS VENDAS`, case-insensitively.
 2. Collect every unlocked FDM Accounts record in the same month whose account is
-   exactly `Credit Card`.
+   exactly `Credit Card` and whose category is not exactly
+   `TransferOutToAccount`. A `NULL` category remains eligible.
 3. If either collection is empty, persist no visible proposal for that month.
 4. Sum each collection with exact decimal arithmetic and calculate Bank total
    minus FDM total.
@@ -229,7 +231,8 @@ identity checks.
 Indexes must support:
 
 - Bank Statement closed-month scanning with the `POS VENDAS` predicate;
-- FDM Accounts month scanning for exact account `Credit Card`;
+- FDM Accounts month scanning for exact account `Credit Card`, excluding exact
+  category `TransferOutToAccount` while retaining `NULL` categories;
 - unlocked-record exclusion by source type and source ID;
 - proposal membership paging by proposal, role, ordinal;
 - deterministic proposal uniqueness by run, rule, and month.
@@ -272,7 +275,8 @@ Automated Node and transactional PostgreSQL tests cover:
 
 - five-rule settings and allowlists;
 - closed-month, year-boundary, and leap-year behavior;
-- case-insensitive `POS VENDAS` and exact `Credit Card` predicates;
+- case-insensitive `POS VENDAS`, exact `Credit Card`, exact
+  `TransferOutToAccount` exclusion, and `NULL` category eligibility;
 - missing-side invisibility;
 - proposed and ambiguous EUR 7,500.00 boundaries;
 - remaining-unlocked-record behavior;

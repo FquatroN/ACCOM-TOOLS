@@ -233,12 +233,15 @@ production enablement.
 
 4. In an authenticated Settings session, confirm the fifth managed rule is
    disabled, its `7,500.00 EUR` tolerance is editable, its `31 days` value and
-   managed definition are read-only, and saving flags, priority, and tolerance
-   reloads the authoritative persisted values.
+   managed version 2 definition are read-only, including the destination rule
+   `Account = Credit Card` and `Category <> TransferOutToAccount`, and saving
+   flags, priority, and tolerance reloads the authoritative persisted values.
 5. In protected non-production only, enable the rule and manual participation
    while leaving scheduled participation off. Analyze and execute a closed
    month. Verify oldest-first month ordering, an unselectable above-tolerance
-   result, independently paged collapsed source/destination groups, normal
+   result, inclusion of a `NULL` FDM category, exclusion of an exact
+   `TransferOutToAccount` category, independently paged collapsed
+   source/destination groups, normal
    zero-difference completion, forced in-tolerance nonzero completion with the
    generated audit comment, and History origin/count/total evidence at desktop
    and at `768px` or narrower.

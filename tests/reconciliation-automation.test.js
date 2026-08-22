@@ -310,7 +310,7 @@ function fourRuleSettings({
 
 const monthlyIncomeRule = {
   ruleKey: MONTHLY_INCOME_RULE_KEY,
-  ruleVersion: 1,
+  ruleVersion: 2,
   enabled: true,
   allowManualExecution: true,
   includeInScheduledBatch: true,
@@ -361,7 +361,7 @@ function amountOnlyScheduledDefinition(ruleKey, priority) {
 function monthlyIncomeScheduledDefinition(priority) {
   return {
     ruleKey: MONTHLY_INCOME_RULE_KEY,
-    ruleVersion: 1,
+    ruleVersion: 2,
     displayName: "Card Payments - POS - Income",
     priority,
     differenceAllowed: 7500,
@@ -371,6 +371,7 @@ function monthlyIncomeScheduledDefinition(priority) {
       matchingMode: "monthly_aggregate",
       sourceDescriptionPattern: "%POS VENDAS%",
       destinationAccount: "Credit Card",
+      destinationExcludedCategory: "TransferOutToAccount",
       calendarGrouping: "closed_month",
       fixedMaxDifferenceDays: 31,
       eligibilityFloor: "2026-01-01",
@@ -438,7 +439,7 @@ function fiveRuleRpcSettings(overrides = {}) {
   return fourRuleRpcSettings({
     rules: [...fourRuleRpcSettings().rules, {
       ruleKey: MONTHLY_INCOME_RULE_KEY,
-      ruleVersion: 1,
+      ruleVersion: 2,
       enabled: true,
       allowManualExecution: true,
       includeInScheduledBatch: true,
@@ -653,7 +654,7 @@ test("managed automation exposes a five-rule response with a fixed monthly incom
     rules: toAutomationSettingsRpcPayload(settingsPayload, "user@example.com").p_rules,
   });
 
-  assert.equal(AUTOMATIC_RULE_VERSIONS[MONTHLY_INCOME_RULE_KEY], 1);
+  assert.equal(AUTOMATIC_RULE_VERSIONS[MONTHLY_INCOME_RULE_KEY], 2);
   assert.equal(normalized.rules[4].differenceAllowed, "7500.00");
   assert.equal(normalized.rules[4].maxDifferenceDays, 31);
   assert.equal(isMonthlyAggregateRule(MONTHLY_INCOME_RULE_KEY), true);
@@ -1680,7 +1681,7 @@ test("five-rule heartbeat resumes monthly analysis across midnight before execut
   const monthlyProposal = {
     id: monthlyProposalId,
     ruleKey: MONTHLY_INCOME_RULE_KEY,
-    ruleVersion: 1,
+    ruleVersion: 2,
     baseSourceType: "import_cgd_extrato_ordem",
     baseSourceId: monthlyBaseId,
     baseSourceDate: "2026-03-02",
@@ -1993,7 +1994,7 @@ test("scheduled heartbeat rejects a monthly child whose snapshot is not the exac
     batchRuleKey: MONTHLY_INCOME_RULE_KEY,
     batchRulePosition: 4,
     batchRuleCount: 5,
-    definitions: [{ ...monthlyIncomeScheduledDefinition(4), ruleVersion: 2 }],
+    definitions: [{ ...monthlyIncomeScheduledDefinition(4), ruleVersion: 1 }],
     status: "completed",
     finishedAt: "2026-08-16T00:06:00.000Z",
   });
@@ -2802,7 +2803,7 @@ test("automation settings GET supplies the managed display name in its five-rule
       ...productionSettingsRpcResult(4),
       rules: [...productionSettingsRules(), {
         rule_key: MONTHLY_INCOME_RULE_KEY,
-        rule_version: 1,
+        rule_version: 2,
         enabled: false,
         allow_manual_execution: false,
         include_in_scheduled_batch: false,
@@ -2818,7 +2819,7 @@ test("automation settings GET supplies the managed display name in its five-rule
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body.rules[4], {
     ruleKey: MONTHLY_INCOME_RULE_KEY,
-    ruleVersion: 1,
+    ruleVersion: 2,
     displayName: "Card Payments - POS - Income",
     enabled: false,
     allowManualExecution: false,
