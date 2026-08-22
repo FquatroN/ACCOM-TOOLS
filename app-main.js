@@ -1332,6 +1332,7 @@ const state = {
     automation: {
       rules: [],
       run: null,
+      memberships: {},
       selectedRuleKey: "",
       selectedProposalIds: new Set(),
       pendingAction: "",
@@ -2727,6 +2728,7 @@ function bindEvents() {
   els.financialReconciliationWorkbenchAutomationAnalyze?.addEventListener("click", () => analyzeFinancialReconciliationAutomationRule());
   els.financialReconciliationWorkbenchAutomationProposals?.addEventListener("click", onFinancialReconciliationAutomationProposalsClick);
   els.financialReconciliationWorkbenchAutomationProposals?.addEventListener("change", onFinancialReconciliationAutomationProposalsChange);
+  els.financialReconciliationWorkbenchAutomationProposals?.addEventListener("toggle", onFinancialReconciliationAutomationMemberGroupToggle, true);
   els.financialReconciliationWorkbenchAutomationSelectAll?.addEventListener("click", () => setFinancialReconciliationAutomationSelection("all"));
   els.financialReconciliationWorkbenchAutomationClearAll?.addEventListener("click", () => setFinancialReconciliationAutomationSelection("clear"));
   els.financialReconciliationWorkbenchAutomationExecute?.addEventListener("click", executeFinancialReconciliationAutomationSelection);
@@ -21685,6 +21687,10 @@ function isReconciliationAutomationAmountOnlyRule(ruleKey) {
     || key === "financial_documents_cgd_credit_card_amount_only";
 }
 
+function isFinancialReconciliationMonthlyAggregateRule(ruleKey) {
+  return clean(ruleKey) === "cgd_bank_statement_fdm_credit_card_monthly_income";
+}
+
 function applyReconciliationAutomationSettingsResult(result) {
   const current = state.reconciliationAutomationSettings;
   const schedule = result?.schedule && typeof result.schedule === "object" ? result.schedule : {};
@@ -21707,7 +21713,7 @@ function applyReconciliationAutomationSettingsResult(result) {
     allowManualExecution: rule?.allowManualExecution === true,
     includeInScheduledBatch: rule?.includeInScheduledBatch === true,
     differenceAllowed: isReconciliationAutomationAmountOnlyRule(rule?.ruleKey) ? "0.00" : clean(rule?.differenceAllowed) || "0.00",
-    maxDifferenceDays: Number(rule?.maxDifferenceDays),
+    maxDifferenceDays: isFinancialReconciliationMonthlyAggregateRule(rule?.ruleKey) ? 31 : Number(rule?.maxDifferenceDays),
     priority: Number.isInteger(Number(rule?.priority)) && Number(rule.priority) > 0 ? Number(rule.priority) : index + 1,
   })).sort((left, right) => left.priority - right.priority || left.ruleKey.localeCompare(right.ruleKey));
   current.rules = current.rules.map((rule, index) => ({ ...rule, priority: index + 1 }));
@@ -21731,7 +21737,7 @@ function reconciliationAutomationSettingsPayload() {
     const ruleKey = clean(rule?.ruleKey);
     const ruleVersion = Number(rule?.ruleVersion);
     const differenceAllowed = isReconciliationAutomationAmountOnlyRule(ruleKey) ? "0.00" : clean(rule?.differenceAllowed);
-    const maxDifferenceDaysText = clean(rule?.maxDifferenceDays);
+    const maxDifferenceDaysText = isFinancialReconciliationMonthlyAggregateRule(ruleKey) ? "31" : clean(rule?.maxDifferenceDays);
     const maxDifferenceDays = Number(maxDifferenceDaysText);
     if (!ruleKey || !Number.isInteger(ruleVersion) || ruleVersion < 1) return null;
     if (!/^\d+(?:\.\d{1,2})?$/.test(differenceAllowed)) return null;
@@ -21882,6 +21888,11 @@ function renderReconciliationAutomationSettings() {
       <output class="financial-reconciliation-automation-fixed-value" aria-label="Difference allowed, fixed">0.00 €</output>
     </label>`
         : `<label>Difference allowed<input type="number" min="0" step="0.01" inputmode="decimal" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="differenceAllowed" value="${escape(rule?.differenceAllowed)}" ${current.loading ? "disabled" : ""} /></label>`;
+      const maxDifferenceDaysControl = isFinancialReconciliationMonthlyAggregateRule(ruleKey)
+        ? `<label>Max difference days
+      <output class="financial-reconciliation-automation-fixed-value" aria-label="Maximum difference in days, fixed">31 days</output>
+    </label>`
+        : `<label>Max difference days<input type="number" min="0" max="90" step="1" inputmode="numeric" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="maxDifferenceDays" value="${escape(rule?.maxDifferenceDays)}" ${current.loading ? "disabled" : ""} /></label>`;
       return `<article class="financial-reconciliation-automation-rule-card" data-reconciliation-automation-rule-card="${escape(ruleKey)}" tabindex="-1">
   <div class="financial-reconciliation-automation-rule-head">
     <div><h4>${escape(rule?.displayName || ruleKey || "Managed rule")}</h4><span class="financial-reconciliation-automation-rule-version">Version ${escape(rule?.ruleVersion)} · managed definition</span></div>
@@ -21893,7 +21904,7 @@ function renderReconciliationAutomationSettings() {
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="allowManualExecution" ${rule?.allowManualExecution === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Manual</label>
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="includeInScheduledBatch" ${rule?.includeInScheduledBatch === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Scheduled</label>
     ${differenceAllowedControl}
-    <label>Max difference days<input type="number" min="0" max="90" step="1" inputmode="numeric" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="maxDifferenceDays" value="${escape(rule?.maxDifferenceDays)}" ${current.loading ? "disabled" : ""} /></label>
+    ${maxDifferenceDaysControl}
   </div>
   <details class="financial-reconciliation-automation-definition"><summary>Managed definition (read only)</summary><pre class="financial-reconciliation-automation-logic">${escape(logicText)}</pre></details>
 </article>`;
@@ -21973,6 +21984,10 @@ function onReconciliationAutomationSettingsInput(event) {
   if (!rule || !["enabled", "allowManualExecution", "includeInScheduledBatch", "differenceAllowed", "maxDifferenceDays"].includes(field)) return;
   if (field === "differenceAllowed" && isReconciliationAutomationAmountOnlyRule(ruleKey)) {
     rule.differenceAllowed = "0.00";
+    return;
+  }
+  if (field === "maxDifferenceDays" && isFinancialReconciliationMonthlyAggregateRule(ruleKey)) {
+    rule.maxDifferenceDays = 31;
     return;
   }
   rule[field] = ["enabled", "allowManualExecution", "includeInScheduledBatch"].includes(field)
@@ -22372,11 +22387,13 @@ async function continueFinancialReconciliationAutomationAnalysis(token) {
         body: { action: "continue_analysis", runId },
       });
       if (automation.continuationToken !== expectedToken || clean(nextRun?.runId) !== runId) return;
+      if (clean(automation.run?.runId) !== clean(nextRun?.runId)) automation.memberships = {};
       automation.run = nextRun;
     } catch (error) {
       try {
         const persisted = await api("/api/reconciliation-automation?view=active_run");
         if (automation.continuationToken === expectedToken && clean(persisted?.runId) === runId) {
+          if (clean(automation.run?.runId) !== clean(persisted?.runId)) automation.memberships = {};
           automation.run = persisted;
         }
       } catch {
@@ -22407,6 +22424,7 @@ async function restoreFinancialReconciliationAutomationAnalysis() {
   try {
     const activeRun = await api("/api/reconciliation-automation?view=active_run");
     if (!activeRun) return;
+    if (clean(automation.run?.runId) !== clean(activeRun?.runId)) automation.memberships = {};
     automation.run = activeRun;
     automation.selectedRuleKey = clean(activeRun?.definitions?.[0]?.ruleKey) || automation.selectedRuleKey;
     automation.selectedProposalIds = new Set();
@@ -22475,6 +22493,7 @@ function financialReconciliationAutomationReasonLabel(reason) {
     tolerance_changed: "Allowed tolerance changed after analysis",
     combination_changed: "Candidate combination changed after analysis",
     proposal_evidence_changed: "Identity evidence changed after analysis",
+    monthly_difference_exceeded: "Monthly difference exceeds the allowed tolerance",
     source_locked: "A source record is already locked",
     execution_failed: "Execution could not be completed",
     deselected: "Not selected for execution",
@@ -22533,8 +22552,95 @@ function financialReconciliationAutomationItemMarkup(item, label, operator = "")
   </article>`;
 }
 
-function financialReconciliationAutomationProposalMarkup(proposal, run, rules, selectedProposalIds, pending) {
+function financialReconciliationAutomationMembershipKey(proposalId, role) {
+  return `${clean(proposalId)}:${role}`;
+}
+
+function financialReconciliationAutomationMonthlyMemberMarkup(member) {
+  const value = member && typeof member === "object" ? member : {};
+  const sourceId = clean(value.sourceId) || "-";
+  const account = clean(value.account);
+  return `<article class="financial-reconciliation-automation-member-row">
+    <div class="financial-reconciliation-automation-item-head">
+      <span><strong>${escape(formatDateOnly(value.sourceDate) || "-")}</strong>${account ? `<small>FDM account ${escape(account)}</small>` : ""}</span>
+      <strong class="financial-reconciliation-automation-item-amount">${escape(formatMoney(Number(value.amount || 0)))}</strong>
+    </div>
+    <p class="financial-reconciliation-automation-member-row-description">${escape(clean(value.description) || "-")}</p>
+    <details class="financial-reconciliation-automation-item-id"><summary>Record ID</summary><code>${escape(sourceId)}</code></details>
+  </article>`;
+}
+
+function financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, role, summary, membership) {
+  const state = membership && typeof membership === "object" ? membership : {};
+  const source = role === "source";
+  const label = source ? "CGD Bank Statement" : "FDM Accounts";
+  const count = Math.max(0, Number(source ? summary?.sourceCount : summary?.destinationCount) || 0);
+  const total = Number(source ? summary?.sourceTotal : summary?.destinationTotal) || 0;
+  const members = Array.isArray(state.members) ? state.members : [];
+  const totalCount = Math.max(count, Number(state.totalCount) || 0);
+  const loading = state.loading === true;
+  const error = clean(state.error);
+  const memberRows = members.map((member) => financialReconciliationAutomationMonthlyMemberMarkup(member)).join("");
+  const status = loading
+    ? '<p class="financial-reconciliation-automation-member-status" role="status">Loading members…</p>'
+    : error
+      ? `<p class="financial-reconciliation-automation-member-error" role="alert">${escape(error)}</p>`
+      : state.loaded === true && !members.length
+        ? '<p class="financial-reconciliation-automation-member-status">No members were returned.</p>'
+        : "";
+  const loadMore = state.loaded === true && members.length < totalCount
+    ? `<div class="financial-reconciliation-automation-member-actions"><button type="button" class="ghost financial-reconciliation-automation-member-load-more" data-financial-reconciliation-automation-member-more data-proposal-id="${escape(clean(proposalId))}" data-role="${escape(role)}" ${loading ? "disabled" : ""}>${loading ? "Loading…" : "Load more"}</button></div>`
+    : "";
+  return `<summary>${escape(label)} (#${escape(count)}; ${escape(formatMoney(total))})</summary>
+    <div class="financial-reconciliation-automation-member-list">${memberRows}${status}${loadMore}</div>`;
+}
+
+function financialReconciliationAutomationMemberGroupMarkup(proposalId, role, summary, memberships) {
+  const key = financialReconciliationAutomationMembershipKey(proposalId, role);
+  const membership = memberships && typeof memberships === "object" ? memberships[key] : null;
+  return `<details class="financial-reconciliation-automation-member-group" data-role="${escape(role)}" data-financial-reconciliation-automation-members data-proposal-id="${escape(clean(proposalId))}" ${membership?.open === true ? "open" : ""}>
+    ${financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, role, summary, membership)}
+  </details>`;
+}
+
+function financialReconciliationAutomationMonthlyProposalMarkup(proposal, run, rules, selectedProposalIds, pending, memberships) {
   const value = proposal && typeof proposal === "object" ? proposal : {};
+  const status = clean(value.status).toLowerCase();
+  const executable = status === "proposed";
+  const selected = executable && selectedProposalIds instanceof Set && selectedProposalIds.has(clean(value.id));
+  const definition = financialReconciliationAutomationRunDefinition(value, run);
+  const rule = (Array.isArray(rules) ? rules : []).find((entry) => clean(entry?.ruleKey) === clean(value.ruleKey) && Number(entry?.ruleVersion) === Number(value.ruleVersion)) || definition;
+  const summary = value.summarySnapshot && typeof value.summarySnapshot === "object" ? value.summarySnapshot : {};
+  const month = clean(summary.calendarMonth) || clean(value.groupingKey).split(":").at(-1) || "-";
+  const reason = executable || !clean(value.reason) ? "" : `<p class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;
+  const accessibleName = `Execute automatic monthly proposal for ${month}`;
+  const executionOutcome = (Array.isArray(run?.executionOutcomes) ? run.executionOutcomes : []).find((outcome) => clean(outcome?.proposalId ?? outcome?.id) === clean(value.id));
+  const executionOutcomeStatus = clean(executionOutcome?.status).toLowerCase();
+  const executionOutcomeMarkup = executionOutcomeStatus && executionOutcomeStatus !== status
+    ? `<p class="financial-reconciliation-automation-attempt financial-reconciliation-automation-attempt--${escape(executionOutcomeStatus)}">Execution attempt: ${escape(executionOutcomeStatus)} &middot; ${escape(financialReconciliationAutomationReasonLabel(executionOutcome.reason))}</p>`
+    : "";
+  const selectionMarkup = !executable ? "" : `<label class="financial-reconciliation-automation-proposal-selection"><input type="checkbox" aria-label="${escape(accessibleName)}" data-financial-reconciliation-automation-proposal-id="${escape(clean(value.id))}" ${selected ? "checked" : ""} ${pending ? "disabled" : ""} /><span>Execute proposal</span></label>`;
+  return `<article class="financial-reconciliation-automation-proposal financial-reconciliation-automation-proposal--monthly financial-reconciliation-automation-proposal--${escape(status || "unknown")}" tabindex="-1">
+    <section class="financial-reconciliation-automation-proposal-meta">
+      <h4>Monthly summary</h4>
+      ${selectionMarkup}
+      <span class="financial-reconciliation-automation-proposal-status">${escape(status || "unknown")}</span>
+      ${reason}${executionOutcomeMarkup}
+      <strong>Month ${escape(month)}</strong>
+      <strong>Difference ${escape(formatMoney(Number(value.calculatedDifference || 0)))}</strong>
+      <span>Allowed ${escape(formatMoney(Number(value.allowedDifference ?? definition.differenceAllowed ?? 0)))}</span>
+      <span>${escape(clean(rule.displayName) || clean(value.ruleKey))} &middot; version ${escape(Number(value.ruleVersion) || 1)}</span>
+    </section>
+    ${financialReconciliationAutomationMemberGroupMarkup(value.id, "source", summary, memberships)}
+    ${financialReconciliationAutomationMemberGroupMarkup(value.id, "destination", summary, memberships)}
+  </article>`;
+}
+
+function financialReconciliationAutomationProposalMarkup(proposal, run, rules, selectedProposalIds, pending, memberships = {}) {
+  const value = proposal && typeof proposal === "object" ? proposal : {};
+  if (isFinancialReconciliationMonthlyAggregateRule(value.ruleKey)) {
+    return financialReconciliationAutomationMonthlyProposalMarkup(value, run, rules, selectedProposalIds, pending, memberships);
+  }
   const status = clean(value.status).toLowerCase();
   const executable = status === "proposed";
   const selected = executable && selectedProposalIds instanceof Set && selectedProposalIds.has(clean(value.id));
@@ -22659,6 +22765,7 @@ function renderFinancialReconciliationAutomation(focusProposalId = "") {
         automation.rules,
         automation.selectedProposalIds,
         Boolean(pending),
+        automation.memberships,
       )).join("")
       : `<p class="empty">${escape(financialReconciliationAutomationEmptyMessage(automation.run))}${automation.continuationRetry ? ' <button type="button" class="ghost" data-financial-reconciliation-automation-retry>Retry analysis</button>' : ""}</p>`;
     const focusId = clean(focusProposalId);
@@ -22698,6 +22805,7 @@ async function analyzeFinancialReconciliationAutomationRule(ruleKey) {
       method: "POST",
       body: { action: "analyze_rule", ruleKeys: [key], clientRequestId: crypto.randomUUID() },
     });
+    if (clean(automation.run?.runId) !== clean(run?.runId)) automation.memberships = {};
     automation.run = run;
     automation.pendingAction = "";
     if (financialReconciliationAutomationIsAnalyzing(run)) {
@@ -22758,7 +22866,9 @@ async function executeFinancialReconciliationAutomationSelection() {
       body: { action: "execute_selected", runId: clean(automation.run?.runId), proposalIds },
     });
     const executionOutcomes = Array.isArray(result?.outcomes) ? result.outcomes.map((outcome) => ({ ...outcome })) : [];
-    automation.run = result?.run ? { ...result.run, executionOutcomes } : { ...(automation.run || {}), executionOutcomes };
+    const nextRun = result?.run ? { ...result.run, executionOutcomes } : { ...(automation.run || {}), executionOutcomes };
+    if (clean(automation.run?.runId) !== clean(nextRun?.runId)) automation.memberships = {};
+    automation.run = nextRun;
     automation.selectedProposalIds = new Set();
     current.loaded = false;
     const historyRefreshed = await loadFinancialReconciliationWorkspace({ silent: true });
@@ -22782,6 +22892,111 @@ async function executeFinancialReconciliationAutomationSelection() {
   }
 }
 
+function financialReconciliationAutomationMembershipState(automation, proposalId, role) {
+  const key = financialReconciliationAutomationMembershipKey(proposalId, role);
+  if (!automation.memberships || typeof automation.memberships !== "object") automation.memberships = {};
+  if (!automation.memberships[key] || typeof automation.memberships[key] !== "object") {
+    automation.memberships[key] = {
+      role,
+      members: [],
+      offset: 0,
+      totalCount: 0,
+      loaded: false,
+      loading: false,
+      error: "",
+      open: false,
+    };
+  }
+  return automation.memberships[key];
+}
+
+function financialReconciliationAutomationRefreshMemberGroup(proposalId, role) {
+  const container = els.financialReconciliationWorkbenchAutomationProposals;
+  if (!container) return;
+  const automation = financialReconciliationState().automation;
+  const id = clean(proposalId);
+  const memberRole = clean(role);
+  const proposal = (Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
+    .find((entry) => clean(entry?.id) === id);
+  if (!proposal || !isFinancialReconciliationMonthlyAggregateRule(proposal.ruleKey)) return;
+  const details = Array.from(container.querySelectorAll("details[data-financial-reconciliation-automation-members]"))
+    .find((entry) => clean(entry.dataset?.proposalId) === id && clean(entry.dataset?.role) === memberRole);
+  if (!details) return;
+  const membership = financialReconciliationAutomationMembershipState(automation, id, memberRole);
+  details.innerHTML = financialReconciliationAutomationMemberGroupContentsMarkup(id, memberRole, proposal.summarySnapshot, membership);
+  details.open = membership.open === true;
+}
+
+async function loadFinancialReconciliationAutomationMembers(proposalId, role) {
+  const automation = financialReconciliationState().automation;
+  const id = clean(proposalId);
+  const memberRole = clean(role);
+  if (memberRole !== "source" && memberRole !== "destination") return;
+  const proposal = (Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
+    .find((entry) => clean(entry?.id) === id && isFinancialReconciliationMonthlyAggregateRule(entry?.ruleKey));
+  const runId = clean(automation.run?.runId);
+  if (!proposal || !runId) return;
+  const membership = financialReconciliationAutomationMembershipState(automation, id, memberRole);
+  if (membership.loading || (membership.loaded && membership.members.length >= membership.totalCount)) return;
+  const offset = membership.members.length;
+  membership.loading = true;
+  membership.error = "";
+  financialReconciliationAutomationRefreshMemberGroup(id, memberRole);
+  try {
+    const page = await api(`/api/reconciliation-automation-members?run_id=${encodeURIComponent(runId)}&proposal_id=${encodeURIComponent(id)}&role=${encodeURIComponent(memberRole)}&offset=${offset}&limit=50`);
+    const pageOffset = Number(page?.offset);
+    const totalCount = Number(page?.totalCount);
+    const members = Array.isArray(page?.members) ? page.members : null;
+    if (clean(page?.runId) !== runId
+      || clean(page?.proposalId) !== id
+      || clean(page?.role) !== memberRole
+      || pageOffset !== offset
+      || Number(page?.limit) !== 50
+      || !Number.isInteger(totalCount)
+      || totalCount < offset
+      || !members
+      || members.length > 50
+      || offset + members.length > totalCount
+      || (membership.loaded && membership.totalCount !== totalCount)) {
+      throw new Error("The member page response is invalid.");
+    }
+    const seenIds = new Set(membership.members.map((member) => clean(member?.sourceId)).filter(Boolean));
+    const nextMembers = members.map((member, index) => {
+      const sourceId = clean(member?.sourceId);
+      if (clean(member?.role) !== memberRole
+        || !sourceId
+        || Number(member?.ordinal) !== offset + index + 1
+        || seenIds.has(sourceId)) {
+        throw new Error("The member page contains invalid or duplicate records.");
+      }
+      seenIds.add(sourceId);
+      return { ...member };
+    });
+    membership.members = membership.members.concat(nextMembers);
+    membership.offset = membership.members.length;
+    membership.totalCount = totalCount;
+    membership.loaded = true;
+  } catch (error) {
+    membership.error = `Could not load members: ${clean(error?.message) || "Unknown error"}`;
+  } finally {
+    membership.loading = false;
+    financialReconciliationAutomationRefreshMemberGroup(id, memberRole);
+  }
+}
+
+function onFinancialReconciliationAutomationMemberGroupToggle(event) {
+  const details = event?.target;
+  if (!details?.matches?.("details[data-financial-reconciliation-automation-members]")) return;
+  const proposalId = clean(details.dataset?.proposalId);
+  const role = clean(details.dataset?.role);
+  if (!proposalId || (role !== "source" && role !== "destination")) return;
+  const membership = financialReconciliationAutomationMembershipState(financialReconciliationState().automation, proposalId, role);
+  membership.open = details.open === true;
+  if (membership.open && !membership.loaded && !membership.loading) {
+    void loadFinancialReconciliationAutomationMembers(proposalId, role);
+  }
+}
+
 function onFinancialReconciliationAutomationRuleChange(event) {
   const automation = financialReconciliationState().automation;
   if (automation.pendingAction || financialReconciliationAutomationOpenRun(automation.run)) {
@@ -22796,6 +23011,11 @@ function onFinancialReconciliationAutomationRuleChange(event) {
 }
 
 function onFinancialReconciliationAutomationProposalsClick(event) {
+  const loadMore = event.target.closest("[data-financial-reconciliation-automation-member-more]");
+  if (loadMore && !loadMore.disabled) {
+    void loadFinancialReconciliationAutomationMembers(loadMore.dataset.proposalId, loadMore.dataset.role);
+    return;
+  }
   const button = event.target.closest("[data-financial-reconciliation-automation-retry]");
   if (button) retryFinancialReconciliationAutomationAnalysis();
 }

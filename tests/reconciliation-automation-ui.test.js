@@ -86,6 +86,29 @@ function managedRules() {
   ];
 }
 
+function monthlyIncomeRule(overrides = {}) {
+  return {
+    ruleKey: "cgd_bank_statement_fdm_credit_card_monthly_income",
+    ruleVersion: 1,
+    displayName: "Card Payments - POS - Income",
+    baseSourceType: "import_cgd_extrato_ordem",
+    destinationSourceTypes: ["import_fdm_accounts"],
+    logicDescription: "Closed months with <POS VENDAS> are compared to FDM Credit Card income.",
+    definition: { matchingMode: "monthly_aggregate", sourcePredicate: "<POS VENDAS>", destinationAccount: "Credit Card" },
+    enabled: true,
+    allowManualExecution: true,
+    includeInScheduledBatch: false,
+    differenceAllowed: "7500.00",
+    maxDifferenceDays: 31,
+    priority: 5,
+    ...overrides,
+  };
+}
+
+function isMonthlyIncomeRuleKey(ruleKey) {
+  return String(ruleKey ?? "").trim() === "cgd_bank_statement_fdm_credit_card_monthly_income";
+}
+
 function isAmountOnlyRuleKey(ruleKey) {
   return [
     "financial_documents_cgd_bank_statement_amount_only",
@@ -109,10 +132,11 @@ function compilePayload(state) {
   return new Function(
     "state",
     "isReconciliationAutomationAmountOnlyRule",
+    "isFinancialReconciliationMonthlyAggregateRule",
     `${appFunctionSource("clean")}
      ${appFunctionSource("reconciliationAutomationSettingsPayload")}
      return reconciliationAutomationSettingsPayload;`,
-  )(state, isAmountOnlyRuleKey);
+  )(state, isAmountOnlyRuleKey, isMonthlyIncomeRuleKey);
 }
 
 function fakeClassList() {
@@ -174,6 +198,7 @@ function renderAutomationSettings(settings, { dirty = false, canOpenWorkbench = 
     "reconciliationAutomationSettingsPayload",
     "updateReconciliationAutomationControls",
     "isReconciliationAutomationAmountOnlyRule",
+    "isFinancialReconciliationMonthlyAggregateRule",
     `${appFunctionSource("renderReconciliationAutomationSettings")}
      return renderReconciliationAutomationSettings;`,
   )(
@@ -192,6 +217,7 @@ function renderAutomationSettings(settings, { dirty = false, canOpenWorkbench = 
     payload,
     updateControls,
     isAmountOnlyRuleKey,
+    isMonthlyIncomeRuleKey,
   );
   render();
   return els;
@@ -264,6 +290,46 @@ test("amount-only Settings cards render a fixed zero while their other controls 
       assert.doesNotMatch(card.match(new RegExp(`data-reconciliation-automation-rule-field="${field}"[^>]*`, "g"))?.join("") || "", /disabled/);
     }
   }
+});
+
+test("the fifth Settings card fixes 31 days while preserving escaped immutable monthly logic and editable controls", () => {
+  const rule = monthlyIncomeRule();
+  const markup = renderAutomationSettings(automationSettings({ rules: [...managedRules(), rule] }))
+    .financialReconciliationAutomationRules.innerHTML;
+  const card = markup.match(new RegExp(`<article[^>]*data-reconciliation-automation-rule-card="${rule.ruleKey}"[\\s\\S]*?<\\/article>`))?.[0] || "";
+
+  assert.match(card, /Card Payments - POS - Income/);
+  assert.match(card, /Closed months with &lt;POS VENDAS&gt; are compared to FDM Credit Card income\./);
+  assert.match(card, /sourcePredicate[\s\S]*&lt;POS VENDAS&gt;[\s\S]*destinationAccount[\s\S]*Credit Card/);
+  assert.match(card, /<output class="financial-reconciliation-automation-fixed-value" aria-label="Maximum difference in days, fixed">31 days<\/output>/);
+  assert.doesNotMatch(card, /data-reconciliation-automation-rule-field="maxDifferenceDays"/);
+  for (const field of ["enabled", "allowManualExecution", "includeInScheduledBatch", "differenceAllowed"]) {
+    assert.match(card, new RegExp(`data-reconciliation-automation-rule-field="${field}"`));
+  }
+  assert.doesNotMatch(card, /data-reconciliation-automation-rule-field="(?:definition|logicDescription|ruleVersion)"/);
+});
+
+test("monthly Settings serialization reasserts 31 after state tampering and preserves edited tolerance flags and priority", () => {
+  const rule = monthlyIncomeRule({
+    enabled: false,
+    allowManualExecution: false,
+    includeInScheduledBatch: true,
+    differenceAllowed: "8123.45",
+    maxDifferenceDays: 2,
+    priority: 1,
+  });
+  const payload = compilePayload({ reconciliationAutomationSettings: automationSettings({ rules: [rule] }) })();
+
+  assert.deepEqual(payload.rules, [{
+    ruleKey: rule.ruleKey,
+    ruleVersion: 1,
+    enabled: false,
+    allowManualExecution: false,
+    includeInScheduledBatch: true,
+    differenceAllowed: "8123.45",
+    maxDifferenceDays: 31,
+    priority: 1,
+  }]);
 });
 
 test("server-loaded amount-only tolerances canonicalize to zero without changing identity tolerances", () => {
@@ -342,6 +408,7 @@ test("server-loaded amount-only tolerances canonicalize to zero without changing
     "clean",
     "clone",
     "isReconciliationAutomationAmountOnlyRule",
+    "isFinancialReconciliationMonthlyAggregateRule",
     `${appFunctionSource("applyReconciliationAutomationSettingsResult")}
      return applyReconciliationAutomationSettingsResult;`,
   )(
@@ -349,6 +416,7 @@ test("server-loaded amount-only tolerances canonicalize to zero without changing
     new Function(`${appFunctionSource("clean")}; return clean;`)(),
     new Function(`${appFunctionSource("clone")}; return clone;`)(),
     isAmountOnlyRuleKey,
+    isMonthlyIncomeRuleKey,
   );
 
   applyResult(result);
@@ -535,11 +603,12 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     "state",
     "clean",
     "isReconciliationAutomationAmountOnlyRule",
+    "isFinancialReconciliationMonthlyAggregateRule",
     "updateReconciliationAutomationNextExecution",
     "updateReconciliationAutomationControls",
     `${appFunctionSource("onReconciliationAutomationSettingsInput")}
      return onReconciliationAutomationSettingsInput;`,
-  )(FakeHTMLElement, state, (value) => String(value ?? "").trim(), isAmountOnlyRuleKey, () => {}, () => { validationUpdates += 1; });
+  )(FakeHTMLElement, state, (value) => String(value ?? "").trim(), isAmountOnlyRuleKey, isMonthlyIncomeRuleKey, () => {}, () => { validationUpdates += 1; });
   input({ target: new FakeHTMLElement({ reconciliationAutomationRuleKey: "rule-a", reconciliationAutomationRuleField: "differenceAllowed" }, { value: "3.25" }) });
   assert.equal(settings.rules.find((rule) => rule.ruleKey === "rule-a").differenceAllowed, "3.25");
   assert.equal(state.reconciliationAutomationSettingsDirty, true);
@@ -568,6 +637,7 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     "clean",
     "clone",
     "isReconciliationAutomationAmountOnlyRule",
+    "isFinancialReconciliationMonthlyAggregateRule",
     `${appFunctionSource("applyReconciliationAutomationSettingsResult")}
      return applyReconciliationAutomationSettingsResult;`,
   )(
@@ -575,6 +645,7 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     new Function(`${appFunctionSource("clean")}; return clean;`)(),
     new Function(`${appFunctionSource("clone")}; return clone;`)(),
     isAmountOnlyRuleKey,
+    isMonthlyIncomeRuleKey,
   );
   const financialState = new Function(
     "state",
@@ -1260,6 +1331,7 @@ function compileWorkbenchProposalMarkup() {
      ${appFunctionSource("financialReconciliationAutomationRunDefinition")}
      ${appFunctionSource("financialReconciliationAutomationIdentityEvidenceMarkup")}
      ${appFunctionSource("financialReconciliationAutomationItemMarkup")}
+     ${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
      ${appFunctionSource("financialReconciliationAutomationProposalMarkup")}
      return financialReconciliationAutomationProposalMarkup;`,
   )(
@@ -1273,6 +1345,309 @@ function compileWorkbenchProposalMarkup() {
     (value) => `${Number(value).toFixed(2)} â‚¬`,
   );
 }
+
+function monthlyProposal(overrides = {}) {
+  return {
+    id: WORKBENCH_PROPOSAL_1,
+    ruleKey: "cgd_bank_statement_fdm_credit_card_monthly_income",
+    ruleVersion: 1,
+    status: "proposed",
+    reason: "",
+    groupingKey: "fdm-credit-card:2026-07",
+    baseSourceId: "technical-base-must-not-render",
+    baseSnapshot: {
+      sourceType: "import_cgd_extrato_ordem",
+      sourceId: "technical-base-must-not-render",
+      sourceDate: "2026-07-01",
+      description: "one technical row must not look like the group",
+      amount: 100,
+    },
+    items: [{ sourceType: "import_fdm_accounts", sourceId: "fake-destination-must-not-render", amount: 50 }],
+    candidateGroups: [],
+    summarySnapshot: {
+      calendarMonth: "2026-07",
+      sourceCount: 73,
+      sourceTotal: "12500.25",
+      destinationCount: 52,
+      destinationTotal: "5000.00",
+      totalCount: 125,
+    },
+    calculatedDifference: "7500.25",
+    allowedDifference: "7500.00",
+    ...overrides,
+  };
+}
+
+function compileMonthlyProposalMarkup() {
+  return new Function(
+    "clean",
+    "escape",
+    "financialReconciliationSourceLabel",
+    "formatDateOnly",
+    "formatMoney",
+    `${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
+     ${appFunctionSource("financialReconciliationAutomationMembershipKey")}
+     ${appFunctionSource("financialReconciliationAutomationReasonLabel")}
+     ${appFunctionSource("financialReconciliationAutomationRunDefinition")}
+     ${appFunctionSource("financialReconciliationAutomationIdentityEvidenceMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationItemMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationMonthlyMemberMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationMemberGroupContentsMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationMemberGroupMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationMonthlyProposalMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationProposalMarkup")}
+     return financialReconciliationAutomationProposalMarkup;`,
+  )(
+    (value) => String(value ?? "").trim(),
+    new Function(`${appFunctionSource("escape")}; return escape;`)(),
+    (value) => ({
+      financial_documents: "Financial Documents",
+      import_cgd_extrato_ordem: "CGD Bank Statement",
+      import_fdm_accounts: "FDM Accounts",
+    })[value] || value,
+    (value) => String(value || "").slice(0, 10),
+    (value) => `${Number(value).toFixed(2)} €`,
+  );
+}
+
+function monthlyRun(proposal) {
+  const run = workbenchRun([proposal]);
+  run.definitions = [{
+    ruleKey: "cgd_bank_statement_fdm_credit_card_monthly_income",
+    ruleVersion: 1,
+    displayName: "Card Payments - POS - Income",
+    operator: "-",
+    differenceAllowed: "7500.00",
+  }];
+  return run;
+}
+
+function monthlyMember(role, ordinal, overrides = {}) {
+  return {
+    role,
+    sourceType: role === "source" ? "import_cgd_extrato_ordem" : "import_fdm_accounts",
+    sourceId: `${role}-${String(ordinal).padStart(3, "0")}`,
+    ordinal,
+    sourceDate: `2026-07-${String(((ordinal - 1) % 28) + 1).padStart(2, "0")}`,
+    amount: `${ordinal}.25`,
+    description: `${role} <member ${ordinal}>`,
+    account: role === "destination" ? "Credit <Card>" : "",
+    ...overrides,
+  };
+}
+
+test("monthly proposal rendering uses exactly summary, source, and destination columns with collapsed aggregate groups", () => {
+  const proposalMarkup = compileMonthlyProposalMarkup();
+  const proposal = monthlyProposal();
+  const markup = proposalMarkup(
+    proposal,
+    monthlyRun(proposal),
+    [monthlyIncomeRule()],
+    new Set([proposal.id]),
+    false,
+    {},
+  );
+
+  assert.match(markup, /^<article class="financial-reconciliation-automation-proposal financial-reconciliation-automation-proposal--monthly financial-reconciliation-automation-proposal--proposed"[^>]*>[\s\S]*<section class="financial-reconciliation-automation-proposal-meta">[\s\S]*Monthly summary[\s\S]*<details class="financial-reconciliation-automation-member-group" data-role="source"[^>]*>[\s\S]*<details class="financial-reconciliation-automation-member-group" data-role="destination"[^>]*>[\s\S]*<\/article>$/);
+  assert.equal((markup.match(/class="financial-reconciliation-automation-member-group"/g) || []).length, 2);
+  assert.doesNotMatch(markup, /<details[^>]*\sopen(?:\s|>)/);
+  assert.match(markup, /CGD Bank Statement \(#73; 12500\.25 €\)/);
+  assert.match(markup, /FDM Accounts \(#52; 5000\.00 €\)/);
+  assert.match(markup, /Month 2026-07[\s\S]*Difference 7500\.25 €[\s\S]*Allowed 7500\.00 €[\s\S]*Card Payments - POS - Income[\s\S]*version 1/i);
+  assert.doesNotMatch(markup, /technical-base-must-not-render|fake-destination-must-not-render|Base record|Destination 1|financial-reconciliation-automation-proposal-records/);
+  assert.match(markup, /data-financial-reconciliation-automation-proposal-id=/);
+});
+
+test("monthly difference ambiguity renders an auditable reason without an execution checkbox", () => {
+  const proposalMarkup = compileMonthlyProposalMarkup();
+  const proposal = monthlyProposal({ status: "ambiguous", reason: "monthly_difference_exceeded" });
+  const markup = proposalMarkup(proposal, monthlyRun(proposal), [monthlyIncomeRule()], new Set([proposal.id]), false, {});
+
+  assert.match(markup, /Monthly difference exceeds the allowed tolerance/);
+  assert.doesNotMatch(markup, /data-financial-reconciliation-automation-proposal-id=|Execute proposal/);
+});
+
+test("loaded monthly members stay escaped and expose record IDs only in disclosure controls", () => {
+  const proposalMarkup = compileMonthlyProposalMarkup();
+  const proposal = monthlyProposal();
+  const memberships = {
+    [`${proposal.id}:source`]: { role: "source", members: [monthlyMember("source", 1)], totalCount: 1, loaded: true, loading: false, error: "", open: true },
+    [`${proposal.id}:destination`]: { role: "destination", members: [monthlyMember("destination", 1)], totalCount: 1, loaded: true, loading: false, error: "", open: true },
+  };
+  const markup = proposalMarkup(proposal, monthlyRun(proposal), [monthlyIncomeRule()], new Set([proposal.id]), false, memberships);
+
+  assert.match(markup, /source &lt;member 1&gt;/);
+  assert.match(markup, /Credit &lt;Card&gt;/);
+  assert.doesNotMatch(markup, /<member 1>|Credit <Card>/);
+  assert.match(markup, /<details class="financial-reconciliation-automation-item-id"><summary>Record ID<\/summary><code>source-001<\/code><\/details>/);
+  assert.match(markup, /<details class="financial-reconciliation-automation-item-id"><summary>Record ID<\/summary><code>destination-001<\/code><\/details>/);
+});
+
+function compileMonthlyMembershipLoader(current, api, refresh = () => {}) {
+  return new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "financialReconciliationAutomationRefreshMemberGroup",
+    `${appFunctionSource("financialReconciliationAutomationMembershipKey")}
+     ${appFunctionSource("financialReconciliationAutomationMembershipState")}
+     ${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
+     ${appFunctionSource("loadFinancialReconciliationAutomationMembers").replace(/^function /, "async function ")}
+     return loadFinancialReconciliationAutomationMembers;`,
+  )(
+    () => current,
+    api,
+    (value) => String(value ?? "").trim(),
+    refresh,
+  );
+}
+
+test("opening each monthly group starts only its own independent 50-row page", async () => {
+  const proposal = monthlyProposal();
+  const current = {
+    automation: {
+      run: monthlyRun(proposal),
+      memberships: {},
+    },
+  };
+  const calls = [];
+  const load = compileMonthlyMembershipLoader(current, async (url) => {
+    calls.push(url);
+    const parsed = new URL(url, "https://example.test");
+    const role = parsed.searchParams.get("role");
+    const offset = Number(parsed.searchParams.get("offset"));
+    return {
+      runId: current.automation.run.runId,
+      proposalId: proposal.id,
+      role,
+      offset,
+      limit: 50,
+      totalCount: role === "source" ? 73 : 52,
+      members: Array.from({ length: 50 }, (_, index) => monthlyMember(role, offset + index + 1)),
+    };
+  });
+
+  await load(proposal.id, "source");
+  assert.deepEqual(calls, [`/api/reconciliation-automation-members?run_id=${current.automation.run.runId}&proposal_id=${proposal.id}&role=source&offset=0&limit=50`]);
+  assert.equal(current.automation.memberships[`${proposal.id}:source`].members.length, 50);
+  assert.equal(current.automation.memberships[`${proposal.id}:destination`], undefined);
+
+  await load(proposal.id, "destination");
+  assert.equal(calls.length, 2);
+  assert.match(calls[1], /role=destination&offset=0&limit=50$/);
+  assert.equal(current.automation.memberships[`${proposal.id}:source`].members.length, 50);
+  assert.equal(current.automation.memberships[`${proposal.id}:destination`].members.length, 50);
+});
+
+test("Load more appends the next monthly page in ordinal order without replacing or reloading the other group", async () => {
+  const proposal = monthlyProposal();
+  const sourceMembers = Array.from({ length: 50 }, (_, index) => monthlyMember("source", index + 1));
+  const destinationMembers = [monthlyMember("destination", 1)];
+  const current = {
+    automation: {
+      run: monthlyRun(proposal),
+      memberships: {
+        [`${proposal.id}:source`]: { role: "source", members: sourceMembers, offset: 50, totalCount: 73, loaded: true, loading: false, error: "", open: true },
+        [`${proposal.id}:destination`]: { role: "destination", members: destinationMembers, offset: 1, totalCount: 52, loaded: true, loading: false, error: "", open: true },
+      },
+    },
+  };
+  const calls = [];
+  const refreshed = [];
+  const load = compileMonthlyMembershipLoader(current, async (url) => {
+    calls.push(url);
+    return {
+      runId: current.automation.run.runId,
+      proposalId: proposal.id,
+      role: "source",
+      offset: 50,
+      limit: 50,
+      totalCount: 73,
+      members: Array.from({ length: 23 }, (_, index) => monthlyMember("source", index + 51)),
+    };
+  }, (proposalId, role) => refreshed.push(`${proposalId}:${role}`));
+
+  await load(proposal.id, "source");
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /role=source&offset=50&limit=50$/);
+  assert.deepEqual(current.automation.memberships[`${proposal.id}:source`].members.map((member) => member.ordinal), Array.from({ length: 73 }, (_, index) => index + 1));
+  assert.equal(current.automation.memberships[`${proposal.id}:source`].open, true);
+  assert.equal(current.automation.memberships[`${proposal.id}:destination`].members, destinationMembers);
+  assert.equal(current.automation.memberships[`${proposal.id}:destination`].open, true);
+  assert.deepEqual([...new Set(refreshed)], [`${proposal.id}:source`]);
+});
+
+test("monthly paging keeps pending and failure state local and rejects unsafe duplicate appends", async () => {
+  const proposal = monthlyProposal();
+  const current = {
+    automation: {
+      run: monthlyRun(proposal),
+      memberships: {
+        [`${proposal.id}:source`]: { role: "source", members: [monthlyMember("source", 1)], offset: 1, totalCount: 2, loaded: true, loading: false, error: "", open: true },
+        [`${proposal.id}:destination`]: { role: "destination", members: [monthlyMember("destination", 1)], offset: 1, totalCount: 1, loaded: true, loading: false, error: "", open: true },
+      },
+    },
+  };
+  let rejectRequest;
+  const load = compileMonthlyMembershipLoader(current, () => new Promise((_resolve, reject) => { rejectRequest = reject; }));
+  const pending = load(proposal.id, "source");
+  assert.equal(current.automation.memberships[`${proposal.id}:source`].loading, true);
+  assert.equal(current.automation.memberships[`${proposal.id}:destination`].loading, false);
+  rejectRequest(new Error("source page unavailable"));
+  await pending;
+  assert.match(current.automation.memberships[`${proposal.id}:source`].error, /source page unavailable/);
+  assert.equal(current.automation.memberships[`${proposal.id}:destination`].error, "");
+
+  const unsafeLoad = compileMonthlyMembershipLoader(current, async () => ({
+    runId: current.automation.run.runId,
+    proposalId: proposal.id,
+    role: "source",
+    offset: 1,
+    limit: 50,
+    totalCount: 2,
+    members: [monthlyMember("source", 2, { sourceId: "source-001" })],
+  }));
+  await unsafeLoad(proposal.id, "source");
+  assert.deepEqual(current.automation.memberships[`${proposal.id}:source`].members.map((member) => member.sourceId), ["source-001"]);
+  assert.match(current.automation.memberships[`${proposal.id}:source`].error, /invalid|duplicate/i);
+  assert.equal(current.automation.memberships[`${proposal.id}:destination`].error, "");
+});
+
+test("monthly group toggle loads only the first opened role and never reloads a closed or loaded group", () => {
+  const proposal = monthlyProposal();
+  const current = { automation: { memberships: {} } };
+  const calls = [];
+  const onToggle = new Function(
+    "financialReconciliationState",
+    "clean",
+    "loadFinancialReconciliationAutomationMembers",
+    `${appFunctionSource("financialReconciliationAutomationMembershipKey")}
+     ${appFunctionSource("financialReconciliationAutomationMembershipState")}
+     ${appFunctionSource("onFinancialReconciliationAutomationMemberGroupToggle")}
+     return onFinancialReconciliationAutomationMemberGroupToggle;`,
+  )(
+    () => current,
+    (value) => String(value ?? "").trim(),
+    (proposalId, role) => calls.push(`${proposalId}:${role}`),
+  );
+  const details = {
+    open: true,
+    dataset: { proposalId: proposal.id, role: "source" },
+    matches: (selector) => selector === "details[data-financial-reconciliation-automation-members]",
+  };
+
+  onToggle({ target: details });
+  assert.deepEqual(calls, [`${proposal.id}:source`]);
+  assert.equal(current.automation.memberships[`${proposal.id}:source`].open, true);
+  details.open = false;
+  onToggle({ target: details });
+  assert.deepEqual(calls, [`${proposal.id}:source`]);
+  current.automation.memberships[`${proposal.id}:source`].loaded = true;
+  details.open = true;
+  onToggle({ target: details });
+  assert.deepEqual(calls, [`${proposal.id}:source`]);
+});
 
 test("workbench rule LOV filters, sorts, escapes, and preserves only a valid selection", () => {
   const ruleOptions = new Function(
@@ -1327,6 +1702,63 @@ test("enabled manual amount-only rules appear escaped in the workbench selector"
     /value="financial_documents_cgd_bank_statement_amount_only" selected>&lt;Amount-only &amp; manual&gt;<\/option>/,
   );
   assert.equal(els.financialReconciliationWorkbenchAutomationRule.disabled, false);
+});
+
+test("enabled manual monthly income uses the approved selector name and a single-rule Analyze payload", async () => {
+  const rule = monthlyIncomeRule();
+  const { els } = renderAutomationWorkbench(null, new Set(), {
+    rules: [rule],
+    selectedRuleKey: rule.ruleKey,
+  });
+  assert.match(els.financialReconciliationWorkbenchAutomationRule.innerHTML, /value="cgd_bank_statement_fdm_credit_card_monthly_income" selected>Card Payments - POS - Income<\/option>/);
+
+  const current = {
+    automation: {
+      rules: [rule],
+      run: null,
+      memberships: { stale: { members: [{ sourceId: "old" }] } },
+      selectedRuleKey: rule.ruleKey,
+      selectedProposalIds: new Set(),
+      pendingAction: "",
+      loaded: true,
+      continuationToken: 0,
+      continuationRetry: false,
+    },
+  };
+  const calls = [];
+  const run = monthlyRun(monthlyProposal());
+  const analyze = new Function(
+    "financialReconciliationState",
+    "api",
+    "crypto",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "showToast",
+    "finalizeFinancialReconciliationAutomationAnalysis",
+    `${appFunctionSource("financialReconciliationAutomationOpenRun")}
+     ${appFunctionSource("financialReconciliationAutomationIsAnalyzing")}
+     ${appFunctionSource("analyzeFinancialReconciliationAutomationRule").replace(/^function /, "async function ")}
+     return analyzeFinancialReconciliationAutomationRule;`,
+  )(
+    () => current,
+    async (url, options) => { calls.push({ url, options }); return run; },
+    { randomUUID: () => "00000000-0000-0000-0000-000000000299" },
+    (value) => String(value ?? "").trim(),
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+  );
+
+  await analyze(rule.ruleKey);
+
+  assert.deepEqual(calls[0].options.body, {
+    action: "analyze_rule",
+    ruleKeys: ["cgd_bank_statement_fdm_credit_card_monthly_income"],
+    clientRequestId: "00000000-0000-0000-0000-000000000299",
+  });
+  assert.deepEqual(current.automation.memberships, {}, "a newly assigned run clears prior membership paging state");
 });
 
 test("workbench rule change keeps the user selection and refuses changes while a run is open", () => {
@@ -1988,6 +2420,7 @@ test("all authoritative proposal reasons have safe auditable labels", () => {
     tolerance_changed: "Allowed tolerance changed after analysis",
     combination_changed: "Candidate combination changed after analysis",
     proposal_evidence_changed: "Identity evidence changed after analysis",
+    monthly_difference_exceeded: "Monthly difference exceeds the allowed tolerance",
     not_selected: "Not selected for execution",
   };
   for (const [reason, label] of Object.entries(expected)) assert.equal(reasonLabel(reason), label);

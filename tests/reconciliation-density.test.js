@@ -470,6 +470,15 @@ test("automatic proposals render as three divided open desktop columns", () => {
   assert.match(css, /\.financial-reconciliation-automation-item\s*\{[^}]*background:\s*transparent[^}]*\}/);
 });
 
+test("monthly automatic proposals keep three separated desktop columns and accessible group controls", () => {
+  assert.match(css, /\.financial-reconciliation-automation-proposal--monthly\s*\{[^}]*grid-template-columns:\s*minmax\(11rem,\s*\.55fr\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-member-group\s*\{[^}]*min-width:\s*0[^}]*border-left:\s*1px solid var\(--line\)[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-member-group\s*>\s*summary\s*\{[^}]*cursor:\s*pointer[^}]*overflow-wrap:\s*anywhere[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-member-group\s*>\s*summary:focus-visible\s*\{[^}]*outline:\s*3px solid[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-member-load-more\s*\{[^}]*min-height:[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-member-error\s*\{[^}]*color:\s*var\(--danger\)[^}]*\}/);
+});
+
 test("automatic proposal desktop keeps every destination and candidate group in the third column", () => {
   assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*:first-child\s*\{[^}]*grid-column:\s*1[^}]*\}/);
   assert.match(css, /\.financial-reconciliation-automation-proposal-records\s*>\s*:not\(:first-child\)\s*\{[^}]*grid-column:\s*2[^}]*border-left:\s*1px solid var\(--line\)[^}]*\}/);
@@ -488,6 +497,20 @@ test("automatic proposal dividers become section separators on narrow screens", 
   assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-meta\s*\{[^}]*border-right:\s*0[^}]*border-bottom:\s*1px solid var\(--line\)[^}]*\}/);
   assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-records\s*>\s*:first-child\s*,\s*\.financial-reconciliation-automation-proposal-records\s*>\s*:not\(:first-child\)\s*\{[^}]*grid-column:\s*1[^}]*\}/);
   assert.match(narrowCss, /\.financial-reconciliation-automation-proposal-records\s*>\s*:not\(:first-child\)\s*\{[^}]*border-left:\s*0[^}]*border-top:\s*1px solid var\(--line\)[^}]*\}/);
+});
+
+test("monthly proposal groups stack with horizontal separators and usable controls at 768px", () => {
+  const narrowStart = css.indexOf("@media (max-width: 768px)", css.indexOf(".financial-reconciliation-automation-proposal--monthly"));
+  const narrowEnd = css.indexOf("@media", narrowStart + 1);
+  assert.notEqual(narrowStart, -1);
+  const narrowCss = css.slice(narrowStart, narrowEnd === -1 ? css.length : narrowEnd);
+
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal--monthly\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal--monthly\s+\.financial-reconciliation-automation-proposal-meta\s*\{[^}]*border-right:\s*0[^}]*border-bottom:\s*1px solid var\(--line\)[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-member-group\s*\{[^}]*border-left:\s*0[^}]*border-top:\s*1px solid var\(--line\)[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-member-group\s*>\s*summary\s*,\s*\.financial-reconciliation-automation-member-load-more\s*\{[^}]*font-size:\s*16px[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-member-row-description\s*\{[^}]*overflow-wrap:\s*anywhere[^}]*white-space:\s*normal[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-member-actions\s*\{[^}]*flex-wrap:\s*wrap[^}]*\}/);
 });
 
 test("workbench rule snapshots keep only valid unique signed sources", () => {
