@@ -6,6 +6,7 @@ const path = require("node:path");
 const {
   AUTOMATIC_RULE_KEY,
   AUTOMATIC_RULE_VERSION,
+  AUTOMATIC_RULE_VERSIONS,
   AUTOMATIC_TIME_ZONE,
   AMOUNT_ONLY_RULE_KEYS,
   BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
@@ -17,7 +18,9 @@ const {
   CREDIT_CARD_RULE_KEY,
   CREDIT_CARD_RULE_VERSION,
   isAmountOnlyRuleKey,
+  isMonthlyAggregateRule,
   isCronRequest,
+  MONTHLY_INCOME_RULE_KEY,
   normalizeAnalyzePayload,
   normalizeAutomationAction,
   normalizeAutomationSettingsPayload,
@@ -298,6 +301,24 @@ function fourRuleSettings({
   });
 }
 
+const monthlyIncomeRule = {
+  ruleKey: MONTHLY_INCOME_RULE_KEY,
+  ruleVersion: 1,
+  enabled: true,
+  allowManualExecution: true,
+  includeInScheduledBatch: true,
+  differenceAllowed: "7500.00",
+  maxDifferenceDays: 31,
+  priority: 5,
+};
+
+function fiveRuleSettings(overrides = {}) {
+  return fourRuleSettings({
+    rules: [...fourRuleSettings().rules, monthlyIncomeRule],
+    ...overrides,
+  });
+}
+
 function amountOnlyScheduledDefinition(ruleKey, priority) {
   const bank = ruleKey === BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY;
   return {
@@ -382,6 +403,22 @@ function fourRuleRpcSettings({
     ],
     ...overrides,
   };
+}
+
+function fiveRuleRpcSettings(overrides = {}) {
+  return fourRuleRpcSettings({
+    rules: [...fourRuleRpcSettings().rules, {
+      ruleKey: MONTHLY_INCOME_RULE_KEY,
+      ruleVersion: 1,
+      enabled: true,
+      allowManualExecution: true,
+      includeInScheduledBatch: true,
+      differenceAllowedCents: 750000,
+      maxDifferenceDays: 31,
+      priority: 5,
+    }],
+    ...overrides,
+  });
 }
 
 function productionSettingsRules() {
@@ -579,6 +616,30 @@ test("managed automation accepts the four explicit key/version pairs", () => {
       { ...fourRuleSettings().rules[2], priority: 4 },
     ],
   })), /duplicate rule key/i);
+});
+
+test("managed automation exposes a five-rule response with a fixed monthly income window", () => {
+  const settingsPayload = fiveRuleSettings();
+  const normalized = toAutomationPublicResult({
+    rules: toAutomationSettingsRpcPayload(settingsPayload, "user@example.com").p_rules,
+  });
+
+  assert.equal(AUTOMATIC_RULE_VERSIONS[MONTHLY_INCOME_RULE_KEY], 1);
+  assert.equal(normalized.rules[4].differenceAllowed, "7500.00");
+  assert.equal(normalized.rules[4].maxDifferenceDays, 31);
+  assert.equal(isMonthlyAggregateRule(MONTHLY_INCOME_RULE_KEY), true);
+
+  const tampered = structuredClone(settingsPayload);
+  tampered.rules.find((rule) => rule.ruleKey === MONTHLY_INCOME_RULE_KEY).maxDifferenceDays = 30;
+  assert.throws(
+    () => normalizeAutomationSettingsPayload(tampered),
+    /Maximum difference in days is invalid/,
+  );
+
+  const authoritative = fiveRuleRpcSettings();
+  assert.equal(normalizeRpcSettings(authoritative).rules[4].maxDifferenceDays, 31);
+  authoritative.rules[4].maxDifferenceDays = 30;
+  assert.throws(() => normalizeRpcSettings(authoritative), /Maximum difference in days is invalid/);
 });
 
 test("amount-only tolerance is fixed at zero in both settings shapes", () => {
@@ -2189,6 +2250,54 @@ test("automation public result recursively maps known fields and strips diagnost
   });
   assert.equal(input.schedule.diagnostic, "remove");
   assert.equal(input.proposals[0].candidate_groups[0].items[0].error_detail, "remove");
+});
+
+test("automation public result maps monthly proposal summaries and paged members", () => {
+  const input = {
+    proposals: [{
+      grouping_key: "fdm-credit-card:2026-08",
+      summary_snapshot: {
+        calendar_month: "2026-08",
+        source_count: 3,
+        source_total: "7500.00",
+        destination_count: 2,
+        destination_total: "7500.00",
+        total_count: 5,
+        diagnostic: "remove",
+      },
+      error_detail: "remove",
+    }],
+    page: {
+      members: [{
+        source_type: "financial_documents",
+        source_id: "document-1",
+        amount_snapshot: "2500.00",
+        internal_error: "remove",
+      }],
+      diagnostic: "remove",
+    },
+  };
+
+  assert.deepEqual(toAutomationPublicResult(input), {
+    proposals: [{
+      groupingKey: "fdm-credit-card:2026-08",
+      summarySnapshot: {
+        calendarMonth: "2026-08",
+        sourceCount: 3,
+        sourceTotal: "7500.00",
+        destinationCount: 2,
+        destinationTotal: "7500.00",
+        totalCount: 5,
+      },
+    }],
+    page: {
+      members: [{
+        sourceType: "financial_documents",
+        sourceId: "document-1",
+        amountSnapshot: "2500.00",
+      }],
+    },
+  });
 });
 
 test("automation public result preserves primitives and null without coercion", () => {

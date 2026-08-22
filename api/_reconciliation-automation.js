@@ -8,11 +8,14 @@ const BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY = "financial_documents_cgd_bank_statem
 const BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION = 1;
 const CREDIT_CARD_AMOUNT_ONLY_RULE_KEY = "financial_documents_cgd_credit_card_amount_only";
 const CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION = 1;
+const MONTHLY_INCOME_RULE_KEY = "cgd_bank_statement_fdm_credit_card_monthly_income";
+const MONTHLY_AGGREGATE_RULE_KEYS = new Set([MONTHLY_INCOME_RULE_KEY]);
 const AUTOMATIC_RULE_VERSIONS = Object.freeze({
   [BANK_STATEMENT_RULE_KEY]: BANK_STATEMENT_RULE_VERSION,
   [CREDIT_CARD_RULE_KEY]: CREDIT_CARD_RULE_VERSION,
   [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY]: BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY]: CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
+  [MONTHLY_INCOME_RULE_KEY]: 1,
 });
 const AMOUNT_ONLY_RULE_KEYS = Object.freeze([
   BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
@@ -89,6 +92,15 @@ const PUBLIC_KEY_MAP = Object.freeze({
   source_id: "sourceId",
   source_date: "sourceDate",
   amount_snapshot: "amountSnapshot",
+  grouping_key: "groupingKey",
+  summary_snapshot: "summarySnapshot",
+  calendar_month: "calendarMonth",
+  source_count: "sourceCount",
+  source_total: "sourceTotal",
+  destination_count: "destinationCount",
+  destination_total: "destinationTotal",
+  total_count: "totalCount",
+  members: "members",
   created_at: "createdAt",
   updated_at: "updatedAt",
 });
@@ -165,6 +177,10 @@ function isAmountOnlyRuleKey(ruleKey) {
   return AMOUNT_ONLY_RULE_KEY_SET.has(ruleKey);
 }
 
+function isMonthlyAggregateRule(ruleKey) {
+  return MONTHLY_AGGREGATE_RULE_KEYS.has(normalizeRuleKey(ruleKey));
+}
+
 function normalizeSchedule(value) {
   const schedule = requirePlainObject(value, "Schedule");
   requireOnlyKeys(schedule, EDITABLE_SCHEDULE_FIELDS, "Schedule");
@@ -188,6 +204,10 @@ function normalizeManagedRule(value) {
   if (isAmountOnlyRuleKey(ruleKey) && differenceAllowedCents !== 0) {
     throw inputError("Amount-only rules require a zero difference allowed.");
   }
+  const maxDifferenceDays = requireInteger(rule.maxDifferenceDays, "Max difference days", 0, 90);
+  if (isMonthlyAggregateRule(ruleKey) && maxDifferenceDays !== 31) {
+    throw inputError("Maximum difference in days is invalid.");
+  }
   return {
     ruleKey,
     ruleVersion: normalizeRuleVersion(rule.ruleVersion, ruleKey),
@@ -195,7 +215,7 @@ function normalizeManagedRule(value) {
     allowManualExecution: requireBoolean(rule.allowManualExecution, "Allow manual execution"),
     includeInScheduledBatch: requireBoolean(rule.includeInScheduledBatch, "Include in scheduled batch"),
     differenceAllowedCents,
-    maxDifferenceDays: requireInteger(rule.maxDifferenceDays, "Max difference days", 0, 90),
+    maxDifferenceDays,
     priority: requireInteger(rule.priority, "Priority", 1),
   };
 }
@@ -310,6 +330,10 @@ function normalizeRpcSettings(settings) {
     if (isAmountOnlyRuleKey(ruleKey) && differenceAllowedCents !== 0) {
       throw inputError("Amount-only rules require a zero difference allowed.");
     }
+    const maxDifferenceDays = requireInteger(input.maxDifferenceDays, "Max difference days", 0, 90);
+    if (isMonthlyAggregateRule(ruleKey) && maxDifferenceDays !== 31) {
+      throw inputError("Maximum difference in days is invalid.");
+    }
     const normalized = {
       ruleKey,
       ruleVersion: normalizeRuleVersion(input.ruleVersion, ruleKey),
@@ -317,7 +341,7 @@ function normalizeRpcSettings(settings) {
       allowManualExecution: requireBoolean(input.allowManualExecution, "Allow manual execution"),
       includeInScheduledBatch: requireBoolean(input.includeInScheduledBatch, "Include in scheduled batch"),
       differenceAllowedCents,
-      maxDifferenceDays: requireInteger(input.maxDifferenceDays, "Max difference days", 0, 90),
+      maxDifferenceDays,
       priority: requireInteger(input.priority, "Priority", 1),
     };
     if (priorities.has(normalized.priority)) throw inputError("Duplicate rule priority.");
@@ -390,9 +414,11 @@ module.exports = {
   CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
   CREDIT_CARD_RULE_KEY,
   CREDIT_CARD_RULE_VERSION,
+  MONTHLY_INCOME_RULE_KEY,
   SOURCE_TYPES,
   isAmountOnlyRuleKey,
   isCronRequest,
+  isMonthlyAggregateRule,
   normalizeAnalyzePayload,
   normalizeAutomationAction,
   normalizeAutomationSettingsPayload,
