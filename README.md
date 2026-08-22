@@ -55,6 +55,7 @@ migrations in this exact order:
 9. `supabase-migrations/2026-08-17-financial-reconciliation-automation-amount-only-rules.sql`
 10. `supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql`
 11. `supabase-migrations/2026-08-22-financial-reconciliation-history-search.sql`
+12. `supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql`
 
 If the database is already current through Banco v2, apply migrations 7 and 8
 and then migration 9 in that order. If it is already current through the
@@ -66,7 +67,10 @@ or priority. The supported **Max difference in days** range is 0-90 days.
 Installations current through migration 9 apply only migration 10.
 Installations current through migration 10 apply only migration 11. Migration 11
 adds the service-only paginated RPC used by the dedicated Reconciliation →
-History tab and is safe to apply twice.
+History tab and is safe to apply twice. Installations current through migration
+11 apply only migration 12. Migration 12 installs the **Card Payments - POS -
+Income** managed rule and is safe to apply twice without overwriting later
+administrator tolerance, execution flags, or priority changes.
 
 ### Amount-only rollout sequence
 
@@ -200,6 +204,53 @@ development environment and confirm their configured order appears as separate
 child runs and separate history entries. Deliberately create a failed child and
 confirm it does not block the next child. Do not rely on the production daily
 schedule until the configured order and failure continuation have been observed.
+
+### POS income migration 12 rollout
+
+Keep **Card Payments - POS - Income** disabled for both manual and scheduled
+execution until every database, authenticated-browser, and protected
+non-production gate below has passed. Applying the migration does not authorize
+production enablement.
+
+1. Apply automatic reconciliation migrations 1–11 in the exact order listed
+   above.
+2. Apply migration 12, then apply the same file a second time to prove reapply
+   safety. Use only a disposable or protected development database for release
+   verification:
+
+   ```powershell
+   psql "$env:SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql
+   psql "$env:SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql
+   ```
+
+3. Run both transaction-safe reconciliation smoke suites. The automation smoke
+   also applies and reapplies migration 12 inside its rollback transaction:
+
+   ```powershell
+   psql "$env:SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f tests/reconciliation-rpc.smoke.sql
+   psql "$env:SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f tests/reconciliation-automation-rpc.smoke.sql
+   ```
+
+4. In an authenticated Settings session, confirm the fifth managed rule is
+   disabled, its `7,500.00 EUR` tolerance is editable, its `31 days` value and
+   managed definition are read-only, and saving flags, priority, and tolerance
+   reloads the authoritative persisted values.
+5. In protected non-production only, enable the rule and manual participation
+   while leaving scheduled participation off. Analyze and execute a closed
+   month. Verify oldest-first month ordering, an unselectable above-tolerance
+   result, independently paged collapsed source/destination groups, normal
+   zero-difference completion, forced in-tolerance nonzero completion with the
+   generated audit comment, and History origin/count/total evidence at desktop
+   and at `768px` or narrower.
+6. Only after the manual checks pass, temporarily enable scheduled participation
+   and the shared schedule in protected non-production. Invoke one authorized
+   heartbeat and an idempotent retry; verify sequential child creation, resume,
+   execution, finalization, and later-rule continuation. Disable scheduled
+   participation and the shared schedule again after verification unless a
+   separate production enablement has been approved.
+7. Keep the production rule disabled until the two SQL smokes, authenticated
+   desktop/narrow browser checks, and protected scheduled-heartbeat verification
+   are all recorded as passing.
 
 Vercel calls `/api/reconciliation-automation-cron` every minute as a heartbeat.
 The database—not the Vercel schedule—atomically claims at most one configured
