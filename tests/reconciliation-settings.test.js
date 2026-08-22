@@ -74,6 +74,11 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
             matchingSourceType: "import_cgd_cartao_credito",
             operator: "+",
           },
+          {
+            baseSourceType: "import_cgd_extrato_ordem",
+            matchingSourceType: "import_fdm_accounts",
+            operator: "-",
+          },
         ],
       },
     }, response);
@@ -92,6 +97,11 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
         matchingSourceType: "import_cgd_cartao_credito",
         operator: "+",
       },
+      {
+        baseSourceType: "import_cgd_extrato_ordem",
+        matchingSourceType: "import_fdm_accounts",
+        operator: "-",
+      },
     ],
   });
   assert.deepEqual(calls, [{
@@ -109,6 +119,11 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
             base_source_type: "financial_documents",
             matching_source_type: "import_cgd_cartao_credito",
             operator: "+",
+          },
+          {
+            base_source_type: "import_cgd_extrato_ordem",
+            matching_source_type: "import_fdm_accounts",
+            operator: "-",
           },
         ],
       },
@@ -129,12 +144,24 @@ test("PUT rejects changing or removing the managed Credit Card source rule befor
         matchingSourceType: "import_cgd_cartao_credito",
         operator: "-",
       },
+      {
+        baseSourceType: "import_cgd_extrato_ordem",
+        matchingSourceType: "import_fdm_accounts",
+        operator: "-",
+      },
     ],
-    [{
-      baseSourceType: "financial_documents",
-      matchingSourceType: "import_cgd_extrato_ordem",
-      operator: "+",
-    }],
+    [
+      {
+        baseSourceType: "financial_documents",
+        matchingSourceType: "import_cgd_extrato_ordem",
+        operator: "+",
+      },
+      {
+        baseSourceType: "import_cgd_extrato_ordem",
+        matchingSourceType: "import_fdm_accounts",
+        operator: "-",
+      },
+    ],
   ];
 
   for (const rules of invalidRules) {
@@ -173,12 +200,24 @@ test("PUT rejects changing or removing the managed Bank Statement source rule be
         matchingSourceType: "import_cgd_cartao_credito",
         operator: "+",
       },
+      {
+        baseSourceType: "import_cgd_extrato_ordem",
+        matchingSourceType: "import_fdm_accounts",
+        operator: "-",
+      },
     ],
-    [{
-      baseSourceType: "financial_documents",
-      matchingSourceType: "import_cgd_cartao_credito",
-      operator: "+",
-    }],
+    [
+      {
+        baseSourceType: "financial_documents",
+        matchingSourceType: "import_cgd_cartao_credito",
+        operator: "+",
+      },
+      {
+        baseSourceType: "import_cgd_extrato_ordem",
+        matchingSourceType: "import_fdm_accounts",
+        operator: "-",
+      },
+    ],
   ];
 
   for (const rules of invalidRules) {
@@ -201,6 +240,60 @@ test("PUT rejects changing or removing the managed Bank Statement source rule be
       error: "The managed Bank Statement source rule must remain enabled with operator +.",
     });
     assert.deepEqual(calls, []);
+  }
+});
+
+test("PUT rejects changing or removing the managed POS income source rule before RPC", async () => {
+  const invalidRules = [
+    [
+      {
+        baseSourceType: "financial_documents",
+        matchingSourceType: "import_cgd_extrato_ordem",
+        operator: "+",
+      },
+      {
+        baseSourceType: "financial_documents",
+        matchingSourceType: "import_cgd_cartao_credito",
+        operator: "+",
+      },
+      {
+        baseSourceType: "import_cgd_extrato_ordem",
+        matchingSourceType: "import_fdm_accounts",
+        operator: "+",
+      },
+    ],
+    [
+      {
+        baseSourceType: "financial_documents",
+        matchingSourceType: "import_cgd_extrato_ordem",
+        operator: "+",
+      },
+      {
+        baseSourceType: "financial_documents",
+        matchingSourceType: "import_cgd_cartao_credito",
+        operator: "+",
+      },
+    ],
+  ];
+
+  for (const rules of invalidRules) {
+    const rpcCalls = [];
+    const response = responseRecorder();
+    await withSettingsHandler({
+      parseBody: async (request) => request.body,
+      requireFeature: async () => ({}),
+      restQuery: async (resource, options) => {
+        rpcCalls.push({ resource, options });
+        return null;
+      },
+      sendError: (res, error) => res.status(error.statusCode || 500).json({ error: error.message }),
+    }, async (handler) => {
+      await handler({ method: "PUT", body: { rules } }, response);
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.match(response.body.error, /managed POS income source rule must remain enabled with operator -/i);
+    assert.equal(rpcCalls.length, 0);
   }
 });
 

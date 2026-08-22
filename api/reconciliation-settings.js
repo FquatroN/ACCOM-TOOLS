@@ -15,15 +15,33 @@ const toRow = (rule) => ({
 
 const requireManagedAutomaticSourceRules = (rules) => {
   for (const managedRule of [
-    { matchingSourceType: "import_cgd_extrato_ordem", displayName: "Bank Statement" },
-    { matchingSourceType: "import_cgd_cartao_credito", displayName: "Credit Card" },
+    {
+      baseSourceType: "financial_documents",
+      matchingSourceType: "import_cgd_extrato_ordem",
+      operator: "+",
+      displayName: "Bank Statement",
+    },
+    {
+      baseSourceType: "financial_documents",
+      matchingSourceType: "import_cgd_cartao_credito",
+      operator: "+",
+      displayName: "Credit Card",
+    },
+    {
+      baseSourceType: "import_cgd_extrato_ordem",
+      matchingSourceType: "import_fdm_accounts",
+      operator: "-",
+      displayName: "POS income",
+    },
   ]) {
     const valid = rules.some((rule) =>
-      rule.baseSourceType === "financial_documents"
+      rule.baseSourceType === managedRule.baseSourceType
         && rule.matchingSourceType === managedRule.matchingSourceType
-        && rule.operator === "+");
+        && rule.operator === managedRule.operator);
     if (!valid) {
-      const error = new Error(`The managed ${managedRule.displayName} source rule must remain enabled with operator +.`);
+      const error = new Error(
+        `The managed ${managedRule.displayName} source rule must remain enabled with operator ${managedRule.operator}.`,
+      );
       error.statusCode = 400;
       throw error;
     }

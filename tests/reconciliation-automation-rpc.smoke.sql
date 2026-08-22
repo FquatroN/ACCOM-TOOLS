@@ -7127,4 +7127,521 @@ begin
   end loop;
 end $$;
 
+-- Card Payments - POS - Income catalog, immutable memberships, and source-rule guard.
+create temporary table pos_income_existing_priorities as
+select rule_key, priority
+from public.financial_reconciliation_automatic_rule_configs;
+
+create temporary table pos_income_expected_priority as
+select coalesce(max(priority), 0) + 1 as priority
+from public.financial_reconciliation_automatic_rule_configs;
+
+create temporary table pos_income_source_rule_rpc_owner as
+select procedure.proowner
+from pg_proc procedure
+where procedure.oid =
+  'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure;
+
+\ir ../supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql
+
+do $$
+declare
+  v_definition jsonb := jsonb_build_object(
+    'matchingMode', 'monthly_aggregate',
+    'sourceDescriptionPattern', '%POS VENDAS%',
+    'destinationAccount', 'Credit Card',
+    'calendarGrouping', 'closed_month',
+    'fixedMaxDifferenceDays', 31,
+    'eligibilityFloor', '2026-01-01'
+  );
+begin
+  if (select count(*)
+      from public.financial_reconciliation_automatic_rule_definitions
+      where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+        and version = 1) <> 1
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_definitions definition
+      where definition.rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+        and definition.version = 1
+        and definition.display_name = 'Card Payments - POS - Income'
+        and definition.base_source_type = 'import_cgd_extrato_ordem'
+        and definition.destination_source_types = '["import_fdm_accounts"]'::jsonb
+        and definition.definition = v_definition
+    ) then
+    raise exception 'POS income immutable definition differs from the approved v1 literal.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    cross join pos_income_expected_priority expected
+    where config.rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+      and config.rule_version = 1
+      and not config.enabled
+      and not config.allow_manual_execution
+      and not config.include_in_scheduled_batch
+      and config.difference_allowed = 7500.00
+      and config.max_difference_days = 31
+      and config.priority = expected.priority
+  ) then
+    raise exception 'POS income config defaults or stable next priority are invalid.';
+  end if;
+
+  if exists (
+    select 1
+    from pos_income_existing_priorities expected
+    join public.financial_reconciliation_automatic_rule_configs config
+      using (rule_key)
+    where config.priority is distinct from expected.priority
+  ) then
+    raise exception 'Installing POS income changed an existing managed rule priority.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_source_rules source_rule
+    where source_rule.base_source_type = 'import_cgd_extrato_ordem'
+      and source_rule.matching_source_type = 'import_fdm_accounts'
+      and source_rule.operator = '-'
+  ) then
+    raise exception 'POS income directional source rule is not Bank Statement to FDM Accounts (-).';
+  end if;
+end $$;
+
+do $$
+declare
+  v_rejected boolean;
+  v_rules jsonb;
+begin
+  if not exists (
+      select 1
+      from information_schema.columns column_row
+      where column_row.table_schema = 'public'
+        and column_row.table_name = 'financial_reconciliation_automatic_proposals'
+        and column_row.column_name = 'grouping_key'
+        and column_row.data_type = 'text'
+        and column_row.is_nullable = 'YES'
+    ) or not exists (
+      select 1
+      from information_schema.columns column_row
+      where column_row.table_schema = 'public'
+        and column_row.table_name = 'financial_reconciliation_automatic_proposals'
+        and column_row.column_name = 'summary_snapshot'
+        and column_row.data_type = 'jsonb'
+        and column_row.is_nullable = 'NO'
+        and column_row.column_default = '''{}''::jsonb'
+  ) then
+    raise exception 'POS income proposal columns do not match the monthly-only schema.';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint constraint_row
+    where constraint_row.conrelid =
+        'public.financial_reconciliation_automatic_proposals'::regclass
+      and constraint_row.conname =
+        'financial_reconciliation_proposals_summary_snapshot_check'
+      and constraint_row.contype = 'c'
+      and constraint_row.convalidated
+  ) then
+    raise exception 'POS income proposal summary object constraint is missing or unvalidated.';
+  end if;
+
+  v_rejected := false;
+  begin
+    insert into public.financial_reconciliation_automatic_runs (
+      id, trigger, scope, status, actor, client_request_id
+    ) values (
+      '82000000-0000-0000-0000-000000000001', 'manual', 'rule', 'ready',
+      'smoke:pos-income-memberships',
+      '82000000-0000-0000-0000-000000000002'
+    );
+    insert into public.financial_reconciliation_automatic_proposals (
+      id, run_id, rule_key, rule_version, base_source_type, base_source_id,
+      base_source_date, base_snapshot, allowed_difference, signature,
+      grouping_key, summary_snapshot
+    ) values (
+      '82000000-0000-0000-0000-000000000003',
+      '82000000-0000-0000-0000-000000000001',
+      'cgd_bank_statement_fdm_credit_card_monthly_income', 1,
+      'import_cgd_extrato_ordem',
+      '82000000-0000-0000-0000-000000000004', date '2026-01-01',
+      '{}'::jsonb, 7500.00, 'smoke:pos-income:2026-01',
+      '2026-01', '{"calendarMonth":"2026-01"}'::jsonb
+    );
+  exception when others then
+    raise exception 'Could not create POS income membership fixture: %', sqlerrm;
+  end;
+
+  insert into public.financial_reconciliation_automatic_proposal_memberships (
+    proposal_id, role, source_type, source_id, ordinal, source_date,
+    amount, description, account, row_snapshot
+  ) values (
+    '82000000-0000-0000-0000-000000000003', 'source',
+    'import_cgd_extrato_ordem', '82000000-0000-0000-0000-000000000005',
+    1, date '2026-01-02', 100.00, 'POS VENDAS', '',
+    '{"sourceType":"import_cgd_extrato_ordem"}'::jsonb
+  );
+
+  v_rejected := false;
+  begin
+    insert into public.financial_reconciliation_automatic_proposal_memberships (
+      proposal_id, role, source_type, source_id, ordinal, source_date,
+      amount, row_snapshot
+    ) values (
+      '82000000-0000-0000-0000-000000000003', 'other',
+      'import_fdm_accounts', '82000000-0000-0000-0000-000000000006',
+      2, date '2026-01-03', 100.00, '{}'::jsonb
+    );
+  exception when check_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'POS income memberships accepted an invalid role.';
+  end if;
+
+  v_rejected := false;
+  begin
+    insert into public.financial_reconciliation_automatic_proposal_memberships (
+      proposal_id, role, source_type, source_id, ordinal, source_date,
+      amount, row_snapshot
+    ) values (
+      '82000000-0000-0000-0000-000000000003', 'source',
+      'import_fdm_accounts', '82000000-0000-0000-0000-000000000007',
+      1, date '2026-01-03', 100.00, '{}'::jsonb
+    );
+  exception when unique_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'POS income memberships accepted a duplicate role ordinal.';
+  end if;
+
+  v_rejected := false;
+  begin
+    insert into public.financial_reconciliation_automatic_proposal_memberships (
+      proposal_id, role, source_type, source_id, ordinal, source_date,
+      amount, row_snapshot
+    ) values (
+      '82000000-0000-0000-0000-000000000003', 'destination',
+      'import_cgd_extrato_ordem', '82000000-0000-0000-0000-000000000005',
+      2, date '2026-01-03', 100.00, '{}'::jsonb
+    );
+  exception when unique_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'POS income memberships accepted a duplicate source membership.';
+  end if;
+
+  v_rejected := false;
+  begin
+    insert into public.financial_reconciliation_automatic_proposal_memberships (
+      proposal_id, role, source_type, source_id, ordinal, source_date,
+      amount, row_snapshot
+    ) values (
+      '82000000-0000-0000-0000-000000000003', 'destination',
+      'import_fdm_accounts', '82000000-0000-0000-0000-000000000008',
+      2, date '2026-01-03', 100.00, '[]'::jsonb
+    );
+  exception when check_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'POS income memberships accepted a non-object row snapshot.';
+  end if;
+
+  v_rejected := false;
+  begin
+    update public.financial_reconciliation_automatic_proposal_memberships
+    set amount = 101.00
+    where proposal_id = '82000000-0000-0000-0000-000000000003'
+      and source_id = '82000000-0000-0000-0000-000000000005';
+  exception when others then
+    v_rejected := sqlerrm = 'Automatic proposal memberships are immutable.';
+  end;
+  if not v_rejected then
+    raise exception 'POS income membership snapshot update was accepted.';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'base_source_type', base_source_type,
+    'matching_source_type', matching_source_type,
+    'operator', operator
+  ) order by base_source_type, matching_source_type), '[]'::jsonb)
+  into v_rules
+  from public.financial_reconciliation_source_rules;
+
+  v_rejected := false;
+  begin
+    perform public.replace_financial_reconciliation_source_rules((
+      select jsonb_agg(case
+        when rule->>'base_source_type' = 'import_cgd_extrato_ordem'
+         and rule->>'matching_source_type' = 'import_fdm_accounts'
+          then jsonb_set(rule, '{operator}', '"+"'::jsonb)
+        else rule
+      end)
+      from jsonb_array_elements(v_rules) rule
+    ));
+  exception when others then
+    v_rejected := sqlerrm =
+      'The managed POS income source rule must remain enabled with operator -.';
+  end;
+  if not v_rejected then
+    raise exception 'Managed POS income source-rule operator change was accepted.';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.replace_financial_reconciliation_source_rules((
+      select coalesce(jsonb_agg(rule), '[]'::jsonb)
+      from jsonb_array_elements(v_rules) rule
+      where not (
+        rule->>'base_source_type' = 'import_cgd_extrato_ordem'
+        and rule->>'matching_source_type' = 'import_fdm_accounts'
+      )
+    ));
+  exception when others then
+    v_rejected := sqlerrm =
+      'The managed POS income source rule must remain enabled with operator -.';
+  end;
+  if not v_rejected then
+    raise exception 'Managed POS income source-rule deletion was accepted.';
+  end if;
+end $$;
+
+do $$
+declare
+  v_index_name text;
+  v_signature text :=
+    'public.replace_financial_reconciliation_source_rules(jsonb)';
+begin
+  if not (
+    select table_row.relrowsecurity
+    from pg_class table_row
+    where table_row.oid =
+      'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+  ) then
+    raise exception 'POS income membership RLS is not enabled.';
+  end if;
+
+  if has_table_privilege(
+      'anon',
+      'public.financial_reconciliation_automatic_proposal_memberships',
+      'SELECT,INSERT,UPDATE,DELETE'
+    ) or has_table_privilege(
+      'authenticated',
+      'public.financial_reconciliation_automatic_proposal_memberships',
+      'SELECT,INSERT,UPDATE,DELETE'
+    ) or has_table_privilege(
+      'service_role',
+      'public.financial_reconciliation_automatic_proposal_memberships',
+      'SELECT,INSERT,UPDATE,DELETE'
+  ) then
+    raise exception 'POS income membership table retains direct API-role privileges.';
+  end if;
+
+  if has_function_privilege('anon', v_signature, 'EXECUTE')
+    or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+    or not has_function_privilege('service_role', v_signature, 'EXECUTE')
+    or not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[])
+          @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    ) then
+    raise exception 'POS income source-rule RPC security is invalid.';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_proc procedure
+    cross join pos_income_source_rule_rpc_owner expected
+    where procedure.oid = v_signature::regprocedure
+      and procedure.proowner = expected.proowner
+  ) then
+    raise exception 'POS income source-rule RPC owner changed during replacement.';
+  end if;
+
+  if has_function_privilege(
+      'anon',
+      'public.prevent_financial_reconciliation_automatic_membership_change()',
+      'EXECUTE'
+    ) or has_function_privilege(
+      'authenticated',
+      'public.prevent_financial_reconciliation_automatic_membership_change()',
+      'EXECUTE'
+    ) or has_function_privilege(
+      'service_role',
+      'public.prevent_financial_reconciliation_automatic_membership_change()',
+      'EXECUTE'
+  ) then
+    raise exception 'POS income membership trigger function is directly executable by an API role.';
+  end if;
+
+  foreach v_index_name in array array[
+    'financial_reconciliation_automatic_memberships_role_ordinal_idx',
+    'import_cgd_extrato_ordem_pos_income_lock_idx',
+    'import_fdm_accounts_credit_card_lock_idx'
+  ] loop
+    if to_regclass('public.' || v_index_name) is null then
+      raise exception 'POS income required index is missing: %.', v_index_name;
+    end if;
+  end loop;
+end $$;
+
+update public.financial_reconciliation_automatic_rule_configs
+set enabled = true,
+    allow_manual_execution = true,
+    include_in_scheduled_batch = true,
+    difference_allowed = 4321.00,
+    priority = (select max(priority) + 10
+                from public.financial_reconciliation_automatic_rule_configs),
+    updated_by = 'smoke:pos-income-administrator'
+where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+
+create or replace function pg_temp.pos_income_task2_state()
+returns jsonb
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_object(
+    'definitions', (
+      select jsonb_agg(to_jsonb(definition)
+                       order by definition.rule_key, definition.version)
+      from public.financial_reconciliation_automatic_rule_definitions definition
+    ),
+    'configs', (
+      select jsonb_agg(to_jsonb(config) order by config.rule_key)
+      from public.financial_reconciliation_automatic_rule_configs config
+    ),
+    'proposalColumns', (
+      select jsonb_agg(to_jsonb(column_row) order by column_row.column_name)
+      from information_schema.columns column_row
+      where column_row.table_schema = 'public'
+        and column_row.table_name = 'financial_reconciliation_automatic_proposals'
+        and column_row.column_name in ('grouping_key', 'summary_snapshot')
+    ),
+    'constraints', (
+      select jsonb_agg(jsonb_build_object(
+        'table', constraint_row.conrelid::regclass::text,
+        'name', constraint_row.conname,
+        'type', constraint_row.contype,
+        'validated', constraint_row.convalidated,
+        'definition', pg_get_constraintdef(constraint_row.oid, true)
+      ) order by constraint_row.conrelid::regclass::text, constraint_row.conname)
+      from pg_constraint constraint_row
+      where constraint_row.conrelid in (
+        'public.financial_reconciliation_automatic_proposal_memberships'::regclass,
+        'public.financial_reconciliation_automatic_proposals'::regclass,
+        'public.financial_reconciliation_automatic_rule_configs'::regclass
+      )
+        and (
+          constraint_row.conrelid =
+            'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+          or constraint_row.conname in (
+            'financial_reconciliation_proposals_summary_snapshot_check',
+            'financial_reconciliation_rule_configs_pos_income_days_check'
+          )
+        )
+    ),
+    'indexes', (
+      select jsonb_agg(jsonb_build_object(
+        'name', index_row.indexrelid::regclass::text,
+        'definition', pg_get_indexdef(index_row.indexrelid),
+        'predicate', pg_get_expr(index_row.indpred, index_row.indrelid)
+      ) order by index_row.indexrelid::regclass::text)
+      from pg_index index_row
+      where index_row.indexrelid in (
+        'public.financial_reconciliation_automatic_memberships_role_ordinal_idx'::regclass,
+        'public.import_cgd_extrato_ordem_pos_income_lock_idx'::regclass,
+        'public.import_fdm_accounts_credit_card_lock_idx'::regclass
+      )
+    ),
+    'functions', (
+      select jsonb_agg(jsonb_build_object(
+        'signature', procedure.oid::regprocedure::text,
+        'definition', pg_get_functiondef(procedure.oid),
+        'owner', procedure.proowner::regrole::text,
+        'acl', coalesce(procedure.proacl::text, ''),
+        'config', coalesce(to_jsonb(procedure.proconfig), '[]'::jsonb)
+      ) order by procedure.oid::regprocedure::text)
+      from pg_proc procedure
+      where procedure.oid in (
+        'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure,
+        'public.prevent_financial_reconciliation_automatic_membership_change()'::regprocedure
+      )
+    ),
+    'triggers', (
+      select jsonb_agg(pg_get_triggerdef(trigger_row.oid, true)
+                       order by trigger_row.tgname)
+      from pg_trigger trigger_row
+      where trigger_row.tgrelid =
+          'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+        and not trigger_row.tgisinternal
+    ),
+    'tableAcl', (
+      select coalesce(table_row.relacl::text, '')
+      from pg_class table_row
+      where table_row.oid =
+        'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+    ),
+    'rowSecurity', (
+      select table_row.relrowsecurity
+      from pg_class table_row
+      where table_row.oid =
+        'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+    ),
+    'sourceRules', (
+      select jsonb_agg(to_jsonb(source_rule)
+                       order by base_source_type, matching_source_type)
+      from public.financial_reconciliation_source_rules source_rule
+    ),
+    'memberships', (
+      select jsonb_agg(to_jsonb(membership)
+                       order by role, ordinal, source_id)
+      from public.financial_reconciliation_automatic_proposal_memberships membership
+      where membership.proposal_id =
+        '82000000-0000-0000-0000-000000000003'
+    ),
+    'proposal', (
+      select to_jsonb(proposal)
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id =
+        '82000000-0000-0000-0000-000000000003'
+    )
+  )
+$$;
+
+create temporary table pos_income_task2_reapply_baseline as
+select pg_temp.pos_income_task2_state() as state;
+
+\ir ../supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql
+
+do $$
+begin
+  if (select state from pos_income_task2_reapply_baseline)
+      is distinct from pg_temp.pos_income_task2_state() then
+    raise exception 'POS income migration second apply changed schema, catalog, functions, privileges, or data.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    where config.rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+      and config.rule_version = 1
+      and config.enabled
+      and config.allow_manual_execution
+      and config.include_in_scheduled_batch
+      and config.difference_allowed = 4321.00
+      and config.max_difference_days = 31
+      and config.updated_by = 'smoke:pos-income-administrator'
+  ) then
+    raise exception 'POS income migration reapply overwrote administrator configuration.';
+  end if;
+end $$;
+
 rollback;
