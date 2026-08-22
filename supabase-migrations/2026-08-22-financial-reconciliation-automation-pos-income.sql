@@ -3774,12 +3774,14 @@ begin
         'cgd_bank_statement_fdm_credit_card_monthly_income'
       and (v_selected_rule->>'maxDifferenceDays')::integer <> 31
     )
-    or v_selected_rule->>'operator' is distinct from case
-      when v_selected_rule_key =
-          'cgd_bank_statement_fdm_credit_card_monthly_income'
-        then '-'
-      else '+'
-    end then
+    or v_selected_rule->>'operator' is distinct from (
+      case
+        when v_selected_rule_key =
+            'cgd_bank_statement_fdm_credit_card_monthly_income'
+          then '-'
+        else '+'
+      end
+    ) then
     raise exception 'Automatic scheduled batch snapshot is invalid.';
   end if;
 
