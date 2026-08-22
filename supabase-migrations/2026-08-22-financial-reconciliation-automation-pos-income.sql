@@ -2083,7 +2083,6 @@ declare
   v_actual_difference numeric(14,2);
   v_comment text;
   v_failure_message text;
-  v_failure_detail text;
 begin
   if p_proposal_id is null then
     raise exception 'Automation proposal ID is required.';
@@ -2390,8 +2389,20 @@ begin
   v_calendar_month :=
     (v_proposal.summary_snapshot->>'calendarMonth')::date;
 
-  -- Lock immutable membership rows and both live source tables in the same
-  -- (source_type, source_date, source_id) order before recomputing eligibility.
+  -- Global monthly-execution table-lock order: Bank source, FDM source, then
+  -- reconciliation item locks. SHARE ROW EXCLUSIVE conflicts with every
+  -- external INSERT/UPDATE/DELETE writer (ROW EXCLUSIVE) and with another
+  -- monthly executor, while this transaction may still write its own item
+  -- locks. These transaction-scoped locks are held through lifecycle completion.
+  lock table
+    public.import_cgd_extrato_ordem,
+    public.import_fdm_accounts,
+    public.financial_reconciliation_items
+  in share row exclusive mode;
+
+  -- Only after the predicate-level writer barrier is held, lock immutable
+  -- membership rows and live members in deterministic source/date/ID order,
+  -- then recompute and compare the entire eligible month before any write.
   perform membership.source_id
   from public.financial_reconciliation_automatic_proposal_memberships membership
   where membership.proposal_id = v_proposal.id
@@ -2938,8 +2949,7 @@ begin
       );
     when others then
       get stacked diagnostics
-        v_failure_message = message_text,
-        v_failure_detail = pg_exception_detail;
+        v_failure_message = message_text;
       if v_failure_message in (
         'Automatic monthly reconciliation lifecycle snapshots changed after revalidation.',
         'This record is already reconciled.'
@@ -2966,9 +2976,7 @@ begin
           reconciliation_id = null,
           completed_at = null,
           error = 'Automatic reconciliation execution failed.',
-          error_detail = left(concat_ws(
-            ' ', v_failure_message, nullif(v_failure_detail, '')
-          ), 2000),
+          error_detail = '',
           updated_at = now()
       where id = v_proposal.id;
       return jsonb_build_object(

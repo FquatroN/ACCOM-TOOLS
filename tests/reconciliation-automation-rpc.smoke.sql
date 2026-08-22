@@ -8707,6 +8707,72 @@ select pg_temp.pos_income_task4_clone_proposal(
   '86100000-0000-0000-0000-000000000021', 'smoke:pos-income-rollback'
 );
 
+-- Observe the serialization protocol at the first write after exact stale
+-- revalidation and at both ends of a successful lifecycle. PostgreSQL relation
+-- locks are transaction-scoped, so these checkpoints prove the three writer-
+-- conflicting locks are already held after revalidation and remain held
+-- through proposal completion.
+create temporary table pos_income_task4_serialization_observations (
+  proposal_id uuid not null,
+  observed_status text not null,
+  locked_relations text[] not null,
+  primary key (proposal_id, observed_status)
+);
+
+create or replace function pg_temp.pos_income_task4_observe_serialization()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_locked_relations text[];
+begin
+  if (new.id = '86100000-0000-0000-0000-000000000003'
+      and new.status = 'stale')
+    or (new.id = '86100000-0000-0000-0000-000000000001'
+        and new.status in ('executing', 'completed')) then
+    select array_agg(target.relation_name order by target.lock_ordinal)
+    into v_locked_relations
+    from (values
+      (1, 'import_cgd_extrato_ordem'::text,
+       'public.import_cgd_extrato_ordem'::regclass),
+      (2, 'import_fdm_accounts'::text,
+       'public.import_fdm_accounts'::regclass),
+      (3, 'financial_reconciliation_items'::text,
+       'public.financial_reconciliation_items'::regclass)
+    ) target(lock_ordinal, relation_name, relation_oid)
+    where exists (
+      select 1
+      from pg_catalog.pg_locks held
+      where held.pid = pg_backend_pid()
+        and held.locktype = 'relation'
+        and held.relation = target.relation_oid
+        and held.mode = 'ShareRowExclusiveLock'
+        and held.granted
+    );
+
+    if v_locked_relations is distinct from array[
+      'import_cgd_extrato_ordem',
+      'import_fdm_accounts',
+      'financial_reconciliation_items'
+    ]::text[] then
+      raise exception
+        'POS income serialization locks were not held at %: %.',
+        new.status, v_locked_relations;
+    end if;
+
+    insert into pg_temp.pos_income_task4_serialization_observations (
+      proposal_id, observed_status, locked_relations
+    ) values (new.id, new.status, v_locked_relations);
+  end if;
+  return new;
+end
+$$;
+
+create trigger pos_income_task4_observe_serialization
+before update on public.financial_reconciliation_automatic_proposals
+for each row execute function pg_temp.pos_income_task4_observe_serialization();
+
 -- Above-tolerance proposals remain non-executable and make no lifecycle writes.
 do $$
 declare
@@ -9029,7 +9095,9 @@ as $$
 begin
   if new.action = 'automatic_complete'
     and new.actor = 'smoke:pos-income-rollback' then
-    raise exception 'smoke POS income automatic completion failure';
+    raise exception using
+      message = 'task4-secret-message-77fbd4d6',
+      detail = 'task4-secret-detail-77fbd4d6';
   end if;
   return new;
 end
@@ -9042,10 +9110,15 @@ for each row execute function pg_temp.pos_income_task4_reject_automatic_complete
 do $$
 declare
   v_result jsonb;
+  v_public_run jsonb;
+  v_secret_pattern text := '%77fbd4d6%';
 begin
   v_result := public.execute_financial_reconciliation_automatic_proposal(
     '86100000-0000-0000-0000-000000000021',
     'smoke:pos-income-rollback'
+  );
+  v_public_run := public.get_financial_reconciliation_automatic_run(
+    '86000000-0000-0000-0000-000000000021'
   );
   if v_result is distinct from jsonb_build_object(
       'proposalId', '86100000-0000-0000-0000-000000000021'::uuid,
@@ -9062,6 +9135,21 @@ begin
         and proposal.reconciliation_id is null
         and proposal.completed_at is null
         and proposal.error = 'Automatic reconciliation execution failed.'
+        and proposal.error_detail = ''
+    )
+    or v_result::text ilike v_secret_pattern
+    or v_public_run::text ilike v_secret_pattern
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = '86100000-0000-0000-0000-000000000021'
+        and to_jsonb(proposal)::text ilike v_secret_pattern
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_runs run
+      where run.id = '86000000-0000-0000-0000-000000000021'
+        and to_jsonb(run)::text ilike v_secret_pattern
     )
     or exists (
       select 1 from public.financial_reconciliations reconciliation
@@ -9076,8 +9164,9 @@ begin
     or exists (
       select 1 from public.financial_reconciliation_audit audit
       where audit.actor = 'smoke:pos-income-rollback'
+         or to_jsonb(audit)::text ilike v_secret_pattern
     ) then
-    raise exception 'POS income post-start failure left lifecycle writes: %.',
+    raise exception 'POS income failure leaked diagnostics or left lifecycle writes: %.',
       v_result;
   end if;
 end
@@ -9262,6 +9351,40 @@ begin
   end loop;
 end
 $$;
+
+do $$
+begin
+  if not exists (
+      select 1
+      from pg_temp.pos_income_task4_serialization_observations observation
+      where observation.proposal_id =
+          '86100000-0000-0000-0000-000000000003'
+        and observation.observed_status = 'stale'
+    )
+    or not exists (
+      select 1
+      from pg_temp.pos_income_task4_serialization_observations observation
+      where observation.proposal_id =
+          '86100000-0000-0000-0000-000000000001'
+        and observation.observed_status = 'executing'
+    )
+    or not exists (
+      select 1
+      from pg_temp.pos_income_task4_serialization_observations observation
+      where observation.proposal_id =
+          '86100000-0000-0000-0000-000000000001'
+        and observation.observed_status = 'completed'
+    ) then
+    raise exception
+      'POS income serialization protocol missed a revalidation/lifecycle checkpoint.';
+  end if;
+end
+$$;
+
+drop trigger pos_income_task4_observe_serialization
+on public.financial_reconciliation_automatic_proposals;
+drop function pg_temp.pos_income_task4_observe_serialization();
+drop table pg_temp.pos_income_task4_serialization_observations;
 
 -- Execute the exact 1,000 + 1,000 immutable membership set and verify the
 -- paginated history summary reports both raw counts and totals.
