@@ -6589,9 +6589,50 @@ button[id^="close-settings"] {
 }
 
 .financial-reconciliation-manual-panel:not([hidden]),
-.financial-reconciliation-automatic-panel:not([hidden]) {
+.financial-reconciliation-automatic-panel:not([hidden]),
+.financial-reconciliation-history-panel:not([hidden]) {
   display: grid;
   gap: 1rem;
+}
+
+.financial-reconciliation-history-filters {
+  grid-template-columns: repeat(6, minmax(8rem, 1fr));
+  align-items: end;
+}
+
+.financial-reconciliation-history-filter-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
+.financial-reconciliation-history-search-wrap {
+  max-height: min(64vh, 48rem);
+}
+
+.financial-reconciliation-history-search-table {
+  min-width: 92rem;
+}
+
+.financial-reconciliation-history-sources {
+  min-width: 13rem;
+}
+
+.financial-reconciliation-history-sources span {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.financial-reconciliation-history-comment {
+  min-width: 12rem;
+  max-width: 20rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.financial-reconciliation-history-pagination {
+  justify-content: flex-end;
+  margin-top: .75rem;
 }
 
 .financial-reconciliation-workbench {
@@ -6712,8 +6753,14 @@ button[id^="close-settings"] {
     flex: 1 1 12rem;
   }
 
+  .financial-reconciliation-history-filters { grid-template-columns: 1fr 1fr; }
+
   .financial-reconciliation-source-row { grid-template-columns: 1fr; }
   .financial-reconciliation-rule-hint { margin: 0; }
+}
+
+@media (max-width: 520px) {
+  .financial-reconciliation-history-filters { grid-template-columns: 1fr; }
 }
 
 .financial-reconciliation-filter-wide {

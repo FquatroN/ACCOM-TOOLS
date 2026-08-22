@@ -18,6 +18,8 @@ insert into financial_reconciliations (
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-schema.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-analysis.sql
 \ir ../supabase-migrations/2026-08-14-financial-reconciliation-automation-execution.sql
+\ir ../supabase-migrations/2026-08-22-financial-reconciliation-history-search.sql
+\ir ../supabase-migrations/2026-08-22-financial-reconciliation-history-search.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-analysis-performance.sql
 \ir ../supabase-migrations/2026-08-15-financial-reconciliation-automation-candidate-index-lookup.sql
 \ir ../supabase-migrations/2026-08-16-financial-reconciliation-automation-banco-v2.sql
@@ -515,5 +517,69 @@ begin
     perform financial_reconciliation_action('add_item','smoke',fdm_rid,'import_cgd_cartao_credito',card_id,null);
     raise exception 'Expected source absent from snapshot failure';
   exception when others then if sqlerrm <> 'Item source type is not allowed for this reconciliation.' then raise; end if; end;
+end $$;
+
+do $$
+declare
+  v_reconciliation_id uuid := gen_random_uuid();
+  v_document_id uuid := gen_random_uuid();
+  v_bank_id uuid := gen_random_uuid();
+  v_result jsonb;
+  v_row jsonb;
+  v_today date := (now() at time zone 'Europe/Lisbon')::date;
+begin
+  insert into public.financial_reconciliations (
+    id, status, base_source_type, matching_source_types, matching_source_rules,
+    difference_amount, created_by, created_at, origin
+  ) values (
+    v_reconciliation_id, 'complete', 'financial_documents',
+    '["import_cgd_extrato_ordem"]'::jsonb,
+    '[{"sourceType":"import_cgd_extrato_ordem","operator":"+"}]'::jsonb,
+    0, 'history-smoke', clock_timestamp(), 'user'
+  );
+
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  ) values
+    (v_reconciliation_id, 'financial_documents', v_document_id, 100, 'history-smoke'),
+    (v_reconciliation_id, 'import_cgd_extrato_ordem', v_bank_id, -100, 'history-smoke');
+
+  insert into public.financial_reconciliation_audit (
+    reconciliation_id, action, actor, comment, difference_amount
+  ) values (
+    v_reconciliation_id, 'complete', 'history-smoke', 'History completion comment', 0
+  );
+
+  v_result := public.get_financial_reconciliation_history(
+    v_today, v_today, 'user', 'complete', 0, 0, 1, 100
+  );
+  if (v_result->>'total')::integer < 1
+    or (v_result->>'pageSize')::integer <> 100 then
+    raise exception 'History search did not filter and paginate completed user reconciliations';
+  end if;
+  select value into v_row
+  from jsonb_array_elements(v_result->'rows') value
+  where value->>'id' = v_reconciliation_id::text;
+  if v_row is null
+    or v_row->>'completionComment' <> 'History completion comment'
+    or (v_row->>'totalRecords')::integer <> 2
+    or (v_row->>'sourceAmountTotal')::numeric <> 100
+    or (v_row->>'destinationAmountTotal')::numeric <> -100
+    or jsonb_array_length(v_row->'sourceSummary') <> 2 then
+    raise exception 'History search did not return source/destination totals and completion comment';
+  end if;
+
+  v_result := public.get_financial_reconciliation_history(
+    null, null, null, 'not_started', null, null, 1, 50
+  );
+  if (v_result->>'total')::integer <> 0 then
+    raise exception 'History not-started filter should return no persisted reconciliations';
+  end if;
+
+  if has_function_privilege('anon', 'public.get_financial_reconciliation_history(date,date,text,text,numeric,numeric,integer,integer)', 'execute')
+    or has_function_privilege('authenticated', 'public.get_financial_reconciliation_history(date,date,text,text,numeric,numeric,integer,integer)', 'execute')
+    or not has_function_privilege('service_role', 'public.get_financial_reconciliation_history(date,date,text,text,numeric,numeric,integer,integer)', 'execute') then
+    raise exception 'History search RPC privileges are not service-role only';
+  end if;
 end $$;
 rollback;

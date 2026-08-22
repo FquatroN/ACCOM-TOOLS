@@ -270,10 +270,22 @@ test("reconciliation separates manual and automatic work into accessible tabs wi
   assert.ok(html.indexOf('id="financial-reconciliation-history-rows"') > html.indexOf('id="financial-reconciliation-automatic-panel"'));
 });
 
+test("reconciliation provides a dedicated searchable History tab while retaining compact history", () => {
+  assert.match(html, /id="financial-reconciliation-history-tab"[^>]*role="tab"[^>]*aria-controls="financial-reconciliation-history-panel"/);
+  assert.match(html, /id="financial-reconciliation-history-panel"[^>]*role="tabpanel"[^>]*aria-labelledby="financial-reconciliation-history-tab"[^>]*hidden/);
+  assert.match(html, /id="financial-reconciliation-history-filters"[\s\S]*id="financial-reconciliation-history-created-from"[\s\S]*id="financial-reconciliation-history-created-to"/);
+  assert.match(html, /id="financial-reconciliation-history-origin"[\s\S]*<option value="user">User<\/option>[\s\S]*<option value="automatic">Automatic<\/option>/);
+  assert.match(html, /id="financial-reconciliation-history-status-filter"[\s\S]*<option value="not_started">Not started<\/option>[\s\S]*<option value="started">Started<\/option>[\s\S]*<option value="complete">Complete<\/option>/);
+  assert.match(html, /id="financial-reconciliation-history-difference-from"[\s\S]*id="financial-reconciliation-history-difference-to"/);
+  assert.match(html, /<th>Created<\/th>[\s\S]*<th>Source<\/th>[\s\S]*<th>Destination<\/th>[\s\S]*<th># records<\/th>[\s\S]*<th>Origin<\/th>[\s\S]*<th>Status<\/th>[\s\S]*<th>Source total<\/th>[\s\S]*<th>Destination total<\/th>[\s\S]*<th>Difference<\/th>[\s\S]*<th>Completion comment<\/th>/);
+  assert.match(html, /id="financial-reconciliation-history-search-rows"/);
+  assert.match(html, /id="financial-reconciliation-history-card"[^>]*class="[^"]*financial-reconciliation-history-card/);
+});
+
 test("reconciliation application tabs remain visible and usable on narrow screens", () => {
   assert.match(css, /\.financial-reconciliation-view-tabs\s*\{[\s\S]*flex-wrap:\s*wrap;[\s\S]*margin-bottom:\s*1rem;/);
   assert.match(css, /\.financial-reconciliation-view-tabs\s*>\s*button:focus-visible\s*\{[\s\S]*outline:/);
-  assert.match(css, /\.financial-reconciliation-manual-panel:not\(\[hidden\]\),[\s\S]*\.financial-reconciliation-automatic-panel:not\(\[hidden\]\)\s*\{[\s\S]*display:\s*grid;/);
+  assert.match(css, /\.financial-reconciliation-manual-panel:not\(\[hidden\]\),[\s\S]*\.financial-reconciliation-automatic-panel:not\(\[hidden\]\),[\s\S]*\.financial-reconciliation-history-panel:not\(\[hidden\]\)\s*\{[\s\S]*display:\s*grid;/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-view-tabs\s*>\s*button\s*\{[\s\S]*flex:\s*1 1 12rem;/);
   assert.match(html, /id="financial-reconciliation-manual-panel"[^>]*class="[^"]*financial-reconciliation-manual-panel/);
   assert.match(html, /id="financial-reconciliation-automatic-panel"[^>]*class="[^"]*financial-reconciliation-automatic-panel/);
@@ -305,18 +317,22 @@ function reconciliationTabElements() {
   return {
     financialReconciliationManualTab: tab(),
     financialReconciliationAutomaticTab: tab(),
+    financialReconciliationHistoryTab: tab(),
     financialReconciliationManualPanel: { hidden: false },
     financialReconciliationAutomaticPanel: { hidden: true },
+    financialReconciliationHistoryPanel: { hidden: true },
+    financialReconciliationHistoryCard: { hidden: false },
   };
 }
 
-function compileReconciliationTabController({ current, els, calls, loadRules = async () => { calls.push("load-rules"); current.automation.loaded = true; } }) {
+function compileReconciliationTabController({ current, els, calls, loadRules = async () => { calls.push("load-rules"); current.automation.loaded = true; }, loadHistory = async () => { calls.push("load-history"); current.historySearch.loaded = true; } }) {
   let controller;
   controller = new Function(
     "clean",
     "financialReconciliationState",
     "renderFinancialReconciliation",
     "loadFinancialReconciliationAutomationRules",
+    "loadFinancialReconciliationHistory",
     "els",
     `${appFunctionSource("normalizeFinancialReconciliationTab")}
      ${appFunctionSource("renderFinancialReconciliationTabs")}
@@ -328,6 +344,7 @@ function compileReconciliationTabController({ current, els, calls, loadRules = a
     () => current,
     () => { calls.push(`render:${current.activeTab}`); controller.renderFinancialReconciliationTabs(); },
     loadRules,
+    loadHistory,
     els,
   );
   return controller;
@@ -338,6 +355,7 @@ test("reconciliation tab controller defaults to Manual and supports arrow activa
     activeTab: "manual",
     filters: { description: "retained" },
     automation: { loaded: true, run: { runId: "retained-run" } },
+    historySearch: { loaded: false },
   };
   const calls = [];
   const els = reconciliationTabElements();
@@ -362,7 +380,14 @@ test("reconciliation tab controller defaults to Manual and supports arrow activa
   assert.equal(els.financialReconciliationAutomaticTab.tabindex, "0");
   assert.equal(els.financialReconciliationAutomaticTab.focused, true);
 
-  controller.onFinancialReconciliationTabKeydown({ key: "ArrowLeft", preventDefault() { calls.push("prevent"); } });
+  controller.onFinancialReconciliationTabKeydown({ key: "ArrowRight", preventDefault() { calls.push("prevent"); } });
+  await Promise.resolve();
+  assert.equal(current.activeTab, "history");
+  assert.equal(els.financialReconciliationHistoryPanel.hidden, false);
+  assert.equal(els.financialReconciliationHistoryCard.hidden, true);
+  assert.ok(calls.includes("load-history"));
+
+  controller.onFinancialReconciliationTabKeydown({ key: "ArrowRight", preventDefault() { calls.push("prevent"); } });
   await Promise.resolve();
   assert.equal(current.activeTab, "manual");
   assert.ok(calls.includes("prevent"));
@@ -825,6 +850,71 @@ test("history renders one wrapping source summary and preserves row behavior", (
   assert.match(markup, /Complete/);
   assert.match(markup, /0\.00 €/);
   assert.match(markup, /data-financial-reconciliation-select="rec-1">Open<\/button>/);
+});
+
+test("dedicated history renders source and destination totals with completion comments", () => {
+  const current = {
+    rows: [{
+      id: "rec-history-1",
+      created_at: "2026-08-22T12:00:00Z",
+      base_source_type: "financial_documents",
+      origin: "automatic",
+      automaticTrigger: "scheduled",
+      status: "complete",
+      difference_amount: 0,
+      totalRecords: 5,
+      sourceAmountTotal: 450,
+      destinationAmountTotal: -450,
+      completionComment: "Matched by scheduled rule",
+      sourceSummary: [
+        { sourceType: "financial_documents", recordCount: 2, amountTotal: 450 },
+        { sourceType: "import_cgd_extrato_ordem", recordCount: 2, amountTotal: -400 },
+        { sourceType: "import_cgd_cartao_credito", recordCount: 1, amountTotal: -50 },
+      ],
+    }],
+    page: 1,
+    pageSize: 50,
+    total: 1,
+    loading: false,
+    error: "",
+  };
+  const els = {
+    financialReconciliationHistorySearchRows: { innerHTML: "" },
+    financialReconciliationHistoryCount: { textContent: "" },
+    financialReconciliationHistoryPage: { textContent: "" },
+    financialReconciliationHistoryPrevious: { disabled: false },
+    financialReconciliationHistoryNext: { disabled: false },
+    financialReconciliationHistorySearchStatus: { textContent: "" },
+  };
+  const render = new Function(
+    "clean", "escape", "formatMoney", "formatDateTimeShort", "financialReconciliationSourceLabel",
+    "financialReconciliationHistorySearchState", "financialReconciliationOriginMarkup",
+    "financialReconciliationStatusMarkup", "financialReconciliationDifference", "FINANCIAL_RECONCILIATION_SOURCES", "els",
+    `${appFunctionSource("financialReconciliationHistorySourceSummary")}
+     ${appFunctionSource("financialReconciliationHistorySummaryMarkup")}
+     ${appFunctionSource("renderFinancialReconciliationHistorySearch")}
+     return renderFinancialReconciliationHistorySearch;`,
+  )(
+    (value) => String(value ?? "").trim(),
+    (value) => String(value),
+    (value) => `${Number(value).toFixed(2)} €`,
+    () => "2026-08-22 12:00",
+    (source) => ({ financial_documents: "Financial Documents", import_cgd_extrato_ordem: "CGD Bank Statement", import_cgd_cartao_credito: "CGD Credit Card" }[source] || source),
+    () => current,
+    () => "Automatic",
+    () => "Complete",
+    (record) => Number(record.difference_amount),
+    { financial_documents: {}, import_cgd_extrato_ordem: {}, import_cgd_cartao_credito: {} },
+    els,
+  );
+  render();
+  const markup = els.financialReconciliationHistorySearchRows.innerHTML;
+  assert.match(markup, /Financial Documents <small>\(#2; 450\.00 €\)<\/small>/);
+  assert.match(markup, /CGD Bank Statement <small>\(#2; -400\.00 €\)<\/small>/);
+  assert.match(markup, /CGD Credit Card <small>\(#1; -50\.00 €\)<\/small>/);
+  assert.match(markup, />5<\/td>/);
+  assert.match(markup, /Matched by scheduled rule/);
+  assert.match(markup, /data-financial-reconciliation-select="rec-history-1"/);
 });
 
 test("origin presentation is backward compatible and distinguishes automatic triggers", () => {

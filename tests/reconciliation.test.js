@@ -10,6 +10,7 @@ const {
   normalizeRuleSnapshot,
   normalizeSourceType,
   validateMutation,
+  validateHistoryQuery,
   validateWorkspaceQuery,
 } = require("../api/_reconciliation");
 
@@ -296,6 +297,43 @@ test("workspace rejects malformed date and amount filters before SQL casts", () 
     () => validateWorkspaceQuery({ source_type: "financial_documents", filters: '{"amountMin":"not-a-number"}' }),
     /valid number/i,
   );
+});
+
+test("history query validates searchable ranges and normalizes optional filters", () => {
+  assert.equal(typeof validateHistoryQuery, "function");
+  assert.deepEqual(validateHistoryQuery({
+    created_from: "2026-01-01",
+    created_to: "2026-08-22",
+    origin: "automatic",
+    status: "complete",
+    difference_from: "-10.50",
+    difference_to: "20",
+    page: "2",
+    page_size: "50",
+  }), {
+    createdFrom: "2026-01-01",
+    createdTo: "2026-08-22",
+    origin: "automatic",
+    status: "complete",
+    differenceFrom: -10.5,
+    differenceTo: 20,
+    page: 2,
+    pageSize: 50,
+  });
+  assert.deepEqual(validateHistoryQuery({}), {
+    createdFrom: "",
+    createdTo: "",
+    origin: "",
+    status: "",
+    differenceFrom: null,
+    differenceTo: null,
+    page: 1,
+    pageSize: 50,
+  });
+  assert.throws(() => validateHistoryQuery({ created_from: "2026-02-02", created_to: "2026-02-01" }), /created date range/i);
+  assert.throws(() => validateHistoryQuery({ difference_from: "2", difference_to: "1" }), /difference range/i);
+  assert.throws(() => validateHistoryQuery({ origin: "scheduled" }), /origin/i);
+  assert.throws(() => validateHistoryQuery({ status: "deleted" }), /status/i);
 });
 
 test("RPC error mapping makes source locks conflicts and validation errors client-safe", () => {

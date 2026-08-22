@@ -54,6 +54,7 @@ migrations in this exact order:
 8. `supabase-migrations/2026-08-16-financial-reconciliation-automation-credit-card-rule.sql`
 9. `supabase-migrations/2026-08-17-financial-reconciliation-automation-amount-only-rules.sql`
 10. `supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql`
+11. `supabase-migrations/2026-08-22-financial-reconciliation-history-search.sql`
 
 If the database is already current through Banco v2, apply migrations 7 and 8
 and then migration 9 in that order. If it is already current through the
@@ -63,6 +64,9 @@ Card and amount-only migrations are reapply-safe: they verify immutable managed
 definitions without overwriting saved administrator flags, editable day window,
 or priority. The supported **Max difference in days** range is 0-90 days.
 Installations current through migration 9 apply only migration 10.
+Installations current through migration 10 apply only migration 11. Migration 11
+adds the service-only paginated RPC used by the dedicated Reconciliation →
+History tab and is safe to apply twice.
 
 ### Amount-only rollout sequence
 

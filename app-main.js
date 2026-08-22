@@ -1325,6 +1325,10 @@ const state = {
     selectedReconciliationId: "",
     pendingAction: "",
     completionCommentDraft: { reconciliationId: "", value: "" },
+    historySearch: {
+      filters: { createdFrom: "", createdTo: "", origin: "", status: "", differenceFrom: "", differenceTo: "" },
+      rows: [], page: 1, pageSize: 50, total: 0, loaded: false, loading: false, error: "",
+    },
     automation: {
       rules: [],
       run: null,
@@ -1994,10 +1998,27 @@ const els = {
   financialReconciliationStatus: document.getElementById("financial-reconciliation-status"),
   financialReconciliationManualTab: document.getElementById("financial-reconciliation-manual-tab"),
   financialReconciliationAutomaticTab: document.getElementById("financial-reconciliation-automatic-tab"),
+  financialReconciliationHistoryTab: document.getElementById("financial-reconciliation-history-tab"),
   financialReconciliationManualPanel: document.getElementById("financial-reconciliation-manual-panel"),
   financialReconciliationAutomaticPanel: document.getElementById("financial-reconciliation-automatic-panel"),
+  financialReconciliationHistoryPanel: document.getElementById("financial-reconciliation-history-panel"),
+  financialReconciliationHistoryCard: document.getElementById("financial-reconciliation-history-card"),
   financialReconciliationCurrent: document.getElementById("financial-reconciliation-current"),
   financialReconciliationHistoryRows: document.getElementById("financial-reconciliation-history-rows"),
+  financialReconciliationHistoryFilters: document.getElementById("financial-reconciliation-history-filters"),
+  financialReconciliationHistoryCreatedFrom: document.getElementById("financial-reconciliation-history-created-from"),
+  financialReconciliationHistoryCreatedTo: document.getElementById("financial-reconciliation-history-created-to"),
+  financialReconciliationHistoryOrigin: document.getElementById("financial-reconciliation-history-origin"),
+  financialReconciliationHistoryStatusFilter: document.getElementById("financial-reconciliation-history-status-filter"),
+  financialReconciliationHistoryDifferenceFrom: document.getElementById("financial-reconciliation-history-difference-from"),
+  financialReconciliationHistoryDifferenceTo: document.getElementById("financial-reconciliation-history-difference-to"),
+  financialReconciliationHistoryClear: document.getElementById("financial-reconciliation-history-clear"),
+  financialReconciliationHistorySearchStatus: document.getElementById("financial-reconciliation-history-search-status"),
+  financialReconciliationHistorySearchRows: document.getElementById("financial-reconciliation-history-search-rows"),
+  financialReconciliationHistoryCount: document.getElementById("financial-reconciliation-history-count"),
+  financialReconciliationHistoryPrevious: document.getElementById("financial-reconciliation-history-previous"),
+  financialReconciliationHistoryNext: document.getElementById("financial-reconciliation-history-next"),
+  financialReconciliationHistoryPage: document.getElementById("financial-reconciliation-history-page"),
   financialReconciliationWorkbenchAutomationRule: document.getElementById("financial-reconciliation-workbench-automation-rule"),
   financialReconciliationWorkbenchAutomationAnalyze: document.getElementById("financial-reconciliation-workbench-automation-analyze"),
   financialReconciliationWorkbenchAutomationStatus: document.getElementById("financial-reconciliation-workbench-automation-status"),
@@ -2685,8 +2706,10 @@ function bindEvents() {
   els.navFinancialReconciliation?.addEventListener("click", () => setView("financial-reconciliation"));
   els.financialReconciliationManualTab?.addEventListener("click", () => setFinancialReconciliationTab("manual"));
   els.financialReconciliationAutomaticTab?.addEventListener("click", () => setFinancialReconciliationTab("automatic"));
+  els.financialReconciliationHistoryTab?.addEventListener("click", () => setFinancialReconciliationTab("history"));
   els.financialReconciliationManualTab?.addEventListener("keydown", onFinancialReconciliationTabKeydown);
   els.financialReconciliationAutomaticTab?.addEventListener("keydown", onFinancialReconciliationTabKeydown);
+  els.financialReconciliationHistoryTab?.addEventListener("keydown", onFinancialReconciliationTabKeydown);
   els.financialReconciliationSource?.addEventListener("change", onFinancialReconciliationSourceChange);
   els.financialReconciliationFilters?.addEventListener("change", onFinancialReconciliationFilterChange);
   els.financialReconciliationFilters?.addEventListener("input", onFinancialReconciliationFilterInput);
@@ -2695,6 +2718,11 @@ function bindEvents() {
   els.financialReconciliationCurrent?.addEventListener("click", onFinancialReconciliationCurrentClick);
   els.financialReconciliationCurrent?.addEventListener("input", onFinancialReconciliationCurrentInput);
   els.financialReconciliationHistoryRows?.addEventListener("click", onFinancialReconciliationHistoryClick);
+  els.financialReconciliationHistoryFilters?.addEventListener("submit", onFinancialReconciliationHistorySearch);
+  els.financialReconciliationHistoryClear?.addEventListener("click", clearFinancialReconciliationHistorySearch);
+  els.financialReconciliationHistorySearchRows?.addEventListener("click", onFinancialReconciliationHistoryClick);
+  els.financialReconciliationHistoryPrevious?.addEventListener("click", () => changeFinancialReconciliationHistoryPage(-1));
+  els.financialReconciliationHistoryNext?.addEventListener("click", () => changeFinancialReconciliationHistoryPage(1));
   els.financialReconciliationWorkbenchAutomationRule?.addEventListener("change", onFinancialReconciliationAutomationRuleChange);
   els.financialReconciliationWorkbenchAutomationAnalyze?.addEventListener("click", () => analyzeFinancialReconciliationAutomationRule());
   els.financialReconciliationWorkbenchAutomationProposals?.addEventListener("click", onFinancialReconciliationAutomationProposalsClick);
@@ -3986,7 +4014,8 @@ async function refreshCurrentViewData(reason = "timer") {
       return;
     }
     if (state.currentView === "financial-reconciliation" && canAppFinancialReconciliation()) {
-      await loadFinancialReconciliationWorkspace({ silent: true });
+      if (financialReconciliationState().activeTab === "history") await loadFinancialReconciliationHistory();
+      else await loadFinancialReconciliationWorkspace({ silent: true });
       state.lastAutoRefreshAt = now;
       return;
     }
@@ -22023,48 +22052,63 @@ function financialReconciliationState() {
 }
 
 function normalizeFinancialReconciliationTab(tab) {
-  return clean(tab) === "automatic" ? "automatic" : "manual";
+  const normalized = clean(tab);
+  return normalized === "automatic" || normalized === "history" ? normalized : "manual";
 }
 
 function financialReconciliationEntryTab(options = {}) {
-  return options && options.financialReconciliationTab === "automatic" ? "automatic" : "manual";
+  const requested = options?.financialReconciliationTab;
+  return requested === "automatic" || requested === "history" ? requested : "manual";
 }
 
 function renderFinancialReconciliationTabs() {
-  const automatic = normalizeFinancialReconciliationTab(financialReconciliationState().activeTab) === "automatic";
-  financialReconciliationState().activeTab = automatic ? "automatic" : "manual";
-  els.financialReconciliationManualTab?.classList.toggle("active-tab", !automatic);
-  els.financialReconciliationManualTab?.classList.toggle("ghost", automatic);
-  els.financialReconciliationAutomaticTab?.classList.toggle("active-tab", automatic);
-  els.financialReconciliationAutomaticTab?.classList.toggle("ghost", !automatic);
-  els.financialReconciliationManualTab?.setAttribute("aria-selected", String(!automatic));
-  els.financialReconciliationAutomaticTab?.setAttribute("aria-selected", String(automatic));
-  els.financialReconciliationManualTab?.setAttribute("tabindex", automatic ? "-1" : "0");
-  els.financialReconciliationAutomaticTab?.setAttribute("tabindex", automatic ? "0" : "-1");
-  if (els.financialReconciliationManualPanel) els.financialReconciliationManualPanel.hidden = automatic;
-  if (els.financialReconciliationAutomaticPanel) els.financialReconciliationAutomaticPanel.hidden = !automatic;
+  const active = normalizeFinancialReconciliationTab(financialReconciliationState().activeTab);
+  financialReconciliationState().activeTab = active;
+  [
+    ["manual", els.financialReconciliationManualTab, els.financialReconciliationManualPanel],
+    ["automatic", els.financialReconciliationAutomaticTab, els.financialReconciliationAutomaticPanel],
+    ["history", els.financialReconciliationHistoryTab, els.financialReconciliationHistoryPanel],
+  ].forEach(([name, tab, panel]) => {
+    const selected = active === name;
+    tab?.classList.toggle("active-tab", selected);
+    tab?.classList.toggle("ghost", !selected);
+    tab?.setAttribute("aria-selected", String(selected));
+    tab?.setAttribute("tabindex", selected ? "0" : "-1");
+    if (panel) panel.hidden = !selected;
+  });
+  if (els.financialReconciliationHistoryCard) els.financialReconciliationHistoryCard.hidden = active === "history";
 }
 
 function focusFinancialReconciliationTab(tab) {
   const next = normalizeFinancialReconciliationTab(tab);
   if (state.currentView !== "financial-reconciliation" || financialReconciliationState().activeTab !== next) return;
-  (next === "automatic" ? els.financialReconciliationAutomaticTab : els.financialReconciliationManualTab)?.focus();
+  ({ manual: els.financialReconciliationManualTab, automatic: els.financialReconciliationAutomaticTab, history: els.financialReconciliationHistoryTab }[next])?.focus();
 }
 
 async function setFinancialReconciliationTab(tab, { focus = false } = {}) {
   const next = normalizeFinancialReconciliationTab(tab);
-  financialReconciliationState().activeTab = next;
+  const current = financialReconciliationState();
+  current.activeTab = next;
   renderFinancialReconciliation();
-  if (focus) (next === "automatic" ? els.financialReconciliationAutomaticTab : els.financialReconciliationManualTab)?.focus();
+  if (focus) ({ manual: els.financialReconciliationManualTab, automatic: els.financialReconciliationAutomaticTab, history: els.financialReconciliationHistoryTab }[next])?.focus();
   if (next === "automatic" && !financialReconciliationState().automation.loaded) {
     await loadFinancialReconciliationAutomationRules();
+  }
+  if (next === "history" && !financialReconciliationState().historySearch.loaded) {
+    await loadFinancialReconciliationHistory();
+  }
+  if (next !== "history" && current.loaded === false) {
+    await loadFinancialReconciliationWorkspace({ silent: true });
   }
 }
 
 function onFinancialReconciliationTabKeydown(event) {
   if (!event || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
   event.preventDefault();
-  const next = financialReconciliationState().activeTab === "automatic" ? "manual" : "automatic";
+  const tabs = ["manual", "automatic", "history"];
+  const currentIndex = Math.max(0, tabs.indexOf(normalizeFinancialReconciliationTab(financialReconciliationState().activeTab)));
+  const direction = event.key === "ArrowRight" ? 1 : -1;
+  const next = tabs[(currentIndex + direction + tabs.length) % tabs.length];
   void setFinancialReconciliationTab(next, { focus: true });
 }
 
@@ -22217,7 +22261,11 @@ async function loadFinancialReconciliationWorkspace({ silent = false } = {}) {
 
 async function ensureFinancialReconciliationData() {
   const current = financialReconciliationState();
-  if (!current.loaded) await loadFinancialReconciliationWorkspace({ silent: true });
+  if (current.activeTab === "history") {
+    if (!current.historySearch.loaded) await loadFinancialReconciliationHistory();
+  } else if (!current.loaded) {
+    await loadFinancialReconciliationWorkspace({ silent: true });
+  }
   if (current.activeTab === "automatic" && !current.automation.loaded) {
     await loadFinancialReconciliationAutomationRules();
   }
@@ -23041,6 +23089,119 @@ function financialReconciliationHistorySourceText(record) {
   )).join(", ");
 }
 
+function financialReconciliationHistorySearchState() {
+  return financialReconciliationState().historySearch;
+}
+
+function readFinancialReconciliationHistoryFilters() {
+  return {
+    createdFrom: clean(els.financialReconciliationHistoryCreatedFrom?.value),
+    createdTo: clean(els.financialReconciliationHistoryCreatedTo?.value),
+    origin: clean(els.financialReconciliationHistoryOrigin?.value),
+    status: clean(els.financialReconciliationHistoryStatusFilter?.value),
+    differenceFrom: clean(els.financialReconciliationHistoryDifferenceFrom?.value),
+    differenceTo: clean(els.financialReconciliationHistoryDifferenceTo?.value),
+  };
+}
+
+function buildFinancialReconciliationHistoryUrl() {
+  const current = financialReconciliationHistorySearchState();
+  const filters = current.filters;
+  const params = new URLSearchParams({ page: String(current.page), page_size: String(current.pageSize) });
+  Object.entries({
+    created_from: filters.createdFrom,
+    created_to: filters.createdTo,
+    origin: filters.origin,
+    status: filters.status,
+    difference_from: filters.differenceFrom,
+    difference_to: filters.differenceTo,
+  }).forEach(([key, value]) => { if (clean(value)) params.set(key, clean(value)); });
+  return `/api/reconciliation-history?${params.toString()}`;
+}
+
+function normalizeFinancialReconciliationHistoryResult(result) {
+  const value = result && typeof result === "object" ? result : {};
+  return {
+    rows: Array.isArray(value.rows) ? value.rows : [],
+    page: Math.max(1, Number(value.page || 1)),
+    pageSize: Math.max(1, Number(value.pageSize || 50)),
+    total: Math.max(0, Number(value.total || 0)),
+  };
+}
+
+async function loadFinancialReconciliationHistory() {
+  const current = financialReconciliationHistorySearchState();
+  if (current.loading) return;
+  current.loading = true;
+  current.error = "";
+  renderFinancialReconciliationHistorySearch();
+  try {
+    const result = normalizeFinancialReconciliationHistoryResult(await api(buildFinancialReconciliationHistoryUrl()));
+    Object.assign(current, result, { loaded: true });
+  } catch (error) {
+    current.error = error.message;
+  } finally {
+    current.loading = false;
+    renderFinancialReconciliationHistorySearch();
+  }
+}
+
+function financialReconciliationHistorySummaryMarkup(record, destination = false) {
+  const summary = financialReconciliationHistorySourceSummary(record) || [];
+  const baseType = clean(record?.base_source_type);
+  const rows = summary.filter((entry) => destination ? entry.sourceType !== baseType : entry.sourceType === baseType);
+  if (!rows.length) return '<span class="field-hint">—</span>';
+  return rows.map((entry) => `<span>${escape(financialReconciliationSourceLabel(entry.sourceType))} <small>(#${entry.recordCount}; ${escape(formatMoney(entry.amountTotal))})</small></span>`).join("");
+}
+
+function renderFinancialReconciliationHistorySearch() {
+  const current = financialReconciliationHistorySearchState();
+  if (!els.financialReconciliationHistorySearchRows) return;
+  const pageCount = Math.max(1, Math.ceil(current.total / current.pageSize));
+  els.financialReconciliationHistorySearchRows.innerHTML = current.rows.length ? current.rows.map((record) => `<tr>
+    <td>${escape(formatDateTimeShort(record.created_at) || "-")}</td>
+    <td class="financial-reconciliation-history-sources">${financialReconciliationHistorySummaryMarkup(record)}</td>
+    <td class="financial-reconciliation-history-sources">${financialReconciliationHistorySummaryMarkup(record, true)}</td>
+    <td>${escape(String(Number(record.totalRecords || 0)))}</td>
+    <td><span class="financial-reconciliation-origin">${clean(record.origin) === "automatic" ? "Automatic" : "User"}</span></td>
+    <td>${financialReconciliationStatusMarkup(record.status)}</td>
+    <td>${escape(formatMoney(Number(record.sourceAmountTotal || 0)))}</td>
+    <td>${escape(formatMoney(Number(record.destinationAmountTotal || 0)))}</td>
+    <td>${escape(formatMoney(financialReconciliationDifference(record)))}</td>
+    <td class="financial-reconciliation-history-comment">${escape(clean(record.completionComment) || "—")}</td>
+    <td><button type="button" class="ghost" data-financial-reconciliation-select="${escape(record.id)}">Open</button></td>
+  </tr>`).join("") : `<tr><td colspan="11" class="empty">${current.loading ? "Loading reconciliation history…" : "No reconciliations match these filters."}</td></tr>`;
+  if (els.financialReconciliationHistoryCount) els.financialReconciliationHistoryCount.textContent = `${current.total} reconciliation${current.total === 1 ? "" : "s"}`;
+  if (els.financialReconciliationHistoryPage) els.financialReconciliationHistoryPage.textContent = `Page ${current.page} of ${pageCount}`;
+  if (els.financialReconciliationHistoryPrevious) els.financialReconciliationHistoryPrevious.disabled = current.loading || current.page <= 1;
+  if (els.financialReconciliationHistoryNext) els.financialReconciliationHistoryNext.disabled = current.loading || current.page >= pageCount;
+  if (els.financialReconciliationHistorySearchStatus) els.financialReconciliationHistorySearchStatus.textContent = current.error ? `History failed: ${current.error}` : "";
+}
+
+function onFinancialReconciliationHistorySearch(event) {
+  event?.preventDefault();
+  const current = financialReconciliationHistorySearchState();
+  current.filters = readFinancialReconciliationHistoryFilters();
+  current.page = 1;
+  current.loaded = false;
+  loadFinancialReconciliationHistory();
+}
+
+function clearFinancialReconciliationHistorySearch() {
+  [els.financialReconciliationHistoryCreatedFrom, els.financialReconciliationHistoryCreatedTo, els.financialReconciliationHistoryOrigin, els.financialReconciliationHistoryStatusFilter, els.financialReconciliationHistoryDifferenceFrom, els.financialReconciliationHistoryDifferenceTo]
+    .forEach((field) => { if (field) field.value = ""; });
+  onFinancialReconciliationHistorySearch();
+}
+
+function changeFinancialReconciliationHistoryPage(offset) {
+  const current = financialReconciliationHistorySearchState();
+  const pageCount = Math.max(1, Math.ceil(current.total / current.pageSize));
+  const next = Math.min(pageCount, Math.max(1, current.page + offset));
+  if (next === current.page) return;
+  current.page = next;
+  loadFinancialReconciliationHistory();
+}
+
 function renderFinancialReconciliationHistory() {
   const history = financialReconciliationState().workspace?.history || [];
   if (!els.financialReconciliationHistoryRows) return;
@@ -23059,6 +23220,8 @@ function renderFinancialReconciliation() {
   renderFinancialReconciliationTabs();
   if (financialReconciliationState().activeTab === "automatic") {
     renderFinancialReconciliationAutomation();
+  } else if (financialReconciliationState().activeTab === "history") {
+    renderFinancialReconciliationHistorySearch();
   } else {
     renderFinancialReconciliationSourceControls();
     renderFinancialReconciliationFilters();
@@ -23204,7 +23367,10 @@ function completeFinancialReconciliation() {
 async function onFinancialReconciliationHistoryClick(event) {
   const button = event.target instanceof HTMLElement ? event.target.closest("[data-financial-reconciliation-select]") : null;
   if (!button) return;
-  const record = (financialReconciliationState().workspace?.history || []).find((item) => clean(item.id) === clean(button.dataset.financialReconciliationSelect));
+  const record = [
+    ...(financialReconciliationState().workspace?.history || []),
+    ...(financialReconciliationState().historySearch?.rows || []),
+  ].find((item) => clean(item.id) === clean(button.dataset.financialReconciliationSelect));
   if (!record) return;
   await setFinancialReconciliationTab("manual", { focus: true });
   const current = financialReconciliationState();
@@ -23213,6 +23379,10 @@ async function onFinancialReconciliationHistoryClick(event) {
   current.workspace = { ...current.workspace, reconciliation: record };
   current.loaded = false;
   await loadFinancialReconciliationWorkspace({ silent: true });
+  if (typeof els !== "undefined") {
+    els.financialReconciliationCurrent?.scrollIntoView({ behavior: "smooth", block: "start" });
+    els.financialReconciliationCurrent?.focus();
+  }
 }
 
 function reopenFinancialReconciliation() {

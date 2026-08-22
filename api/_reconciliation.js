@@ -129,6 +129,53 @@ function parseFilters(value) {
   return filters;
 }
 
+function optionalIsoDate(value, label) {
+  if (value === undefined || value === null || String(value).trim() === "") return "";
+  const text = String(value).trim();
+  const parsed = new Date(`${text}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) {
+    throw inputError(`${label} must be a valid ISO date.`);
+  }
+  return text;
+}
+
+function optionalNumber(value, label) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  const text = String(value).trim();
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) throw inputError(`${label} must be a valid number.`);
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed)) throw inputError(`${label} must be a valid number.`);
+  return parsed;
+}
+
+function optionalChoice(value, label, choices) {
+  const normalized = value === undefined || value === null ? "" : String(value).trim().toLowerCase();
+  if (!choices.includes(normalized)) throw inputError(`${label} is invalid.`);
+  return normalized;
+}
+
+function validateHistoryQuery(query) {
+  const input = query && typeof query === "object" ? query : {};
+  const createdFrom = optionalIsoDate(input.created_from ?? input.createdFrom, "Created from");
+  const createdTo = optionalIsoDate(input.created_to ?? input.createdTo, "Created to");
+  const differenceFrom = optionalNumber(input.difference_from ?? input.differenceFrom, "Difference from");
+  const differenceTo = optionalNumber(input.difference_to ?? input.differenceTo, "Difference to");
+  if (createdFrom && createdTo && createdFrom > createdTo) throw inputError("Created date range is invalid.");
+  if (differenceFrom !== null && differenceTo !== null && differenceFrom > differenceTo) {
+    throw inputError("Difference range is invalid.");
+  }
+  return {
+    createdFrom,
+    createdTo,
+    origin: optionalChoice(input.origin, "Origin", ["", "user", "automatic"]),
+    status: optionalChoice(input.status, "Status", ["", "not_started", "started", "complete"]),
+    differenceFrom,
+    differenceTo,
+    page: input.page === undefined || input.page === "" ? 1 : positiveInteger(input.page, "Page", 100000),
+    pageSize: input.page_size === undefined || input.page_size === "" ? 50 : positiveInteger(input.page_size, "Page size", 100),
+  };
+}
+
 function validateWorkspaceQuery(query) {
   const input = query && typeof query === "object" ? query : {};
   const reconciliationId = identifier(input.reconciliation_id || input.reconciliationId, "Reconciliation ID", false);
@@ -184,5 +231,6 @@ module.exports = {
   normalizeRuleSnapshot,
   normalizeSourceType,
   validateMutation,
+  validateHistoryQuery,
   validateWorkspaceQuery,
 };
