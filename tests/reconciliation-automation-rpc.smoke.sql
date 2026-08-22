@@ -7142,7 +7142,86 @@ from pg_proc procedure
 where procedure.oid =
   'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure;
 
+create temporary table pos_income_task3_four_rule_output_baseline as
+select run.id as run_id,
+       public.get_financial_reconciliation_automatic_run(run.id) as detail
+from public.financial_reconciliation_automatic_runs run
+where exists (
+  select 1
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = run.id
+    and (proposal.rule_key, proposal.rule_version) in (
+      ('financial_documents_cgd_bank_statement', 2),
+      ('financial_documents_cgd_credit_card', 1),
+      ('financial_documents_cgd_bank_statement_amount_only', 1),
+      ('financial_documents_cgd_credit_card_amount_only', 1)
+    )
+);
+
+create temporary table pos_income_task3_four_rule_contract_baseline as
+select expected.rule_key,
+       expected.rule_version,
+       public.financial_reconciliation_automatic_rule_contract(
+         expected.rule_key,
+         expected.rule_version
+       ) as contract
+from (values
+  ('financial_documents_cgd_bank_statement', 2),
+  ('financial_documents_cgd_credit_card', 1),
+  ('financial_documents_cgd_bank_statement_amount_only', 1),
+  ('financial_documents_cgd_credit_card_amount_only', 1)
+) expected(rule_key, rule_version);
+
 \ir ../supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql
+
+create or replace function pg_temp.pos_income_task3_normalized_run(p_run_id uuid)
+returns jsonb
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select jsonb_set(
+    detail,
+    '{proposals}',
+    coalesce((
+      select jsonb_agg(
+        proposal.value - 'groupingKey' - 'summarySnapshot'
+        order by proposal.ordinality
+      )
+      from jsonb_array_elements(detail->'proposals')
+        with ordinality proposal(value, ordinality)
+    ), '[]'::jsonb)
+  )
+  from (
+    select public.get_financial_reconciliation_automatic_run(p_run_id) as detail
+  ) current_run
+$$;
+
+do $$
+declare
+  v_baseline record;
+begin
+  if exists (
+    select 1
+    from pos_income_task3_four_rule_contract_baseline baseline
+    where public.financial_reconciliation_automatic_rule_contract(
+            baseline.rule_key,
+            baseline.rule_version
+          ) is distinct from baseline.contract
+  ) then
+    raise exception 'Installing POS income analysis changed an existing dispatcher contract.';
+  end if;
+
+  for v_baseline in
+    select * from pos_income_task3_four_rule_output_baseline
+  loop
+    if pg_temp.pos_income_task3_normalized_run(v_baseline.run_id)
+        is distinct from v_baseline.detail then
+      raise exception 'Installing POS income analysis changed an existing four-rule run response for %.',
+        v_baseline.run_id;
+    end if;
+  end loop;
+end $$;
 
 do $$
 declare
@@ -7731,6 +7810,556 @@ begin
       is distinct from pg_temp.pos_income_task2_state() then
     raise exception 'POS income migration did not restore and reapply safely after the conflicting-index fixture.';
   end if;
+end $$;
+
+-- Card Payments - POS - Income closed-month analysis and serialization.
+update public.financial_reconciliation_automatic_rule_configs
+set enabled = true,
+    allow_manual_execution = true,
+    include_in_scheduled_batch = true,
+    difference_allowed = 7500.00,
+    updated_by = 'smoke:pos-income-analysis'
+where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values
+  ('83000000-0000-0000-0000-000000000001', 'smoke-pos-income-analysis',
+   'pos-income-pre-floor', date '2025-12-31', 'POS VENDAS pre-floor', 25.00),
+  ('83000000-0000-0000-0000-000000000002', 'smoke-pos-income-analysis',
+   'pos-income-leap-floor', date '2024-02-29', 'POS VENDAS leap-floor', 25.00),
+  ('83000000-0000-0000-0000-000000000010', 'smoke-pos-income-analysis',
+   'pos-income-jan-a', date '2026-01-05', 'prefix pos vendas suffix', 4000.00),
+  ('83000000-0000-0000-0000-000000000011', 'smoke-pos-income-analysis',
+   'pos-income-jan-b', date '2026-01-05', 'POS VENDAS January', 3600.00),
+  ('83000000-0000-0000-0000-000000000020', 'smoke-pos-income-analysis',
+   'pos-income-feb', date '2026-02-28', 'POS VENDAS February', 7600.01),
+  ('83000000-0000-0000-0000-000000000040', 'smoke-pos-income-analysis',
+   'pos-income-source-only', date '2026-04-15', 'POS VENDAS source-only', 10.00),
+  ('83000000-0000-0000-0000-000000000060', 'smoke-pos-income-analysis',
+   'pos-income-jun-good', date '2026-06-05', 'xx PoS VeNdAs yy', 75.00),
+  ('83000000-0000-0000-0000-000000000061', 'smoke-pos-income-analysis',
+   'pos-income-jun-wrong-description', date '2026-06-06', 'POS VENDA', 500.00),
+  ('83000000-0000-0000-0000-000000000062', 'smoke-pos-income-analysis',
+   'pos-income-jun-locked', date '2026-06-07', 'POS VENDAS locked', 600.00),
+  ('83000000-0000-0000-0000-000000000090', 'smoke-pos-income-analysis',
+   'pos-income-current-month', date_trunc('month', current_date)::date + 1,
+   'POS VENDAS current-month', 700.00);
+
+insert into public.import_fdm_accounts (
+  id, import_batch, account, date_time_raw, event_date, category,
+  amount, description
+) values
+  ('84000000-0000-0000-0000-000000000001', 'smoke-pos-income-analysis',
+   'Credit Card', '2025-12-31', date '2025-12-31', 'POS income',
+   25.00, 'pre-floor'),
+  ('84000000-0000-0000-0000-000000000002', 'smoke-pos-income-analysis',
+   'Credit Card', '2024-02-29', date '2024-02-29', 'POS income',
+   25.00, 'leap-floor'),
+  ('84000000-0000-0000-0000-000000000010', 'smoke-pos-income-analysis',
+   'Credit Card', '2026-01-31', date '2026-01-31', 'POS income',
+   100.00, 'January'),
+  ('84000000-0000-0000-0000-000000000020', 'smoke-pos-income-analysis',
+   'Credit Card', '2026-02-01', date '2026-02-01', 'POS income',
+   100.00, 'February'),
+  ('84000000-0000-0000-0000-000000000050', 'smoke-pos-income-analysis',
+   'Credit Card', '2026-05-15', date '2026-05-15', 'POS income',
+   10.00, 'destination-only'),
+  ('84000000-0000-0000-0000-000000000060', 'smoke-pos-income-analysis',
+   'Credit Card', '2026-06-05', date '2026-06-05', 'POS income',
+   75.00, 'June eligible'),
+  ('84000000-0000-0000-0000-000000000061', 'smoke-pos-income-analysis',
+   'credit card', '2026-06-06', date '2026-06-06', 'POS income',
+   500.00, 'wrong account case'),
+  ('84000000-0000-0000-0000-000000000062', 'smoke-pos-income-analysis',
+   'Credit Card', '2026-06-07', date '2026-06-07', 'POS income',
+   600.00, 'locked destination'),
+  ('84000000-0000-0000-0000-000000000090', 'smoke-pos-income-analysis',
+   'Credit Card', current_date::text,
+   date_trunc('month', current_date)::date + 1, 'POS income',
+   700.00, 'current-month');
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, source_row_number, data, descritivo, montante
+)
+select
+  ('83100000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-pos-income-large',
+  'pos-income-large-bank-' || series,
+  series,
+  date '2026-03-01' + ((series - 1) % 31),
+  'bulk POS VENDAS row ' || series,
+  2.00
+from generate_series(1, 1000) series;
+
+insert into public.import_fdm_accounts (
+  id, import_batch, source_row_number, account, date_time_raw, event_date,
+  category, amount, description
+)
+select
+  ('84100000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-pos-income-large',
+  series,
+  'Credit Card',
+  '2026-03-' || lpad((((series - 1) % 31) + 1)::text, 2, '0'),
+  date '2026-03-01' + ((series - 1) % 31),
+  'POS income',
+  1.25,
+  'bulk FDM row ' || series
+from generate_series(1, 1000) series;
+
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_cgd_extrato_ordem', '["import_fdm_accounts"]'::jsonb,
+    'smoke:pos-income-analysis-locks'
+  ) returning id into v_reconciliation_id;
+
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  ) values
+    (v_reconciliation_id, 'import_cgd_extrato_ordem',
+     '83000000-0000-0000-0000-000000000062', 600.00,
+     'smoke:pos-income-analysis-locks'),
+    (v_reconciliation_id, 'import_fdm_accounts',
+     '84000000-0000-0000-0000-000000000062', 600.00,
+     'smoke:pos-income-analysis-locks');
+end $$;
+
+do $$
+declare
+  v_contract jsonb;
+  v_page_one date[];
+  v_page_two date[];
+  v_page_three date[];
+  v_rejected boolean := false;
+  v_signature text;
+begin
+  v_contract := public.financial_reconciliation_automatic_rule_contract(
+    'cgd_bank_statement_fdm_credit_card_monthly_income', 1
+  );
+  if v_contract is distinct from jsonb_build_object(
+      'destinationSourceType', 'import_fdm_accounts',
+      'matchingMode', 'monthly_aggregate',
+      'sourceDescriptionPattern', '%POS VENDAS%',
+      'destinationAccount', 'Credit Card',
+      'calendarGrouping', 'closed_month',
+      'eligibilityFloor', '2026-01-01',
+      'fixedMaxDifferenceDays', 31
+    ) then
+    raise exception 'POS income dispatcher contract is not the approved literal: %',
+      v_contract;
+  end if;
+
+  if public.financial_reconciliation_automatic_monthly_income_count() <> 4 then
+    raise exception 'POS income month count admitted a floor, current-month, locked, predicate, or one-sided row.';
+  end if;
+
+  select array_agg(page.calendar_month order by page.calendar_month)
+  into v_page_one
+  from public.financial_reconciliation_automatic_monthly_income_page(null, 2) page;
+  select array_agg(page.calendar_month order by page.calendar_month)
+  into v_page_two
+  from public.financial_reconciliation_automatic_monthly_income_page(
+    date '2026-02-01', 2
+  ) page;
+  select array_agg(page.calendar_month order by page.calendar_month)
+  into v_page_three
+  from public.financial_reconciliation_automatic_monthly_income_page(
+    date '2026-06-01', 2
+  ) page;
+  if v_page_one is distinct from array[date '2026-01-01', date '2026-02-01']
+    or v_page_two is distinct from array[date '2026-03-01', date '2026-06-01']
+    or coalesce(v_page_three, '{}'::date[]) <> '{}'::date[] then
+    raise exception 'POS income month paging is not stable and oldest first: %, %, %',
+      v_page_one, v_page_two, v_page_three;
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.financial_reconciliation_automatic_monthly_income_page(null, 26);
+  exception when others then
+    v_rejected := sqlerrm =
+      'Automatic monthly analysis page size must be between 1 and 25.';
+  end;
+  if not v_rejected then
+    raise exception 'POS income monthly page accepted an oversized limit.';
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.financial_reconciliation_automatic_monthly_income_page(null, null);
+  exception when others then
+    v_rejected := sqlerrm =
+      'Automatic monthly analysis page size must be between 1 and 25.';
+  end;
+  if not v_rejected then
+    raise exception 'POS income monthly page accepted a null limit.';
+  end if;
+
+  foreach v_signature in array array[
+    'public.financial_reconciliation_automatic_rule_contract(text,integer)',
+    'public.financial_reconciliation_automatic_monthly_income_count()',
+    'public.financial_reconciliation_automatic_monthly_income_page(date,integer)',
+    'public.continue_financial_reconciliation_automatic_analysis(uuid,text)',
+    'public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid)',
+    'public.financial_reconciliation_finalize_automatic_analysis(uuid)',
+    'public.financial_reconciliation_automatic_progress_or_run(uuid)',
+    'public.get_financial_reconciliation_automatic_run(uuid)'
+  ] loop
+    if has_function_privilege('anon', v_signature, 'EXECUTE')
+      or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+      or not has_function_privilege('service_role', v_signature, 'EXECUTE')
+      or not (
+        select procedure.prosecdef
+          and coalesce(procedure.proconfig, '{}'::text[])
+            @> array['search_path=public, pg_temp']
+        from pg_proc procedure
+        where procedure.oid = v_signature::regprocedure
+      ) then
+      raise exception 'POS income analysis function security is invalid for %.',
+        v_signature;
+    end if;
+  end loop;
+
+  v_signature :=
+    'public.financial_reconciliation_continue_automatic_monthly_income(uuid,jsonb)';
+  if has_function_privilege('anon', v_signature, 'EXECUTE')
+    or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+    or has_function_privilege('service_role', v_signature, 'EXECUTE')
+    or not (
+      select not procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[])
+          @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    ) then
+    raise exception 'POS income internal continuation helper is exposed or unsafe.';
+  end if;
+end $$;
+
+create or replace function pg_temp.reject_pos_income_membership_insert()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.source_id = '84000000-0000-0000-0000-000000000060'::uuid then
+    raise exception 'smoke POS income membership insert failure';
+  end if;
+  return new;
+end
+$$;
+
+create trigger reject_pos_income_membership_insert
+before insert on public.financial_reconciliation_automatic_proposal_memberships
+for each row execute function pg_temp.reject_pos_income_membership_insert();
+
+do $$
+declare
+  v_result jsonb;
+  v_run_id uuid;
+begin
+  v_result := public.create_financial_reconciliation_automatic_analysis(
+    array['cgd_bank_statement_fdm_credit_card_monthly_income'],
+    'manual_rule',
+    'smoke:pos-income-atomicity',
+    '85000000-0000-0000-0000-000000000001'
+  );
+  v_run_id := (v_result->>'runId')::uuid;
+  if v_result->>'status' <> 'failed'
+    or v_result->>'analysisErrorCode' <> 'analysis_continuation_failed'
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposal_memberships membership
+      join public.financial_reconciliation_automatic_proposals proposal
+        on proposal.id = membership.proposal_id
+      where proposal.run_id = v_run_id
+    ) then
+    raise exception 'POS income proposal and memberships did not roll back atomically: %',
+      v_result;
+  end if;
+end $$;
+
+drop trigger reject_pos_income_membership_insert
+on public.financial_reconciliation_automatic_proposal_memberships;
+drop function pg_temp.reject_pos_income_membership_insert();
+
+create temporary table pos_income_task3_success_run (
+  run_id uuid primary key
+);
+
+do $$
+declare
+  v_result jsonb;
+  v_retry jsonb;
+  v_run_id uuid;
+  v_january_proposal_id uuid;
+  v_large_proposal_id uuid;
+  v_expected_months text[] := array['2026-01','2026-02','2026-03','2026-06'];
+  v_actual_months text[];
+begin
+  v_result := public.create_financial_reconciliation_automatic_analysis(
+    array['cgd_bank_statement_fdm_credit_card_monthly_income'],
+    'manual_rule',
+    'smoke:pos-income-analysis',
+    '85000000-0000-0000-0000-000000000002'
+  );
+  v_run_id := (v_result->>'runId')::uuid;
+  insert into pos_income_task3_success_run values (v_run_id);
+
+  if v_result->>'status' <> 'ready'
+    or v_result->>'analysisComplete' <> 'true'
+    or (v_result->>'analysisProcessed')::integer <> 4
+    or (v_result->>'analysisTotal')::integer <> 4
+    or v_result->>'analysisCursorDate' <> '2026-06-01'
+    or v_result->>'analysisCursorId' <>
+       '83000000-0000-0000-0000-000000000060'
+    or jsonb_array_length(v_result->'proposals') <> 4 then
+    raise exception 'POS income analysis lifecycle or month cursor is invalid: %',
+      v_result;
+  end if;
+
+  select array_agg(proposal.value->>'groupingKey' order by proposal.ordinality)
+  into v_actual_months
+  from jsonb_array_elements(v_result->'proposals')
+    with ordinality proposal(value, ordinality);
+  if v_actual_months is distinct from v_expected_months then
+    raise exception 'POS income proposals are not serialized oldest first: %',
+      v_actual_months;
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(v_result->'proposals') proposal(value)
+    where proposal.value->'items' <> '[]'::jsonb
+       or proposal.value->'candidateGroups' <> '[]'::jsonb
+       or jsonb_typeof(proposal.value->'summarySnapshot') <> 'object'
+  ) then
+    raise exception 'POS income run detail embedded members or omitted a summary: %',
+      v_result->'proposals';
+  end if;
+
+  select proposal.id into strict v_january_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_run_id and proposal.grouping_key = '2026-01';
+  if not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = v_january_proposal_id
+        and proposal.base_source_id =
+          '83000000-0000-0000-0000-000000000010'
+        and proposal.base_source_date = date '2026-01-05'
+        and proposal.status = 'proposed'
+        and proposal.reason = ''
+        and proposal.calculated_difference = 7500.00
+        and proposal.allowed_difference = 7500.00
+        and proposal.summary_snapshot @> jsonb_build_object(
+          'calendarMonth', date '2026-01-01',
+          'sourceCount', 2,
+          'sourceTotal', 7600.00,
+          'destinationCount', 1,
+          'destinationTotal', 100.00,
+          'calculatedDifference', 7500.00,
+          'technicalBaseSourceId',
+            '83000000-0000-0000-0000-000000000010'
+        )
+    ) then
+    raise exception 'POS income exact-tolerance or technical-base proposal is invalid.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.grouping_key = '2026-02'
+      and proposal.status = 'ambiguous'
+      and proposal.reason = 'monthly_difference_exceeded'
+      and proposal.calculated_difference = 7500.01
+      and proposal.allowed_difference = 7500.00
+  ) then
+    raise exception 'POS income tolerance-plus-one-cent boundary is invalid.';
+  end if;
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.grouping_key in ('2025-12','2024-02','2026-04','2026-05')
+  ) then
+    raise exception 'POS income analysis persisted a floor, leap-floor, or one-sided month.';
+  end if;
+
+  select proposal.id into strict v_large_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_run_id and proposal.grouping_key = '2026-03';
+  if not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = v_large_proposal_id
+        and proposal.calculated_difference = 750.00
+        and proposal.summary_snapshot @> jsonb_build_object(
+          'sourceCount', 1000,
+          'sourceTotal', 2000.00,
+          'destinationCount', 1000,
+          'destinationTotal', 1250.00,
+          'calculatedDifference', 750.00
+        )
+    )
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposal_memberships
+        where proposal_id = v_large_proposal_id and role = 'source') <> 1000
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposal_memberships
+        where proposal_id = v_large_proposal_id and role = 'destination') <> 1000
+  then
+    raise exception 'POS income 1,000-row aggregates or memberships are incomplete.';
+  end if;
+
+  if (select count(*)
+      from public.financial_reconciliation_automatic_proposal_memberships membership
+      join public.financial_reconciliation_automatic_proposals proposal
+        on proposal.id = membership.proposal_id
+      where proposal.run_id = v_run_id) <> 2007
+    or exists (
+      select 1
+      from (
+        select membership.*,
+               row_number() over (
+                 partition by membership.proposal_id, membership.role
+                 order by membership.source_date, membership.source_id
+               )::integer as expected_ordinal
+        from public.financial_reconciliation_automatic_proposal_memberships membership
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = membership.proposal_id
+        where proposal.run_id = v_run_id
+      ) ordered_membership
+      where ordered_membership.ordinal <> ordered_membership.expected_ordinal
+    ) then
+    raise exception 'POS income memberships are incomplete, duplicated, or unstably ordered.';
+  end if;
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposal_memberships membership
+    join public.financial_reconciliation_automatic_proposals proposal
+      on proposal.id = membership.proposal_id
+    where proposal.run_id = v_run_id
+      and membership.source_id in (
+        '83000000-0000-0000-0000-000000000001'::uuid,
+        '83000000-0000-0000-0000-000000000002'::uuid,
+        '83000000-0000-0000-0000-000000000061'::uuid,
+        '83000000-0000-0000-0000-000000000062'::uuid,
+        '83000000-0000-0000-0000-000000000090'::uuid,
+        '84000000-0000-0000-0000-000000000001'::uuid,
+        '84000000-0000-0000-0000-000000000002'::uuid,
+        '84000000-0000-0000-0000-000000000061'::uuid,
+        '84000000-0000-0000-0000-000000000062'::uuid,
+        '84000000-0000-0000-0000-000000000090'::uuid
+      )
+  ) then
+    raise exception 'POS income memberships admitted an ineligible row.';
+  end if;
+
+  v_retry := public.continue_financial_reconciliation_automatic_analysis(
+    v_run_id,
+    'smoke:pos-income-analysis'
+  );
+  if v_retry is distinct from v_result
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = v_run_id) <> 4
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposal_memberships membership
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = membership.proposal_id
+        where proposal.run_id = v_run_id) <> 2007 then
+    raise exception 'POS income completed continuation changed output or duplicated proposals/memberships.';
+  end if;
+end $$;
+
+create or replace function pg_temp.pos_income_task3_state(p_run_id uuid)
+returns jsonb
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_object(
+    'run', (
+      select to_jsonb(run)
+      from public.financial_reconciliation_automatic_runs run
+      where run.id = p_run_id
+    ),
+    'detail', public.get_financial_reconciliation_automatic_run(p_run_id),
+    'proposals', (
+      select jsonb_agg(to_jsonb(proposal)
+                       order by proposal.base_source_date,
+                                proposal.base_source_id,
+                                proposal.signature)
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = p_run_id
+    ),
+    'memberships', (
+      select jsonb_agg(to_jsonb(membership)
+                       order by proposal.base_source_date,
+                                membership.role,
+                                membership.ordinal,
+                                membership.source_id)
+      from public.financial_reconciliation_automatic_proposal_memberships membership
+      join public.financial_reconciliation_automatic_proposals proposal
+        on proposal.id = membership.proposal_id
+      where proposal.run_id = p_run_id
+    )
+  )
+$$;
+
+create temporary table pos_income_task3_reapply_baseline as
+select pg_temp.pos_income_task3_state(run_id) as state
+from pos_income_task3_success_run;
+
+\ir ../supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql
+
+do $$
+declare
+  v_baseline record;
+begin
+  if (select state from pos_income_task3_reapply_baseline)
+      is distinct from (
+        select pg_temp.pos_income_task3_state(run_id)
+        from pos_income_task3_success_run
+      ) then
+    raise exception 'POS income migration reapply changed a run, proposal summary, membership, timestamp, or signature.';
+  end if;
+
+  if exists (
+    select 1
+    from pos_income_task3_four_rule_contract_baseline baseline
+    where public.financial_reconciliation_automatic_rule_contract(
+            baseline.rule_key,
+            baseline.rule_version
+          ) is distinct from baseline.contract
+  ) then
+    raise exception 'POS income migration reapply changed an existing dispatcher contract.';
+  end if;
+
+  for v_baseline in
+    select * from pos_income_task3_four_rule_output_baseline
+  loop
+    if pg_temp.pos_income_task3_normalized_run(v_baseline.run_id)
+        is distinct from v_baseline.detail then
+      raise exception 'POS income migration reapply changed an existing four-rule run response for %.',
+        v_baseline.run_id;
+    end if;
+  end loop;
 end $$;
 
 rollback;
