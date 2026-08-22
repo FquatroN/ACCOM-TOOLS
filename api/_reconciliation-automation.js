@@ -9,6 +9,7 @@ const BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION = 1;
 const CREDIT_CARD_AMOUNT_ONLY_RULE_KEY = "financial_documents_cgd_credit_card_amount_only";
 const CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION = 1;
 const MONTHLY_INCOME_RULE_KEY = "cgd_bank_statement_fdm_credit_card_monthly_income";
+const MONTHLY_INCOME_RULE_DISPLAY_NAME = "Card Payments - POS - Income";
 const MONTHLY_AGGREGATE_RULE_KEYS = new Set([MONTHLY_INCOME_RULE_KEY]);
 const AUTOMATIC_RULE_VERSIONS = Object.freeze({
   [BANK_STATEMENT_RULE_KEY]: BANK_STATEMENT_RULE_VERSION,
@@ -16,6 +17,9 @@ const AUTOMATIC_RULE_VERSIONS = Object.freeze({
   [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY]: BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY]: CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
   [MONTHLY_INCOME_RULE_KEY]: 1,
+});
+const AUTOMATIC_RULE_DISPLAY_NAMES = Object.freeze({
+  [MONTHLY_INCOME_RULE_KEY]: MONTHLY_INCOME_RULE_DISPLAY_NAME,
 });
 const AMOUNT_ONLY_RULE_KEYS = Object.freeze([
   BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
@@ -396,12 +400,15 @@ function toAutomationPublicResult(value) {
     if (PRIVATE_PUBLIC_RESULT_KEYS.has(key)) continue;
     result[PUBLIC_KEY_MAP[key] || key] = toAutomationPublicResult(nestedValue);
   }
+  const displayName = AUTOMATIC_RULE_DISPLAY_NAMES[result.ruleKey];
+  if (displayName) result.displayName = displayName;
   return result;
 }
 
 module.exports = {
   AUTOMATIC_RULE_KEY,
   AUTOMATIC_RULE_VERSION,
+  AUTOMATIC_RULE_DISPLAY_NAMES,
   AUTOMATIC_TIME_ZONE,
   AUTOMATIC_RULE_VERSIONS,
   AMOUNT_ONLY_RULE_KEYS,
@@ -414,6 +421,7 @@ module.exports = {
   CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
   CREDIT_CARD_RULE_KEY,
   CREDIT_CARD_RULE_VERSION,
+  MONTHLY_INCOME_RULE_DISPLAY_NAME,
   MONTHLY_INCOME_RULE_KEY,
   SOURCE_TYPES,
   isAmountOnlyRuleKey,

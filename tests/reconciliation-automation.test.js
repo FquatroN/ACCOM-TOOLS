@@ -2421,6 +2421,40 @@ test("automation settings GET preserves complete pre- and post-migration RPC res
   })));
 });
 
+test("automation settings GET supplies the managed display name in its five-rule public response", async () => {
+  const response = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => ({
+      ...productionSettingsRpcResult(4),
+      rules: [...productionSettingsRules(), {
+        rule_key: MONTHLY_INCOME_RULE_KEY,
+        rule_version: 1,
+        enabled: false,
+        allow_manual_execution: false,
+        include_in_scheduled_batch: false,
+        difference_allowed: "7500.00",
+        max_difference_days: 31,
+        priority: 5,
+      }],
+    }),
+  }), async (handler) => {
+    await handler({ method: "GET" }, response);
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.rules[4], {
+    ruleKey: MONTHLY_INCOME_RULE_KEY,
+    ruleVersion: 1,
+    displayName: "Card Payments - POS - Income",
+    enabled: false,
+    allowManualExecution: false,
+    includeInScheduledBatch: false,
+    differenceAllowed: "7500.00",
+    maxDifferenceDays: 31,
+    priority: 5,
+  });
+});
+
 test("automation settings has no action that creates an analysis run", async () => {
   let rpcCalled = false;
   const response = responseRecorder();
