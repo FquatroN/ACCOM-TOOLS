@@ -3043,6 +3043,109 @@ begin
 end
 $$;
 
+create or replace function public.get_financial_reconciliation_automatic_proposal_members(
+  p_run_id uuid,
+  p_proposal_id uuid,
+  p_role text,
+  p_offset integer,
+  p_limit integer,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run record;
+  v_total integer;
+  v_members jsonb;
+begin
+  if p_run_id is null then
+    raise exception 'Automatic run ID is required.';
+  end if;
+  if p_proposal_id is null then
+    raise exception 'Automatic proposal ID is required.';
+  end if;
+  if p_role is null or p_role not in ('source', 'destination') then
+    raise exception 'Automatic proposal member role is invalid.';
+  end if;
+  if p_offset is null or p_offset < 0 then
+    raise exception 'Automatic proposal member offset must be zero or greater.';
+  end if;
+  if p_limit is null or p_limit < 1 or p_limit > 50 then
+    raise exception 'Automatic proposal member limit must be between 1 and 50.';
+  end if;
+  if p_actor is null or btrim(p_actor) = '' then
+    raise exception 'Automatic proposal member actor is required.';
+  end if;
+
+  select
+    run.trigger,
+    run.actor,
+    run.finished_at,
+    proposal.rule_key,
+    proposal.rule_version
+  into v_run
+  from public.financial_reconciliation_automatic_runs run
+  join public.financial_reconciliation_automatic_proposals proposal
+    on proposal.run_id = run.id
+  where run.id = p_run_id
+    and proposal.id = p_proposal_id;
+  if not found then
+    raise exception
+      'Automatic monthly proposal was not found for the requested run.';
+  end if;
+  if v_run.trigger <> 'manual' then
+    raise exception 'Automatic proposal members require a manual run.';
+  end if;
+  if v_run.rule_key <> 'cgd_bank_statement_fdm_credit_card_monthly_income'
+    or v_run.rule_version <> 1 then
+    raise exception 'Automation proposal does not use the monthly income rule.';
+  end if;
+  if v_run.finished_at is null and v_run.actor <> p_actor then
+    raise exception 'You do not have permission for this automation run.';
+  end if;
+
+  select count(*)::integer
+  into v_total
+  from public.financial_reconciliation_automatic_proposal_memberships membership
+  where membership.proposal_id = p_proposal_id
+    and membership.role = p_role;
+
+  select jsonb_agg(jsonb_build_object(
+    'role', page.role,
+    'sourceType', page.source_type,
+    'sourceId', page.source_id,
+    'ordinal', page.ordinal,
+    'sourceDate', page.source_date,
+    'amount', page.amount,
+    'description', page.description,
+    'account', page.account,
+    'rowSnapshot', page.row_snapshot
+  ) order by page.ordinal)
+  into v_members
+  from (
+    select membership.*
+    from public.financial_reconciliation_automatic_proposal_memberships membership
+    where membership.proposal_id = p_proposal_id
+      and membership.role = p_role
+    order by membership.ordinal
+    offset p_offset
+    limit p_limit
+  ) page;
+
+  return jsonb_build_object(
+    'runId', p_run_id,
+    'proposalId', p_proposal_id,
+    'role', p_role,
+    'offset', p_offset,
+    'limit', p_limit,
+    'totalCount', v_total,
+    'members', coalesce(v_members, '[]'::jsonb)
+  );
+end
+$$;
+
 revoke all on function public.financial_reconciliation_automatic_rule_contract(text,integer)
   from public, anon, authenticated;
 revoke all on function public.financial_reconciliation_automatic_monthly_income_count()
@@ -3067,6 +3170,8 @@ revoke all on function public.financial_reconciliation_execute_monthly_income_pr
   from public, anon, authenticated, service_role;
 revoke all on function public.execute_financial_reconciliation_automatic_proposal(uuid,text)
   from public, anon, authenticated, service_role;
+revoke all on function public.get_financial_reconciliation_automatic_proposal_members(uuid,uuid,text,integer,integer,text)
+  from public, anon, authenticated, service_role;
 
 grant execute on function public.financial_reconciliation_automatic_rule_contract(text,integer)
   to service_role;
@@ -3085,6 +3190,8 @@ grant execute on function public.financial_reconciliation_automatic_progress_or_
 grant execute on function public.get_financial_reconciliation_automatic_run(uuid)
   to service_role;
 grant execute on function public.execute_financial_reconciliation_automatic_proposal(uuid,text)
+  to service_role;
+grant execute on function public.get_financial_reconciliation_automatic_proposal_members(uuid,uuid,text,integer,integer,text)
   to service_role;
 
 notify pgrst, 'reload schema';

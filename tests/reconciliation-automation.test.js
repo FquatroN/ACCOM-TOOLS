@@ -89,6 +89,7 @@ const RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-automation-rpc.smoke
 const MANUAL_RPC_SMOKE_PATH = path.join(__dirname, "reconciliation-rpc.smoke.sql");
 const SETTINGS_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation-settings.js");
 const MANUAL_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation.js");
+const MEMBERS_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation-members.js");
 const CRON_HANDLER_PATH = path.join(__dirname, "..", "api", "reconciliation-automation-cron.js");
 const VERCEL_CONFIG_PATH = path.join(__dirname, "..", "vercel.json");
 const README_PATH = path.join(__dirname, "..", "README.md");
@@ -2339,10 +2340,12 @@ test("automation public result exhaustively maps the controller contract without
     ["automatic_rule_version", "automaticRuleVersion"],
     ["automatic_run_id", "automaticRunId"],
     ["automatic_proposal_id", "automaticProposalId"],
+    ["proposal_id", "proposalId"],
     ["source_type", "sourceType"],
     ["source_id", "sourceId"],
     ["source_date", "sourceDate"],
     ["amount_snapshot", "amountSnapshot"],
+    ["row_snapshot", "rowSnapshot"],
     ["created_at", "createdAt"],
     ["updated_at", "updatedAt"],
   ];
@@ -2616,6 +2619,190 @@ test("manual automation GET authorizes app access and validates the run detail R
   });
   assert.equal(invalidResponse.statusCode, 400);
   assert.equal(invalidRpcCalled, false);
+});
+
+test("monthly member paging binds the authenticated app actor to the only data RPC", async () => {
+  const authorizations = [];
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    requireFeature: async (_request, area, feature) => {
+      authorizations.push({ area, feature });
+      return {
+        user: { email: " owner@example.com ", id: "user-1" },
+        access: { profile: { id: "profile-1" } },
+      };
+    },
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return {
+        run_id: RUN_ID,
+        proposal_id: PROPOSAL_ID,
+        role: "source",
+        offset: 50,
+        limit: 50,
+        total_count: 73,
+        members: [{
+          role: "source",
+          source_type: "import_cgd_extrato_ordem",
+          source_id: "00000000-0000-0000-0000-000000000073",
+          ordinal: 51,
+          source_date: "2026-08-10",
+          amount: "125.00",
+          description: "POS VENDAS",
+          account: "",
+          row_snapshot: { row_key: "bank-73", diagnostic: "remove" },
+          internal_error: "remove",
+        }],
+        diagnostic: "remove",
+      };
+    },
+  }), async (handler) => {
+    await handler({
+      method: "GET",
+      query: {
+        run_id: RUN_ID.toUpperCase(),
+        proposal_id: PROPOSAL_ID.toUpperCase(),
+        role: "source",
+        offset: "50",
+        limit: "50",
+      },
+    }, response);
+  });
+
+  assert.deepEqual(authorizations, [{ area: "app", feature: "financial-reconciliation" }]);
+  assert.deepEqual(calls, [{
+    resource: "rpc/get_financial_reconciliation_automatic_proposal_members",
+    options: {
+      method: "POST",
+      body: {
+        p_run_id: RUN_ID,
+        p_proposal_id: PROPOSAL_ID,
+        p_role: "source",
+        p_offset: 50,
+        p_limit: 50,
+        p_actor: "owner@example.com",
+      },
+    },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    runId: RUN_ID,
+    proposalId: PROPOSAL_ID,
+    role: "source",
+    offset: 50,
+    limit: 50,
+    totalCount: 73,
+    members: [{
+      role: "source",
+      sourceType: "import_cgd_extrato_ordem",
+      sourceId: "00000000-0000-0000-0000-000000000073",
+      ordinal: 51,
+      sourceDate: "2026-08-10",
+      amount: "125.00",
+      description: "POS VENDAS",
+      account: "",
+      rowSnapshot: { row_key: "bank-73" },
+    }],
+  });
+});
+
+test("monthly member paging rejects malformed query values and absent actor before its RPC", async () => {
+  const invalidQueries = [
+    { run_id: "not-a-uuid", proposal_id: PROPOSAL_ID, role: "source", offset: "0", limit: "50" },
+    { run_id: RUN_ID, proposal_id: "not-a-uuid", role: "source", offset: "0", limit: "50" },
+    { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "Source", offset: "0", limit: "50" },
+    { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "source ", offset: "0", limit: "50" },
+    { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "source", offset: "-1", limit: "50" },
+    { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "source", offset: "1.5", limit: "50" },
+    { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "source", offset: "0", limit: "0" },
+    { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "source", offset: "0", limit: "51" },
+    { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "source", offset: "0", limit: ["50"] },
+  ];
+
+  for (const query of invalidQueries) {
+    let rpcCalled = false;
+    const response = responseRecorder();
+    await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => {
+        rpcCalled = true;
+        return {};
+      },
+    }), async (handler) => handler({ method: "GET", query }, response));
+    assert.equal(response.statusCode, 400, JSON.stringify(query));
+    assert.equal(rpcCalled, false, JSON.stringify(query));
+  }
+
+  let rpcCalled = false;
+  const noActorResponse = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    requireFeature: async () => ({
+      user: { email: "", id: "" },
+      access: { profile: { id: "profile-1" } },
+    }),
+    restQuery: async () => {
+      rpcCalled = true;
+      return {};
+    },
+  }), async (handler) => handler({
+    method: "GET",
+    query: { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "source", offset: "0", limit: "50" },
+  }, noActorResponse));
+  assert.equal(noActorResponse.statusCode, 403);
+  assert.equal(rpcCalled, false);
+});
+
+test("monthly member paging is GET-only, denies fallback access, and sanitizes database errors", async () => {
+  for (const [request, expectedStatus, expectedAllow] of [
+    [{ method: "POST", query: {} }, 405, "GET"],
+    [{ method: "DELETE", query: {} }, 405, "GET"],
+  ]) {
+    let rpcCalled = false;
+    const response = responseRecorder();
+    await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => {
+        rpcCalled = true;
+        return {};
+      },
+    }), async (handler) => handler(request, response));
+    assert.equal(response.statusCode, expectedStatus);
+    assert.equal(response.headers.Allow, expectedAllow);
+    assert.equal(rpcCalled, false);
+  }
+
+  let deniedRpcCalled = false;
+  const deniedResponse = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    requireFeature: async () => ({
+      user: { email: "user@example.com", id: "user-1" },
+      access: { profile: { id: "", name: "Full access (fallback)" } },
+    }),
+    restQuery: async () => {
+      deniedRpcCalled = true;
+      return {};
+    },
+  }), async (handler) => handler({
+    method: "GET",
+    query: { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "source", offset: "0", limit: "50" },
+  }, deniedResponse));
+  assert.equal(deniedResponse.statusCode, 403);
+  assert.equal(deniedRpcCalled, false);
+
+  const errorResponse = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => {
+      const error = new Error("Automation proposal was not found. relation task5_private_4f92 does not exist");
+      error.statusCode = 400;
+      error.supabasePayload = { details: "relation task5_private_4f92 does not exist" };
+      throw error;
+    },
+  }), async (handler) => handler({
+    method: "GET",
+    query: { run_id: RUN_ID, proposal_id: PROPOSAL_ID, role: "destination", offset: "0", limit: "50" },
+  }, errorResponse));
+  assert.equal(errorResponse.statusCode, 400);
+  assert.deepEqual(errorResponse.body, { error: "Reconciliation automation request could not be completed." });
+  assert.doesNotMatch(JSON.stringify(errorResponse.body), /task5_private_4f92/);
 });
 
 test("manual automation GET exposes only enabled manual rules from the workbench catalog", async () => {

@@ -9509,4 +9509,261 @@ begin
 end
 $$;
 
+-- App-authorized monthly snapshot member paging uses only the service-role RPC.
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-03', '87000000-0000-0000-0000-000000000001',
+  '87100000-0000-0000-0000-000000000001', 'smoke:task5-owner'
+);
+delete from public.financial_reconciliation_automatic_proposal_memberships
+where proposal_id = '87100000-0000-0000-0000-000000000001'
+  and ((role = 'source' and ordinal > 123)
+    or (role = 'destination' and ordinal > 3));
+
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-06', '87000000-0000-0000-0000-000000000002',
+  '87100000-0000-0000-0000-000000000002', 'smoke:task5-owner'
+);
+
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_completed_at
+) values (
+  '87000000-0000-0000-0000-000000000003', 'manual', 'rule', 'ready',
+  'smoke:task5-owner', '87000000-0000-0000-0000-000000000003',
+  '[]'::jsonb, now()
+);
+insert into public.financial_reconciliation_automatic_proposals (
+  id, run_id, rule_key, rule_version, base_source_type, base_source_id,
+  base_source_date, base_snapshot, allowed_difference, signature
+) values (
+  '87100000-0000-0000-0000-000000000003',
+  '87000000-0000-0000-0000-000000000003',
+  'financial_documents_cgd_bank_statement', 2, 'financial_documents',
+  '87100000-0000-0000-0000-000000000004', date '2026-03-01',
+  '{}'::jsonb, 0.00, 'smoke:task5-non-monthly'
+);
+
+create or replace function pg_temp.pos_income_task5_assert_rejected(
+  p_run_id uuid,
+  p_proposal_id uuid,
+  p_role text,
+  p_offset integer,
+  p_limit integer,
+  p_actor text,
+  p_expected_error text
+)
+returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_rejected boolean := false;
+begin
+  begin
+    perform public.get_financial_reconciliation_automatic_proposal_members(
+      p_run_id, p_proposal_id, p_role, p_offset, p_limit, p_actor
+    );
+  exception when others then
+    v_rejected := sqlerrm = p_expected_error;
+  end;
+  if not v_rejected then
+    raise exception 'Task 5 member paging did not reject with expected error: %.',
+      p_expected_error;
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_page_zero jsonb;
+  v_page_fifty jsonb;
+  v_page_hundred jsonb;
+  v_destination jsonb;
+  v_completed_page jsonb;
+  v_ordinals integer[];
+  v_signature text :=
+    'public.get_financial_reconciliation_automatic_proposal_members(uuid,uuid,text,integer,integer,text)';
+begin
+  perform pg_temp.pos_income_task5_assert_rejected(
+    null, '87100000-0000-0000-0000-000000000001', 'source', 0, 50,
+    'smoke:task5-owner', 'Automatic run ID is required.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001', null, 'source', 0, 50,
+    'smoke:task5-owner', 'Automatic proposal ID is required.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'Source', 0, 50,
+    'smoke:task5-owner', 'Automatic proposal member role is invalid.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', -1, 50,
+    'smoke:task5-owner', 'Automatic proposal member offset must be zero or greater.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', null, 50,
+    'smoke:task5-owner', 'Automatic proposal member offset must be zero or greater.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', 0, 0,
+    'smoke:task5-owner', 'Automatic proposal member limit must be between 1 and 50.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', 0, 51,
+    'smoke:task5-owner', 'Automatic proposal member limit must be between 1 and 50.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', 0, 50, '  ',
+    'Automatic proposal member actor is required.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', 0, 50,
+    'smoke:task5-foreign', 'You do not have permission for this automation run.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000002', 'source', 0, 50,
+    'smoke:task5-owner',
+    'Automatic monthly proposal was not found for the requested run.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000099',
+    '87100000-0000-0000-0000-000000000099', 'source', 0, 50,
+    'smoke:task5-owner',
+    'Automatic monthly proposal was not found for the requested run.'
+  );
+  perform pg_temp.pos_income_task5_assert_rejected(
+    '87000000-0000-0000-0000-000000000003',
+    '87100000-0000-0000-0000-000000000003', 'source', 0, 50,
+    'smoke:task5-owner',
+    'Automation proposal does not use the monthly income rule.'
+  );
+
+  v_page_zero := public.get_financial_reconciliation_automatic_proposal_members(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', 0, 50,
+    'smoke:task5-owner'
+  );
+  v_page_fifty := public.get_financial_reconciliation_automatic_proposal_members(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', 50, 50,
+    'smoke:task5-owner'
+  );
+  v_page_hundred := public.get_financial_reconciliation_automatic_proposal_members(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'source', 100, 50,
+    'smoke:task5-owner'
+  );
+  v_destination := public.get_financial_reconciliation_automatic_proposal_members(
+    '87000000-0000-0000-0000-000000000001',
+    '87100000-0000-0000-0000-000000000001', 'destination', 0, 50,
+    'smoke:task5-owner'
+  );
+
+  select array_agg((member.value->>'ordinal')::integer order by page_number,
+                   member.ordinality)
+  into v_ordinals
+  from (values
+    (0, v_page_zero),
+    (1, v_page_fifty),
+    (2, v_page_hundred)
+  ) page(page_number, payload)
+  cross join lateral jsonb_array_elements(page.payload->'members')
+    with ordinality member(value, ordinality);
+
+  if (v_page_zero - array[
+      'runId','proposalId','role','offset','limit','totalCount','members'
+    ]::text[]) <> '{}'::jsonb
+    or v_page_zero->>'runId' <> '87000000-0000-0000-0000-000000000001'
+    or v_page_zero->>'proposalId' <> '87100000-0000-0000-0000-000000000001'
+    or v_page_zero->>'role' <> 'source'
+    or (v_page_zero->>'offset')::integer <> 0
+    or (v_page_zero->>'limit')::integer <> 50
+    or (v_page_zero->>'totalCount')::integer <> 123
+    or jsonb_array_length(v_page_zero->'members') <> 50
+    or jsonb_array_length(v_page_fifty->'members') <> 50
+    or jsonb_array_length(v_page_hundred->'members') <> 23
+    or v_ordinals is distinct from array(select generate_series(1, 123))
+    or exists (
+      select 1
+      from (values (v_page_zero), (v_page_fifty), (v_page_hundred)) page(payload)
+      cross join lateral jsonb_array_elements(page.payload->'members') member(value)
+      where member.value->>'role' <> 'source'
+        or member.value->>'sourceType' <> 'import_cgd_extrato_ordem'
+        or member.value - array[
+          'role','sourceType','sourceId','ordinal','sourceDate','amount',
+          'description','account','rowSnapshot'
+        ]::text[] <> '{}'::jsonb
+    )
+    or (select count(distinct member.value->>'sourceId')
+        from (values (v_page_zero), (v_page_fifty), (v_page_hundred)) page(payload)
+        cross join lateral jsonb_array_elements(page.payload->'members') member(value)) <> 123
+  then
+    raise exception 'Task 5 source paging skipped, duplicated, reordered, or leaked snapshot fields: %, %, %.',
+      v_page_zero, v_page_fifty, v_page_hundred;
+  end if;
+
+  if (v_destination->>'role' <> 'destination'
+    or (v_destination->>'totalCount')::integer <> 3
+    or jsonb_array_length(v_destination->'members') <> 3
+    or exists (
+      select 1 from jsonb_array_elements(v_destination->'members') member(value)
+      where member.value->>'role' <> 'destination'
+        or member.value->>'sourceType' <> 'import_fdm_accounts'
+    ) then
+    raise exception 'Task 5 member paging mixed source and destination roles: %.',
+      v_destination;
+  end if;
+
+  perform public.finish_financial_reconciliation_automatic_run(
+    '87000000-0000-0000-0000-000000000001'
+  );
+  v_completed_page :=
+    public.get_financial_reconciliation_automatic_proposal_members(
+      '87000000-0000-0000-0000-000000000001',
+      '87100000-0000-0000-0000-000000000001', 'source', 100, 50,
+      'smoke:task5-completed-reader'
+    );
+  if v_completed_page is distinct from v_page_hundred then
+    raise exception 'Task 5 completed snapshot page changed or remained owner-locked.';
+  end if;
+
+  if has_function_privilege('anon', v_signature, 'EXECUTE')
+    or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+    or not has_function_privilege('service_role', v_signature, 'EXECUTE')
+    or not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[])
+          @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    )
+    or has_table_privilege(
+      'anon',
+      'public.financial_reconciliation_automatic_proposal_memberships',
+      'SELECT'
+    )
+    or has_table_privilege(
+      'authenticated',
+      'public.financial_reconciliation_automatic_proposal_memberships',
+      'SELECT'
+    )
+    or not (
+      select table_row.relrowsecurity
+      from pg_class table_row
+      where table_row.oid =
+        'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+    ) then
+    raise exception 'Task 5 member paging RPC ACL, search path, or table RLS is unsafe.';
+  end if;
+end
+$$;
+
 rollback;
