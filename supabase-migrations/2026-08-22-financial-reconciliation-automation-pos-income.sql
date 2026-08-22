@@ -9,7 +9,8 @@ declare
     'destinationAccount', 'Credit Card',
     'calendarGrouping', 'closed_month',
     'fixedMaxDifferenceDays', 31,
-    'eligibilityFloor', '2026-01-01'
+    'eligibilityFloor', '2026-01-01',
+    'requiresNonNullAmount', true
   );
   v_logic text := 'Every unlocked CGD Bank Statement POS VENDAS record is reconciled against every unlocked FDM Credit Card record in the same closed calendar month; the difference is Bank Statement total minus FDM Accounts total.';
 begin
@@ -896,7 +897,8 @@ as $$
         'destinationAccount','Credit Card',
         'calendarGrouping','closed_month',
         'eligibilityFloor','2026-01-01',
-        'fixedMaxDifferenceDays',31
+        'fixedMaxDifferenceDays',31,
+        'requiresNonNullAmount',true
       )
     else null
   end
@@ -913,6 +915,7 @@ as $$
     from public.import_cgd_extrato_ordem bank
     where bank.data >= date '2026-01-01'
       and bank.data < date_trunc('month', current_date)::date
+      and bank.montante is not null
       and bank.descritivo ilike '%POS VENDAS%'
       and not exists (
         select 1
@@ -925,6 +928,7 @@ as $$
     from public.import_fdm_accounts fdm
     where fdm.event_date >= date '2026-01-01'
       and fdm.event_date < date_trunc('month', current_date)::date
+      and fdm.amount is not null
       and fdm.account = 'Credit Card'
       and not exists (
         select 1
@@ -976,6 +980,7 @@ begin
     from public.import_cgd_extrato_ordem bank
     where bank.data >= date '2026-01-01'
       and bank.data < date_trunc('month', current_date)::date
+      and bank.montante is not null
       and bank.descritivo ilike '%POS VENDAS%'
       and not exists (
         select 1
@@ -989,6 +994,7 @@ begin
     from public.import_fdm_accounts fdm
     where fdm.event_date >= date '2026-01-01'
       and fdm.event_date < date_trunc('month', current_date)::date
+      and fdm.amount is not null
       and fdm.account = 'Credit Card'
       and not exists (
         select 1
@@ -1078,7 +1084,8 @@ begin
       'destinationAccount', 'Credit Card',
       'calendarGrouping', 'closed_month',
       'fixedMaxDifferenceDays', 31,
-      'eligibilityFloor', '2026-01-01'
+      'eligibilityFloor', '2026-01-01',
+      'requiresNonNullAmount', true
     ) then
     raise exception 'Automatic monthly rule snapshot contract is invalid.';
   end if;
@@ -1116,6 +1123,7 @@ begin
         and bank.data < v_month.calendar_month + interval '1 month'
         and bank.data >= date '2026-01-01'
         and bank.data < date_trunc('month', current_date)::date
+        and bank.montante is not null
         and bank.descritivo ilike '%POS VENDAS%'
         and not exists (
           select 1
@@ -1131,6 +1139,7 @@ begin
         and fdm.event_date < v_month.calendar_month + interval '1 month'
         and fdm.event_date >= date '2026-01-01'
         and fdm.event_date < date_trunc('month', current_date)::date
+        and fdm.amount is not null
         and fdm.account = 'Credit Card'
         and not exists (
           select 1
@@ -1155,7 +1164,8 @@ begin
       into strict v_base_snapshot
       from public.import_cgd_extrato_ordem bank
       where bank.id = v_month.technical_base_source_id
-        and bank.id = any(v_source_ids);
+        and bank.id = any(v_source_ids)
+        and bank.montante is not null;
 
       v_status := case
         when abs(v_month.calculated_difference) <= v_difference_allowed
@@ -1256,6 +1266,7 @@ begin
                    as ordinal
           from public.import_cgd_extrato_ordem bank
           where bank.id = any(v_source_ids)
+            and bank.montante is not null
         ) source_member
         order by source_member.ordinal;
         get diagnostics v_inserted_count = row_count;
@@ -1292,6 +1303,7 @@ begin
                    as ordinal
           from public.import_fdm_accounts fdm
           where fdm.id = any(v_destination_ids)
+            and fdm.amount is not null
         ) destination_member
         order by destination_member.ordinal;
         get diagnostics v_inserted_count = row_count;

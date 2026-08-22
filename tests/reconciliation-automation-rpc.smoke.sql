@@ -7231,7 +7231,8 @@ declare
     'destinationAccount', 'Credit Card',
     'calendarGrouping', 'closed_month',
     'fixedMaxDifferenceDays', 31,
-    'eligibilityFloor', '2026-01-01'
+    'eligibilityFloor', '2026-01-01',
+    'requiresNonNullAmount', true
   );
 begin
   if (select count(*)
@@ -7842,9 +7843,17 @@ insert into public.import_cgd_extrato_ordem (
    'pos-income-jun-wrong-description', date '2026-06-06', 'POS VENDA', 500.00),
   ('83000000-0000-0000-0000-000000000062', 'smoke-pos-income-analysis',
    'pos-income-jun-locked', date '2026-06-07', 'POS VENDAS locked', 600.00),
+  ('83000000-0000-0000-0000-000000000063', 'smoke-pos-income-analysis',
+   'pos-income-jun-null-amount', date '2026-06-08',
+   'POS VENDAS null amount', null),
   ('83000000-0000-0000-0000-000000000090', 'smoke-pos-income-analysis',
    'pos-income-current-month', date_trunc('month', current_date)::date + 1,
    'POS VENDAS current-month', 700.00);
+
+-- The production FDM schema rejects null amounts at ingestion. Temporarily relax
+-- that guard inside this rollback-only smoke transaction to prove the analysis
+-- layer still treats a malformed legacy row as ineligible rather than failing.
+alter table public.import_fdm_accounts alter column amount drop not null;
 
 insert into public.import_fdm_accounts (
   id, import_batch, account, date_time_raw, event_date, category,
@@ -7874,6 +7883,9 @@ insert into public.import_fdm_accounts (
   ('84000000-0000-0000-0000-000000000062', 'smoke-pos-income-analysis',
    'Credit Card', '2026-06-07', date '2026-06-07', 'POS income',
    600.00, 'locked destination'),
+  ('84000000-0000-0000-0000-000000000063', 'smoke-pos-income-analysis',
+   'Credit Card', '2026-06-08', date '2026-06-08', 'POS income',
+   null, 'null amount'),
   ('84000000-0000-0000-0000-000000000090', 'smoke-pos-income-analysis',
    'Credit Card', current_date::text,
    date_trunc('month', current_date)::date + 1, 'POS income',
@@ -7933,6 +7945,7 @@ end $$;
 do $$
 declare
   v_contract jsonb;
+  v_june record;
   v_page_one date[];
   v_page_two date[];
   v_page_three date[];
@@ -7949,14 +7962,29 @@ begin
       'destinationAccount', 'Credit Card',
       'calendarGrouping', 'closed_month',
       'eligibilityFloor', '2026-01-01',
-      'fixedMaxDifferenceDays', 31
+      'fixedMaxDifferenceDays', 31,
+      'requiresNonNullAmount', true
     ) then
     raise exception 'POS income dispatcher contract is not the approved literal: %',
       v_contract;
   end if;
 
   if public.financial_reconciliation_automatic_monthly_income_count() <> 4 then
-    raise exception 'POS income month count admitted a floor, current-month, locked, predicate, or one-sided row.';
+    raise exception 'POS income month count admitted a floor, current-month, locked, null-amount, predicate, or one-sided row.';
+  end if;
+
+  select page.* into strict v_june
+  from public.financial_reconciliation_automatic_monthly_income_page(
+    date '2026-03-01', 25
+  ) page
+  where page.calendar_month = date '2026-06-01';
+  if v_june.source_count <> 1
+    or v_june.source_total <> 75.00
+    or v_june.destination_count <> 1
+    or v_june.destination_total <> 75.00
+    or v_june.calculated_difference <> 0.00 then
+    raise exception 'POS income null amounts changed June counts or totals: %',
+      to_jsonb(v_june);
   end if;
 
   select array_agg(page.calendar_month order by page.calendar_month)
@@ -8190,6 +8218,26 @@ begin
     raise exception 'POS income tolerance-plus-one-cent boundary is invalid.';
   end if;
 
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.grouping_key = '2026-06'
+      and proposal.status = 'proposed'
+      and proposal.reason = ''
+      and proposal.calculated_difference = 0.00
+      and proposal.summary_snapshot @> jsonb_build_object(
+        'calendarMonth', date '2026-06-01',
+        'sourceCount', 1,
+        'sourceTotal', 75.00,
+        'destinationCount', 1,
+        'destinationTotal', 75.00,
+        'calculatedDifference', 0.00
+      )
+  ) then
+    raise exception 'POS income valid June rows did not produce the null-safe proposal.';
+  end if;
+
   if exists (
     select 1
     from public.financial_reconciliation_automatic_proposals proposal
@@ -8259,11 +8307,13 @@ begin
         '83000000-0000-0000-0000-000000000002'::uuid,
         '83000000-0000-0000-0000-000000000061'::uuid,
         '83000000-0000-0000-0000-000000000062'::uuid,
+        '83000000-0000-0000-0000-000000000063'::uuid,
         '83000000-0000-0000-0000-000000000090'::uuid,
         '84000000-0000-0000-0000-000000000001'::uuid,
         '84000000-0000-0000-0000-000000000002'::uuid,
         '84000000-0000-0000-0000-000000000061'::uuid,
         '84000000-0000-0000-0000-000000000062'::uuid,
+        '84000000-0000-0000-0000-000000000063'::uuid,
         '84000000-0000-0000-0000-000000000090'::uuid
       )
   ) then
@@ -8286,6 +8336,10 @@ begin
     raise exception 'POS income completed continuation changed output or duplicated proposals/memberships.';
   end if;
 end $$;
+
+delete from public.import_fdm_accounts
+where id = '84000000-0000-0000-0000-000000000063';
+alter table public.import_fdm_accounts alter column amount set not null;
 
 create or replace function pg_temp.pos_income_task3_state(p_run_id uuid)
 returns jsonb
