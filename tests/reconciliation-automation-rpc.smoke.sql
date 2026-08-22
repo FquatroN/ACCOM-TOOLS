@@ -8416,4 +8416,974 @@ begin
   end loop;
 end $$;
 
+-- Card Payments - POS - Income execution, stale revalidation, rollback, and
+-- existing four-rule dispatch regression.
+create or replace function pg_temp.pos_income_task4_clone_proposal(
+  p_grouping_key text,
+  p_run_id uuid,
+  p_proposal_id uuid,
+  p_actor text
+)
+returns uuid
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_source_run_id uuid;
+  v_source_proposal_id uuid;
+begin
+  select proposal.run_id, proposal.id
+  into strict v_source_run_id, v_source_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  join pos_income_task3_success_run successful
+    on successful.run_id = proposal.run_id
+  where proposal.grouping_key = p_grouping_key;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    id, trigger, scope, status, actor, client_request_id,
+    definition_config_snapshot, counts, analysis_completed_at
+  )
+  select
+    p_run_id, 'manual', 'rule', 'ready', p_actor, p_run_id,
+    source_run.definition_config_snapshot, source_run.counts, now()
+  from public.financial_reconciliation_automatic_runs source_run
+  where source_run.id = v_source_run_id;
+
+  insert into public.financial_reconciliation_automatic_proposals (
+    id, run_id, rule_key, rule_version, base_source_type, base_source_id,
+    base_source_date, base_snapshot, items, evidence, candidate_groups,
+    calculated_difference, allowed_difference, status, reason, signature,
+    reconciliation_id, error, error_detail, completed_at,
+    grouping_key, summary_snapshot
+  )
+  select
+    p_proposal_id, p_run_id, proposal.rule_key, proposal.rule_version,
+    proposal.base_source_type, proposal.base_source_id,
+    proposal.base_source_date, proposal.base_snapshot, proposal.items,
+    proposal.evidence, proposal.candidate_groups,
+    proposal.calculated_difference, proposal.allowed_difference,
+    proposal.status, proposal.reason, proposal.signature,
+    null, '', '', null, proposal.grouping_key, proposal.summary_snapshot
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = v_source_proposal_id;
+
+  insert into public.financial_reconciliation_automatic_proposal_memberships (
+    proposal_id, role, source_type, source_id, ordinal, source_date,
+    amount, description, account, row_snapshot
+  )
+  select
+    p_proposal_id, membership.role, membership.source_type,
+    membership.source_id, membership.ordinal, membership.source_date,
+    membership.amount, membership.description, membership.account,
+    membership.row_snapshot
+  from public.financial_reconciliation_automatic_proposal_memberships membership
+  where membership.proposal_id = v_source_proposal_id
+  order by membership.source_type, membership.source_date, membership.source_id;
+
+  return p_proposal_id;
+end
+$$;
+
+create or replace function pg_temp.pos_income_task4_assert_stale(
+  p_proposal_id uuid,
+  p_reason text
+)
+returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor text;
+  v_run_id uuid;
+  v_result jsonb;
+begin
+  select run.actor, run.id
+  into strict v_actor, v_run_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  join public.financial_reconciliation_automatic_runs run
+    on run.id = proposal.run_id
+  where proposal.id = p_proposal_id;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    p_proposal_id, v_actor
+  );
+  if v_result is distinct from jsonb_build_object(
+      'proposalId', p_proposal_id,
+      'runId', v_run_id,
+      'status', 'stale',
+      'reason', p_reason
+    )
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = p_proposal_id
+        and proposal.status = 'stale'
+        and proposal.reason = p_reason
+        and proposal.reconciliation_id is null
+        and proposal.completed_at is null
+        and proposal.error = ''
+        and proposal.error_detail = ''
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliations reconciliation
+      where reconciliation.automatic_proposal_id = p_proposal_id
+         or reconciliation.created_by = v_actor
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliation_items item
+      where item.created_by = v_actor
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliation_audit audit
+      where audit.actor = v_actor
+    ) then
+    raise exception 'POS income stale outcome was not atomic or sanitized for %: %.',
+      p_proposal_id, v_result;
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_rejected boolean := false;
+  v_signature text;
+  v_eligible boolean;
+begin
+  insert into public.import_fdm_accounts (
+    id, import_batch, account, date_time_raw, event_date, category,
+    amount, description
+  ) values (
+    '84200000-0000-0000-0000-000000000001',
+    'smoke-pos-income-execution-eligibility', 'Credit Card', '2026-07-01',
+    date '2026-07-01', 'POS income', 10.00,
+    'managed-only eligibility probe'
+  );
+
+  select source.eligible into strict v_eligible
+  from public.financial_reconciliation_source(
+    'import_fdm_accounts', '84200000-0000-0000-0000-000000000001'
+  ) source;
+  if v_eligible then
+    raise exception 'POS income execution broadened public FDM workbench eligibility.';
+  end if;
+
+  begin
+    perform public.financial_reconciliation_action(
+      'start', 'smoke:pos-income-managed-only', null,
+      'import_fdm_accounts', '84200000-0000-0000-0000-000000000001', null
+    );
+  exception when others then
+    v_rejected := sqlerrm =
+      'Source record is not eligible for reconciliation.';
+  end;
+  if not v_rejected then
+    raise exception 'Public reconciliation action admitted a managed-only FDM row.';
+  end if;
+  delete from public.import_fdm_accounts
+  where id = '84200000-0000-0000-0000-000000000001';
+
+  foreach v_signature in array array[
+    'public.financial_reconciliation_execute_prior_proposal(uuid,text)',
+    'public.financial_reconciliation_execute_monthly_income_proposal(uuid,text)'
+  ] loop
+    if has_function_privilege('anon', v_signature, 'EXECUTE')
+      or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+      or has_function_privilege('service_role', v_signature, 'EXECUTE')
+      or not (
+        select procedure.prosecdef
+          and coalesce(procedure.proconfig, '{}'::text[])
+            @> array['search_path=public, pg_temp']
+        from pg_proc procedure
+        where procedure.oid = v_signature::regprocedure
+      ) then
+      raise exception 'POS income private execution helper is exposed or unsafe: %.',
+        v_signature;
+    end if;
+  end loop;
+
+  v_signature :=
+    'public.execute_financial_reconciliation_automatic_proposal(uuid,text)';
+  if has_function_privilege('anon', v_signature, 'EXECUTE')
+    or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+    or not has_function_privilege('service_role', v_signature, 'EXECUTE')
+    or not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[])
+          @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    ) then
+    raise exception 'POS income public execution dispatcher ACL or search path changed.';
+  end if;
+end
+$$;
+
+-- Clone every execution fixture before any success consumes a shared member.
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-06', '86000000-0000-0000-0000-000000000001',
+  '86100000-0000-0000-0000-000000000001', 'smoke:pos-income-zero'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000002',
+  '86100000-0000-0000-0000-000000000002', 'smoke:pos-income-forced'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000003',
+  '86100000-0000-0000-0000-000000000003', 'smoke:pos-income-gained'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000004',
+  '86100000-0000-0000-0000-000000000004', 'smoke:pos-income-lost'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000005',
+  '86100000-0000-0000-0000-000000000005', 'smoke:pos-income-predicate'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000006',
+  '86100000-0000-0000-0000-000000000006', 'smoke:pos-income-account'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000007',
+  '86100000-0000-0000-0000-000000000007', 'smoke:pos-income-source-date'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000008',
+  '86100000-0000-0000-0000-000000000008', 'smoke:pos-income-destination-date'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000009',
+  '86100000-0000-0000-0000-000000000009', 'smoke:pos-income-source-amount'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000010',
+  '86100000-0000-0000-0000-000000000010', 'smoke:pos-income-destination-amount'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000011',
+  '86100000-0000-0000-0000-000000000011', 'smoke:pos-income-rule-missing'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000012',
+  '86100000-0000-0000-0000-000000000012', 'smoke:pos-income-operator'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000013',
+  '86100000-0000-0000-0000-000000000013', 'smoke:pos-income-definition'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000014',
+  '86100000-0000-0000-0000-000000000014', 'smoke:pos-income-disabled'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000015',
+  '86100000-0000-0000-0000-000000000015', 'smoke:pos-income-tolerance'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000016',
+  '86100000-0000-0000-0000-000000000016', 'smoke:pos-income-priority'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000017',
+  '86100000-0000-0000-0000-000000000017', 'smoke:pos-income-consumed'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000018',
+  '86100000-0000-0000-0000-000000000018', 'smoke:pos-income-null'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000019',
+  '86100000-0000-0000-0000-000000000019', 'smoke:pos-income-malformed'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-06', '86000000-0000-0000-0000-000000000020',
+  '86100000-0000-0000-0000-000000000020', 'smoke:pos-income-competing'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-06', '86000000-0000-0000-0000-000000000021',
+  '86100000-0000-0000-0000-000000000021', 'smoke:pos-income-rollback'
+);
+
+-- Above-tolerance proposals remain non-executable and make no lifecycle writes.
+do $$
+declare
+  v_proposal_id uuid;
+  v_rejected boolean := false;
+  v_reconciliations_before bigint;
+begin
+  select proposal.id into strict v_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  join pos_income_task3_success_run successful
+    on successful.run_id = proposal.run_id
+  where proposal.grouping_key = '2026-02';
+  select count(*) into v_reconciliations_before
+  from public.financial_reconciliations;
+
+  begin
+    perform public.execute_financial_reconciliation_automatic_proposal(
+      v_proposal_id, 'smoke:pos-income-ambiguous'
+    );
+  exception when others then
+    v_rejected := sqlerrm =
+      'Automation proposal with status ambiguous cannot be executed.';
+  end;
+  if not v_rejected
+    or (select count(*) from public.financial_reconciliations) <>
+       v_reconciliations_before
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = v_proposal_id
+        and proposal.status = 'ambiguous'
+        and proposal.reason = 'monthly_difference_exceeded'
+        and proposal.reconciliation_id is null
+    ) then
+    raise exception 'POS income above-tolerance proposal executed or mutated.';
+  end if;
+end
+$$;
+
+-- Entire live source/destination membership and every date/amount are compared
+-- against the immutable snapshot in both directions.
+do $$
+declare
+  v_lock_id uuid;
+  v_result jsonb;
+  v_definition jsonb;
+  v_priority integer;
+begin
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    '83200000-0000-0000-0000-000000000001',
+    'smoke-pos-income-execution-drift', 'pos-income-execution-gained',
+    date '2026-01-06', 'POS VENDAS gained after analysis', 1.00
+  );
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000003',
+    'source_snapshot_changed'
+  );
+  delete from public.import_cgd_extrato_ordem
+  where id = '83200000-0000-0000-0000-000000000001';
+
+  delete from public.import_fdm_accounts
+  where id = '84000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000004',
+    'source_snapshot_changed'
+  );
+  insert into public.import_fdm_accounts (
+    id, import_batch, account, date_time_raw, event_date, category,
+    amount, description
+  ) values (
+    '84000000-0000-0000-0000-000000000010',
+    'smoke-pos-income-analysis', 'Credit Card', '2026-01-31',
+    date '2026-01-31', 'POS income', 100.00, 'January'
+  );
+
+  update public.import_cgd_extrato_ordem
+  set descritivo = 'CARD SALES January'
+  where id = '83000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000005',
+    'source_snapshot_changed'
+  );
+  update public.import_cgd_extrato_ordem
+  set descritivo = 'prefix pos vendas suffix'
+  where id = '83000000-0000-0000-0000-000000000010';
+
+  update public.import_fdm_accounts set account = 'Cash'
+  where id = '84000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000006',
+    'source_snapshot_changed'
+  );
+  update public.import_fdm_accounts set account = 'Credit Card'
+  where id = '84000000-0000-0000-0000-000000000010';
+
+  update public.import_cgd_extrato_ordem set data = date '2026-02-01'
+  where id = '83000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000007',
+    'source_snapshot_changed'
+  );
+  update public.import_cgd_extrato_ordem set data = date '2026-01-05'
+  where id = '83000000-0000-0000-0000-000000000010';
+
+  update public.import_fdm_accounts set event_date = date '2026-02-01'
+  where id = '84000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000008',
+    'source_snapshot_changed'
+  );
+  update public.import_fdm_accounts set event_date = date '2026-01-31'
+  where id = '84000000-0000-0000-0000-000000000010';
+
+  update public.import_cgd_extrato_ordem set montante = 4000.01
+  where id = '83000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000009',
+    'source_snapshot_changed'
+  );
+  update public.import_cgd_extrato_ordem set montante = 4000.00
+  where id = '83000000-0000-0000-0000-000000000010';
+
+  update public.import_fdm_accounts set amount = 100.01
+  where id = '84000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000010',
+    'source_snapshot_changed'
+  );
+  update public.import_fdm_accounts set amount = 100.00
+  where id = '84000000-0000-0000-0000-000000000010';
+
+  delete from public.financial_reconciliation_source_rules
+  where base_source_type = 'import_cgd_extrato_ordem'
+    and matching_source_type = 'import_fdm_accounts';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000011',
+    'rule_snapshot_changed'
+  );
+  insert into public.financial_reconciliation_source_rules (
+    base_source_type, matching_source_type, operator
+  ) values ('import_cgd_extrato_ordem', 'import_fdm_accounts', '-');
+
+  update public.financial_reconciliation_source_rules set operator = '+'
+  where base_source_type = 'import_cgd_extrato_ordem'
+    and matching_source_type = 'import_fdm_accounts';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000012',
+    'operator_changed'
+  );
+  update public.financial_reconciliation_source_rules set operator = '-'
+  where base_source_type = 'import_cgd_extrato_ordem'
+    and matching_source_type = 'import_fdm_accounts';
+
+  select definition into strict v_definition
+  from public.financial_reconciliation_automatic_rule_definitions
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+    and version = 1;
+  update public.financial_reconciliation_automatic_rule_definitions
+  set definition = definition || '{"executionDrift":true}'::jsonb
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+    and version = 1;
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000013',
+    'rule_snapshot_changed'
+  );
+  update public.financial_reconciliation_automatic_rule_definitions
+  set definition = v_definition
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+    and version = 1;
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = false
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000014',
+    'rule_snapshot_changed'
+  );
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set difference_allowed = 7499.99
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000015',
+    'tolerance_changed'
+  );
+  update public.financial_reconciliation_automatic_rule_configs
+  set difference_allowed = 7500.00
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+
+  select priority into strict v_priority
+  from public.financial_reconciliation_automatic_rule_configs
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+  update public.financial_reconciliation_automatic_rule_configs
+  set priority = 1000000
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000016',
+    'rule_snapshot_changed'
+  );
+  update public.financial_reconciliation_automatic_rule_configs
+  set priority = v_priority
+  where rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income';
+
+  v_result := public.financial_reconciliation_action(
+    'start', 'smoke:pos-income-consumed-holder', null,
+    'import_cgd_extrato_ordem',
+    '83000000-0000-0000-0000-000000000010', null
+  );
+  v_lock_id := (v_result#>>'{reconciliation,id}')::uuid;
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000017',
+    'source_snapshot_changed'
+  );
+  perform public.financial_reconciliation_action(
+    'delete', 'smoke:pos-income-consumed-holder',
+    v_lock_id, null, null, null
+  );
+
+  update public.import_cgd_extrato_ordem set montante = null
+  where id = '83000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000018',
+    'source_snapshot_changed'
+  );
+  update public.import_cgd_extrato_ordem set montante = 4000.00
+  where id = '83000000-0000-0000-0000-000000000010';
+
+  update public.financial_reconciliation_automatic_runs
+  set definition_config_snapshot = jsonb_set(
+    definition_config_snapshot,
+    '{0,ruleVersion}',
+    '"999999999999999999999999999999999999999999999"'::jsonb
+  )
+  where id = '86000000-0000-0000-0000-000000000019';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000019',
+    'rule_snapshot_changed'
+  );
+end
+$$;
+
+-- Simulate a destination becoming consumed after the monthly start audit but
+-- before the remaining item locks are inserted. The whole lifecycle must roll
+-- back and leave only the proposal's stale outcome.
+create temporary table pos_income_task4_competing_lock (
+  reconciliation_id uuid not null,
+  source_id uuid not null
+);
+
+create or replace function pg_temp.pos_income_task4_consume_after_start()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.action = 'start' and new.actor = 'smoke:pos-income-competing' then
+    insert into public.financial_reconciliation_items (
+      reconciliation_id, source_type, source_id, amount_snapshot, created_by
+    )
+    select reconciliation_id, 'import_fdm_accounts', source_id, 75.00,
+           'smoke:pos-income-competing'
+    from pos_income_task4_competing_lock;
+  end if;
+  return new;
+end
+$$;
+
+create trigger pos_income_task4_consume_after_start
+after insert on public.financial_reconciliation_audit
+for each row execute function pg_temp.pos_income_task4_consume_after_start();
+
+do $$
+declare
+  v_competing_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types,
+    matching_source_rules, created_by
+  ) values (
+    'started', 'import_cgd_extrato_ordem',
+    '["import_fdm_accounts"]'::jsonb,
+    '[{"sourceType":"import_fdm_accounts","operator":"-"}]'::jsonb,
+    'smoke:pos-income-competing-holder'
+  ) returning id into v_competing_reconciliation_id;
+  insert into pos_income_task4_competing_lock values (
+    v_competing_reconciliation_id,
+    '84000000-0000-0000-0000-000000000060'
+  );
+
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000020',
+    'source_snapshot_changed'
+  );
+  if exists (
+    select 1
+    from public.financial_reconciliation_items item
+    where item.reconciliation_id = v_competing_reconciliation_id
+  ) then
+    raise exception 'POS income competing-consumption rollback left a partial lock.';
+  end if;
+end
+$$;
+
+drop trigger pos_income_task4_consume_after_start
+on public.financial_reconciliation_audit;
+drop function pg_temp.pos_income_task4_consume_after_start();
+
+-- A failure after reconciliation start rolls back reconciliation, item locks,
+-- lifecycle audit, provenance, and proposal completion before persisting failed.
+create or replace function pg_temp.pos_income_task4_reject_automatic_complete()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.action = 'automatic_complete'
+    and new.actor = 'smoke:pos-income-rollback' then
+    raise exception 'smoke POS income automatic completion failure';
+  end if;
+  return new;
+end
+$$;
+
+create trigger pos_income_task4_reject_automatic_complete
+before insert on public.financial_reconciliation_audit
+for each row execute function pg_temp.pos_income_task4_reject_automatic_complete();
+
+do $$
+declare
+  v_result jsonb;
+begin
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    '86100000-0000-0000-0000-000000000021',
+    'smoke:pos-income-rollback'
+  );
+  if v_result is distinct from jsonb_build_object(
+      'proposalId', '86100000-0000-0000-0000-000000000021'::uuid,
+      'runId', '86000000-0000-0000-0000-000000000021'::uuid,
+      'status', 'failed',
+      'reason', 'execution_failed'
+    )
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = '86100000-0000-0000-0000-000000000021'
+        and proposal.status = 'failed'
+        and proposal.reason = 'execution_failed'
+        and proposal.reconciliation_id is null
+        and proposal.completed_at is null
+        and proposal.error = 'Automatic reconciliation execution failed.'
+    )
+    or exists (
+      select 1 from public.financial_reconciliations reconciliation
+      where reconciliation.automatic_proposal_id =
+        '86100000-0000-0000-0000-000000000021'
+         or reconciliation.created_by = 'smoke:pos-income-rollback'
+    )
+    or exists (
+      select 1 from public.financial_reconciliation_items item
+      where item.created_by = 'smoke:pos-income-rollback'
+    )
+    or exists (
+      select 1 from public.financial_reconciliation_audit audit
+      where audit.actor = 'smoke:pos-income-rollback'
+    ) then
+    raise exception 'POS income post-start failure left lifecycle writes: %.',
+      v_result;
+  end if;
+end
+$$;
+
+drop trigger pos_income_task4_reject_automatic_complete
+on public.financial_reconciliation_audit;
+drop function pg_temp.pos_income_task4_reject_automatic_complete();
+
+-- Normal and forced completion preserve every lock, provenance field, ordinary
+-- lifecycle audit record, immutable snapshots, generated comment, and retry ID.
+do $$
+declare
+  v_case record;
+  v_result jsonb;
+  v_retry jsonb;
+  v_reconciliation_id uuid;
+  v_expected_comment text;
+  v_items_before bigint;
+  v_audit_before bigint;
+begin
+  for v_case in
+    select * from (values
+      ('86100000-0000-0000-0000-000000000001'::uuid,
+       '86000000-0000-0000-0000-000000000001'::uuid,
+       'smoke:pos-income-zero'::text, 'normal'::text, 0.00::numeric,
+       null::text, 2::integer),
+      ('86100000-0000-0000-0000-000000000002'::uuid,
+       '86000000-0000-0000-0000-000000000002'::uuid,
+       'smoke:pos-income-forced'::text, 'forced'::text, 7500.00::numeric,
+       'Automatic monthly reconciliation for 2026-01: Bank Statement total 7600.00 EUR; FDM Credit Card total 100.00 EUR; difference 7500.00 EUR within allowed 7500.00 EUR; run 86000000-0000-0000-0000-000000000002; proposal 86100000-0000-0000-0000-000000000002.'::text,
+       3::integer)
+    ) expected(
+      proposal_id, run_id, actor, completion_type, difference_amount,
+      completion_comment, item_count
+    )
+  loop
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_case.proposal_id, v_case.actor
+    );
+    v_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+    v_expected_comment := v_case.completion_comment;
+
+    if v_result is distinct from jsonb_build_object(
+        'proposalId', v_case.proposal_id,
+        'runId', v_case.run_id,
+        'status', 'completed',
+        'reconciliationId', v_reconciliation_id
+      )
+      or v_reconciliation_id is null
+      or not exists (
+        select 1
+        from public.financial_reconciliations reconciliation
+        where reconciliation.id = v_reconciliation_id
+          and reconciliation.status = 'complete'
+          and reconciliation.completion_type = v_case.completion_type
+          and reconciliation.difference_amount = v_case.difference_amount
+          and reconciliation.forced_completion_comment is not distinct from
+            v_expected_comment
+          and reconciliation.origin = 'automatic'
+          and reconciliation.automatic_trigger = 'manual'
+          and reconciliation.automatic_rule_key =
+            'cgd_bank_statement_fdm_credit_card_monthly_income'
+          and reconciliation.automatic_rule_version = 1
+          and reconciliation.automatic_run_id = v_case.run_id
+          and reconciliation.automatic_proposal_id = v_case.proposal_id
+          and reconciliation.matching_source_rules @> jsonb_build_array(
+            jsonb_build_object(
+              'sourceType', 'import_fdm_accounts', 'operator', '-'
+            )
+          )
+      )
+      or (select count(*)
+          from public.financial_reconciliation_items item
+          where item.reconciliation_id = v_reconciliation_id) <>
+         v_case.item_count
+      or exists (
+        select membership.source_type, membership.source_id, membership.amount
+        from public.financial_reconciliation_automatic_proposal_memberships membership
+        where membership.proposal_id = v_case.proposal_id
+        except
+        select item.source_type, item.source_id, item.amount_snapshot
+        from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id
+      )
+      or exists (
+        select item.source_type, item.source_id, item.amount_snapshot
+        from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id
+        except
+        select membership.source_type, membership.source_id, membership.amount
+        from public.financial_reconciliation_automatic_proposal_memberships membership
+        where membership.proposal_id = v_case.proposal_id
+      ) then
+      raise exception 'POS income ordinary reconciliation lifecycle is incomplete for %: %.',
+        v_case.proposal_id, v_result;
+    end if;
+
+    if (select count(*)
+        from public.financial_reconciliation_audit audit
+        where audit.reconciliation_id = v_reconciliation_id
+          and audit.action = 'automatic_complete') <> 1
+      or (select count(*)
+          from public.financial_reconciliation_audit audit
+          where audit.reconciliation_id = v_reconciliation_id) <>
+         v_case.item_count + 2
+      or not exists (
+        select 1
+        from public.financial_reconciliation_audit audit
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = v_case.proposal_id
+        where audit.reconciliation_id = v_reconciliation_id
+          and audit.action = 'automatic_complete'
+          and audit.actor = v_case.actor
+          and audit.comment is not distinct from v_expected_comment
+          and audit.difference_amount = v_case.difference_amount
+          and audit.metadata @> jsonb_build_object(
+            'ruleSnapshot', jsonb_build_object(
+              'ruleKey', proposal.rule_key,
+              'ruleVersion', proposal.rule_version
+            ),
+            'configSnapshot', jsonb_build_object(
+              'differenceAllowed', proposal.allowed_difference,
+              'maxDifferenceDays', 31
+            ),
+            'operatorSnapshot', jsonb_build_object(
+              'import_fdm_accounts', '-'
+            ),
+            'summarySnapshot', proposal.summary_snapshot,
+            'proposalSignature', proposal.signature,
+            'trigger', 'manual',
+            'runId', v_case.run_id,
+            'proposalId', v_case.proposal_id,
+            'tolerance', proposal.allowed_difference,
+            'calculatedDifference', v_case.difference_amount
+          )
+          and jsonb_typeof(audit.metadata->'membershipSnapshots') = 'array'
+          and jsonb_array_length(audit.metadata->'membershipSnapshots') =
+            v_case.item_count
+          and audit.metadata->'membershipSnapshots' = (
+            select jsonb_agg(jsonb_build_object(
+              'role', membership.role,
+              'sourceType', membership.source_type,
+              'sourceId', membership.source_id,
+              'ordinal', membership.ordinal,
+              'sourceDate', membership.source_date,
+              'amount', membership.amount,
+              'description', membership.description,
+              'account', membership.account,
+              'rowSnapshot', membership.row_snapshot
+            ) order by membership.source_type, membership.source_date,
+                       membership.source_id)
+            from public.financial_reconciliation_automatic_proposal_memberships membership
+            where membership.proposal_id = v_case.proposal_id
+          )
+      ) then
+      raise exception 'POS income automatic audit is duplicated or incomplete for %.',
+        v_case.proposal_id;
+    end if;
+
+    select count(*) into v_items_before
+    from public.financial_reconciliation_items item
+    where item.reconciliation_id = v_reconciliation_id;
+    select count(*) into v_audit_before
+    from public.financial_reconciliation_audit audit
+    where audit.reconciliation_id = v_reconciliation_id;
+    v_retry := public.execute_financial_reconciliation_automatic_proposal(
+      v_case.proposal_id, v_case.actor
+    );
+    if v_retry is distinct from v_result
+      or (select count(*)
+          from public.financial_reconciliation_items item
+          where item.reconciliation_id = v_reconciliation_id) <>
+         v_items_before
+      or (select count(*)
+          from public.financial_reconciliation_audit audit
+          where audit.reconciliation_id = v_reconciliation_id) <>
+         v_audit_before then
+      raise exception 'POS income retry duplicated lifecycle rows for %.',
+        v_case.proposal_id;
+    end if;
+  end loop;
+end
+$$;
+
+-- Execute the exact 1,000 + 1,000 immutable membership set and verify the
+-- paginated history summary reports both raw counts and totals.
+do $$
+declare
+  v_proposal_id uuid;
+  v_run_id uuid;
+  v_reconciliation_id uuid;
+  v_result jsonb;
+  v_history jsonb;
+  v_row jsonb;
+begin
+  select proposal.id, proposal.run_id
+  into strict v_proposal_id, v_run_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  join pos_income_task3_success_run successful
+    on successful.run_id = proposal.run_id
+  where proposal.grouping_key = '2026-03';
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, 'smoke:pos-income-large-execution'
+  );
+  v_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+  if v_result->>'status' <> 'completed'
+    or v_reconciliation_id is null
+    or (select count(*)
+        from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id) <> 2000
+    or (select count(*)
+        from public.financial_reconciliation_audit audit
+        where audit.reconciliation_id = v_reconciliation_id
+          and audit.action = 'automatic_complete') <> 1 then
+    raise exception 'POS income 1,000 + 1,000 execution was incomplete: %.',
+      v_result;
+  end if;
+
+  v_history := public.get_financial_reconciliation_history(
+    null, null, 'automatic', 'complete', null, null, 1, 100
+  );
+  select history_row.value into strict v_row
+  from jsonb_array_elements(v_history->'rows') history_row(value)
+  where history_row.value->>'id' = v_reconciliation_id::text;
+  if (v_row->>'totalRecords')::integer <> 2000
+    or (v_row->>'sourceAmountTotal')::numeric <> 2000.00
+    or (v_row->>'destinationAmountTotal')::numeric <> 1250.00
+    or not (v_row->'sourceSummary') @> jsonb_build_array(
+      jsonb_build_object(
+        'sourceType', 'import_cgd_extrato_ordem',
+        'recordCount', 1000,
+        'amountTotal', 2000.00
+      ),
+      jsonb_build_object(
+        'sourceType', 'import_fdm_accounts',
+        'recordCount', 1000,
+        'amountTotal', 1250.00
+      )
+    ) then
+    raise exception 'POS income large history summary lost counts or totals: %.',
+      v_row;
+  end if;
+end
+$$;
+
+-- The exact four pre-existing rule/version adapters still own their execution.
+do $$
+declare
+  v_fixture record;
+  v_result jsonb;
+  v_items_before bigint;
+  v_audit_before bigint;
+  v_seen integer := 0;
+begin
+  for v_fixture in
+    select distinct on (proposal.rule_key, proposal.rule_version)
+      proposal.id, proposal.run_id, proposal.reconciliation_id,
+      proposal.rule_key, proposal.rule_version
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.status = 'completed'
+      and proposal.reconciliation_id is not null
+      and (proposal.rule_key, proposal.rule_version) in (
+        ('financial_documents_cgd_bank_statement', 2),
+        ('financial_documents_cgd_credit_card', 1),
+        ('financial_documents_cgd_bank_statement_amount_only', 1),
+        ('financial_documents_cgd_credit_card_amount_only', 1)
+      )
+    order by proposal.rule_key, proposal.rule_version, proposal.id
+  loop
+    v_seen := v_seen + 1;
+    select count(*) into v_items_before
+    from public.financial_reconciliation_items item
+    where item.reconciliation_id = v_fixture.reconciliation_id;
+    select count(*) into v_audit_before
+    from public.financial_reconciliation_audit audit
+    where audit.reconciliation_id = v_fixture.reconciliation_id;
+
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      v_fixture.id, 'smoke:pos-income-four-rule-regression'
+    );
+    if v_result is distinct from jsonb_build_object(
+        'proposalId', v_fixture.id,
+        'runId', v_fixture.run_id,
+        'status', 'completed',
+        'reconciliationId', v_fixture.reconciliation_id
+      )
+      or (select count(*)
+          from public.financial_reconciliation_items item
+          where item.reconciliation_id = v_fixture.reconciliation_id) <>
+         v_items_before
+      or (select count(*)
+          from public.financial_reconciliation_audit audit
+          where audit.reconciliation_id = v_fixture.reconciliation_id) <>
+         v_audit_before then
+      raise exception 'POS income dispatcher changed completed % v% execution.',
+        v_fixture.rule_key, v_fixture.rule_version;
+    end if;
+  end loop;
+
+  if v_seen <> 4 then
+    raise exception 'POS income four-rule execution regression covered % adapters.',
+      v_seen;
+  end if;
+end
+$$;
+
 rollback;

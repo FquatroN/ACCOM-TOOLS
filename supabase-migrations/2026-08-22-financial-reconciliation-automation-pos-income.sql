@@ -2011,6 +2011,1030 @@ begin
 end
 $$;
 
+-- Preserve the exact four-rule executor installed by the prior migrations.
+-- On reapply the private copy already exists, so the monthly dispatcher remains
+-- stable without dynamic SQL or replacing the saved implementation.
+do $migration$
+begin
+  if to_regprocedure(
+      'public.financial_reconciliation_execute_prior_proposal(uuid,text)'
+    ) is null then
+    alter function public.execute_financial_reconciliation_automatic_proposal(uuid,text)
+      rename to financial_reconciliation_execute_prior_proposal;
+  end if;
+end
+$migration$;
+
+create or replace function public.financial_reconciliation_execute_monthly_income_proposal(
+  p_proposal_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run_id uuid;
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_proposal public.financial_reconciliation_automatic_proposals%rowtype;
+  v_rule_snapshot jsonb;
+  v_contract jsonb;
+  v_current_definition jsonb;
+  v_current_display_name text;
+  v_current_base_source_type text;
+  v_current_destination_source_types jsonb;
+  v_current_rule_version integer;
+  v_current_enabled boolean;
+  v_current_allow_manual boolean;
+  v_current_include_scheduled boolean;
+  v_current_difference_allowed numeric(14,2);
+  v_current_max_difference_days integer;
+  v_current_priority integer;
+  v_current_operator text;
+  v_snapshot_rule_version integer;
+  v_snapshot_difference_allowed numeric(14,2);
+  v_snapshot_max_difference_days integer;
+  v_snapshot_priority integer;
+  v_calendar_month date;
+  v_stored_count bigint;
+  v_locked_source_count bigint;
+  v_locked_destination_count bigint;
+  v_membership_mismatch boolean;
+  v_stored_source_count bigint;
+  v_stored_source_total numeric;
+  v_stored_destination_count bigint;
+  v_stored_destination_total numeric;
+  v_live_source_count bigint;
+  v_live_source_total numeric;
+  v_live_destination_count bigint;
+  v_live_destination_total numeric;
+  v_live_difference numeric;
+  v_technical_base_source_id uuid;
+  v_technical_base_source_date date;
+  v_technical_base_snapshot jsonb;
+  v_source_ids uuid[];
+  v_destination_ids uuid[];
+  v_current_signature text;
+  v_matching_source_types jsonb;
+  v_matching_source_rules jsonb;
+  v_membership_snapshots jsonb;
+  v_reconciliation_id uuid;
+  v_actual_item_count bigint;
+  v_actual_difference numeric(14,2);
+  v_comment text;
+  v_failure_message text;
+  v_failure_detail text;
+begin
+  if p_proposal_id is null then
+    raise exception 'Automation proposal ID is required.';
+  end if;
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  select proposal.run_id into v_run_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = p_proposal_id;
+  if not found then
+    raise exception 'Automation proposal was not found.';
+  end if;
+
+  select * into strict v_run
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = v_run_id
+  for update;
+
+  select * into strict v_proposal
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = p_proposal_id
+  for update;
+  if v_proposal.run_id <> v_run.id then
+    raise exception 'Automation proposal run changed during execution.';
+  end if;
+
+  if v_proposal.status = 'completed' then
+    if v_proposal.reconciliation_id is null then
+      raise exception 'Completed automation proposal has no reconciliation.';
+    end if;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id,
+      'runId', v_run.id,
+      'status', 'completed',
+      'reconciliationId', v_proposal.reconciliation_id
+    );
+  end if;
+  if v_proposal.status in (
+    'ambiguous', 'skipped', 'deselected', 'failed'
+  ) then
+    raise exception 'Automation proposal with status % cannot be executed.',
+      v_proposal.status;
+  end if;
+  if v_proposal.status <> 'proposed' then
+    raise exception 'Automation proposal is already being executed.';
+  end if;
+  if v_run.finished_at is not null then
+    raise exception 'Automation proposal belongs to a finished run.';
+  end if;
+  if v_run.analysis_completed_at is null or v_run.status = 'analyzing' then
+    raise exception 'Automatic analysis must finish before proposals can be executed.';
+  end if;
+  if v_proposal.rule_key <>
+      'cgd_bank_statement_fdm_credit_card_monthly_income'
+    or v_proposal.rule_version <> 1
+    or v_proposal.base_source_type <> 'import_cgd_extrato_ordem' then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'rule_version_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'rule_version_changed'
+    );
+  end if;
+
+  -- Lock the current definition/config and required directional source rule
+  -- before interpreting the immutable run snapshot.
+  select
+    definition.definition,
+    definition.display_name,
+    definition.base_source_type,
+    definition.destination_source_types,
+    config.rule_version,
+    config.enabled,
+    config.allow_manual_execution,
+    config.include_in_scheduled_batch,
+    config.difference_allowed,
+    config.max_difference_days,
+    config.priority
+  into
+    v_current_definition,
+    v_current_display_name,
+    v_current_base_source_type,
+    v_current_destination_source_types,
+    v_current_rule_version,
+    v_current_enabled,
+    v_current_allow_manual,
+    v_current_include_scheduled,
+    v_current_difference_allowed,
+    v_current_max_difference_days,
+    v_current_priority
+  from public.financial_reconciliation_automatic_rule_definitions definition
+  join public.financial_reconciliation_automatic_rule_configs config
+    on config.rule_key = definition.rule_key
+   and config.rule_version = definition.version
+  where definition.rule_key = v_proposal.rule_key
+    and definition.version = v_proposal.rule_version
+  for share of definition, config;
+
+  select source_rule.operator
+  into v_current_operator
+  from public.financial_reconciliation_source_rules source_rule
+  where source_rule.base_source_type = 'import_cgd_extrato_ordem'
+    and source_rule.matching_source_type = 'import_fdm_accounts'
+  for share of source_rule;
+
+  if v_current_definition is null
+    or v_current_operator is null then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'rule_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'rule_snapshot_changed'
+    );
+  end if;
+
+  -- Validate every textual snapshot field and numeric bound before casting.
+  if jsonb_typeof(v_run.definition_config_snapshot) <> 'array'
+    or jsonb_array_length(v_run.definition_config_snapshot) <> 1
+    or jsonb_typeof(v_run.definition_config_snapshot->0) <> 'object' then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'rule_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'rule_snapshot_changed'
+    );
+  end if;
+  v_rule_snapshot := v_run.definition_config_snapshot->0;
+  if v_rule_snapshot->>'ruleKey' is distinct from v_proposal.rule_key
+    or coalesce(v_rule_snapshot->>'ruleVersion', '') !~ '^[0-9]+$'
+    or length(v_rule_snapshot->>'ruleVersion') > 10
+    or v_rule_snapshot->>'displayName' is distinct from
+      'Card Payments - POS - Income'
+    or v_rule_snapshot->>'destinationSourceType' is distinct from
+      'import_fdm_accounts'
+    or v_rule_snapshot->>'operator' is distinct from '-'
+    or coalesce(v_rule_snapshot->>'differenceAllowed', '') !~
+      '^[0-9]{1,12}(\.[0-9]{1,2})?$'
+    or coalesce(v_rule_snapshot->>'maxDifferenceDays', '') !~ '^[0-9]+$'
+    or length(v_rule_snapshot->>'maxDifferenceDays') > 10
+    or coalesce(v_rule_snapshot->>'priority', '') !~ '^[0-9]+$'
+    or length(v_rule_snapshot->>'priority') > 10
+    or v_rule_snapshot->'definition' is distinct from jsonb_build_object(
+      'matchingMode', 'monthly_aggregate',
+      'sourceDescriptionPattern', '%POS VENDAS%',
+      'destinationAccount', 'Credit Card',
+      'calendarGrouping', 'closed_month',
+      'fixedMaxDifferenceDays', 31,
+      'eligibilityFloor', '2026-01-01',
+      'requiresNonNullAmount', true
+    ) then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'rule_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'rule_snapshot_changed'
+    );
+  end if;
+  if (v_rule_snapshot->>'ruleVersion')::bigint not between 1 and 2147483647
+    or (v_rule_snapshot->>'maxDifferenceDays')::bigint not between 0 and 90
+    or (v_rule_snapshot->>'priority')::bigint not between 1 and 2147483647 then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'rule_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'rule_snapshot_changed'
+    );
+  end if;
+
+  v_snapshot_rule_version := (v_rule_snapshot->>'ruleVersion')::integer;
+  v_snapshot_difference_allowed :=
+    (v_rule_snapshot->>'differenceAllowed')::numeric(14,2);
+  v_snapshot_max_difference_days :=
+    (v_rule_snapshot->>'maxDifferenceDays')::integer;
+  v_snapshot_priority := (v_rule_snapshot->>'priority')::integer;
+
+  v_contract := public.financial_reconciliation_automatic_rule_contract(
+    v_proposal.rule_key, v_proposal.rule_version
+  );
+  if v_contract is distinct from jsonb_build_object(
+      'destinationSourceType', 'import_fdm_accounts',
+      'matchingMode', 'monthly_aggregate',
+      'sourceDescriptionPattern', '%POS VENDAS%',
+      'destinationAccount', 'Credit Card',
+      'calendarGrouping', 'closed_month',
+      'eligibilityFloor', '2026-01-01',
+      'fixedMaxDifferenceDays', 31,
+      'requiresNonNullAmount', true
+    )
+    or v_snapshot_rule_version <> v_proposal.rule_version
+    or v_snapshot_max_difference_days <> 31
+    or v_current_rule_version is distinct from v_snapshot_rule_version
+    or not v_current_enabled
+    or (v_run.trigger = 'manual' and not v_current_allow_manual)
+    or (v_run.trigger = 'scheduled' and not v_current_include_scheduled)
+    or v_current_definition is distinct from v_rule_snapshot->'definition'
+    or v_current_display_name is distinct from
+      v_rule_snapshot->>'displayName'
+    or v_current_base_source_type is distinct from
+      'import_cgd_extrato_ordem'
+    or v_current_destination_source_types is distinct from
+      '["import_fdm_accounts"]'::jsonb
+    or v_current_max_difference_days is distinct from
+      v_snapshot_max_difference_days
+    or v_current_priority is distinct from v_snapshot_priority then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'rule_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'rule_snapshot_changed'
+    );
+  end if;
+  if v_current_operator is distinct from '-' then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'operator_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'operator_changed'
+    );
+  end if;
+  if v_current_difference_allowed is distinct from
+      v_snapshot_difference_allowed
+    or v_proposal.allowed_difference is distinct from
+      v_snapshot_difference_allowed then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'tolerance_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'tolerance_changed'
+    );
+  end if;
+
+  if jsonb_typeof(v_proposal.summary_snapshot) <> 'object'
+    or coalesce(v_proposal.grouping_key, '') !~
+      '^\d{4}-(0[1-9]|1[0-2])$'
+    or substring(v_proposal.grouping_key from 1 for 4) = '0000'
+    or coalesce(v_proposal.summary_snapshot->>'calendarMonth', '') !~
+      '^\d{4}-(0[1-9]|1[0-2])-01$'
+    or v_proposal.summary_snapshot->>'calendarMonth' is distinct from
+      v_proposal.grouping_key || '-01'
+    or v_proposal.summary_snapshot->>'ruleKey' is distinct from
+      v_proposal.rule_key
+    or v_proposal.summary_snapshot->>'ruleVersion' is distinct from '1'
+    or v_proposal.summary_snapshot->>'sourceDescriptionPattern' is distinct from
+      '%POS VENDAS%'
+    or v_proposal.summary_snapshot->>'destinationAccount' is distinct from
+      'Credit Card'
+    or v_proposal.summary_snapshot->>'operator' is distinct from '-'
+    or v_proposal.summary_snapshot->>'maxDifferenceDays' is distinct from '31'
+    or coalesce(v_proposal.summary_snapshot->>'sourceCount', '') !~ '^[0-9]+$'
+    or length(v_proposal.summary_snapshot->>'sourceCount') > 10
+    or coalesce(v_proposal.summary_snapshot->>'destinationCount', '') !~
+      '^[0-9]+$'
+    or length(v_proposal.summary_snapshot->>'destinationCount') > 10
+    or coalesce(v_proposal.summary_snapshot->>'sourceTotal', '') !~
+      '^-?[0-9]{1,12}(\.[0-9]{1,2})?$'
+    or coalesce(v_proposal.summary_snapshot->>'destinationTotal', '') !~
+      '^-?[0-9]{1,12}(\.[0-9]{1,2})?$'
+    or coalesce(v_proposal.summary_snapshot->>'calculatedDifference', '') !~
+      '^-?[0-9]{1,12}(\.[0-9]{1,2})?$'
+    or coalesce(v_proposal.summary_snapshot->>'differenceAllowed', '') !~
+      '^[0-9]{1,12}(\.[0-9]{1,2})?$'
+    or coalesce(v_proposal.summary_snapshot->>'technicalBaseSourceId', '') !~
+      '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    or coalesce(v_proposal.summary_snapshot->>'technicalBaseSourceDate', '') !~
+      '^\d{4}-\d{2}-\d{2}$'
+    or v_proposal.summary_snapshot->>'signature' is distinct from
+      v_proposal.signature then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'source_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'source_snapshot_changed'
+    );
+  end if;
+  v_calendar_month :=
+    (v_proposal.summary_snapshot->>'calendarMonth')::date;
+
+  -- Lock immutable membership rows and both live source tables in the same
+  -- (source_type, source_date, source_id) order before recomputing eligibility.
+  perform membership.source_id
+  from public.financial_reconciliation_automatic_proposal_memberships membership
+  where membership.proposal_id = v_proposal.id
+  order by membership.source_type, membership.source_date, membership.source_id
+  for share;
+  get diagnostics v_stored_count = row_count;
+
+  perform bank.id
+  from public.import_cgd_extrato_ordem bank
+  where bank.data >= v_calendar_month
+    and bank.data < v_calendar_month + interval '1 month'
+    and bank.data >= date '2026-01-01'
+    and bank.data < date_trunc('month', current_date)::date
+    and bank.montante is not null
+    and bank.descritivo ilike '%POS VENDAS%'
+    and not exists (
+      select 1
+      from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    )
+  order by bank.data, bank.id
+  for update of bank;
+  get diagnostics v_locked_source_count = row_count;
+
+  perform fdm.id
+  from public.import_fdm_accounts fdm
+  where fdm.event_date >= v_calendar_month
+    and fdm.event_date < v_calendar_month + interval '1 month'
+    and fdm.event_date >= date '2026-01-01'
+    and fdm.event_date < date_trunc('month', current_date)::date
+    and fdm.amount is not null
+    and fdm.account = 'Credit Card'
+    and not exists (
+      select 1
+      from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_fdm_accounts'
+        and locked.source_id = fdm.id
+    )
+  order by fdm.event_date, fdm.id
+  for update of fdm;
+  get diagnostics v_locked_destination_count = row_count;
+
+  select
+    count(*) filter (where membership.role = 'source'),
+    sum(membership.amount) filter (where membership.role = 'source'),
+    count(*) filter (where membership.role = 'destination'),
+    sum(membership.amount) filter (where membership.role = 'destination'),
+    (array_agg(membership.source_id order by membership.source_date,
+               membership.source_id)
+       filter (where membership.role = 'source'))[1],
+    (array_agg(membership.source_date order by membership.source_date,
+               membership.source_id)
+       filter (where membership.role = 'source'))[1],
+    (array_agg(membership.row_snapshot order by membership.source_date,
+               membership.source_id)
+       filter (where membership.role = 'source'))[1],
+    array_agg(membership.source_id order by membership.ordinal)
+      filter (where membership.role = 'source'),
+    array_agg(membership.source_id order by membership.ordinal)
+      filter (where membership.role = 'destination'),
+    jsonb_agg(jsonb_build_object(
+      'role', membership.role,
+      'sourceType', membership.source_type,
+      'sourceId', membership.source_id,
+      'ordinal', membership.ordinal,
+      'sourceDate', membership.source_date,
+      'amount', membership.amount,
+      'description', membership.description,
+      'account', membership.account,
+      'rowSnapshot', membership.row_snapshot
+    ) order by membership.source_type, membership.source_date,
+               membership.source_id)
+  into
+    v_stored_source_count,
+    v_stored_source_total,
+    v_stored_destination_count,
+    v_stored_destination_total,
+    v_technical_base_source_id,
+    v_technical_base_source_date,
+    v_technical_base_snapshot,
+    v_source_ids,
+    v_destination_ids,
+    v_membership_snapshots
+  from public.financial_reconciliation_automatic_proposal_memberships membership
+  where membership.proposal_id = v_proposal.id;
+
+  with stored as (
+    select
+      membership.role,
+      membership.source_type,
+      membership.source_id,
+      membership.source_date,
+      membership.amount
+    from public.financial_reconciliation_automatic_proposal_memberships membership
+    where membership.proposal_id = v_proposal.id
+  ), live as (
+    select
+      'source'::text as role,
+      'import_cgd_extrato_ordem'::text as source_type,
+      bank.id as source_id,
+      bank.data as source_date,
+      bank.montante as amount
+    from public.import_cgd_extrato_ordem bank
+    where bank.data >= v_calendar_month
+      and bank.data < v_calendar_month + interval '1 month'
+      and bank.data >= date '2026-01-01'
+      and bank.data < date_trunc('month', current_date)::date
+      and bank.montante is not null
+      and bank.descritivo ilike '%POS VENDAS%'
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_cgd_extrato_ordem'
+          and locked.source_id = bank.id
+      )
+    union all
+    select
+      'destination'::text,
+      'import_fdm_accounts'::text,
+      fdm.id,
+      fdm.event_date,
+      fdm.amount
+    from public.import_fdm_accounts fdm
+    where fdm.event_date >= v_calendar_month
+      and fdm.event_date < v_calendar_month + interval '1 month'
+      and fdm.event_date >= date '2026-01-01'
+      and fdm.event_date < date_trunc('month', current_date)::date
+      and fdm.amount is not null
+      and fdm.account = 'Credit Card'
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_fdm_accounts'
+          and locked.source_id = fdm.id
+      )
+  ), lost as (
+    select * from stored
+    except
+    select * from live
+  ), gained as (
+    select * from live
+    except
+    select * from stored
+  )
+  select exists (select 1 from lost) or exists (select 1 from gained)
+  into v_membership_mismatch;
+
+  select
+    count(*) filter (where live.role = 'source'),
+    sum(live.amount) filter (where live.role = 'source'),
+    count(*) filter (where live.role = 'destination'),
+    sum(live.amount) filter (where live.role = 'destination')
+  into
+    v_live_source_count,
+    v_live_source_total,
+    v_live_destination_count,
+    v_live_destination_total
+  from (
+    select 'source'::text as role, bank.montante as amount
+    from public.import_cgd_extrato_ordem bank
+    where bank.data >= v_calendar_month
+      and bank.data < v_calendar_month + interval '1 month'
+      and bank.data >= date '2026-01-01'
+      and bank.data < date_trunc('month', current_date)::date
+      and bank.montante is not null
+      and bank.descritivo ilike '%POS VENDAS%'
+      and not exists (
+        select 1 from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_cgd_extrato_ordem'
+          and locked.source_id = bank.id
+      )
+    union all
+    select 'destination'::text, fdm.amount
+    from public.import_fdm_accounts fdm
+    where fdm.event_date >= v_calendar_month
+      and fdm.event_date < v_calendar_month + interval '1 month'
+      and fdm.event_date >= date '2026-01-01'
+      and fdm.event_date < date_trunc('month', current_date)::date
+      and fdm.amount is not null
+      and fdm.account = 'Credit Card'
+      and not exists (
+        select 1 from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_fdm_accounts'
+          and locked.source_id = fdm.id
+      )
+  ) live;
+  v_live_difference := round(
+    v_live_source_total - v_live_destination_total, 2
+  );
+
+  v_current_signature := public.financial_reconciliation_extension_sha256(
+    jsonb_build_object(
+      'ruleKey', v_proposal.rule_key,
+      'ruleVersion', v_proposal.rule_version,
+      'calendarMonth', v_calendar_month,
+      'sourceIds', to_jsonb(v_source_ids),
+      'destinationIds', to_jsonb(v_destination_ids),
+      'sourceTotal', v_stored_source_total,
+      'destinationTotal', v_stored_destination_total,
+      'calculatedDifference',
+        (v_stored_source_total - v_stored_destination_total)::numeric(14,2),
+      'differenceAllowed', v_snapshot_difference_allowed,
+      'operator', '-'
+    )::text
+  );
+
+  if v_stored_count <> v_stored_source_count + v_stored_destination_count
+    or v_locked_source_count <> v_stored_source_count
+    or v_locked_destination_count <> v_stored_destination_count
+    or v_stored_source_count < 1
+    or v_stored_destination_count < 1
+    or exists (
+      select 1
+      from (
+        select
+          membership.*,
+          row_number() over (
+            partition by membership.role
+            order by membership.source_date, membership.source_id
+          )::integer as expected_ordinal
+        from public.financial_reconciliation_automatic_proposal_memberships membership
+        where membership.proposal_id = v_proposal.id
+      ) membership
+      where membership.ordinal <> membership.expected_ordinal
+        or (
+          membership.role = 'source'
+          and (
+            membership.source_type <> 'import_cgd_extrato_ordem'
+            or membership.account <> ''
+            or membership.row_snapshot is distinct from jsonb_build_object(
+              'sourceType', membership.source_type,
+              'sourceId', membership.source_id,
+              'sourceDate', membership.source_date,
+              'amount', membership.amount,
+              'description', membership.description
+            )
+          )
+        )
+        or (
+          membership.role = 'destination'
+          and (
+            membership.source_type <> 'import_fdm_accounts'
+            or membership.row_snapshot is distinct from jsonb_build_object(
+              'sourceType', membership.source_type,
+              'sourceId', membership.source_id,
+              'sourceDate', membership.source_date,
+              'amount', membership.amount,
+              'description', membership.description,
+              'account', membership.account
+            )
+          )
+        )
+    )
+    or v_membership_mismatch
+    or v_live_source_count is distinct from v_stored_source_count
+    or v_live_source_total is distinct from v_stored_source_total
+    or v_live_destination_count is distinct from v_stored_destination_count
+    or v_live_destination_total is distinct from v_stored_destination_total
+    or (v_proposal.summary_snapshot->>'sourceCount')::bigint <>
+      v_stored_source_count
+    or (v_proposal.summary_snapshot->>'sourceTotal')::numeric(14,2) is distinct from
+      v_stored_source_total
+    or (v_proposal.summary_snapshot->>'destinationCount')::bigint <>
+      v_stored_destination_count
+    or (v_proposal.summary_snapshot->>'destinationTotal')::numeric(14,2)
+      is distinct from v_stored_destination_total
+    or (v_proposal.summary_snapshot->>'calculatedDifference')::numeric(14,2)
+      is distinct from v_live_difference
+    or (v_proposal.summary_snapshot->>'differenceAllowed')::numeric(14,2)
+      is distinct from v_snapshot_difference_allowed
+    or v_proposal.calculated_difference is distinct from v_live_difference
+    or v_proposal.base_source_id is distinct from
+      v_technical_base_source_id
+    or v_proposal.base_source_date is distinct from
+      v_technical_base_source_date
+    or v_proposal.base_snapshot is distinct from v_technical_base_snapshot
+    or v_proposal.summary_snapshot->>'technicalBaseSourceId' is distinct from
+      v_technical_base_source_id::text
+    or v_proposal.summary_snapshot->>'technicalBaseSourceDate'
+      is distinct from v_technical_base_source_date::text
+    or v_proposal.signature is distinct from v_current_signature
+    or abs(v_live_difference) > v_snapshot_difference_allowed then
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'stale', reason = 'source_snapshot_changed',
+        reconciliation_id = null, completed_at = null,
+        error = '', error_detail = '', updated_at = now()
+    where id = v_proposal.id;
+    return jsonb_build_object(
+      'proposalId', v_proposal.id, 'runId', v_run.id,
+      'status', 'stale', 'reason', 'source_snapshot_changed'
+    );
+  end if;
+
+  v_matching_source_types := '["import_fdm_accounts"]'::jsonb;
+  v_matching_source_rules := jsonb_build_array(jsonb_build_object(
+    'sourceType', 'import_fdm_accounts', 'operator', '-'
+  ));
+
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'executing', reason = '', error = '', error_detail = '',
+        updated_at = now()
+    where id = v_proposal.id;
+
+    insert into public.financial_reconciliations (
+      status, base_source_type, matching_source_types,
+      matching_source_rules, created_by
+    ) values (
+      'started', 'import_cgd_extrato_ordem', v_matching_source_types,
+      v_matching_source_rules, p_actor
+    ) returning id into v_reconciliation_id;
+
+    insert into public.financial_reconciliation_items (
+      reconciliation_id, source_type, source_id, amount_snapshot, created_by
+    )
+    select v_reconciliation_id, membership.source_type,
+           membership.source_id, membership.amount, p_actor
+    from public.financial_reconciliation_automatic_proposal_memberships membership
+    where membership.proposal_id = v_proposal.id
+      and membership.role = 'source'
+      and membership.source_id = v_technical_base_source_id;
+
+    update public.financial_reconciliations
+    set difference_amount =
+          (v_technical_base_snapshot->>'amount')::numeric(14,2),
+        updated_at = timezone('utc', now())
+    where id = v_reconciliation_id;
+
+    insert into public.financial_reconciliation_audit (
+      reconciliation_id, action, actor, difference_amount, metadata
+    ) values (
+      v_reconciliation_id, 'start', p_actor,
+      (v_technical_base_snapshot->>'amount')::numeric(14,2),
+      jsonb_build_object(
+        'sourceType', 'import_cgd_extrato_ordem',
+        'sourceId', v_technical_base_source_id,
+        'differenceAmount',
+          (v_technical_base_snapshot->>'amount')::numeric(14,2),
+        'matchingSourceRules', v_matching_source_rules
+      )
+    );
+
+    insert into public.financial_reconciliation_items (
+      reconciliation_id, source_type, source_id, amount_snapshot, created_by
+    )
+    select v_reconciliation_id, membership.source_type,
+           membership.source_id, membership.amount, p_actor
+    from public.financial_reconciliation_automatic_proposal_memberships membership
+    where membership.proposal_id = v_proposal.id
+      and not (
+        membership.role = 'source'
+        and membership.source_id = v_technical_base_source_id
+      )
+    order by membership.source_type, membership.source_date,
+             membership.source_id;
+
+    with ordered as (
+      select
+        membership.*,
+        row_number() over (
+          order by membership.source_type, membership.source_date,
+                   membership.source_id
+        ) as sequence,
+        sum(case
+          when membership.source_type = 'import_cgd_extrato_ordem'
+            then membership.amount
+          else -membership.amount
+        end) over (
+          order by membership.source_type, membership.source_date,
+                   membership.source_id
+          rows between unbounded preceding and current row
+        )::numeric(14,2) as running_difference
+      from public.financial_reconciliation_automatic_proposal_memberships membership
+      where membership.proposal_id = v_proposal.id
+    )
+    insert into public.financial_reconciliation_audit (
+      reconciliation_id, action, actor, difference_amount, metadata
+    )
+    select
+      v_reconciliation_id, 'add_item', p_actor,
+      ordered.running_difference,
+      jsonb_build_object(
+        'sourceType', ordered.source_type,
+        'sourceId', ordered.source_id,
+        'differenceAmount', ordered.running_difference
+      )
+    from ordered
+    where ordered.sequence > 1
+    order by ordered.sequence;
+
+    select count(*) into v_actual_item_count
+    from public.financial_reconciliation_items item
+    where item.reconciliation_id = v_reconciliation_id;
+    select public.financial_reconciliation_difference(
+      'import_cgd_extrato_ordem', v_matching_source_rules,
+      v_reconciliation_id
+    ) into v_actual_difference;
+    update public.financial_reconciliations
+    set difference_amount = v_actual_difference,
+        updated_at = timezone('utc', now())
+    where id = v_reconciliation_id;
+
+    if v_actual_item_count <> v_stored_count
+      or v_actual_difference is distinct from v_live_difference
+      or exists (
+        select membership.source_type, membership.source_id, membership.amount
+        from public.financial_reconciliation_automatic_proposal_memberships membership
+        where membership.proposal_id = v_proposal.id
+        except
+        select item.source_type, item.source_id, item.amount_snapshot
+        from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id
+      )
+      or exists (
+        select item.source_type, item.source_id, item.amount_snapshot
+        from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id
+        except
+        select membership.source_type, membership.source_id, membership.amount
+        from public.financial_reconciliation_automatic_proposal_memberships membership
+        where membership.proposal_id = v_proposal.id
+      ) then
+      raise exception 'Automatic monthly reconciliation lifecycle snapshots changed after revalidation.';
+    end if;
+
+    update public.financial_reconciliations
+    set origin = 'automatic',
+        automatic_trigger = v_run.trigger,
+        automatic_rule_key = v_proposal.rule_key,
+        automatic_rule_version = v_proposal.rule_version,
+        automatic_run_id = v_run.id,
+        automatic_proposal_id = v_proposal.id,
+        updated_at = timezone('utc', now())
+    where id = v_reconciliation_id;
+
+    if v_actual_difference = 0 then
+      v_comment := null;
+      perform public.financial_reconciliation_action(
+        'complete', p_actor, v_reconciliation_id, null, null, null
+      );
+    else
+      v_comment := 'Automatic monthly reconciliation for '
+        || v_proposal.grouping_key
+        || ': Bank Statement total '
+        || to_char(v_stored_source_total, 'FM999999999990.00')
+        || ' EUR; FDM Credit Card total '
+        || to_char(v_stored_destination_total, 'FM999999999990.00')
+        || ' EUR; difference '
+        || to_char(v_actual_difference, 'FM999999999990.00')
+        || ' EUR within allowed '
+        || to_char(v_snapshot_difference_allowed, 'FM999999999990.00')
+        || ' EUR; run ' || v_run.id::text
+        || '; proposal ' || v_proposal.id::text || '.';
+      perform public.financial_reconciliation_action(
+        'force_complete', p_actor, v_reconciliation_id, null, null, v_comment
+      );
+    end if;
+
+    insert into public.financial_reconciliation_audit (
+      reconciliation_id, action, actor, comment, difference_amount, metadata
+    ) values (
+      v_reconciliation_id,
+      'automatic_complete',
+      p_actor,
+      v_comment,
+      v_actual_difference,
+      jsonb_build_object(
+        'ruleSnapshot', jsonb_build_object(
+          'ruleKey', v_proposal.rule_key,
+          'ruleVersion', v_proposal.rule_version,
+          'displayName', v_rule_snapshot->>'displayName',
+          'definition', v_rule_snapshot->'definition'
+        ),
+        'configSnapshot', jsonb_build_object(
+          'differenceAllowed', v_snapshot_difference_allowed,
+          'maxDifferenceDays', v_snapshot_max_difference_days,
+          'priority', v_snapshot_priority
+        ),
+        'operatorSnapshot', jsonb_build_object(
+          'import_fdm_accounts', '-'
+        ),
+        'summarySnapshot', v_proposal.summary_snapshot,
+        'membershipSnapshots', v_membership_snapshots,
+        'proposalSignature', v_proposal.signature,
+        'trigger', v_run.trigger,
+        'runId', v_run.id,
+        'proposalId', v_proposal.id,
+        'tolerance', v_snapshot_difference_allowed,
+        'calculatedDifference', v_actual_difference
+      )
+    );
+
+    if not exists (
+      select 1
+      from public.financial_reconciliations reconciliation
+      where reconciliation.id = v_reconciliation_id
+        and reconciliation.status = 'complete'
+        and reconciliation.completion_type = case
+          when v_actual_difference = 0 then 'normal' else 'forced'
+        end
+        and reconciliation.difference_amount = v_actual_difference
+        and reconciliation.forced_completion_comment is not distinct from
+          v_comment
+        and reconciliation.origin = 'automatic'
+        and reconciliation.automatic_trigger = v_run.trigger
+        and reconciliation.automatic_rule_key = v_proposal.rule_key
+        and reconciliation.automatic_rule_version = v_proposal.rule_version
+        and reconciliation.automatic_run_id = v_run.id
+        and reconciliation.automatic_proposal_id = v_proposal.id
+        and reconciliation.matching_source_rules = v_matching_source_rules
+    ) or (select count(*)
+          from public.financial_reconciliation_audit audit
+          where audit.reconciliation_id = v_reconciliation_id
+            and audit.action = 'automatic_complete') <> 1 then
+      raise exception 'Automatic monthly reconciliation lifecycle snapshots changed after revalidation.';
+    end if;
+
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'completed',
+        reconciliation_id = v_reconciliation_id,
+        completed_at = now(),
+        reason = '',
+        error = '',
+        error_detail = '',
+        updated_at = now()
+    where id = v_proposal.id;
+  exception
+    when unique_violation then
+      update public.financial_reconciliation_automatic_proposals
+      set status = 'stale',
+          reason = 'source_snapshot_changed',
+          reconciliation_id = null,
+          completed_at = null,
+          error = '',
+          error_detail = '',
+          updated_at = now()
+      where id = v_proposal.id;
+      return jsonb_build_object(
+        'proposalId', v_proposal.id,
+        'runId', v_run.id,
+        'status', 'stale',
+        'reason', 'source_snapshot_changed'
+      );
+    when others then
+      get stacked diagnostics
+        v_failure_message = message_text,
+        v_failure_detail = pg_exception_detail;
+      if v_failure_message in (
+        'Automatic monthly reconciliation lifecycle snapshots changed after revalidation.',
+        'This record is already reconciled.'
+      ) then
+        update public.financial_reconciliation_automatic_proposals
+        set status = 'stale',
+            reason = 'source_snapshot_changed',
+            reconciliation_id = null,
+            completed_at = null,
+            error = '',
+            error_detail = '',
+            updated_at = now()
+        where id = v_proposal.id;
+        return jsonb_build_object(
+          'proposalId', v_proposal.id,
+          'runId', v_run.id,
+          'status', 'stale',
+          'reason', 'source_snapshot_changed'
+        );
+      end if;
+      update public.financial_reconciliation_automatic_proposals
+      set status = 'failed',
+          reason = 'execution_failed',
+          reconciliation_id = null,
+          completed_at = null,
+          error = 'Automatic reconciliation execution failed.',
+          error_detail = left(concat_ws(
+            ' ', v_failure_message, nullif(v_failure_detail, '')
+          ), 2000),
+          updated_at = now()
+      where id = v_proposal.id;
+      return jsonb_build_object(
+        'proposalId', v_proposal.id,
+        'runId', v_run.id,
+        'status', 'failed',
+        'reason', 'execution_failed'
+      );
+  end;
+
+  return jsonb_build_object(
+    'proposalId', v_proposal.id,
+    'runId', v_run.id,
+    'status', 'completed',
+    'reconciliationId', v_reconciliation_id
+  );
+end
+$$;
+
+create or replace function public.execute_financial_reconciliation_automatic_proposal(
+  p_proposal_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_rule_key text;
+  v_rule_version integer;
+begin
+  if p_proposal_id is null then
+    raise exception 'Automation proposal ID is required.';
+  end if;
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  select proposal.rule_key, proposal.rule_version
+  into v_rule_key, v_rule_version
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = p_proposal_id;
+  if not found then
+    raise exception 'Automation proposal was not found.';
+  end if;
+
+  if v_rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+    and v_rule_version = 1 then
+    return public.financial_reconciliation_execute_monthly_income_proposal(
+      p_proposal_id, p_actor
+    );
+  elsif (v_rule_key, v_rule_version) in (
+    ('financial_documents_cgd_bank_statement', 2),
+    ('financial_documents_cgd_credit_card', 1),
+    ('financial_documents_cgd_bank_statement_amount_only', 1),
+    ('financial_documents_cgd_credit_card_amount_only', 1)
+  ) then
+    return public.financial_reconciliation_execute_prior_proposal(
+      p_proposal_id, p_actor
+    );
+  end if;
+
+  raise exception 'Automation proposal rule/version is not executable.';
+end
+$$;
+
 revoke all on function public.financial_reconciliation_automatic_rule_contract(text,integer)
   from public, anon, authenticated;
 revoke all on function public.financial_reconciliation_automatic_monthly_income_count()
@@ -2029,6 +3053,12 @@ revoke all on function public.financial_reconciliation_automatic_progress_or_run
   from public, anon, authenticated;
 revoke all on function public.get_financial_reconciliation_automatic_run(uuid)
   from public, anon, authenticated;
+revoke all on function public.financial_reconciliation_execute_prior_proposal(uuid,text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_execute_monthly_income_proposal(uuid,text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.execute_financial_reconciliation_automatic_proposal(uuid,text)
+  from public, anon, authenticated, service_role;
 
 grant execute on function public.financial_reconciliation_automatic_rule_contract(text,integer)
   to service_role;
@@ -2045,6 +3075,8 @@ grant execute on function public.financial_reconciliation_finalize_automatic_ana
 grant execute on function public.financial_reconciliation_automatic_progress_or_run(uuid)
   to service_role;
 grant execute on function public.get_financial_reconciliation_automatic_run(uuid)
+  to service_role;
+grant execute on function public.execute_financial_reconciliation_automatic_proposal(uuid,text)
   to service_role;
 
 notify pgrst, 'reload schema';
