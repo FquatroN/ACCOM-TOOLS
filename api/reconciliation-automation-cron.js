@@ -2,6 +2,7 @@ const { restQuery } = require("./_supabase");
 const {
   AUTOMATIC_RULE_VERSIONS,
   isCronRequest,
+  MONTHLY_INCOME_RULE_KEY,
   toAutomationPublicResult,
 } = require("./_reconciliation-automation");
 
@@ -150,6 +151,8 @@ function requireScheduledRun(value, expectedRun = null) {
   if (!isPlainRecord(definition)
     || !hasOwnFields(definition, ["ruleKey", "priority"])
     || !Object.hasOwn(AUTOMATIC_RULE_VERSIONS, ruleKey)
+    || (ruleKey === MONTHLY_INCOME_RULE_KEY
+      && definition.ruleVersion !== AUTOMATIC_RULE_VERSIONS[ruleKey])
     || !Number.isSafeInteger(priority) || priority < 1
     || run.batchRuleKey !== ruleKey) {
     throw new Error("Scheduled reconciliation rule snapshot is invalid.");

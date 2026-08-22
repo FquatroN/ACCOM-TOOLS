@@ -9766,4 +9766,441 @@ begin
 end
 $$;
 
+-- Task 7: the installed fifth rule stays out of unchanged four-rule batches
+-- until an administrator explicitly enables scheduled execution.
+do $$
+declare
+  v_rules jsonb := '[
+    {"rule_key":"financial_documents_cgd_bank_statement","rule_version":2,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.10","max_difference_days":10,"priority":1},
+    {"rule_key":"financial_documents_cgd_credit_card","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.20","max_difference_days":11,"priority":2},
+    {"rule_key":"financial_documents_cgd_bank_statement_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":1,"priority":3},
+    {"rule_key":"financial_documents_cgd_credit_card_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":1,"priority":4},
+    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":1,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"7500.00","max_difference_days":31,"priority":5}
+  ]'::jsonb;
+  v_expected_rules text[] := array[
+    'financial_documents_cgd_bank_statement',
+    'financial_documents_cgd_credit_card',
+    'financial_documents_cgd_bank_statement_amount_only',
+    'financial_documents_cgd_credit_card_amount_only'
+  ];
+  v_settings jsonb;
+  v_claim jsonb;
+  v_retry jsonb;
+  v_complete jsonb;
+  v_batch_id uuid;
+  v_run_id uuid;
+  v_position integer;
+begin
+  v_settings := public.replace_financial_reconciliation_automation_settings(
+    '{"enabled":true,"time_of_day":"00:00","time_zone":"Europe/Lisbon"}'::jsonb,
+    v_rules,
+    'smoke:task7-four-rule-settings'
+  );
+  if jsonb_array_length(v_settings->'rules') <> 5
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.rule_key =
+          'cgd_bank_statement_fdm_credit_card_monthly_income'
+        and config.rule_version = 1
+        and not config.enabled
+        and not config.allow_manual_execution
+        and not config.include_in_scheduled_batch
+        and config.difference_allowed = 7500.00
+        and config.max_difference_days = 31
+        and config.priority = 5
+    ) then
+    raise exception 'Task 7 five-rule Settings replacement changed the disabled monthly contract.';
+  end if;
+
+  for v_position in 1..4 loop
+    v_claim := public.claim_financial_reconciliation_automatic_schedule(
+      timestamptz '2095-01-01 01:00:00+00'
+        + make_interval(mins => v_position),
+      'smoke:task7-four-rule-batch'
+    );
+    v_batch_id := coalesce(v_batch_id, (v_claim->>'batchId')::uuid);
+    v_run_id := (v_claim#>>'{run,runId}')::uuid;
+    if not (v_claim->>'claimed')::boolean
+      or (v_claim->>'resumed')::boolean
+      or v_claim->>'batchId' <> v_batch_id::text
+      or (v_claim->>'batchRulePosition')::integer <> v_position
+      or (v_claim->>'batchRuleCount')::integer <> 4
+      or v_claim#>>'{run,batchRuleKey}' <>
+        v_expected_rules[v_position]
+      or (select jsonb_array_length(batch.rule_snapshot)
+          from public.financial_reconciliation_automatic_batches batch
+          where batch.id = v_batch_id) <> 4
+      or exists (
+        select 1
+        from public.financial_reconciliation_automatic_batches batch,
+             jsonb_array_elements(batch.rule_snapshot) snapshot(value)
+        where batch.id = v_batch_id
+          and snapshot.value->>'ruleKey' =
+            'cgd_bank_statement_fdm_credit_card_monthly_income'
+      ) then
+      raise exception 'Task 7 disabled monthly rule changed four-rule child position %: %.',
+        v_position, v_claim;
+    end if;
+
+    v_retry := public.claim_financial_reconciliation_automatic_schedule(
+      timestamptz '2095-01-01 01:10:00+00'
+        + make_interval(mins => v_position),
+      'smoke:task7-four-rule-batch'
+    );
+    if not (v_retry->>'resumed')::boolean
+      or v_retry#>>'{run,runId}' <> v_run_id::text
+      or (select count(*)
+          from public.financial_reconciliation_automatic_runs run
+          where run.batch_id = v_batch_id) <> v_position then
+      raise exception 'Task 7 four-rule retry duplicated child position %.',
+        v_position;
+    end if;
+
+    update public.financial_reconciliation_automatic_runs
+    set status = 'completed',
+        analysis_completed_at = coalesce(analysis_completed_at, now()),
+        counts = '{"bases":0,"completed":0,"failed":0}'::jsonb,
+        finished_at = now(),
+        updated_at = now()
+    where id = v_run_id;
+  end loop;
+
+  v_complete := public.claim_financial_reconciliation_automatic_schedule(
+    '2095-01-01 02:00:00+00', 'smoke:task7-four-rule-batch'
+  );
+  if v_complete->>'reason' <> 'batch_complete'
+    or v_complete->>'batchId' <> v_batch_id::text
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_batches batch
+      where batch.id = v_batch_id
+        and batch.status = 'completed'
+        and batch.counts @> '{"ruleCount":4,"childCount":4,"completedChildren":4,"failedChildren":0}'::jsonb
+    )
+    or (select count(*)
+        from public.financial_reconciliation_automatic_runs run
+        where run.batch_id = v_batch_id) <> 4
+    or (select count(distinct run.batch_rule_position)
+        from public.financial_reconciliation_automatic_runs run
+        where run.batch_id = v_batch_id) <> 4 then
+    raise exception 'Task 7 disabled monthly rule no longer preserves the four-rule batch lifecycle.';
+  end if;
+end
+$$;
+
+-- Task 7: an administrator can reorder and schedule all five exact managed
+-- contracts; the immutable batch advances only after each child is terminal.
+do $$
+declare
+  v_rules jsonb := '[
+    {"rule_key":"financial_documents_cgd_credit_card_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":1,"priority":1},
+    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":1,"enabled":true,"allow_manual_execution":false,"include_in_scheduled_batch":true,"difference_allowed":"7500.00","max_difference_days":31,"priority":2},
+    {"rule_key":"financial_documents_cgd_bank_statement_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":1,"priority":3},
+    {"rule_key":"financial_documents_cgd_credit_card","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.20","max_difference_days":11,"priority":4},
+    {"rule_key":"financial_documents_cgd_bank_statement","rule_version":2,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.10","max_difference_days":10,"priority":5}
+  ]'::jsonb;
+  v_changed_rules jsonb := '[
+    {"rule_key":"financial_documents_cgd_bank_statement","rule_version":2,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.40","max_difference_days":13,"priority":1},
+    {"rule_key":"financial_documents_cgd_credit_card","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.30","max_difference_days":12,"priority":2},
+    {"rule_key":"financial_documents_cgd_bank_statement_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":3,"priority":3},
+    {"rule_key":"financial_documents_cgd_credit_card_amount_only","rule_version":1,"enabled":true,"allow_manual_execution":true,"include_in_scheduled_batch":true,"difference_allowed":"0.00","max_difference_days":2,"priority":4},
+    {"rule_key":"cgd_bank_statement_fdm_credit_card_monthly_income","rule_version":1,"enabled":false,"allow_manual_execution":false,"include_in_scheduled_batch":false,"difference_allowed":"7000.00","max_difference_days":31,"priority":5}
+  ]'::jsonb;
+  v_expected_rules text[] := array[
+    'financial_documents_cgd_credit_card_amount_only',
+    'cgd_bank_statement_fdm_credit_card_monthly_income',
+    'financial_documents_cgd_bank_statement_amount_only',
+    'financial_documents_cgd_credit_card',
+    'financial_documents_cgd_bank_statement'
+  ];
+  v_settings jsonb;
+  v_claim jsonb;
+  v_retry jsonb;
+  v_cursor_retry jsonb;
+  v_complete jsonb;
+  v_batch_id uuid;
+  v_run_id uuid;
+  v_monthly_run_id uuid;
+  v_snapshot jsonb;
+  v_month_count bigint;
+  v_first_month record;
+  v_position integer;
+  v_runs_before bigint;
+  v_proposals_before bigint;
+  v_reconciliations_before bigint;
+  v_fixed_days_rejected boolean := false;
+begin
+  begin
+    perform public.replace_financial_reconciliation_automation_settings(
+      '{"enabled":true,"time_of_day":"00:00","time_zone":"Europe/Lisbon"}'::jsonb,
+      jsonb_set(v_rules, '{1,max_difference_days}', '30'::jsonb),
+      'smoke:task7-fixed-days-tamper'
+    );
+  exception when others then
+    v_fixed_days_rejected := sqlerrm =
+      'POS income automatic rule requires the fixed 31-day display property.';
+  end;
+  if not v_fixed_days_rejected then
+    raise exception 'Task 7 Settings accepted a monthly maximum difference other than 31.';
+  end if;
+
+  v_settings := public.replace_financial_reconciliation_automation_settings(
+    '{"enabled":true,"time_of_day":"00:00","time_zone":"Europe/Lisbon"}'::jsonb,
+    v_rules,
+    'smoke:task7-five-rule-settings'
+  );
+  if jsonb_array_length(v_settings->'rules') <> 5
+    or not exists (
+      select 1
+      from jsonb_array_elements(v_settings->'rules') rule(value)
+      where rule.value->>'ruleKey' =
+          'cgd_bank_statement_fdm_credit_card_monthly_income'
+        and rule.value->>'ruleVersion' = '1'
+        and rule.value->>'includeInScheduledBatch' = 'true'
+        and rule.value->>'priority' = '2'
+        and rule.value->>'maxDifferenceDays' = '31'
+    ) then
+    raise exception 'Task 7 Settings did not persist scheduled monthly priority and fixed days.';
+  end if;
+
+  v_claim := public.claim_financial_reconciliation_automatic_schedule(
+    '2095-01-02 01:00:00+00', 'smoke:task7-five-rule-batch'
+  );
+  v_batch_id := (v_claim->>'batchId')::uuid;
+  v_run_id := (v_claim#>>'{run,runId}')::uuid;
+  select batch.rule_snapshot into strict v_snapshot
+  from public.financial_reconciliation_automatic_batches batch
+  where batch.id = v_batch_id;
+  if not (v_claim->>'claimed')::boolean
+    or (v_claim->>'resumed')::boolean
+    or v_claim->>'batchRulePosition' <> '1'
+    or v_claim->>'batchRuleCount' <> '5'
+    or v_claim#>>'{run,batchRuleKey}' <> v_expected_rules[1]
+    or jsonb_array_length(v_snapshot) <> 5
+    or v_snapshot#>>'{0,ruleKey}' <> v_expected_rules[1]
+    or v_snapshot#>>'{1,ruleKey}' <> v_expected_rules[2]
+    or v_snapshot#>>'{1,ruleVersion}' <> '1'
+    or v_snapshot#>>'{1,displayName}' <> 'Card Payments - POS - Income'
+    or v_snapshot#>>'{1,priority}' <> '2'
+    or v_snapshot#>>'{1,differenceAllowed}' <> '7500.00'
+    or v_snapshot#>>'{1,maxDifferenceDays}' <> '31'
+    or v_snapshot#>>'{1,destinationSourceType}' <> 'import_fdm_accounts'
+    or v_snapshot#>>'{1,operator}' <> '-'
+    or v_snapshot#>>'{1,definition,matchingMode}' <> 'monthly_aggregate'
+    or v_snapshot#>>'{2,ruleKey}' <> v_expected_rules[3]
+    or v_snapshot#>>'{3,ruleKey}' <> v_expected_rules[4]
+    or v_snapshot#>>'{4,ruleKey}' <> v_expected_rules[5] then
+    raise exception 'Task 7 scheduled batch did not snapshot all five exact managed contracts: %.',
+      v_snapshot;
+  end if;
+
+  v_retry := public.claim_financial_reconciliation_automatic_schedule(
+    '2095-01-02 01:01:00+00', 'smoke:task7-five-rule-batch'
+  );
+  if not (v_retry->>'resumed')::boolean
+    or v_retry#>>'{run,runId}' <> v_run_id::text
+    or (select count(*)
+        from public.financial_reconciliation_automatic_runs run
+        where run.batch_id = v_batch_id) <> 1 then
+    raise exception 'Task 7 retry duplicated the first five-rule child.';
+  end if;
+
+  perform public.replace_financial_reconciliation_automation_settings(
+    '{"enabled":true,"time_of_day":"00:00","time_zone":"Europe/Lisbon"}'::jsonb,
+    v_changed_rules,
+    'smoke:task7-settings-after-snapshot'
+  );
+  if (select batch.rule_snapshot
+      from public.financial_reconciliation_automatic_batches batch
+      where batch.id = v_batch_id) is distinct from v_snapshot then
+    raise exception 'Task 7 administrator changes rewrote the five-rule batch snapshot.';
+  end if;
+
+  update public.financial_reconciliation_automatic_runs
+  set status = 'completed',
+      analysis_completed_at = coalesce(analysis_completed_at, now()),
+      counts = '{"bases":0,"completed":0,"failed":0}'::jsonb,
+      finished_at = now(),
+      updated_at = now()
+  where id = v_run_id;
+
+  select public.financial_reconciliation_automatic_monthly_income_count()
+  into v_month_count;
+  v_claim := public.claim_financial_reconciliation_automatic_schedule(
+    '2095-01-03 00:30:00+00', 'smoke:task7-five-rule-batch'
+  );
+  v_monthly_run_id := (v_claim#>>'{run,runId}')::uuid;
+  if (v_claim->>'resumed')::boolean
+    or v_claim->>'batchId' <> v_batch_id::text
+    or v_claim->>'batchRulePosition' <> '2'
+    or v_claim->>'batchRuleCount' <> '5'
+    or v_claim#>>'{run,batchRuleKey}' <> v_expected_rules[2]
+    or (v_claim#>>'{run,analysisTotal}')::bigint <> v_month_count
+    or jsonb_array_length(v_claim#>'{run,definitions}') <> 1
+    or v_claim#>>'{run,definitions,0,maxDifferenceDays}' <> '31'
+    or (select count(*)
+        from public.financial_reconciliation_automatic_runs run
+        where run.batch_id = v_batch_id) <> 2
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_batches batch
+      where batch.scheduled_slot = '2095-01-03'
+    ) then
+    raise exception 'Task 7 cross-midnight claim did not start only the monthly snapshot child: %.',
+      v_claim;
+  end if;
+
+  select count(*) into v_runs_before
+  from public.financial_reconciliation_automatic_runs run
+  where run.batch_id = v_batch_id;
+  select count(*) into v_proposals_before
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_monthly_run_id;
+  select count(*) into v_reconciliations_before
+  from public.financial_reconciliations reconciliation
+  where reconciliation.automatic_run_id = v_monthly_run_id;
+  v_retry := public.claim_financial_reconciliation_automatic_schedule(
+    '2095-01-03 00:31:00+00', 'smoke:task7-five-rule-batch'
+  );
+  if not (v_retry->>'resumed')::boolean
+    or v_retry#>>'{run,runId}' <> v_monthly_run_id::text
+    or (select count(*)
+        from public.financial_reconciliation_automatic_runs run
+        where run.batch_id = v_batch_id) <> v_runs_before
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = v_monthly_run_id) <> v_proposals_before
+    or (select count(*)
+        from public.financial_reconciliations reconciliation
+        where reconciliation.automatic_run_id = v_monthly_run_id) <>
+      v_reconciliations_before then
+    raise exception 'Task 7 monthly retry duplicated batch, proposal, or reconciliation work.';
+  end if;
+
+  if v_month_count > 0 then
+    select month_page.calendar_month,
+           month_page.technical_base_source_id
+    into strict v_first_month
+    from public.financial_reconciliation_automatic_monthly_income_page(
+      null, 1
+    ) month_page;
+    update public.financial_reconciliation_automatic_runs
+    set analysis_cursor_date = v_first_month.calendar_month,
+        analysis_cursor_id = v_first_month.technical_base_source_id,
+        analysis_processed = 1,
+        analysis_total = greatest(analysis_total, 1),
+        updated_at = now()
+    where id = v_monthly_run_id;
+    v_cursor_retry := public.claim_financial_reconciliation_automatic_schedule(
+      '2095-01-03 00:32:00+00', 'smoke:task7-five-rule-batch'
+    );
+    if not (v_cursor_retry->>'resumed')::boolean
+      or v_cursor_retry#>>'{run,runId}' <> v_monthly_run_id::text
+      or v_cursor_retry#>>'{run,analysisCursorDate}' <>
+        v_first_month.calendar_month::text
+      or v_cursor_retry#>>'{run,analysisCursorId}' <>
+        v_first_month.technical_base_source_id::text
+      or v_cursor_retry#>>'{run,analysisProcessed}' <> '1'
+      or (select count(*)
+          from public.financial_reconciliation_automatic_runs run
+          where run.batch_id = v_batch_id) <> 2 then
+      raise exception 'Task 7 monthly retry did not preserve the stable month cursor.';
+    end if;
+  end if;
+
+  update public.financial_reconciliation_automatic_runs
+  set status = 'failed',
+      error_summary = 'secret task7 monthly database failure',
+      error_detail = 'secret task7 monthly stack',
+      analysis_error_code = 'analysis_continuation_failed',
+      analysis_error_at = now(),
+      finished_at = now(),
+      updated_at = now()
+  where id = v_monthly_run_id;
+
+  for v_position in 3..5 loop
+    v_claim := public.claim_financial_reconciliation_automatic_schedule(
+      timestamptz '2095-01-03 00:33:00+00'
+        + make_interval(mins => v_position),
+      'smoke:task7-five-rule-batch'
+    );
+    v_run_id := (v_claim#>>'{run,runId}')::uuid;
+    if (v_claim->>'resumed')::boolean
+      or v_claim->>'batchId' <> v_batch_id::text
+      or (v_claim->>'batchRulePosition')::integer <> v_position
+      or (v_claim->>'batchRuleCount')::integer <> 5
+      or v_claim#>>'{run,batchRuleKey}' <>
+        v_expected_rules[v_position]
+      or (select count(*)
+          from public.financial_reconciliation_automatic_runs run
+          where run.batch_id = v_batch_id) <> v_position then
+      raise exception 'Task 7 failed monthly child did not advance to position %: %.',
+        v_position, v_claim;
+    end if;
+    update public.financial_reconciliation_automatic_runs
+    set status = 'completed',
+        analysis_completed_at = coalesce(analysis_completed_at, now()),
+        counts = '{"bases":0,"completed":0,"failed":0}'::jsonb,
+        finished_at = now(),
+        updated_at = now()
+    where id = v_run_id;
+  end loop;
+
+  v_complete := public.claim_financial_reconciliation_automatic_schedule(
+    '2095-01-03 01:00:00+00', 'smoke:task7-five-rule-batch'
+  );
+  v_settings := public.get_financial_reconciliation_automation_settings();
+  if v_complete->>'reason' <> 'batch_complete'
+    or v_complete->>'batchId' <> v_batch_id::text
+    or (select count(*)
+        from public.financial_reconciliation_automatic_runs run
+        where run.batch_id = v_batch_id) <> 5
+    or (select count(distinct run.batch_rule_position)
+        from public.financial_reconciliation_automatic_runs run
+        where run.batch_id = v_batch_id) <> 5
+    or (select count(distinct run.batch_rule_key)
+        from public.financial_reconciliation_automatic_runs run
+        where run.batch_id = v_batch_id) <> 5
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_batches batch
+      where batch.id = v_batch_id
+        and batch.status = 'partial'
+        and batch.rule_snapshot = v_snapshot
+        and batch.counts @> '{"ruleCount":5,"childCount":5,"completedChildren":4,"failedChildren":1}'::jsonb
+    )
+    or v_settings#>>'{last_scheduled_batch,id}' <> v_batch_id::text
+    or v_settings#>>'{last_scheduled_batch,status}' <> 'partial'
+    or v_settings::text like '%secret task7 monthly%' then
+    raise exception 'Task 7 five-rule parent did not finish as a sanitized partial batch.';
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_signature text;
+begin
+  foreach v_signature in array array[
+    'public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)',
+    'public.claim_financial_reconciliation_automatic_schedule(timestamptz,text)'
+  ] loop
+    if not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[])
+          @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    )
+      or has_function_privilege('anon', v_signature, 'EXECUTE')
+      or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+      or not has_function_privilege('service_role', v_signature, 'EXECUTE') then
+      raise exception 'Task 7 five-rule scheduler RPC security changed for %.',
+        v_signature;
+    end if;
+  end loop;
+end
+$$;
+
 rollback;

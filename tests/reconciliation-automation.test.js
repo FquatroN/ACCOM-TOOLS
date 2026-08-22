@@ -352,6 +352,28 @@ function amountOnlyScheduledDefinition(ruleKey, priority) {
   };
 }
 
+function monthlyIncomeScheduledDefinition(priority) {
+  return {
+    ruleKey: MONTHLY_INCOME_RULE_KEY,
+    ruleVersion: 1,
+    displayName: "Card Payments - POS - Income",
+    priority,
+    differenceAllowed: 7500,
+    maxDifferenceDays: 31,
+    destinationSourceType: "import_fdm_accounts",
+    definition: {
+      matchingMode: "monthly_aggregate",
+      sourceDescriptionPattern: "%POS VENDAS%",
+      destinationAccount: "Credit Card",
+      calendarGrouping: "closed_month",
+      fixedMaxDifferenceDays: 31,
+      eligibilityFloor: "2026-01-01",
+      requiresNonNullAmount: true,
+    },
+    operator: "-",
+  };
+}
+
 function fourRuleRpcSettings({
   amountOnlyDifferenceAllowedCents = 0,
   bankStatementAmountOnlyDifferenceAllowedCents = amountOnlyDifferenceAllowedCents,
@@ -1642,6 +1664,349 @@ test("scheduled heartbeat finishes one resumed amount-only child before the next
       hasMore: false,
     },
   ]);
+});
+
+test("five-rule heartbeat resumes monthly analysis across midnight before execute, finalize, and the next child", async () => {
+  const monthlyRunId = uuidFor(741);
+  const monthlyProposalId = uuidFor(742);
+  const monthlyBaseId = uuidFor(743);
+  const monthlyDefinition = monthlyIncomeScheduledDefinition(4);
+  const monthlyProposal = {
+    id: monthlyProposalId,
+    ruleKey: MONTHLY_INCOME_RULE_KEY,
+    ruleVersion: 1,
+    baseSourceType: "import_cgd_extrato_ordem",
+    baseSourceId: monthlyBaseId,
+    baseSourceDate: "2026-03-02",
+    groupingKey: "2026-03",
+    summarySnapshot: {
+      calendarMonth: "2026-03-01",
+      sourceCount: 1000,
+      sourceTotal: 2000,
+      destinationCount: 1000,
+      destinationTotal: 1250,
+      totalCount: 2000,
+      calculatedDifference: 750,
+    },
+    items: [],
+    candidateGroups: [],
+    calculatedDifference: 750,
+    allowedDifference: 7500,
+    status: "proposed",
+    reason: null,
+    signature: "monthly-scheduled-signature",
+    reconciliationId: null,
+    createdAt: "2026-08-15T02:00:01.000Z",
+    updatedAt: "2026-08-15T02:00:01.000Z",
+  };
+  const claimedAnalyzingRun = scheduledRun({
+    runId: monthlyRunId,
+    batchRuleKey: MONTHLY_INCOME_RULE_KEY,
+    batchRulePosition: 4,
+    batchRuleCount: 5,
+    status: "analyzing",
+    definitions: [monthlyDefinition],
+    analysisCursorDate: null,
+    analysisCursorId: null,
+    analysisProcessed: 0,
+    analysisTotal: 3,
+    analysisComplete: false,
+    analysisCompletedAt: null,
+  });
+  const firstPageRun = scheduledRun({
+    ...claimedAnalyzingRun,
+    analysisCursorDate: "2026-01-01",
+    analysisCursorId: uuidFor(744),
+    analysisProcessed: 1,
+  });
+  const crossMidnightRun = scheduledRun({
+    ...firstPageRun,
+    analysisCursorDate: "2026-02-01",
+    analysisCursorId: uuidFor(745),
+    analysisProcessed: 2,
+  });
+  const readyRun = scheduledRun({
+    ...crossMidnightRun,
+    status: "ready",
+    analysisCursorDate: null,
+    analysisCursorId: null,
+    analysisProcessed: 3,
+    analysisComplete: true,
+    analysisCompletedAt: "2026-08-16T00:02:00.000Z",
+    proposals: [monthlyProposal],
+  });
+  const runningRun = scheduledRun({
+    ...readyRun,
+    status: "running",
+    proposals: [{
+      ...monthlyProposal,
+      status: "completed",
+      reconciliationId: uuidFor(746),
+      updatedAt: "2026-08-16T00:03:01.000Z",
+    }],
+  });
+  const completedRun = scheduledRun({
+    ...runningRun,
+    status: "completed",
+    finishedAt: "2026-08-16T00:03:02.000Z",
+  });
+  const nextRun = scheduledRun({
+    runId: uuidFor(747),
+    batchRuleKey: BANK_STATEMENT_RULE_KEY,
+    batchRulePosition: 5,
+    batchRuleCount: 5,
+    status: "completed",
+    definitions: [{
+      ruleKey: BANK_STATEMENT_RULE_KEY,
+      ruleVersion: BANK_STATEMENT_RULE_VERSION,
+      priority: 5,
+    }],
+    analysisProcessed: 0,
+    analysisTotal: 0,
+    finishedAt: "2026-08-16T00:04:00.000Z",
+  });
+  const oldestResults = [
+    { continued: false },
+    { continued: true, run: crossMidnightRun, diagnostic: "hidden oldest cursor" },
+    { continued: true, run: readyRun, error_detail: "hidden ready detail" },
+    { continued: false },
+    { continued: false },
+  ];
+  const calls = [];
+  const responses = [];
+  let heartbeat = 0;
+
+  await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+    exposeOldestAnalysis: true,
+    restQuery: async (resource, options) => {
+      calls.push({ heartbeat, resource, body: options.body });
+      if (resource === "rpc/continue_financial_reconciliation_automatic_oldest_analysis") {
+        return oldestResults[heartbeat];
+      }
+      if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+        if (heartbeat === 0) return scheduledClaim(claimedAnalyzingRun, { resumed: false });
+        if (heartbeat === 3) return scheduledClaim(readyRun, { resumed: true });
+        if (heartbeat === 4) return scheduledClaim(nextRun, { resumed: false });
+      }
+      if (resource === "rpc/continue_financial_reconciliation_automatic_analysis") return firstPageRun;
+      if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+        return {
+          proposalId: monthlyProposalId,
+          runId: monthlyRunId,
+          status: "completed",
+          reconciliationId: uuidFor(746),
+        };
+      }
+      if (resource === "rpc/get_financial_reconciliation_automatic_run") return runningRun;
+      if (resource === "rpc/finish_financial_reconciliation_automatic_run") return completedRun;
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => {
+    for (const nowIso of [
+      "2026-08-15T23:58:00.000Z",
+      "2026-08-16T00:01:00.000Z",
+      "2026-08-16T00:02:00.000Z",
+      "2026-08-16T00:03:00.000Z",
+      "2026-08-16T00:04:00.000Z",
+    ]) {
+      const response = responseRecorder();
+      await withCronEnvironment(nowIso, async () => {
+        await handler({ method: "POST", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+      });
+      responses.push(response);
+      heartbeat += 1;
+    }
+  });
+
+  assert.deepEqual(
+    calls.filter((call) => call.resource === "rpc/claim_financial_reconciliation_automatic_schedule")
+      .map((call) => call.heartbeat),
+    [0, 3, 4],
+    "no second child may be claimed while monthly analysis is unfinished or merely ready",
+  );
+  assert.deepEqual(calls.map((call) => `${call.heartbeat}:${call.resource}`), [
+    "0:rpc/continue_financial_reconciliation_automatic_oldest_analysis",
+    "0:rpc/claim_financial_reconciliation_automatic_schedule",
+    "0:rpc/continue_financial_reconciliation_automatic_analysis",
+    "1:rpc/continue_financial_reconciliation_automatic_oldest_analysis",
+    "2:rpc/continue_financial_reconciliation_automatic_oldest_analysis",
+    "3:rpc/continue_financial_reconciliation_automatic_oldest_analysis",
+    "3:rpc/claim_financial_reconciliation_automatic_schedule",
+    "3:rpc/execute_financial_reconciliation_automatic_proposal",
+    "3:rpc/get_financial_reconciliation_automatic_run",
+    "3:rpc/finish_financial_reconciliation_automatic_run",
+    "4:rpc/continue_financial_reconciliation_automatic_oldest_analysis",
+    "4:rpc/claim_financial_reconciliation_automatic_schedule",
+  ]);
+  assert.deepEqual(responses.map((response) => response.statusCode), [200, 200, 200, 200, 200]);
+  assert.deepEqual(responses.map((response) => ({
+    claimed: response.body.claimed,
+    continuedAnalysis: response.body.continuedAnalysis || false,
+    ruleKey: response.body.ruleKey,
+    rulePosition: response.body.rulePosition,
+    ruleCount: response.body.ruleCount,
+    runId: response.body.runId,
+    status: response.body.status,
+    attemptedCount: response.body.attemptedCount,
+    hasMore: response.body.hasMore,
+  })), [
+    {
+      claimed: true,
+      continuedAnalysis: false,
+      ruleKey: MONTHLY_INCOME_RULE_KEY,
+      rulePosition: 4,
+      ruleCount: 5,
+      runId: monthlyRunId,
+      status: "analyzing",
+      attemptedCount: 0,
+      hasMore: true,
+    },
+    {
+      claimed: false,
+      continuedAnalysis: true,
+      ruleKey: MONTHLY_INCOME_RULE_KEY,
+      rulePosition: 4,
+      ruleCount: 5,
+      runId: monthlyRunId,
+      status: "analyzing",
+      attemptedCount: undefined,
+      hasMore: true,
+    },
+    {
+      claimed: false,
+      continuedAnalysis: true,
+      ruleKey: MONTHLY_INCOME_RULE_KEY,
+      rulePosition: 4,
+      ruleCount: 5,
+      runId: monthlyRunId,
+      status: "ready",
+      attemptedCount: undefined,
+      hasMore: false,
+    },
+    {
+      claimed: true,
+      continuedAnalysis: false,
+      ruleKey: MONTHLY_INCOME_RULE_KEY,
+      rulePosition: 4,
+      ruleCount: 5,
+      runId: monthlyRunId,
+      status: "completed",
+      attemptedCount: 1,
+      hasMore: false,
+    },
+    {
+      claimed: true,
+      continuedAnalysis: false,
+      ruleKey: BANK_STATEMENT_RULE_KEY,
+      rulePosition: 5,
+      ruleCount: 5,
+      runId: nextRun.runId,
+      status: "completed",
+      attemptedCount: 0,
+      hasMore: false,
+    },
+  ]);
+  assert.deepEqual(responses[3].body.counts, {
+    bases: 1,
+    proposed: 0,
+    ambiguous: 0,
+    skipped: 0,
+    deselected: 0,
+    executing: 0,
+    completed: 1,
+    stale: 0,
+    failed: 0,
+  });
+  assert.doesNotMatch(JSON.stringify(responses.map((response) => response.body)), /hidden|diagnostic|error_detail/);
+});
+
+test("monthly scheduled continuation exposes only its sanitized terminal failure", async () => {
+  const failedRun = scheduledRun({
+    runId: uuidFor(751),
+    batchRuleKey: MONTHLY_INCOME_RULE_KEY,
+    batchRulePosition: 2,
+    batchRuleCount: 5,
+    definitions: [monthlyIncomeScheduledDefinition(2)],
+    status: "failed",
+    analysisCursorDate: "2026-02-01",
+    analysisCursorId: uuidFor(752),
+    analysisProcessed: 2,
+    analysisTotal: 3,
+    analysisComplete: false,
+    analysisCompletedAt: null,
+    analysisErrorCode: "analysis_continuation_failed",
+    analysisErrorAt: "2026-08-16T00:05:00.000Z",
+    finishedAt: "2026-08-16T00:05:00.000Z",
+    errorSummary: "secret monthly database failure",
+    errorDetail: "secret monthly stack",
+  });
+  const calls = [];
+  const response = responseRecorder();
+
+  await withCronEnvironment("2026-08-16T00:05:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      exposeOldestAnalysis: true,
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        if (resource === "rpc/continue_financial_reconciliation_automatic_oldest_analysis") {
+          return { continued: true, run: failedRun, diagnostic: "secret continuation diagnostic" };
+        }
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.deepEqual(calls, [{
+    resource: "rpc/continue_financial_reconciliation_automatic_oldest_analysis",
+    options: { method: "POST", body: { p_worker: SCHEDULE_ACTOR } },
+  }]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    ok: true,
+    claimed: false,
+    continuedAnalysis: true,
+    batchId: BATCH_ID,
+    ruleKey: MONTHLY_INCOME_RULE_KEY,
+    rulePosition: 2,
+    ruleCount: 5,
+    runId: failedRun.runId,
+    status: "failed",
+    analysisProcessed: 2,
+    analysisTotal: 3,
+    hasMore: false,
+  });
+  assert.doesNotMatch(JSON.stringify(response.body), /secret|diagnostic|stack|errorSummary|errorDetail/);
+});
+
+test("scheduled heartbeat rejects a monthly child whose snapshot is not the exact managed version", async () => {
+  const response = responseRecorder();
+  const wrongVersionRun = scheduledRun({
+    runId: uuidFor(761),
+    batchRuleKey: MONTHLY_INCOME_RULE_KEY,
+    batchRulePosition: 4,
+    batchRuleCount: 5,
+    definitions: [{ ...monthlyIncomeScheduledDefinition(4), ruleVersion: 2 }],
+    status: "completed",
+    finishedAt: "2026-08-16T00:06:00.000Z",
+  });
+
+  await withCronEnvironment("2026-08-16T00:06:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource) => {
+        if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+          return scheduledClaim(wrongVersionRun, { resumed: false });
+        }
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
 });
 
 test("scheduled heartbeat fails closed on malformed parent or one-rule child metadata", async () => {
