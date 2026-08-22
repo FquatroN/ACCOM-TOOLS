@@ -1093,6 +1093,15 @@ begin
   v_difference_allowed := (p_rule->>'differenceAllowed')::numeric(14,2);
   v_operator := p_rule->>'operator';
 
+  -- Prevent inserts, updates, deletes, and competing reconciliation locks from
+  -- changing an eligible month between aggregation and membership snapshots.
+  -- Keep the same global relation order used by monthly execution.
+  lock table
+    public.import_cgd_extrato_ordem,
+    public.import_fdm_accounts,
+    public.financial_reconciliation_items
+  in share row exclusive mode;
+
   select public.financial_reconciliation_automatic_monthly_income_count()
   into v_total;
   update public.financial_reconciliation_automatic_runs
@@ -1266,7 +1275,18 @@ begin
                    as ordinal
           from public.import_cgd_extrato_ordem bank
           where bank.id = any(v_source_ids)
+            and bank.data >= v_month.calendar_month
+            and bank.data < v_month.calendar_month + interval '1 month'
+            and bank.data >= date '2026-01-01'
+            and bank.data < date_trunc('month', current_date)::date
             and bank.montante is not null
+            and bank.descritivo ilike '%POS VENDAS%'
+            and not exists (
+              select 1
+              from public.financial_reconciliation_items locked
+              where locked.source_type = 'import_cgd_extrato_ordem'
+                and locked.source_id = bank.id
+            )
         ) source_member
         order by source_member.ordinal;
         get diagnostics v_inserted_count = row_count;
@@ -1303,7 +1323,18 @@ begin
                    as ordinal
           from public.import_fdm_accounts fdm
           where fdm.id = any(v_destination_ids)
+            and fdm.event_date >= v_month.calendar_month
+            and fdm.event_date < v_month.calendar_month + interval '1 month'
+            and fdm.event_date >= date '2026-01-01'
+            and fdm.event_date < date_trunc('month', current_date)::date
             and fdm.amount is not null
+            and fdm.account = 'Credit Card'
+            and not exists (
+              select 1
+              from public.financial_reconciliation_items locked
+              where locked.source_type = 'import_fdm_accounts'
+                and locked.source_id = fdm.id
+            )
         ) destination_member
         order by destination_member.ordinal;
         get diagnostics v_inserted_count = row_count;
@@ -1857,12 +1888,32 @@ begin
   set status = case when exists (
         select 1
         from public.financial_reconciliation_automatic_proposals proposal
-        where proposal.run_id = p_run_id and proposal.status = 'proposed'
+        where proposal.run_id = p_run_id
+          and (
+            proposal.status = 'proposed'
+            or (
+              proposal.rule_key =
+                'cgd_bank_statement_fdm_credit_card_monthly_income'
+              and proposal.rule_version = 1
+              and proposal.status = 'ambiguous'
+              and proposal.reason = 'monthly_difference_exceeded'
+            )
+          )
       ) then 'ready' else 'completed' end,
       finished_at = case when exists (
         select 1
         from public.financial_reconciliation_automatic_proposals proposal
-        where proposal.run_id = p_run_id and proposal.status = 'proposed'
+        where proposal.run_id = p_run_id
+          and (
+            proposal.status = 'proposed'
+            or (
+              proposal.rule_key =
+                'cgd_bank_statement_fdm_credit_card_monthly_income'
+              and proposal.rule_version = 1
+              and proposal.status = 'ambiguous'
+              and proposal.reason = 'monthly_difference_exceeded'
+            )
+          )
       ) then null else now() end,
       analysis_completed_at = now(),
       updated_at = now(),
@@ -2083,6 +2134,7 @@ declare
   v_actual_difference numeric(14,2);
   v_comment text;
   v_failure_message text;
+  v_failure_constraint text;
 begin
   if p_proposal_id is null then
     raise exception 'Automation proposal ID is required.';
@@ -2496,7 +2548,9 @@ begin
       membership.source_type,
       membership.source_id,
       membership.source_date,
-      membership.amount
+      membership.amount,
+      membership.description,
+      membership.account
     from public.financial_reconciliation_automatic_proposal_memberships membership
     where membership.proposal_id = v_proposal.id
   ), live as (
@@ -2505,7 +2559,9 @@ begin
       'import_cgd_extrato_ordem'::text as source_type,
       bank.id as source_id,
       bank.data as source_date,
-      bank.montante as amount
+      bank.montante as amount,
+      bank.descritivo as description,
+      ''::text as account
     from public.import_cgd_extrato_ordem bank
     where bank.data >= v_calendar_month
       and bank.data < v_calendar_month + interval '1 month'
@@ -2525,7 +2581,9 @@ begin
       'import_fdm_accounts'::text,
       fdm.id,
       fdm.event_date,
-      fdm.amount
+      fdm.amount,
+      fdm.description,
+      fdm.account
     from public.import_fdm_accounts fdm
     where fdm.event_date >= v_calendar_month
       and fdm.event_date < v_calendar_month + interval '1 month'
@@ -2932,20 +2990,40 @@ begin
     where id = v_proposal.id;
   exception
     when unique_violation then
+      get stacked diagnostics
+        v_failure_constraint = constraint_name;
+      if v_failure_constraint =
+          'financial_reconciliation_items_source_type_source_id_key' then
+        update public.financial_reconciliation_automatic_proposals
+        set status = 'stale',
+            reason = 'source_snapshot_changed',
+            reconciliation_id = null,
+            completed_at = null,
+            error = '',
+            error_detail = '',
+            updated_at = now()
+        where id = v_proposal.id;
+        return jsonb_build_object(
+          'proposalId', v_proposal.id,
+          'runId', v_run.id,
+          'status', 'stale',
+          'reason', 'source_snapshot_changed'
+        );
+      end if;
       update public.financial_reconciliation_automatic_proposals
-      set status = 'stale',
-          reason = 'source_snapshot_changed',
+      set status = 'failed',
+          reason = 'execution_failed',
           reconciliation_id = null,
           completed_at = null,
-          error = '',
+          error = 'Automatic reconciliation execution failed.',
           error_detail = '',
           updated_at = now()
       where id = v_proposal.id;
       return jsonb_build_object(
         'proposalId', v_proposal.id,
         'runId', v_run.id,
-        'status', 'stale',
-        'reason', 'source_snapshot_changed'
+        'status', 'failed',
+        'reason', 'execution_failed'
       );
     when others then
       get stacked diagnostics

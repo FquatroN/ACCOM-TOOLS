@@ -8122,6 +8122,69 @@ drop trigger reject_pos_income_membership_insert
 on public.financial_reconciliation_automatic_proposal_memberships;
 drop function pg_temp.reject_pos_income_membership_insert();
 
+-- Simulate a same-transaction source mutation after the proposal summary is
+-- inserted but before its memberships are materialized. Analysis must reassert
+-- the exact destination eligibility predicate and roll the whole month back;
+-- otherwise it can persist a born-stale mixed snapshot.
+create or replace function pg_temp.mutate_pos_income_before_memberships()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+    and new.rule_version = 1
+    and new.grouping_key = '2026-06'
+    and exists (
+      select 1
+      from public.financial_reconciliation_automatic_runs run
+      where run.id = new.run_id
+        and run.actor = 'smoke:pos-income-born-stale'
+    ) then
+    update public.import_fdm_accounts
+    set account = 'Cash'
+    where id = '84000000-0000-0000-0000-000000000060';
+  end if;
+  return new;
+end
+$$;
+
+create trigger mutate_pos_income_before_memberships
+after insert on public.financial_reconciliation_automatic_proposals
+for each row execute function pg_temp.mutate_pos_income_before_memberships();
+
+do $$
+declare
+  v_result jsonb;
+  v_run_id uuid;
+begin
+  v_result := public.create_financial_reconciliation_automatic_analysis(
+    array['cgd_bank_statement_fdm_credit_card_monthly_income'],
+    'manual_rule',
+    'smoke:pos-income-born-stale',
+    '85000000-0000-0000-0000-000000000003'
+  );
+  v_run_id := (v_result->>'runId')::uuid;
+  if v_result->>'status' <> 'failed'
+    or v_result->>'analysisErrorCode' <> 'analysis_continuation_failed'
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = v_run_id
+    )
+    or (select account
+        from public.import_fdm_accounts
+        where id = '84000000-0000-0000-0000-000000000060')
+       is distinct from 'Credit Card' then
+    raise exception 'POS income analysis persisted or retained a born-stale source mutation: %',
+      v_result;
+  end if;
+end $$;
+
+drop trigger mutate_pos_income_before_memberships
+on public.financial_reconciliation_automatic_proposals;
+drop function pg_temp.mutate_pos_income_before_memberships();
+
 create temporary table pos_income_task3_success_run (
   run_id uuid primary key
 );
@@ -8546,6 +8609,38 @@ begin
 end
 $$;
 
+-- A monthly run containing only an above-tolerance aggregate must remain ready
+-- so its immutable source and destination snapshots stay reviewable.
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-02', '85a00000-0000-0000-0000-000000000001',
+  '85a10000-0000-0000-0000-000000000001',
+  'smoke:pos-income-ambiguous-only'
+);
+update public.financial_reconciliation_automatic_runs
+set status = 'analyzing', analysis_completed_at = null, finished_at = null,
+    counts = '{}'::jsonb
+where id = '85a00000-0000-0000-0000-000000000001';
+
+do $$
+declare
+  v_result jsonb;
+begin
+  v_result := public.financial_reconciliation_finalize_automatic_analysis(
+    '85a00000-0000-0000-0000-000000000001'
+  );
+  if v_result->>'status' is distinct from 'ready'
+    or v_result->>'finishedAt' is not null
+    or v_result#>>'{counts,proposed}' is distinct from '0'
+    or v_result#>>'{counts,ambiguous}' is distinct from '1'
+    or jsonb_array_length(v_result->'proposals') <> 1
+    or v_result#>>'{proposals,0,status}' is distinct from 'ambiguous'
+    or v_result#>>'{proposals,0,reason}' is distinct from
+      'monthly_difference_exceeded' then
+    raise exception 'POS income ambiguous-only run was not retained ready: %',
+      v_result;
+  end if;
+end $$;
+
 do $$
 declare
   v_rejected boolean := false;
@@ -8705,6 +8800,21 @@ select pg_temp.pos_income_task4_clone_proposal(
 select pg_temp.pos_income_task4_clone_proposal(
   '2026-06', '86000000-0000-0000-0000-000000000021',
   '86100000-0000-0000-0000-000000000021', 'smoke:pos-income-rollback'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000022',
+  '86100000-0000-0000-0000-000000000022',
+  'smoke:pos-income-source-description'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-01', '86000000-0000-0000-0000-000000000023',
+  '86100000-0000-0000-0000-000000000023',
+  'smoke:pos-income-destination-description'
+);
+select pg_temp.pos_income_task4_clone_proposal(
+  '2026-06', '86000000-0000-0000-0000-000000000024',
+  '86100000-0000-0000-0000-000000000024',
+  'smoke:pos-income-unexpected-unique'
 );
 
 -- Observe the serialization protocol at the first write after exact stale
@@ -8904,6 +9014,27 @@ begin
     'source_snapshot_changed'
   );
   update public.import_fdm_accounts set amount = 100.00
+  where id = '84000000-0000-0000-0000-000000000010';
+
+  update public.import_cgd_extrato_ordem
+  set descritivo = 'POS VENDAS January description drift'
+  where id = '83000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000022',
+    'source_snapshot_changed'
+  );
+  update public.import_cgd_extrato_ordem
+  set descritivo = 'prefix pos vendas suffix'
+  where id = '83000000-0000-0000-0000-000000000010';
+
+  update public.import_fdm_accounts
+  set description = 'January destination description drift'
+  where id = '84000000-0000-0000-0000-000000000010';
+  perform pg_temp.pos_income_task4_assert_stale(
+    '86100000-0000-0000-0000-000000000023',
+    'source_snapshot_changed'
+  );
+  update public.import_fdm_accounts set description = 'January'
   where id = '84000000-0000-0000-0000-000000000010';
 
   delete from public.financial_reconciliation_source_rules
@@ -9175,6 +9306,83 @@ $$;
 drop trigger pos_income_task4_reject_automatic_complete
 on public.financial_reconciliation_audit;
 drop function pg_temp.pos_income_task4_reject_automatic_complete();
+
+-- Only the source-lock uniqueness constraint is expected drift. An unrelated
+-- unique violation must take the sanitized internal-failure path and roll back
+-- every reconciliation lifecycle write.
+create temporary table pos_income_task4_unexpected_unique (
+  token text primary key
+);
+insert into pos_income_task4_unexpected_unique values ('occupied');
+
+create or replace function pg_temp.pos_income_task4_raise_unexpected_unique()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.action = 'automatic_complete'
+    and new.actor = 'smoke:pos-income-unexpected-unique' then
+    insert into pg_temp.pos_income_task4_unexpected_unique values ('occupied');
+  end if;
+  return new;
+end
+$$;
+
+create trigger pos_income_task4_raise_unexpected_unique
+before insert on public.financial_reconciliation_audit
+for each row execute function pg_temp.pos_income_task4_raise_unexpected_unique();
+
+do $$
+declare
+  v_result jsonb;
+begin
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    '86100000-0000-0000-0000-000000000024',
+    'smoke:pos-income-unexpected-unique'
+  );
+  if v_result is distinct from jsonb_build_object(
+      'proposalId', '86100000-0000-0000-0000-000000000024'::uuid,
+      'runId', '86000000-0000-0000-0000-000000000024'::uuid,
+      'status', 'failed',
+      'reason', 'execution_failed'
+    )
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = '86100000-0000-0000-0000-000000000024'
+        and proposal.status = 'failed'
+        and proposal.reason = 'execution_failed'
+        and proposal.reconciliation_id is null
+        and proposal.completed_at is null
+        and proposal.error = 'Automatic reconciliation execution failed.'
+        and proposal.error_detail = ''
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliations reconciliation
+      where reconciliation.automatic_proposal_id =
+        '86100000-0000-0000-0000-000000000024'
+        or reconciliation.created_by = 'smoke:pos-income-unexpected-unique'
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliation_items item
+      where item.created_by = 'smoke:pos-income-unexpected-unique'
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliation_audit audit
+      where audit.actor = 'smoke:pos-income-unexpected-unique'
+    ) then
+    raise exception 'POS income unexpected unique violation was misclassified or partially persisted: %',
+      v_result;
+  end if;
+end $$;
+
+drop trigger pos_income_task4_raise_unexpected_unique
+on public.financial_reconciliation_audit;
+drop function pg_temp.pos_income_task4_raise_unexpected_unique();
 
 -- Normal and forced completion preserve every lock, provenance field, ordinary
 -- lifecycle audit record, immutable snapshots, generated comment, and retry ID.

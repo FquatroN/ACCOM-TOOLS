@@ -929,6 +929,26 @@ test("analysis progress renders processed and total records while review control
   assert.equal(els.financialReconciliationWorkbenchAutomationExecute.disabled, true);
 });
 
+test("monthly analysis progress is expressed in calendar months", () => {
+  const progressLabel = new Function(
+    `${appFunctionSource("financialReconciliationAutomationProgressLabel")}
+     return financialReconciliationAutomationProgressLabel;`,
+  )();
+  const run = {
+    ...workbenchRun([]),
+    status: "analyzing",
+    analysisCompletedAt: null,
+    analysisProcessed: 2,
+    analysisTotal: 4,
+    definitions: [monthlyIncomeRule()],
+  };
+  const { els } = renderAutomationWorkbench(run);
+
+  assert.match(progressLabel(run), /Analyzing 2 of 4 months/i);
+  assert.match(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /Analyzing 2 of 4 months/i);
+  assert.doesNotMatch(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /\brecords\b/i);
+});
+
 test("serial continuation replaces progress and selects proposals only after analysis completes", async () => {
   const current = {
     automation: {
@@ -1465,6 +1485,38 @@ test("monthly difference ambiguity renders an auditable reason without an execut
 
   assert.match(markup, /Monthly difference exceeds the allowed tolerance/);
   assert.doesNotMatch(markup, /data-financial-reconciliation-automation-proposal-id=|Execute proposal/);
+});
+
+test("finished monthly ambiguous-only runs retain the reviewable aggregate proposal", () => {
+  const visible = compileVisibleAutomationProposals();
+  const proposalMarkup = compileMonthlyProposalMarkup();
+  const proposal = monthlyProposal({
+    status: "ambiguous",
+    reason: "monthly_difference_exceeded",
+  });
+  const run = monthlyRun(proposal);
+  run.finishedAt = "2026-08-16T10:00:00.000Z";
+
+  assert.deepEqual(visible(run).map((entry) => entry.id), [proposal.id]);
+  const markup = proposalMarkup(proposal, run, [monthlyIncomeRule()], new Set(), false, {});
+  assert.match(markup, /Monthly difference exceeds the allowed tolerance/);
+  assert.match(markup, /CGD Bank Statement \(#73;/);
+  assert.match(markup, /FDM Accounts \(#52;/);
+  assert.doesNotMatch(markup, /data-financial-reconciliation-automation-proposal-id=|Execute proposal/);
+});
+
+test("monthly proposal renders a SQL first-of-month date as YYYY-MM", () => {
+  const proposalMarkup = compileMonthlyProposalMarkup();
+  const proposal = monthlyProposal({
+    summarySnapshot: {
+      ...monthlyProposal().summarySnapshot,
+      calendarMonth: "2026-07-01",
+    },
+  });
+  const markup = proposalMarkup(proposal, monthlyRun(proposal), [monthlyIncomeRule()], new Set(), false, {});
+
+  assert.match(markup, /Month 2026-07(?:<|\s)/);
+  assert.doesNotMatch(markup, /Month 2026-07-01/);
 });
 
 test("loaded monthly members stay escaped and expose record IDs only in disclosure controls", () => {

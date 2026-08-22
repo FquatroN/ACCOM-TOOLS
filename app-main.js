@@ -22349,7 +22349,11 @@ function financialReconciliationAutomationOpenRun(run) {
 function financialReconciliationAutomationProgressLabel(run) {
   const processed = Math.max(0, Number(run?.analysisProcessed) || 0);
   const total = Math.max(processed, Number(run?.analysisTotal) || 0);
-  return `Analyzing ${processed} of ${total} records...`;
+  const monthly = (Array.isArray(run?.definitions) ? run.definitions : []).some((definition) => (
+    String(definition?.ruleKey ?? "").trim() === "cgd_bank_statement_fdm_credit_card_monthly_income"
+    && Number(definition?.ruleVersion) === 1
+  ));
+  return `Analyzing ${processed} of ${total} ${monthly ? "months" : "records"}...`;
 }
 
 function finalizeFinancialReconciliationAutomationAnalysis() {
@@ -22611,7 +22615,8 @@ function financialReconciliationAutomationMonthlyProposalMarkup(proposal, run, r
   const definition = financialReconciliationAutomationRunDefinition(value, run);
   const rule = (Array.isArray(rules) ? rules : []).find((entry) => clean(entry?.ruleKey) === clean(value.ruleKey) && Number(entry?.ruleVersion) === Number(value.ruleVersion)) || definition;
   const summary = value.summarySnapshot && typeof value.summarySnapshot === "object" ? value.summarySnapshot : {};
-  const month = clean(summary.calendarMonth) || clean(value.groupingKey).split(":").at(-1) || "-";
+  const rawMonth = clean(summary.calendarMonth) || clean(value.groupingKey).split(":").at(-1) || "-";
+  const month = rawMonth.match(/^(\d{4}-(?:0[1-9]|1[0-2]))(?:-01)?$/)?.[1] || rawMonth;
   const reason = executable || !clean(value.reason) ? "" : `<p class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;
   const accessibleName = `Execute automatic monthly proposal for ${month}`;
   const executionOutcome = (Array.isArray(run?.executionOutcomes) ? run.executionOutcomes : []).find((outcome) => clean(outcome?.proposalId ?? outcome?.id) === clean(value.id));
@@ -22681,10 +22686,19 @@ function financialReconciliationAutomationVisibleProposals(run) {
   if (financialReconciliationAutomationIsAnalyzing(run)) return [];
   const proposals = Array.isArray(run?.proposals) ? run.proposals : [];
   const finished = Boolean(clean(run?.finishedAt));
-  const visibleStatuses = finished
-    ? new Set(["completed", "stale", "failed"])
-    : new Set(["proposed", "ambiguous"]);
-  return proposals.filter((proposal) => visibleStatuses.has(clean(proposal?.status).toLowerCase()));
+  if (!finished) {
+    return proposals.filter((proposal) => new Set(["proposed", "ambiguous"]).has(clean(proposal?.status).toLowerCase()));
+  }
+  return proposals.filter((proposal) => {
+    const status = clean(proposal?.status).toLowerCase();
+    return new Set(["completed", "stale", "failed"]).has(status)
+      || (
+        status === "ambiguous"
+        && clean(proposal?.ruleKey) === "cgd_bank_statement_fdm_credit_card_monthly_income"
+        && Number(proposal?.ruleVersion) === 1
+        && clean(proposal?.reason) === "monthly_difference_exceeded"
+      );
+  });
 }
 
 function financialReconciliationAutomationEmptyMessage(run) {
