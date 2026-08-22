@@ -7211,6 +7211,7 @@ end $$;
 
 do $$
 declare
+  v_proposal_before jsonb;
   v_rejected boolean;
   v_rules jsonb;
 begin
@@ -7273,6 +7274,47 @@ begin
   exception when others then
     raise exception 'Could not create POS income membership fixture: %', sqlerrm;
   end;
+
+  select to_jsonb(proposal)
+  into strict v_proposal_before
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = '82000000-0000-0000-0000-000000000003';
+
+  v_rejected := false;
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set grouping_key = '2026-02'
+    where id = '82000000-0000-0000-0000-000000000003';
+  exception when others then
+    v_rejected := sqlerrm =
+      'Automatic proposal monthly audit snapshot is immutable.';
+  end;
+  if not v_rejected or exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.id = '82000000-0000-0000-0000-000000000003'
+      and to_jsonb(proposal) is distinct from v_proposal_before
+  ) then
+    raise exception 'POS income grouping key update changed the stored proposal value or timestamps.';
+  end if;
+
+  v_rejected := false;
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set summary_snapshot = '{"calendarMonth":"2026-02"}'::jsonb
+    where id = '82000000-0000-0000-0000-000000000003';
+  exception when others then
+    v_rejected := sqlerrm =
+      'Automatic proposal monthly audit snapshot is immutable.';
+  end;
+  if not v_rejected or exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.id = '82000000-0000-0000-0000-000000000003'
+      and to_jsonb(proposal) is distinct from v_proposal_before
+  ) then
+    raise exception 'POS income summary snapshot update changed the stored proposal value or timestamps.';
+  end if;
 
   insert into public.financial_reconciliation_automatic_proposal_memberships (
     proposal_id, role, source_type, source_id, ordinal, source_date,
@@ -7477,8 +7519,20 @@ begin
       'service_role',
       'public.prevent_financial_reconciliation_automatic_membership_change()',
       'EXECUTE'
+    ) or has_function_privilege(
+      'anon',
+      'public.prevent_financial_reconciliation_monthly_snapshot_change()',
+      'EXECUTE'
+    ) or has_function_privilege(
+      'authenticated',
+      'public.prevent_financial_reconciliation_monthly_snapshot_change()',
+      'EXECUTE'
+    ) or has_function_privilege(
+      'service_role',
+      'public.prevent_financial_reconciliation_monthly_snapshot_change()',
+      'EXECUTE'
   ) then
-    raise exception 'POS income membership trigger function is directly executable by an API role.';
+    raise exception 'POS income immutable-snapshot trigger function is directly executable by an API role.';
   end if;
 
   foreach v_index_name in array array[
@@ -7572,15 +7626,19 @@ as $$
       from pg_proc procedure
       where procedure.oid in (
         'public.replace_financial_reconciliation_source_rules(jsonb)'::regprocedure,
-        'public.prevent_financial_reconciliation_automatic_membership_change()'::regprocedure
+        'public.prevent_financial_reconciliation_automatic_membership_change()'::regprocedure,
+        'public.prevent_financial_reconciliation_monthly_snapshot_change()'::regprocedure
       )
     ),
     'triggers', (
       select jsonb_agg(pg_get_triggerdef(trigger_row.oid, true)
-                       order by trigger_row.tgname)
+                       order by trigger_row.tgrelid::regclass::text,
+                                trigger_row.tgname)
       from pg_trigger trigger_row
-      where trigger_row.tgrelid =
-          'public.financial_reconciliation_automatic_proposal_memberships'::regclass
+      where trigger_row.tgrelid in (
+          'public.financial_reconciliation_automatic_proposal_memberships'::regclass,
+          'public.financial_reconciliation_automatic_proposals'::regclass
+        )
         and not trigger_row.tgisinternal
     ),
     'tableAcl', (
@@ -7641,6 +7699,37 @@ begin
       and config.updated_by = 'smoke:pos-income-administrator'
   ) then
     raise exception 'POS income migration reapply overwrote administrator configuration.';
+  end if;
+end $$;
+
+savepoint pos_income_conflicting_index_fixture;
+
+drop index public.import_cgd_extrato_ordem_pos_income_lock_idx;
+create index import_cgd_extrato_ordem_pos_income_lock_idx
+  on public.import_cgd_extrato_ordem (data, id)
+  with (fillfactor = 70)
+  where descritivo ilike '%POS VENDAS%';
+
+\set ON_ERROR_STOP off
+\ir ../supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql
+\set pos_income_conflicting_index_rejected :ERROR
+\set ON_ERROR_STOP on
+
+rollback to savepoint pos_income_conflicting_index_fixture;
+
+\if :pos_income_conflicting_index_rejected
+\else
+  \echo 'POS income migration accepted a same-named index with incompatible storage options.'
+  \quit 1
+\endif
+
+\ir ../supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql
+
+do $$
+begin
+  if (select state from pos_income_task2_reapply_baseline)
+      is distinct from pg_temp.pos_income_task2_state() then
+    raise exception 'POS income migration did not restore and reapply safely after the conflicting-index fixture.';
   end if;
 end $$;
 

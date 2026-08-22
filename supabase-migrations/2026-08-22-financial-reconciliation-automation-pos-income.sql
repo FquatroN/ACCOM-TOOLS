@@ -247,6 +247,90 @@ $migration$;
 alter table public.financial_reconciliation_automatic_proposals
   validate constraint financial_reconciliation_proposals_summary_snapshot_check;
 
+create or replace function public.prevent_financial_reconciliation_monthly_snapshot_change()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.grouping_key is distinct from old.grouping_key
+    or new.summary_snapshot is distinct from old.summary_snapshot then
+    raise exception 'Automatic proposal monthly audit snapshot is immutable.';
+  end if;
+  return new;
+end
+$$;
+
+revoke all on function public.prevent_financial_reconciliation_monthly_snapshot_change()
+  from public, anon, authenticated, service_role;
+
+do $migration$
+declare
+  v_grouping_key_attnum smallint;
+  v_summary_snapshot_attnum smallint;
+begin
+  select attribute.attnum
+  into strict v_grouping_key_attnum
+  from pg_attribute attribute
+  where attribute.attrelid =
+      'public.financial_reconciliation_automatic_proposals'::regclass
+    and attribute.attname = 'grouping_key'
+    and not attribute.attisdropped;
+
+  select attribute.attnum
+  into strict v_summary_snapshot_attnum
+  from pg_attribute attribute
+  where attribute.attrelid =
+      'public.financial_reconciliation_automatic_proposals'::regclass
+    and attribute.attname = 'summary_snapshot'
+    and not attribute.attisdropped;
+
+  if not exists (
+    select 1
+    from pg_trigger trigger_row
+    where trigger_row.tgrelid =
+        'public.financial_reconciliation_automatic_proposals'::regclass
+      and trigger_row.tgname =
+        'financial_reconciliation_automatic_monthly_snapshot_immutable'
+  ) then
+    create trigger financial_reconciliation_automatic_monthly_snapshot_immutable
+    before update of grouping_key, summary_snapshot
+    on public.financial_reconciliation_automatic_proposals
+    for each row
+    execute function public.prevent_financial_reconciliation_monthly_snapshot_change();
+  end if;
+
+  if not exists (
+    select 1
+    from pg_trigger trigger_row
+    where trigger_row.tgrelid =
+        'public.financial_reconciliation_automatic_proposals'::regclass
+      and trigger_row.tgname =
+        'financial_reconciliation_automatic_monthly_snapshot_immutable'
+      and not trigger_row.tgisinternal
+      and trigger_row.tgenabled = 'O'
+      and trigger_row.tgfoid =
+        'public.prevent_financial_reconciliation_monthly_snapshot_change()'::regprocedure
+      and trigger_row.tgattr = format(
+        '%s %s', v_grouping_key_attnum, v_summary_snapshot_attnum
+      )::int2vector
+      and trigger_row.tgtype = (1 | 2 | 16)
+      and trigger_row.tgnargs = 0
+      and octet_length(trigger_row.tgargs) = 0
+      and trigger_row.tgqual is null
+      and trigger_row.tgconstraint = 0
+      and trigger_row.tgconstrrelid = 0
+      and trigger_row.tgconstrindid = 0
+      and not trigger_row.tgdeferrable
+      and not trigger_row.tginitdeferred
+      and trigger_row.tgoldtable is null
+      and trigger_row.tgnewtable is null
+  ) then
+    raise exception 'Installed POS income proposal monthly-snapshot trigger differs from the required definition.';
+  end if;
+end
+$migration$;
+
 create table if not exists public.financial_reconciliation_automatic_proposal_memberships (
   proposal_id uuid not null,
   role text not null,
@@ -478,6 +562,14 @@ declare
   v_actual record;
   v_expected record;
 begin
+  create temporary table pos_income_membership_index_expected (
+    proposal_id uuid,
+    role text,
+    ordinal integer
+  ) on commit drop;
+  create index pos_income_membership_index_expected_idx
+    on pos_income_membership_index_expected (proposal_id, role, ordinal);
+
   create temporary table pos_income_bank_index_expected (
     data date,
     id uuid,
@@ -500,7 +592,7 @@ begin
     select * from (values
       ('financial_reconciliation_automatic_memberships_role_ordinal_idx',
        'public.financial_reconciliation_automatic_proposal_memberships',
-       null::text),
+       'pos_income_membership_index_expected_idx'),
       ('import_cgd_extrato_ordem_pos_income_lock_idx',
        'public.import_cgd_extrato_ordem',
        'pos_income_bank_index_expected_idx'),
@@ -512,71 +604,68 @@ begin
     select
       index_row.indrelid as table_oid,
       index_row.indisunique,
+      index_row.indisprimary,
+      index_row.indisexclusion,
+      index_row.indimmediate,
+      index_row.indisclustered,
+      index_row.indisreplident,
       index_row.indisvalid,
       index_row.indisready,
+      index_row.indislive,
       index_row.indnkeyatts,
       index_row.indnatts,
-      access_method.amname,
-      pg_get_indexdef(index_row.indexrelid, 1, true) as first_column,
-      pg_get_indexdef(index_row.indexrelid, 2, true) as second_column,
-      case when index_row.indnkeyatts >= 3
-        then pg_get_indexdef(index_row.indexrelid, 3, true)
-        else null
-      end as third_column,
-      pg_get_expr(index_row.indpred, index_row.indrelid) as predicate
+      regexp_replace(
+        pg_get_indexdef(index_row.indexrelid),
+        '^CREATE (UNIQUE )?INDEX [^ ]+ ON (ONLY )?[^ ]+',
+        'CREATE \1INDEX ON \2<table>'
+      ) as normalized_definition
     into v_actual
     from pg_index index_row
-    join pg_class index_class on index_class.oid = index_row.indexrelid
-    join pg_am access_method on access_method.oid = index_class.relam
     where index_row.indexrelid =
       to_regclass('public.' || v_index.index_name);
 
-    if v_index.expected_index_name is not null then
-      select
-        pg_get_indexdef(index_row.indexrelid, 1, true) as first_column,
-        pg_get_indexdef(index_row.indexrelid, 2, true) as second_column,
-        pg_get_expr(index_row.indpred, index_row.indrelid) as predicate
-      into strict v_expected
-      from pg_index index_row
-      where index_row.indexrelid =
-        to_regclass(v_index.expected_index_name);
-    else
-      select 'proposal_id'::text as first_column,
-             'role'::text as second_column,
-             null::text as predicate
-      into v_expected;
-    end if;
+    select
+      index_row.indisunique,
+      index_row.indisprimary,
+      index_row.indisexclusion,
+      index_row.indimmediate,
+      index_row.indisclustered,
+      index_row.indisreplident,
+      index_row.indisvalid,
+      index_row.indisready,
+      index_row.indislive,
+      index_row.indnkeyatts,
+      index_row.indnatts,
+      regexp_replace(
+        pg_get_indexdef(index_row.indexrelid),
+        '^CREATE (UNIQUE )?INDEX [^ ]+ ON (ONLY )?[^ ]+',
+        'CREATE \1INDEX ON \2<table>'
+      ) as normalized_definition
+    into strict v_expected
+    from pg_index index_row
+    where index_row.indexrelid =
+      to_regclass(v_index.expected_index_name);
 
     if v_actual.table_oid is distinct from to_regclass(v_index.table_name)
-      or v_actual.indisunique is distinct from false
-      or v_actual.indisvalid is distinct from true
-      or v_actual.indisready is distinct from true
-      or v_actual.amname is distinct from 'btree'
-      or v_actual.first_column is distinct from v_expected.first_column
-      or v_actual.second_column is distinct from v_expected.second_column
-      or v_actual.predicate is distinct from v_expected.predicate
-      or (
-        v_index.index_name =
-          'financial_reconciliation_automatic_memberships_role_ordinal_idx'
-        and (
-          v_actual.indnkeyatts is distinct from 3
-          or v_actual.indnatts is distinct from 3
-          or v_actual.third_column is distinct from 'ordinal'
-        )
-      )
-      or (
-        v_index.index_name <>
-          'financial_reconciliation_automatic_memberships_role_ordinal_idx'
-        and (
-          v_actual.indnkeyatts is distinct from 2
-          or v_actual.indnatts is distinct from 2
-        )
-      ) then
+      or v_actual.indisunique is distinct from v_expected.indisunique
+      or v_actual.indisprimary is distinct from v_expected.indisprimary
+      or v_actual.indisexclusion is distinct from v_expected.indisexclusion
+      or v_actual.indimmediate is distinct from v_expected.indimmediate
+      or v_actual.indisclustered is distinct from v_expected.indisclustered
+      or v_actual.indisreplident is distinct from v_expected.indisreplident
+      or v_actual.indisvalid is distinct from v_expected.indisvalid
+      or v_actual.indisready is distinct from v_expected.indisready
+      or v_actual.indislive is distinct from v_expected.indislive
+      or v_actual.indnkeyatts is distinct from v_expected.indnkeyatts
+      or v_actual.indnatts is distinct from v_expected.indnatts
+      or v_actual.normalized_definition is distinct from
+        v_expected.normalized_definition then
       raise exception 'Installed POS income index % differs from the required definition.',
         v_index.index_name;
     end if;
   end loop;
 
+  drop table pos_income_membership_index_expected;
   drop table pos_income_bank_index_expected;
   drop table pos_income_fdm_index_expected;
 end
