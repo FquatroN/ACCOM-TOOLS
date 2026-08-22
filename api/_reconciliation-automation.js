@@ -298,17 +298,17 @@ function normalizeExecutePayload(value) {
   requireOnlyKeys(input, new Set(["action", "runId", "proposalIds"]), "Execute payload");
   const action = normalizeAutomationAction(input.action);
   if (action !== "execute_selected") throw inputError("Execution action is invalid.");
-  if (!Array.isArray(input.proposalIds)) throw inputError("Proposal IDs must contain between 1 and 100 unique proposal IDs.");
+  if (!Array.isArray(input.proposalIds)) throw inputError("Proposal IDs must contain up to 100 unique proposal IDs.");
   const proposalIds = [];
   const seen = new Set();
   for (const proposalId of input.proposalIds) {
     normalizeUuid(proposalId, "Proposal ID");
-    if (seen.has(proposalId)) throw inputError("Proposal IDs must contain between 1 and 100 unique proposal IDs.");
+    if (seen.has(proposalId)) throw inputError("Proposal IDs must contain up to 100 unique proposal IDs.");
     seen.add(proposalId);
     proposalIds.push(proposalId);
   }
-  if (proposalIds.length < 1 || proposalIds.length > 100) {
-    throw inputError("Proposal IDs must contain between 1 and 100 unique proposal IDs.");
+  if (proposalIds.length > 100) {
+    throw inputError("Proposal IDs must contain up to 100 unique proposal IDs.");
   }
   return { action, runId: normalizeUuid(input.runId, "Run ID"), proposalIds };
 }

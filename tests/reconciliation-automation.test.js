@@ -906,8 +906,8 @@ test("execution rejects duplicate or oversized proposal selections", () => {
   assert.throws(() => normalizeExecutePayload({
     action: "execute_selected",
     runId: RUN_ID,
-    proposalIds: Array(101).fill(PROPOSAL_ID),
-  }), /between 1 and 100 unique proposal IDs/);
+    proposalIds: Array.from({ length: 101 }, (_, index) => `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`),
+  }), /up to 100 unique proposal IDs/);
 });
 
 test("execution requires valid unique run and proposal UUIDs", () => {
@@ -916,11 +916,15 @@ test("execution requires valid unique run and proposal UUIDs", () => {
     runId: RUN_ID,
     proposalIds: [PROPOSAL_ID],
   }), { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID] });
+  assert.deepEqual(normalizeExecutePayload({
+    action: "execute_selected",
+    runId: RUN_ID,
+    proposalIds: [],
+  }), { action: "execute_selected", runId: RUN_ID, proposalIds: [] });
 
   for (const payload of [
     { action: "analyze_batch", runId: RUN_ID, proposalIds: [PROPOSAL_ID] },
     { action: "execute_selected", runId: "invalid", proposalIds: [PROPOSAL_ID] },
-    { action: "execute_selected", runId: RUN_ID, proposalIds: [] },
     { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID, PROPOSAL_ID] },
     { action: "execute_selected", runId: RUN_ID, proposalIds: ["invalid"] },
   ]) {
@@ -3516,6 +3520,86 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
   assert.doesNotMatch(JSON.stringify(response.body), /secret database diagnostic/);
 });
 
+test("execute_selected with zero proposals finalizes the ready manual run without executing proposals", async () => {
+  const calls = [];
+  const response = responseRecorder();
+  const readyRun = {
+    runId: RUN_ID,
+    trigger: "manual",
+    actor: "user@example.com",
+    status: "ready",
+    analysisCompletedAt: "2026-08-23T12:00:00.000Z",
+    finishedAt: null,
+    proposals: [{ id: PROPOSAL_ID, status: "proposed" }],
+  };
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      if (resource === "rpc/get_financial_reconciliation_automatic_run") return readyRun;
+      if (resource === "rpc/finish_financial_reconciliation_automatic_run") {
+        return {
+          ...readyRun,
+          status: "completed",
+          finishedAt: "2026-08-23T12:01:00.000Z",
+          proposals: [{ id: PROPOSAL_ID, status: "deselected", reason: "not_selected" }],
+        };
+      }
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: { action: "execute_selected", runId: RUN_ID, proposalIds: [] },
+    }, response);
+  });
+
+  assert.deepEqual(calls, [
+    {
+      resource: "rpc/get_financial_reconciliation_automatic_run",
+      options: { method: "POST", body: { p_run_id: RUN_ID } },
+    },
+    {
+      resource: "rpc/finish_financial_reconciliation_automatic_run",
+      options: { method: "POST", body: { p_run_id: RUN_ID } },
+    },
+  ]);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.run.status, "completed");
+  assert.equal(response.body.run.proposals[0].status, "deselected");
+  assert.deepEqual(response.body.outcomes, []);
+});
+
+test("execute_selected with zero proposals cannot finish an analysis still in progress", async () => {
+  const calls = [];
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      return {
+        runId: RUN_ID,
+        trigger: "manual",
+        actor: "user@example.com",
+        status: "analyzing",
+        analysisCompletedAt: null,
+        finishedAt: null,
+        proposals: [],
+      };
+    },
+  }), async (handler) => {
+    await handler({
+      method: "POST",
+      body: { action: "execute_selected", runId: RUN_ID, proposalIds: [] },
+    }, response);
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.body.error, /analysis.*ready/i);
+  assert.deepEqual(calls, [{
+    resource: "rpc/get_financial_reconciliation_automatic_run",
+    options: { method: "POST", body: { p_run_id: RUN_ID } },
+  }]);
+});
+
 test("execute_selected leaves a transport-uncertain selected proposal resumable", async () => {
   const calls = [];
   let runReads = 0;
@@ -3723,6 +3807,7 @@ test("manual automation canonicalizes valid UUID spellings and rejects case-vari
   });
   assert.equal(duplicateResponse.statusCode, 400);
   assert.equal(duplicateRpcCalled, false);
+  assert.match(duplicateResponse.body.error, /up to 100 unique proposal IDs/i);
 });
 
 test("automation handlers set Allow, reject invalid payloads before RPCs, and safely map RPC errors", async () => {

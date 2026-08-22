@@ -22793,7 +22793,7 @@ function renderFinancialReconciliationAutomation(focusProposalId = "") {
   if (els.financialReconciliationWorkbenchAutomationSelectAll) els.financialReconciliationWorkbenchAutomationSelectAll.disabled = analyzing || Boolean(pending) || !executable.length;
   if (els.financialReconciliationWorkbenchAutomationClearAll) els.financialReconciliationWorkbenchAutomationClearAll.disabled = analyzing || Boolean(pending) || !selectedCount;
   if (els.financialReconciliationWorkbenchAutomationExecute) {
-    els.financialReconciliationWorkbenchAutomationExecute.disabled = analyzing || Boolean(pending) || !selectedCount;
+    els.financialReconciliationWorkbenchAutomationExecute.disabled = analyzing || Boolean(pending) || !openRun;
     els.financialReconciliationWorkbenchAutomationExecute.textContent = pending === "execute" ? "Executing…" : `Execute selected (${selectedCount})`;
   }
 }
@@ -22867,12 +22867,10 @@ async function executeFinancialReconciliationAutomationSelection() {
   const proposalIds = [...new Set((Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
     .filter((proposal) => clean(proposal?.status) === "proposed" && automation.selectedProposalIds.has(clean(proposal.id)))
     .map((proposal) => clean(proposal.id)).filter(Boolean))];
-  if (!proposalIds.length) {
-    setFinancialReconciliationAutomationStatus("Select at least one executable proposal before executing.", "error");
-    return;
-  }
   automation.pendingAction = "execute";
-  setFinancialReconciliationAutomationStatus(`Executing ${proposalIds.length} selected proposal${proposalIds.length === 1 ? "" : "s"}…`);
+  setFinancialReconciliationAutomationStatus(proposalIds.length
+    ? `Executing ${proposalIds.length} selected proposal${proposalIds.length === 1 ? "" : "s"}…`
+    : "Finishing review without executing proposals…");
   renderFinancialReconciliationAutomation();
   try {
     const result = await api("/api/reconciliation-automation", {

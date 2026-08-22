@@ -104,7 +104,7 @@ async function executeSelected(req, body) {
     proposalIds: normalizedInput.proposalIds.map((proposalId) => proposalId.toLowerCase()),
   };
   if (new Set(input.proposalIds).size !== input.proposalIds.length) {
-    throw inputError("Proposal IDs must contain between 1 and 100 unique proposal IDs.");
+    throw inputError("Proposal IDs must contain up to 100 unique proposal IDs.");
   }
   const actor = actorFor(auth);
   const outcomes = [];
@@ -138,6 +138,16 @@ async function executeSelected(req, body) {
         return outcome;
       }),
     };
+  }
+  if (!input.proposalIds.length) {
+    if (!run.analysisCompletedAt || cleanText(run.status).toLowerCase() === "analyzing") {
+      throw inputError("Automatic analysis must be ready before it can be finished.");
+    }
+    const finalizedRun = await restQuery("rpc/finish_financial_reconciliation_automatic_run", {
+      method: "POST",
+      body: { p_run_id: input.runId },
+    });
+    return { run: toAutomationPublicResult(finalizedRun), outcomes };
   }
 
   for (const proposalId of input.proposalIds) {

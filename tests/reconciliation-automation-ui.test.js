@@ -934,6 +934,14 @@ test("analysis progress renders processed and total records while review control
   assert.equal(els.financialReconciliationWorkbenchAutomationExecute.disabled, true);
 });
 
+test("ready analysis enables Execute selected with zero proposals selected", () => {
+  const run = workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "proposed" }]);
+  const { els } = renderAutomationWorkbench(run, new Set());
+
+  assert.equal(els.financialReconciliationWorkbenchAutomationExecute.disabled, false);
+  assert.equal(els.financialReconciliationWorkbenchAutomationExecute.textContent, "Execute selected (0)");
+});
+
 test("monthly analysis progress is expressed in calendar months", () => {
   const progressLabel = new Function(
     `${appFunctionSource("financialReconciliationAutomationProgressLabel")}
@@ -2876,7 +2884,7 @@ test("select-all and clear-all change executable proposals only", () => {
   assert.deepEqual([...current.automation.selectedProposalIds], []);
 });
 
-test("Execute selected copies checked IDs once, is pending-safe, refreshes history, and blocks zero selection", async () => {
+test("Execute selected copies checked IDs once, is pending-safe, and refreshes history", async () => {
   const proposals = [WORKBENCH_PROPOSAL_1, WORKBENCH_PROPOSAL_2, WORKBENCH_PROPOSAL_3]
     .map((id) => ({ id, status: "proposed" }));
   const current = {
@@ -2961,9 +2969,64 @@ test("Execute selected copies checked IDs once, is pending-safe, refreshes histo
   assert.match(statuses.at(-1).message, /1 execution attempt failure/i);
   assert.equal(statuses.at(-1).tone, "error");
 
+});
+
+test("Execute selected with zero finalizes the reviewed run without proposal execution", async () => {
+  const current = {
+    loaded: true,
+    automation: {
+      run: workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "proposed" }]),
+      selectedProposalIds: new Set(),
+      pendingAction: "",
+    },
+  };
+  const finalizedRun = {
+    ...workbenchRun([{ id: WORKBENCH_PROPOSAL_1, status: "deselected", reason: "not_selected" }]),
+    status: "completed",
+    finishedAt: "2026-08-23T12:00:00.000Z",
+  };
+  const calls = [];
+  const execute = new Function(
+    "financialReconciliationState",
+    "api",
+    "clean",
+    "renderFinancialReconciliationAutomation",
+    "setFinancialReconciliationAutomationStatus",
+    "loadFinancialReconciliationWorkspace",
+    "showToast",
+    "financialReconciliationAutomationOutcomeCounts",
+    `${appFunctionSource("executeFinancialReconciliationAutomationSelection").replace(/^function /, "async function ")}
+     return executeFinancialReconciliationAutomationSelection;`,
+  )(
+    () => current,
+    async (url, options) => {
+      calls.push({ url, options });
+      return { run: finalizedRun, outcomes: [] };
+    },
+    (value) => String(value ?? "").trim(),
+    () => {},
+    () => {},
+    async () => true,
+    () => {},
+    new Function(
+      "clean",
+      `${appFunctionSource("financialReconciliationAutomationOutcomeCounts")}
+       return financialReconciliationAutomationOutcomeCounts;`,
+    )((value) => String(value ?? "").trim()),
+  );
+
   await execute();
-  assert.equal(calls.length, 1);
-  assert.match(statuses.at(-1).message, /select at least one executable proposal/i);
+
+  assert.deepEqual(calls, [{
+    url: "/api/reconciliation-automation",
+    options: {
+      method: "POST",
+      body: { action: "execute_selected", runId: WORKBENCH_RUN_ID, proposalIds: [] },
+    },
+  }]);
+  assert.equal(current.automation.run.status, "completed");
+  assert.equal(current.automation.run.proposals[0].status, "deselected");
+  assert.deepEqual([...current.automation.selectedProposalIds], []);
 });
 
 test("execution reports a shared-history refresh failure instead of a false success", async () => {
