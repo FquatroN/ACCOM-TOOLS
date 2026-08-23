@@ -3291,7 +3291,16 @@ function task7Proposal(ruleKey, proposalId, overrides = {}) {
     items: [{ privateItem: "must-never-render" }],
     candidateGroups: [],
     summarySnapshot: bank
-      ? { classification: "proposed", reason: "unique_qualifying_combination", candidateCount: 2 }
+      ? {
+        classification: "proposed",
+        reason: "unique_qualifying_combination",
+        candidateCount: 2,
+        bankAnchorDate: "2026-07-19",
+        sourceCount: 2,
+        sourceTotal: "-150.00",
+        destinationCount: 1,
+        destinationTotal: "150.00",
+      }
       : {
         calendarMonth: "2026-07-01",
         sourceCount: 2,
@@ -3431,7 +3440,6 @@ test("Task 7 renders Bank Reservation and Adyen proposal memberships as escaped,
   const bankMemberships = {
     [`${bankProposal.id}:source`]: {
       role: "source", open: true, loaded: true, loading: false, error: "", totalCount: 2,
-      sourceCount: 2, sourceTotal: "-150.00", destinationCount: 1, destinationTotal: "150.00",
       members: [
         task7Member("source", 2, { ruleKey: TASK7_BANK_RULE_KEY }),
         task7Member("source", 1, { ruleKey: TASK7_BANK_RULE_KEY }),
@@ -3439,7 +3447,6 @@ test("Task 7 renders Bank Reservation and Adyen proposal memberships as escaped,
     },
     [`${bankProposal.id}:destination`]: {
       role: "destination", open: true, loaded: true, loading: false, error: "", totalCount: 1,
-      sourceCount: 2, sourceTotal: "-150.00", destinationCount: 1, destinationTotal: "150.00",
       members: [task7Member("destination", 1, { ruleKey: TASK7_BANK_RULE_KEY })],
     },
   };
@@ -3461,6 +3468,8 @@ test("Task 7 renders Bank Reservation and Adyen proposal memberships as escaped,
 
   assert.match(bankMarkup, /financial-reconciliation-automation-proposal--grouped/);
   assert.match(bankMarkup, /FDM sources \(#2; -150\.00 €\)[\s\S]*Bank destination \(#1; 150\.00 €\)/);
+  assert.match(bankMarkup, /Bank anchor 2026-07-19/);
+  assert.doesNotMatch(bankMarkup, /Bank anchor 2026-07-04/);
   assert.ok(bankMarkup.indexOf("FDM source 1") < bankMarkup.indexOf("FDM source 2"));
   assert.match(bankMarkup, /Bank destination/);
   assert.match(bankMarkup, /Bank &lt;Transfer&gt;/);
@@ -3475,14 +3484,56 @@ test("Task 7 renders Bank Reservation and Adyen proposal memberships as escaped,
   assert.ok(adyenMarkup.indexOf("Bank source 1") < adyenMarkup.indexOf("Bank source 2"));
   assert.ok(adyenMarkup.indexOf("FDM destination 1") < adyenMarkup.indexOf("FDM destination 2"));
 
-  const ambiguous = proposalMarkup({ ...bankProposal, status: "ambiguous", reason: "candidate_limit" }, task7Run(bankProposal), [task7BankReservationRule()], new Set(), false, bankMemberships);
-  assert.doesNotMatch(ambiguous, /data-financial-reconciliation-automation-proposal-id=|name="automatic-proposal-/);
+  for (const [reason, label] of [
+    ["multiple_qualifying_combinations", "Multiple qualifying combinations"],
+    ["overlapping_records", "A destination record overlaps another proposal"],
+  ]) {
+    const ambiguous = proposalMarkup(
+      { ...bankProposal, status: "ambiguous", reason },
+      task7Run(bankProposal),
+      [task7BankReservationRule()],
+      new Set(),
+      false,
+      bankMemberships,
+    );
+    assert.match(ambiguous, new RegExp(label));
+    assert.doesNotMatch(ambiguous, /data-financial-reconciliation-automation-proposal-id=|name="automatic-proposal-/);
+    assert.doesNotMatch(ambiguous, /must-never-render|privateAuditField|<description 1>|Bank <Transfer>/);
+  }
 
   const visible = compileVisibleAutomationProposals();
   const completedRun = task7Run(adyenProposal);
   completedRun.finishedAt = "2026-08-23T12:00:00.000Z";
   completedRun.proposals = [{ ...adyenProposal, status: "completed" }, { ...adyenProposal, id: "other-adyen", status: "ambiguous", reason: "monthly_difference_exceeded" }];
   assert.deepEqual(visible(completedRun).map((proposal) => proposal.id), [adyenProposal.id]);
+});
+
+test("Task 7 shows Bank immutable aggregates and the Bank anchor before either member page is loaded", () => {
+  const proposalMarkup = compileMonthlyProposalMarkup();
+  const bankProposal = task7Proposal(TASK7_BANK_RULE_KEY, TASK7_BANK_PROPOSAL_ID);
+  const memberships = {
+    [`${bankProposal.id}:source`]: {
+      role: "source", members: [], totalCount: 0,
+      loaded: false, loading: false, error: "", open: false,
+    },
+    [`${bankProposal.id}:destination`]: {
+      role: "destination", members: [], totalCount: 0,
+      loaded: false, loading: false, error: "", open: false,
+    },
+  };
+
+  const markup = proposalMarkup(
+    bankProposal,
+    task7Run(bankProposal),
+    [task7BankReservationRule()],
+    new Set([bankProposal.id]),
+    false,
+    memberships,
+  );
+
+  assert.match(markup, /FDM sources \(#2; -150\.00 €\)[\s\S]*Bank destination \(#1; 150\.00 €\)/);
+  assert.match(markup, /Bank anchor 2026-07-19/);
+  assert.doesNotMatch(markup, /Bank anchor 2026-07-04|#0; 0\.00 €/);
 });
 
 test("Task 7 fetches ordered Bank members through stable pages and recovers a failed page without exposing raw snapshots", async () => {

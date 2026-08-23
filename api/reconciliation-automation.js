@@ -60,7 +60,10 @@ const PROPOSAL_STATUSES = new Set([
   "proposed", "ambiguous", "skipped", "deselected", "executing", "completed", "stale", "failed",
 ]);
 const GROUPED_BASE_SNAPSHOT_FIELDS = new Set(["sourceType", "sourceId", "sourceDate"]);
-const BANK_GROUPED_SUMMARY_FIELDS = new Set(["classification", "reason", "candidateCount"]);
+const BANK_GROUPED_SUMMARY_FIELDS = new Set([
+  "classification", "reason", "candidateCount", "bankAnchorDate",
+  "sourceCount", "sourceTotal", "destinationCount", "destinationTotal",
+]);
 const MONTHLY_GROUPED_SUMMARY_FIELDS = new Set([
   "calendarMonth", "sourceCount", "sourceTotal", "destinationCount", "destinationTotal",
 ]);
@@ -299,7 +302,14 @@ function requireGroupedSummary(value) {
     if (typeof value.summarySnapshot.classification !== "string"
       || typeof value.summarySnapshot.reason !== "string"
       || !Number.isSafeInteger(value.summarySnapshot.candidateCount)
-      || value.summarySnapshot.candidateCount < 0) failUnexpected();
+      || value.summarySnapshot.candidateCount < 0
+      || !DATE_PATTERN.test(value.summarySnapshot.bankAnchorDate)
+      || !Number.isSafeInteger(value.summarySnapshot.sourceCount)
+      || value.summarySnapshot.sourceCount < 0
+      || !isDecimal(value.summarySnapshot.sourceTotal)
+      || !Number.isSafeInteger(value.summarySnapshot.destinationCount)
+      || value.summarySnapshot.destinationCount < 0
+      || !isDecimal(value.summarySnapshot.destinationTotal)) failUnexpected();
     return;
   }
   requireExactFields(value.summarySnapshot, MONTHLY_GROUPED_SUMMARY_FIELDS);

@@ -22567,8 +22567,10 @@ function financialReconciliationAutomationReasonLabel(reason) {
   const labels = {
     no_qualifying_combination: "No qualifying destination combination",
     multiple_combinations: "Multiple qualifying combinations",
+    multiple_qualifying_combinations: "Multiple qualifying combinations",
     candidate_limit: "Too many qualifying candidates",
     cross_base_overlap: "A destination record overlaps another proposal",
+    overlapping_records: "A destination record overlaps another proposal",
     source_snapshot_changed: "Source details changed after analysis",
     rule_version_changed: "The rule changed after analysis",
     rule_snapshot_changed: "Rule configuration changed after analysis",
@@ -22685,10 +22687,18 @@ function financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, 
   const summaryCount = summaryCountValue == null ? Number.NaN : Number(summaryCountValue);
   const stateTotal = stateTotalValue == null ? Number.NaN : Number(stateTotalValue);
   const summaryTotal = summaryTotalValue == null ? Number.NaN : Number(summaryTotalValue);
-  const count = Math.max(0, Number.isFinite(stateCount) ? stateCount : (Number.isFinite(summaryCount) ? summaryCount : 0));
-  const total = Number.isFinite(stateTotal) ? stateTotal : (Number.isFinite(summaryTotal) ? summaryTotal : 0);
+  const count = Number.isSafeInteger(stateCount) && stateCount >= 0
+    ? stateCount
+    : (Number.isSafeInteger(summaryCount) && summaryCount >= 0 ? summaryCount : null);
+  const total = Number.isFinite(stateTotal)
+    ? stateTotal
+    : (Number.isFinite(summaryTotal) ? summaryTotal : null);
   const members = Array.isArray(state.members) ? state.members : [];
-  const totalCount = Math.max(count, Number(state.totalCount) || 0);
+  const knownPageCount = Number(state.totalCount);
+  const totalCount = Math.max(
+    Number.isSafeInteger(count) ? count : 0,
+    Number.isSafeInteger(knownPageCount) && knownPageCount >= 0 ? knownPageCount : 0,
+  );
   const loading = state.loading === true;
   const error = clean(state.error);
   const orderedMembers = members.slice().sort((left, right) => (
@@ -22713,7 +22723,10 @@ function financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, 
   const loadMore = state.loaded === true && members.length < totalCount
     ? `<div class="financial-reconciliation-automation-member-actions"><button type="button" class="ghost financial-reconciliation-automation-member-load-more" data-financial-reconciliation-automation-member-more data-proposal-id="${escape(clean(proposalId))}" data-role="${escape(role)}" ${loading ? "disabled" : ""}>${loading ? "Loading…" : "Load more"}</button></div>`
     : "";
-  return `<summary>${escape(presentation.groupLabel)} (#${escape(count)}; ${escape(formatMoney(total))})</summary>
+  const aggregateLabel = Number.isSafeInteger(count) && Number.isFinite(total)
+    ? `#${count}; ${formatMoney(total)}`
+    : "Aggregate unavailable";
+  return `<summary>${escape(presentation.groupLabel)} (${escape(aggregateLabel)})</summary>
     <div class="financial-reconciliation-automation-member-list">${memberRows}${status}${loadMore}</div>`;
 }
 
@@ -22739,7 +22752,7 @@ function financialReconciliationAutomationMonthlyProposalMarkup(proposal, run, r
   const summary = value.summarySnapshot && typeof value.summarySnapshot === "object" ? value.summarySnapshot : {};
   const rawMonth = clean(summary.calendarMonth) || clean(value.groupingKey).split(":").at(-1) || "-";
   const month = rawMonth.match(/^(\d{4}-(?:0[1-9]|1[0-2]))(?:-01)?$/)?.[1] || rawMonth;
-  const bankAnchor = formatDateOnly(clean(value.baseSnapshot?.sourceDate) || rawMonth) || rawMonth;
+  const bankAnchor = formatDateOnly(clean(summary.bankAnchorDate)) || "Unavailable";
   const summaryId = `financial-reconciliation-automation-proposal-summary-${proposalIdToken}`;
   const reasonId = `financial-reconciliation-automation-proposal-reason-${proposalIdToken}`;
   const reason = executable || !clean(value.reason) ? "" : `<p id="${escape(reasonId)}" class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;

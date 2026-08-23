@@ -1405,6 +1405,10 @@ declare
   v_inserted boolean;
   v_expected_source_count integer;
   v_inserted_source_count integer;
+  v_source_count integer;
+  v_source_total numeric(14,2);
+  v_destination_count integer;
+  v_destination_total numeric(14,2);
   v_page_count integer := 0;
   v_population_total integer := 0;
   v_population_max_ordinal integer;
@@ -1706,6 +1710,29 @@ begin
       and bank.data = v_bank.bank_date
       and bank.montante = v_bank.bank_amount;
 
+    with selected_ids as (
+      select distinct selected.id
+      from (
+        select fdm_id.value::uuid as id
+        from jsonb_array_elements(v_candidate_groups) candidate_group(value)
+        cross join lateral jsonb_array_elements_text(
+          candidate_group.value->'fdmIds'
+        ) fdm_id(value)
+        union all
+        select v_canonical_fdm_id
+      ) selected
+    )
+    select count(*)::integer, sum(fdm.amount)::numeric(14,2)
+    into v_source_count, v_source_total
+    from public.import_fdm_accounts fdm
+    join selected_ids selected on selected.id = fdm.id;
+    v_destination_count := 1;
+    v_destination_total := v_bank.bank_amount;
+    if v_source_count is null or v_source_count < 1
+      or v_source_total is null or v_destination_total is null then
+      raise exception 'Automatic Bank Reservation immutable proposal totals are invalid.';
+    end if;
+
     v_signature := public.financial_reconciliation_extension_sha256(
       jsonb_build_object(
         'ruleKey', 'fdm_bank_transfer_cgd_bank_statement_combination',
@@ -1727,6 +1754,11 @@ begin
       'candidateGroups', v_candidate_groups,
       'classification', v_classification,
       'reason', v_reason,
+      'bankAnchorDate', v_bank.bank_date,
+      'sourceCount', v_source_count,
+      'sourceTotal', v_source_total,
+      'destinationCount', v_destination_count,
+      'destinationTotal', v_destination_total,
       'evaluatedStates', (v_groups->>'evaluatedStates')::integer,
       'candidateCount', (v_groups->>'candidateCount')::integer,
       'operator', v_operator,
@@ -1833,8 +1865,20 @@ begin
           limit 1) is distinct from v_canonical_fdm_id
         or (select count(*)
             from public.financial_reconciliation_automatic_proposal_memberships member
+          where member.proposal_id = v_proposal_id
+            and member.role = 'destination') <> v_destination_count
+        or (select count(*)::integer
+            from public.financial_reconciliation_automatic_proposal_memberships member
             where member.proposal_id = v_proposal_id
-              and member.role = 'destination') <> 1 then
+              and member.role = 'source') <> v_source_count
+        or (select sum(member.amount)::numeric(14,2)
+            from public.financial_reconciliation_automatic_proposal_memberships member
+            where member.proposal_id = v_proposal_id
+              and member.role = 'source') is distinct from v_source_total
+        or (select sum(member.amount)::numeric(14,2)
+            from public.financial_reconciliation_automatic_proposal_memberships member
+            where member.proposal_id = v_proposal_id
+              and member.role = 'destination') is distinct from v_destination_total then
         raise exception
           'Automatic Bank Reservation proposal and memberships diverged.';
       end if;
@@ -5665,7 +5709,40 @@ begin
         jsonb_build_object(
           'classification', proposal.summary_snapshot->'classification',
           'reason', proposal.summary_snapshot->'reason',
-          'candidateCount', proposal.summary_snapshot->'candidateCount'
+          'candidateCount', proposal.summary_snapshot->'candidateCount',
+          'bankAnchorDate', coalesce(
+            proposal.summary_snapshot->'bankAnchorDate',
+            (select to_jsonb(member.source_date)
+             from public.financial_reconciliation_automatic_proposal_memberships member
+             where member.proposal_id = proposal.id
+               and member.role = 'destination'
+             order by member.ordinal
+             limit 1)
+          ),
+          'sourceCount', coalesce(
+            proposal.summary_snapshot->'sourceCount',
+            (select to_jsonb(count(*)::integer)
+             from public.financial_reconciliation_automatic_proposal_memberships member
+             where member.proposal_id = proposal.id and member.role = 'source')
+          ),
+          'sourceTotal', coalesce(
+            proposal.summary_snapshot->'sourceTotal',
+            (select to_jsonb(coalesce(sum(member.amount), 0::numeric))
+             from public.financial_reconciliation_automatic_proposal_memberships member
+             where member.proposal_id = proposal.id and member.role = 'source')
+          ),
+          'destinationCount', coalesce(
+            proposal.summary_snapshot->'destinationCount',
+            (select to_jsonb(count(*)::integer)
+             from public.financial_reconciliation_automatic_proposal_memberships member
+             where member.proposal_id = proposal.id and member.role = 'destination')
+          ),
+          'destinationTotal', coalesce(
+            proposal.summary_snapshot->'destinationTotal',
+            (select to_jsonb(coalesce(sum(member.amount), 0::numeric))
+             from public.financial_reconciliation_automatic_proposal_memberships member
+             where member.proposal_id = proposal.id and member.role = 'destination')
+          )
         )
       when (proposal.rule_key, proposal.rule_version) in (
         ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),

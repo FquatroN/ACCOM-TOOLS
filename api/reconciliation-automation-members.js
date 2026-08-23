@@ -114,6 +114,11 @@ function shapeSummary(ruleKey, summary) {
       classification: safeOptionalString(pickOwn(summary, "classification")),
       reason: safeOptionalString(pickOwn(summary, "reason")),
       candidateCount: safeOptionalCount(pickOwn(summary, "candidateCount", "candidate_count")),
+      bankAnchorDate: safeOptionalString(pickOwn(summary, "bankAnchorDate", "bank_anchor_date")),
+      sourceCount: safeOptionalCount(pickOwn(summary, "sourceCount", "source_count")),
+      sourceTotal: safeOptionalDecimal(pickOwn(summary, "sourceTotal", "source_total")),
+      destinationCount: safeOptionalCount(pickOwn(summary, "destinationCount", "destination_count")),
+      destinationTotal: safeOptionalDecimal(pickOwn(summary, "destinationTotal", "destination_total")),
     });
   }
   return compactPublicFields({

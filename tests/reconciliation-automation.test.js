@@ -409,7 +409,16 @@ function manualProposal(id = PROPOSAL_ID, overrides = {}) {
   const baseSourceId = uuidFor(700);
   const baseSourceDate = "2026-08-23";
   const summarySnapshot = ruleKey === BANK_RESERVATION_RULE_KEY
-    ? { classification: status, reason, candidateCount: 0 }
+    ? {
+      classification: status,
+      reason,
+      candidateCount: 0,
+      bankAnchorDate: "2026-08-24",
+      sourceCount: 2,
+      sourceTotal: "-150.00",
+      destinationCount: 1,
+      destinationTotal: "150.00",
+    }
     : ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
       ? {
         calendarMonth: "2026-08-01",
@@ -3946,6 +3955,11 @@ test("grouped member paging explicitly shapes summary and source rows without pr
         classification: "proposed",
         reason: "",
         candidateCount: 10,
+        bankAnchorDate: "2026-08-23",
+        sourceCount: 1,
+        sourceTotal: -100,
+        destinationCount: 1,
+        destinationTotal: 100,
         candidateGroups: [{ sourceId: uuidFor(995) }],
         privateDiagnostic: "hidden",
       },
@@ -3989,6 +4003,11 @@ test("grouped member paging explicitly shapes summary and source rows without pr
     classification: "proposed",
     reason: "",
     candidateCount: 10,
+    bankAnchorDate: "2026-08-23",
+    sourceCount: 1,
+    sourceTotal: -100,
+    destinationCount: 1,
+    destinationTotal: 100,
   });
   assert.deepEqual(response.body.members[0].rowSnapshot, {
     id: uuidFor(996),
@@ -4815,6 +4834,44 @@ test("grouped Bank runs cannot bypass paged memberships through evidence or nest
   assert.equal(response.statusCode, 500);
   assert.deepEqual(response.body, { error: "Unexpected server error." });
   assert.doesNotMatch(JSON.stringify(response.body), new RegExp(uuidFor(2001)));
+});
+
+test("Bank grouped runs expose only immutable aggregate scalars and their Bank anchor before member paging", async () => {
+  const proposal = manualProposal(PROPOSAL_ID, {
+    baseSourceDate: "2026-08-23",
+    baseSnapshot: {
+      sourceType: "import_fdm_accounts",
+      sourceId: uuidFor(700),
+      sourceDate: "2026-08-23",
+    },
+    summarySnapshot: {
+      classification: "proposed",
+      reason: "",
+      candidateCount: 2,
+      bankAnchorDate: "2026-08-24",
+      sourceCount: 2,
+      sourceTotal: "-150.00",
+      destinationCount: 1,
+      destinationTotal: "150.00",
+    },
+  });
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => manualRun({
+      ruleKey: BANK_RESERVATION_RULE_KEY,
+      status: "ready",
+      proposals: [proposal],
+    }),
+  }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.proposals[0].summarySnapshot, proposal.summarySnapshot);
+  assert.equal(response.body.proposals[0].baseSnapshot.sourceDate, "2026-08-23");
+  assert.equal(response.body.proposals[0].summarySnapshot.bankAnchorDate, "2026-08-24");
+  assert.doesNotMatch(
+    JSON.stringify(response.body.proposals[0].summarySnapshot),
+    /rowSnapshot|candidateGroups|bankAnchor(?!Date)/i,
+  );
 });
 
 test("grouped runs fail closed on unallowlisted summary snapshot payloads", async () => {
@@ -6925,8 +6982,14 @@ test("Task 6 installs RPC-only manual, membership, serializer, and seven-child s
   assert.match(runSerializer, /'evidence',[\s\S]*fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*'\[\]'::jsonb/i);
   assert.match(
     runSerializer,
-    /'summarySnapshot',\s*case[\s\S]*fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*then\s*jsonb_build_object\(\s*'classification', proposal\.summary_snapshot->'classification',\s*'reason', proposal\.summary_snapshot->'reason',\s*'candidateCount', proposal\.summary_snapshot->'candidateCount'/i,
+    /'summarySnapshot',\s*case[\s\S]*fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*then\s*jsonb_build_object\(\s*'classification', proposal\.summary_snapshot->'classification',\s*'reason', proposal\.summary_snapshot->'reason',\s*'candidateCount', proposal\.summary_snapshot->'candidateCount',\s*'bankAnchorDate',\s*coalesce\(\s*proposal\.summary_snapshot->'bankAnchorDate'/i,
   );
+  for (const field of ["sourceCount", "sourceTotal", "destinationCount", "destinationTotal"]) {
+    assert.match(
+      runSerializer,
+      new RegExp(`'${field}',\\s*coalesce\\(\\s*proposal\\.summary_snapshot->'${field}'`, "i"),
+    );
+  }
   assert.match(
     runSerializer,
     /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*then jsonb_build_object\(\s*'calendarMonth', proposal\.summary_snapshot->'calendarMonth',\s*'sourceCount', proposal\.summary_snapshot->'sourceCount',\s*'sourceTotal', proposal\.summary_snapshot->'sourceTotal',\s*'destinationCount', proposal\.summary_snapshot->'destinationCount',\s*'destinationTotal', proposal\.summary_snapshot->'destinationTotal'/i,
