@@ -45,6 +45,16 @@ const CATALOG_FIELDS = new Set([
   "maxDifferenceDays", "priority", "operator",
 ]);
 const GROUPED_RULES = new Set([MONTHLY_INCOME_RULE_KEY, BANK_RESERVATION_RULE_KEY, ADYEN_MONTHLY_RULE_KEY]);
+const CLASSIC_RULES = new Set([
+  BANK_STATEMENT_RULE_KEY,
+  CREDIT_CARD_RULE_KEY,
+  BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+  CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+]);
+const AMOUNT_ONLY_RULES = new Set([
+  BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+  CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+]);
 const RUN_STATUSES = new Set(["analyzing", "ready", "running", "completed", "partial", "failed"]);
 const PROPOSAL_STATUSES = new Set([
   "proposed", "ambiguous", "skipped", "deselected", "executing", "completed", "stale", "failed",
@@ -251,6 +261,7 @@ function requireRuleValues(rule, label) {
   const expectedOperator = rule.ruleKey === MONTHLY_INCOME_RULE_KEY
     || rule.ruleKey === ADYEN_MONTHLY_RULE_KEY ? "-" : "+";
   if (rule.operator !== expectedOperator
+    || (AMOUNT_ONLY_RULES.has(rule.ruleKey) && Number(rule.differenceAllowed) !== 0)
     || (rule.ruleKey === BANK_RESERVATION_RULE_KEY
       && (Number(rule.differenceAllowed) !== 0
         || rule.maxDifferenceDays < 0 || rule.maxDifferenceDays > 90))
@@ -303,13 +314,16 @@ function requireGroupedSummary(value) {
 function requireProposal(value, run) {
   requireExactFields(value, PROPOSAL_FIELDS);
   requireManagedTuple(value.ruleKey, value.ruleVersion);
+  const groupingKeyIsValid = GROUPED_RULES.has(value.ruleKey)
+    ? typeof value.groupingKey === "string" && Boolean(value.groupingKey)
+    : CLASSIC_RULES.has(value.ruleKey) && value.groupingKey === null;
   if (!UUID_PATTERN.test(value.id) || value.runId !== run.runId
     || value.ruleKey !== run.definitions[0].ruleKey || value.ruleVersion !== run.definitions[0].ruleVersion
     || value.displayName !== AUTOMATIC_RULE_DISPLAY_NAMES[value.ruleKey]
     || typeof value.baseSourceType !== "string" || !value.baseSourceType
     || !UUID_PATTERN.test(value.baseSourceId) || !DATE_PATTERN.test(value.baseSourceDate)
     || !isPlainRecord(value.baseSnapshot) || !Array.isArray(value.items) || !Array.isArray(value.evidence)
-    || !Array.isArray(value.candidateGroups) || typeof value.groupingKey !== "string" || !value.groupingKey
+    || !Array.isArray(value.candidateGroups) || !groupingKeyIsValid
     || !isPlainRecord(value.summarySnapshot) || !isDecimal(value.calculatedDifference)
     || !isDecimal(value.allowedDifference) || !PROPOSAL_STATUSES.has(value.status)
     || typeof value.reason !== "string" || typeof value.signature !== "string" || !value.signature
@@ -353,8 +367,9 @@ function requireManualRun(value, expected = {}, allowNull = false) {
   if (destination !== MANAGED_RULE_CONTRACTS[run.definitions[0].ruleKey]?.destinationSourceType) {
     failUnexpected();
   }
-  requireExactFields(run.counts, COUNT_FIELDS);
-  if (Object.values(run.counts).some((count) => !Number.isSafeInteger(count) || count < 0)) failUnexpected();
+  for (const [key, count] of Object.entries(run.counts)) {
+    if (!COUNT_FIELDS.has(key) || !Number.isSafeInteger(count) || count < 0) failUnexpected();
+  }
   const cursorPair = run.analysisCursorDate === null && run.analysisCursorId === null;
   if (!cursorPair && (!DATE_PATTERN.test(run.analysisCursorDate) || !UUID_PATTERN.test(run.analysisCursorId))) {
     failUnexpected();

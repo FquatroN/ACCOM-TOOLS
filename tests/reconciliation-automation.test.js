@@ -4360,6 +4360,167 @@ test("manual run RPCs fail closed on skeletal, foreign, mismatched, private, or 
   }
 });
 
+test("manual analysis accepts the authoritative empty count shape for a new classic run", async () => {
+  const response = responseRecorder();
+  const newRun = manualRun({
+    ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    counts: {},
+  });
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => newRun,
+  }), async (handler) => handler({
+    method: "POST",
+    body: {
+      action: "analyze_rule",
+      ruleKeys: [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY],
+      clientRequestId: REQUEST_ID,
+    },
+  }, response));
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.counts, {});
+});
+
+test("manual GET and continuation accept classic null groups with analysis count subsets", async () => {
+  const classic = manualRun({
+    ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    status: "ready",
+    counts: { bases: 1, proposed: 1, ambiguous: 0, skipped: 0 },
+    proposals: [manualProposal(PROPOSAL_ID, {
+      ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    })],
+  });
+  for (const request of [
+    { method: "GET", query: { run_id: RUN_ID } },
+    { method: "POST", body: { action: "continue_analysis", runId: RUN_ID } },
+  ]) {
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => classic,
+    }), async (handler) => handler(request, response));
+    assert.equal(response.statusCode, 200, JSON.stringify(request));
+    assert.deepEqual(response.body.counts, { bases: 1, proposed: 1, ambiguous: 0, skipped: 0 });
+    assert.equal(response.body.proposals[0].groupingKey, null);
+  }
+});
+
+test("manual retry and finalization accept classic null groups with terminal count shapes", async () => {
+  const terminalAnalysis = manualRun({
+    ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    status: "completed",
+    counts: { bases: 1, proposed: 0, ambiguous: 1, skipped: 0 },
+    proposals: [manualProposal(PROPOSAL_ID, {
+      ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+      status: "ambiguous",
+      reason: "multiple_matching_candidates",
+    })],
+  });
+  const retryResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => terminalAnalysis,
+  }), async (handler) => handler({
+    method: "POST",
+    body: { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID] },
+  }, retryResponse));
+  assert.equal(retryResponse.statusCode, 200);
+  assert.equal(retryResponse.body.run.proposals[0].groupingKey, null);
+  assert.deepEqual(retryResponse.body.run.counts, { bases: 1, proposed: 0, ambiguous: 1, skipped: 0 });
+
+  const ready = manualRun({
+    ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    status: "ready",
+    counts: { bases: 1, proposed: 1, ambiguous: 0, skipped: 0 },
+    proposals: [manualProposal(PROPOSAL_ID, {
+      ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    })],
+  });
+  const finalized = manualRun({
+    ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    status: "completed",
+    counts: {
+      bases: 1, proposed: 0, ambiguous: 0, skipped: 0, deselected: 1,
+      executing: 0, completed: 0, stale: 0, failed: 0,
+    },
+    proposals: [manualProposal(PROPOSAL_ID, {
+      ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+      status: "deselected",
+      reason: "not_selected",
+    })],
+  });
+  let reads = 0;
+  const finalizeResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource) => {
+      if (resource === "rpc/get_financial_reconciliation_automatic_run") {
+        reads += 1;
+        return ready;
+      }
+      if (resource === "rpc/finish_financial_reconciliation_automatic_run") return finalized;
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => handler({
+    method: "POST",
+    body: { action: "execute_selected", runId: RUN_ID, proposalIds: [] },
+  }, finalizeResponse));
+  assert.equal(reads, 1);
+  assert.equal(finalizeResponse.statusCode, 200);
+  assert.equal(finalizeResponse.body.run.proposals[0].groupingKey, null);
+  assert.equal(finalizeResponse.body.run.counts.deselected, 1);
+});
+
+test("manual validators reject malformed counts and invalid classic or grouped grouping keys", async () => {
+  const cases = [
+    ["unknown count", manualRun({ counts: { bases: 1, rawRows: 0 } })],
+    ["non-integer count", manualRun({ counts: { bases: 1, proposed: 0, ambiguous: 0, skipped: "0" } })],
+    ["classic non-null grouping", manualRun({
+      ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+      status: "ready",
+      proposals: [manualProposal(PROPOSAL_ID, {
+        ruleKey: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+        groupingKey: "unexpected-classic-group",
+      })],
+    })],
+    ["grouped null grouping", manualRun({
+      ruleKey: BANK_RESERVATION_RULE_KEY,
+      status: "ready",
+      proposals: [manualProposal(PROPOSAL_ID, { groupingKey: null })],
+    })],
+  ];
+  for (const [name, run] of cases) {
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => run,
+    }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+  }
+});
+
+test("manual catalog and run snapshots reject nonzero amount-only difference allowed", async () => {
+  for (const ruleKey of [
+    BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
+    CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
+  ]) {
+    const malformedRun = manualRun({
+      ruleKey,
+      status: "ready",
+      definitions: [{ ...manualDefinition(ruleKey), differenceAllowed: 0.01 }],
+    });
+    const runResponse = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => malformedRun,
+    }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, runResponse));
+    assert.equal(runResponse.statusCode, 500, `${ruleKey} run`);
+    assert.deepEqual(runResponse.body, { error: "Unexpected server error." }, `${ruleKey} run`);
+
+    const catalogResponse = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => ({ rules: [catalogRule(ruleKey, 1, { differenceAllowed: 0.01 })] }),
+    }), async (handler) => handler({ method: "GET", query: { view: "rules" } }, catalogResponse));
+    assert.equal(catalogResponse.statusCode, 500, `${ruleKey} catalog`);
+    assert.deepEqual(catalogResponse.body, { error: "Unexpected server error." }, `${ruleKey} catalog`);
+  }
+});
+
 test("manual runs preserve schema-authorized ambiguous and skipped proposal statuses", async () => {
   for (const [ruleKey, status] of [
     [BANK_RESERVATION_RULE_KEY, "ambiguous"],
