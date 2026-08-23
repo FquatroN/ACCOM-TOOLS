@@ -6360,8 +6360,8 @@ button[id^="close-settings"] {
 
 .financial-docs-table th:nth-child(16),
 .financial-docs-table td:nth-child(16) {
-  min-width: 62px;
-  width: 62px;
+  min-width: 72px;
+  width: 72px;
 }
 
 .financial-docs-table th:nth-child(14),
@@ -6372,9 +6372,9 @@ button[id^="close-settings"] {
 
 .financial-docs-table th:nth-child(15),
 .financial-docs-table td:nth-child(15) {
-  min-width: 58px;
-  width: 58px;
-  max-width: 58px;
+  min-width: 68px;
+  width: 68px;
+  max-width: 68px;
   padding-left: 0.16rem;
   padding-right: 0.16rem;
 }
