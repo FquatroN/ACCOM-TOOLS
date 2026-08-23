@@ -2704,6 +2704,7 @@ function bindEvents() {
   els.bankAccountsDateTo?.addEventListener("change", onBankAccountsFilterChange);
   els.bankAccountsDescription?.addEventListener("input", onBankAccountsDescriptionInput);
   els.bankAccountsHead?.addEventListener("click", onBankAccountsHeaderClick);
+  els.bankAccountsRows?.addEventListener("click", onBankAccountsRowsClick);
   els.navFinancialReconciliation?.addEventListener("click", () => setView("financial-reconciliation"));
   els.financialReconciliationManualTab?.addEventListener("click", () => setFinancialReconciliationTab("manual"));
   els.financialReconciliationAutomaticTab?.addEventListener("click", () => setFinancialReconciliationTab("automatic"));
@@ -18451,6 +18452,7 @@ function latestFinancialDocDuplicateWarningMessage(history = [], fallbackMessage
 
 function normalizeFinancialDocRowClient(input = {}) {
   const history = Array.isArray(input.history) ? input.history.map(normalizeFinancialDocHistoryClient) : [];
+  const reconciliationDifferenceInput = input.reconciliationDifferenceAmount ?? input.reconciliation_difference_amount;
   const hasDuplicateWarningOverride =
     Object.prototype.hasOwnProperty.call(input, "duplicateWarningMessage") ||
     Object.prototype.hasOwnProperty.call(input, "duplicate_warning_message");
@@ -18486,6 +18488,9 @@ function normalizeFinancialDocRowClient(input = {}) {
     ocrRawText: clean(input.ocrRawText || input.ocr_raw_text),
     reconciliationId: clean(input.reconciliationId || input.reconciliation_id),
     reconciliationStatus: clean(input.reconciliationStatus || input.reconciliation_status),
+    reconciliationDifferenceAmount: reconciliationDifferenceInput === null || reconciliationDifferenceInput === undefined || clean(reconciliationDifferenceInput) === ""
+      ? ""
+      : (normalizeNumber(reconciliationDifferenceInput) ?? ""),
     duplicateWarningMessage: hasDuplicateWarningOverride
       ? clean(input.duplicateWarningMessage || input.duplicate_warning_message)
       : latestFinancialDocDuplicateWarningMessage(history),
@@ -19519,11 +19524,11 @@ function financialDocFileIconButton(row) {
 }
 
 function financialDocReconciliationButton(row) {
-  const reconciliationId = clean(row?.reconciliationId || row?.reconciliation_id);
-  if (!reconciliationId) return "";
-  const status = clean(row?.reconciliationStatus || row?.reconciliation_status).toLowerCase();
-  const label = status === "complete" ? "Open completed reconciliation" : "Open reconciliation";
-  return `<button type="button" class="ghost financial-doc-reconciliation-button" data-action="open-financial-doc-reconciliation" data-id="${escape(row.id)}" data-reconciliation-id="${escape(reconciliationId)}" title="${escape(label)}" aria-label="${escape(label)}">&#10003;</button>`;
+  return reconciliationListButton(row, {
+    action: "open-financial-doc-reconciliation",
+    sourceType: "financial_documents",
+    className: "financial-doc-reconciliation-button",
+  });
 }
 
 function financialDocFileDropzoneMarkup({ isNew = false, rowId = "", hasAttachment = false, showDownload = false } = {}) {
@@ -21389,6 +21394,7 @@ function renderImportData() {
 const BANK_ACCOUNTS_SOURCES = Object.freeze({
   "cgd-extrato": {
     label: "CGD Extrato",
+    reconciliationSourceType: "import_cgd_extrato_ordem",
     columns: [
       { key: "data", label: "Data", type: "date", sortable: true },
       { key: "data_valor", label: "Data Valor", type: "date" },
@@ -21399,6 +21405,7 @@ const BANK_ACCOUNTS_SOURCES = Object.freeze({
   },
   "cartao-credito": {
     label: "Cartao Credito",
+    reconciliationSourceType: "import_cgd_cartao_credito",
     columns: [
       { key: "data", label: "Data", type: "date", sortable: true },
       { key: "data_valor", label: "Data Valor", type: "date" },
@@ -21501,6 +21508,49 @@ function onBankAccountsHeaderClick(event) {
   renderBankAccounts();
 }
 
+function onBankAccountsRowsClick(event) {
+  const button = event.target instanceof HTMLElement
+    ? event.target.closest("button[data-bank-accounts-reconciliation]")
+    : null;
+  if (!button) return;
+  openListReconciliation(
+    clean(button.dataset.reconciliationId),
+    clean(button.dataset.reconciliationSourceType),
+  );
+}
+
+function reconciliationListButton(row, {
+  action = "",
+  sourceType = "",
+  bankAccounts = false,
+  className = "",
+} = {}) {
+  const reconciliationId = clean(row?.reconciliationId || row?.reconciliation_id);
+  if (!reconciliationId) return "";
+  const status = clean(row?.reconciliationStatus || row?.reconciliation_status).toLowerCase();
+  const differenceRaw = row?.reconciliationDifferenceAmount ?? row?.reconciliation_difference_amount;
+  const differenceText = clean(differenceRaw);
+  const difference = Number(differenceRaw);
+  const balanced = differenceText !== "" && Number.isFinite(difference) && difference === 0;
+  const label = balanced
+    ? `Open balanced${status === "complete" ? " completed" : ""} reconciliation`
+    : "Open reconciliation with a non-zero difference";
+  const classes = [
+    "ghost",
+    "reconciliation-list-button",
+    balanced ? "reconciliation-list-button--balanced" : "reconciliation-list-button--difference",
+    clean(className),
+  ].filter(Boolean).join(" ");
+  const attributes = [
+    `data-id="${escape(row?.id)}"`,
+    `data-reconciliation-id="${escape(reconciliationId)}"`,
+    action ? `data-action="${escape(action)}"` : "",
+    bankAccounts ? "data-bank-accounts-reconciliation" : "",
+    sourceType ? `data-reconciliation-source-type="${escape(sourceType)}"` : "",
+  ].filter(Boolean).join(" ");
+  return `<button type="button" class="${escape(classes)}" ${attributes} title="${escape(label)}" aria-label="${escape(label)}">&#10003;</button>`;
+}
+
 function renderBankAccountsCell(row, column) {
   const value = row?.[column.key];
   if (column.type === "date") return escape(formatDateOnly(value) || "-");
@@ -21521,8 +21571,8 @@ function renderBankAccounts() {
   if (els.bankAccountsRecordsTitle) els.bankAccountsRecordsTitle.textContent = config.label;
   if (!canAppBankAccounts()) {
     if (els.bankAccountsCount) els.bankAccountsCount.textContent = "0 rows";
-    if (els.bankAccountsHead) els.bankAccountsHead.innerHTML = `<tr>${columns.map((column) => `<th>${escape(column.label)}</th>`).join("")}</tr>`;
-    if (els.bankAccountsRows) els.bankAccountsRows.innerHTML = `<tr><td colspan="${columns.length}" class="empty">Your profile has no access to Bank Accounts.</td></tr>`;
+    if (els.bankAccountsHead) els.bankAccountsHead.innerHTML = `<tr>${columns.map((column) => `<th>${escape(column.label)}</th>`).join("")}<th>Reconciliation</th></tr>`;
+    if (els.bankAccountsRows) els.bankAccountsRows.innerHTML = `<tr><td colspan="${columns.length + 1}" class="empty">Your profile has no access to Bank Accounts.</td></tr>`;
     return;
   }
   if (els.bankAccountsHead) {
@@ -21530,13 +21580,16 @@ function renderBankAccounts() {
       if (!column.sortable) return `<th>${escape(column.label)}</th>`;
       const arrow = state.bankAccountsDateSort === "asc" ? "&uarr;" : "&darr;";
       return `<th><button type="button" class="bank-accounts-sort-button" data-bank-accounts-sort-date>${escape(column.label)} ${arrow}</button></th>`;
-    }).join("")}</tr>`;
+    }).join("")}<th>Reconciliation</th></tr>`;
   }
   const rows = Array.isArray(state.bankAccountsRows) ? state.bankAccountsRows : [];
   if (els.bankAccountsRows) {
     els.bankAccountsRows.innerHTML = rows.length
-      ? rows.map((row) => `<tr>${columns.map((column) => `<td class="bank-accounts-${escape(column.key)}">${renderBankAccountsCell(row, column)}</td>`).join("")}</tr>`).join("")
-      : `<tr><td colspan="${columns.length}" class="empty">${state.bankAccountsLoading ? "Loading records..." : "No records found."}</td></tr>`;
+      ? rows.map((row) => `<tr>${columns.map((column) => `<td class="bank-accounts-${escape(column.key)}">${renderBankAccountsCell(row, column)}</td>`).join("")}<td class="bank-accounts-reconciliation center-cell">${reconciliationListButton(row, {
+        bankAccounts: true,
+        sourceType: config.reconciliationSourceType,
+      })}</td></tr>`).join("")
+      : `<tr><td colspan="${columns.length + 1}" class="empty">${state.bankAccountsLoading ? "Loading records..." : "No records found."}</td></tr>`;
   }
   if (els.bankAccountsCount) {
     const suffix = state.bankAccountsTruncated ? " shown - refine filters to see more" : "";
@@ -28351,23 +28404,28 @@ function onFinancialDocTableAction(event) {
   openFinancialDocModal(clean(row.dataset.financialDocId));
 }
 
-async function openFinancialDocReconciliation(reconciliationId) {
+async function openListReconciliation(reconciliationId, sourceType = "financial_documents") {
   const id = clean(reconciliationId);
   if (!id) return;
   if (!canAppFinancialReconciliation()) {
     showToast("No reconciliation access.", "error");
     return;
   }
+  const source = FINANCIAL_RECONCILIATION_SOURCES[clean(sourceType)] ? clean(sourceType) : "financial_documents";
   const current = financialReconciliationState();
   current.activeTab = "manual";
-  current.candidateSourceType = "financial_documents";
+  current.candidateSourceType = source;
   current.page = 1;
   current.selectedReconciliationId = id;
   current.workspace = normalizeFinancialReconciliationWorkspace({
-    reconciliation: { id, base_source_type: "financial_documents" },
+    reconciliation: { id, base_source_type: source },
   });
   current.loaded = false;
   await setView("financial-reconciliation", { financialReconciliationTab: "manual" });
+}
+
+async function openFinancialDocReconciliation(reconciliationId) {
+  return openListReconciliation(reconciliationId, "financial_documents");
 }
 
 function onFinancialDocTableChange(event) {

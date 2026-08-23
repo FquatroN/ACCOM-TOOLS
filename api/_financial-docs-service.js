@@ -448,7 +448,7 @@ async function listFinancialDocuments(filters = {}) {
     .map((item) => cleanText(item.reconciliation_id || item.reconciliationId))
     .filter(Boolean))];
   const reconciliationRows = reconciliationIds.length
-    ? await restQuery(`financial_reconciliations?select=id,status&deleted_at=is.null&id=in.(${reconciliationIds.map((id) => encodeURIComponent(id)).join(",")})`, { method: "GET" })
+    ? await restQuery(`financial_reconciliations?select=id,status,difference_amount&deleted_at=is.null&id=in.(${reconciliationIds.map((id) => encodeURIComponent(id)).join(",")})`, { method: "GET" })
     : [];
   const historyByDocumentId = new Map();
   (Array.isArray(warningRows) ? warningRows : []).forEach((item) => {
@@ -468,6 +468,7 @@ async function listFinancialDocuments(filters = {}) {
     ...row,
     reconciliation_id: reconciliationByDocumentId.get(cleanText(row.id))?.id || "",
     reconciliation_status: reconciliationByDocumentId.get(cleanText(row.id))?.status || "",
+    reconciliation_difference_amount: reconciliationByDocumentId.get(cleanText(row.id))?.difference_amount ?? "",
     duplicate_warning_message: latestDuplicateWarningMessage(historyByDocumentId.get(cleanText(row.id)) || []),
   }));
 }

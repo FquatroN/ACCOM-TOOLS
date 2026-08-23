@@ -373,6 +373,7 @@ function toClientDocument(row = {}) {
     ocrRawText: cleanText(row.ocr_raw_text || row.ocrRawText),
     reconciliationId: cleanText(row.reconciliation_id || row.reconciliationId),
     reconciliationStatus: cleanText(row.reconciliation_status || row.reconciliationStatus),
+    reconciliationDifferenceAmount: normalizeMoney(row.reconciliation_difference_amount ?? row.reconciliationDifferenceAmount, 0),
     duplicateWarningMessage,
     history,
   };

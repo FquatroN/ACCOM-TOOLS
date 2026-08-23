@@ -6481,18 +6481,27 @@ button[id^="close-settings"] {
   line-height: 1;
 }
 
-.financial-doc-reconciliation-button {
+.reconciliation-list-button {
   width: 1.5rem;
   min-width: 1.5rem;
   height: 1.5rem;
   padding: 0;
   border-radius: 999px;
-  border-color: #4d9b77;
-  background: #e4f4ea;
-  color: #17663f;
   font-size: 0.62rem;
   font-weight: 700;
   line-height: 1;
+}
+
+.reconciliation-list-button--balanced {
+  border-color: #4d9b77;
+  background: #e4f4ea;
+  color: #17663f;
+}
+
+.reconciliation-list-button--difference {
+  border-color: #d49a3a;
+  background: #fff0d5;
+  color: #8a5200;
 }
 
 .financial-doc-edit-button {
