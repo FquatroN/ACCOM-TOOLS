@@ -79,6 +79,11 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
             matchingSourceType: "import_fdm_accounts",
             operator: "-",
           },
+          {
+            baseSourceType: "import_fdm_accounts",
+            matchingSourceType: "import_cgd_extrato_ordem",
+            operator: "-",
+          },
         ],
       },
     }, response);
@@ -102,6 +107,11 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
         matchingSourceType: "import_fdm_accounts",
         operator: "-",
       },
+      {
+        baseSourceType: "import_fdm_accounts",
+        matchingSourceType: "import_cgd_extrato_ordem",
+        operator: "-",
+      },
     ],
   });
   assert.deepEqual(calls, [{
@@ -123,6 +133,11 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
           {
             base_source_type: "import_cgd_extrato_ordem",
             matching_source_type: "import_fdm_accounts",
+            operator: "-",
+          },
+          {
+            base_source_type: "import_fdm_accounts",
+            matching_source_type: "import_cgd_extrato_ordem",
             operator: "-",
           },
         ],
@@ -295,6 +310,105 @@ test("PUT rejects changing or removing the managed POS income source rule before
     assert.match(response.body.error, /managed POS income source rule must remain enabled with operator -/i);
     assert.equal(rpcCalls.length, 0);
   }
+});
+
+test("PUT rejects changing or removing the managed Bank Reservation source rule before RPC", async () => {
+  const requiredRules = [
+    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
+    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_cartao_credito", operator: "+" },
+    { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "import_fdm_accounts", operator: "-" },
+    { baseSourceType: "import_fdm_accounts", matchingSourceType: "import_cgd_extrato_ordem", operator: "-" },
+  ];
+  const invalidRules = [
+    requiredRules.map((rule) => rule.baseSourceType === "import_fdm_accounts"
+      && rule.matchingSourceType === "import_cgd_extrato_ordem"
+      ? { ...rule, operator: "+" }
+      : rule),
+    requiredRules.filter((rule) => rule.baseSourceType !== "import_fdm_accounts"
+      || rule.matchingSourceType !== "import_cgd_extrato_ordem"),
+  ];
+
+  for (const rules of invalidRules) {
+    const rpcCalls = [];
+    const response = responseRecorder();
+    await withSettingsHandler({
+      parseBody: async (request) => request.body,
+      requireFeature: async () => ({}),
+      restQuery: async (resource, options) => {
+        rpcCalls.push({ resource, options });
+        return null;
+      },
+      sendError: (res, error) => res.status(error.statusCode || 500).json({ error: error.message }),
+    }, async (handler) => {
+      await handler({ method: "PUT", body: { rules } }, response);
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.body, {
+      error: "The managed Bank Reservation source rule must remain enabled with operator -.",
+    });
+    assert.deepEqual(rpcCalls, []);
+  }
+});
+
+test("PUT preserves the managed Adyen source rule while allowing unrelated source-rule edits", async () => {
+  const requiredRules = [
+    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
+    { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_cartao_credito", operator: "+" },
+    { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "import_fdm_accounts", operator: "-" },
+    { baseSourceType: "import_fdm_accounts", matchingSourceType: "import_cgd_extrato_ordem", operator: "-" },
+  ];
+  const invalidRules = [
+    requiredRules.map((rule) => rule.baseSourceType === "import_cgd_extrato_ordem"
+      && rule.matchingSourceType === "import_fdm_accounts"
+      ? { ...rule, operator: "+" }
+      : rule),
+    requiredRules.filter((rule) => rule.baseSourceType !== "import_cgd_extrato_ordem"
+      || rule.matchingSourceType !== "import_fdm_accounts"),
+  ];
+
+  for (const rules of invalidRules) {
+    const rpcCalls = [];
+    const response = responseRecorder();
+    await withSettingsHandler({
+      parseBody: async (request) => request.body,
+      requireFeature: async () => ({}),
+      restQuery: async (resource, options) => {
+        rpcCalls.push({ resource, options });
+        return null;
+      },
+      sendError: (res, error) => res.status(error.statusCode || 500).json({ error: error.message }),
+    }, async (handler) => {
+      await handler({ method: "PUT", body: { rules } }, response);
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.match(response.body.error, /managed POS income source rule must remain enabled with operator -/i);
+    assert.deepEqual(rpcCalls, []);
+  }
+
+  const response = responseRecorder();
+  const rpcCalls = [];
+  const rules = [...requiredRules, {
+    baseSourceType: "import_cgd_cartao_credito",
+    matchingSourceType: "financial_documents",
+    operator: "-",
+  }];
+  await withSettingsHandler({
+    parseBody: async (request) => request.body,
+    requireFeature: async () => ({}),
+    restQuery: async (resource, options) => {
+      rpcCalls.push({ resource, options });
+      return null;
+    },
+    sendError: (res, error) => res.status(error.statusCode || 500).json({ error: error.message }),
+  }, async (handler) => {
+    await handler({ method: "PUT", body: { rules } }, response);
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(rpcCalls[0].resource, "rpc/replace_financial_reconciliation_source_rules");
 });
 
 test("migration restricts source rules to the service role and defines an atomic validating RPC", () => {

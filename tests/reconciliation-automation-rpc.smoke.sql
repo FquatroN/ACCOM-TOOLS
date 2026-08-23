@@ -10545,4 +10545,473 @@ begin
 end
 $$;
 
+-- Task 2: install and reapply the two immutable FDM/Bank definitions,
+-- disabled configurations, exact supporting indexes, and seven-rule Settings RPC.
+create temporary table task2_existing_config_baseline on commit drop as
+select config.rule_key, to_jsonb(config) as row_snapshot
+from public.financial_reconciliation_automatic_rule_configs config;
+
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+
+do $$
+declare
+  v_bank_definition jsonb := jsonb_build_object(
+    'strategy', 'bounded_exact_combination',
+    'sourceAccount', 'Bank Transfer',
+    'maxSourceRecords', 10,
+    'candidatePoolLimit', 60,
+    'stateLimit', 250000,
+    'evidenceGroupLimit', 12,
+    'amountMode', 'signed_integer_cents',
+    'dateMode', 'inclusive_days'
+  );
+  v_adyen_definition jsonb := jsonb_build_object(
+    'strategy', 'closed_calendar_month',
+    'bankDescriptionContains', 'Adyen',
+    'fdmAccount', 'Adyen',
+    'requiresBothSides', true,
+    'monthMarkerDays', 31
+  );
+  v_bank_logic text := 'Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records with opposite signed totals that equal zero exactly in integer cents within the inclusive configured date window.';
+  v_adyen_logic text := 'Every eligible unlocked CGD Bank Statement and FDM Adyen record in the same closed calendar month forms one proposal; both sides are required and the signed difference must be within the configured allowance.';
+  v_existing_max_priority integer;
+  v_bank_priority integer;
+  v_adyen_priority integer;
+begin
+  if (select count(*)
+      from public.financial_reconciliation_automatic_rule_definitions definition
+      where definition.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+        and definition.version = 1) <> 1
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_definitions definition
+      where definition.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+        and definition.version = 1
+        and definition.display_name =
+          'FDM Accounts – Bank Reservation Payments'
+        and definition.base_source_type = 'import_fdm_accounts'
+        and definition.destination_source_types =
+          '["import_cgd_extrato_ordem"]'::jsonb
+        and definition.logic_description = v_bank_logic
+        and definition.definition = v_bank_definition
+    ) then
+    raise exception 'Task 2 Bank Reservation immutable definition differs from the approved contract.';
+  end if;
+
+  if (select count(*)
+      from public.financial_reconciliation_automatic_rule_definitions definition
+      where definition.rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and definition.version = 1) <> 1
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_definitions definition
+      where definition.rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and definition.version = 1
+        and definition.display_name =
+          'FDM Accounts – Adyen Reservation Payments'
+        and definition.base_source_type = 'import_cgd_extrato_ordem'
+        and definition.destination_source_types =
+          '["import_fdm_accounts"]'::jsonb
+        and definition.logic_description = v_adyen_logic
+        and definition.definition = v_adyen_definition
+    ) then
+    raise exception 'Task 2 Adyen immutable definition differs from the approved contract.';
+  end if;
+
+  if not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+        and config.rule_version = 1
+        and not config.enabled
+        and not config.allow_manual_execution
+        and not config.include_in_scheduled_batch
+        and config.difference_allowed = 0
+        and config.max_difference_days = 3
+    ) or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and config.rule_version = 1
+        and not config.enabled
+        and not config.allow_manual_execution
+        and not config.include_in_scheduled_batch
+        and config.difference_allowed = 2000
+        and config.max_difference_days = 31
+    ) then
+    raise exception 'Task 2 new configurations were not installed disabled with approved defaults.';
+  end if;
+
+  if exists (
+      select 1
+      from task2_existing_config_baseline baseline
+      join public.financial_reconciliation_automatic_rule_configs config
+        on config.rule_key = baseline.rule_key
+      where to_jsonb(config) is distinct from baseline.row_snapshot
+    ) or (select count(*) from task2_existing_config_baseline) <> 5 then
+    raise exception 'Task 2 migration changed an existing managed configuration.';
+  end if;
+
+  select max((baseline.row_snapshot->>'priority')::integer)
+  into strict v_existing_max_priority
+  from task2_existing_config_baseline baseline;
+  select config.priority into strict v_bank_priority
+  from public.financial_reconciliation_automatic_rule_configs config
+  where config.rule_key =
+    'fdm_bank_transfer_cgd_bank_statement_combination';
+  select config.priority into strict v_adyen_priority
+  from public.financial_reconciliation_automatic_rule_configs config
+  where config.rule_key =
+    'cgd_bank_statement_fdm_adyen_monthly_payments';
+  if v_bank_priority <= v_existing_max_priority
+    or v_adyen_priority <= v_existing_max_priority
+    or v_bank_priority >= v_adyen_priority then
+    raise exception 'Task 2 configs were not appended after the existing five in deterministic relative order.';
+  end if;
+
+  if (select count(*)
+      from pg_index index_row
+      join pg_class index_class on index_class.oid = index_row.indexrelid
+      where index_class.relname in (
+        'financial_reconciliation_fdm_bank_transfer_lookup_idx',
+        'financial_reconciliation_fdm_adyen_lookup_idx',
+        'financial_reconciliation_bank_date_amount_lookup_idx'
+      )
+        and index_row.indisvalid
+        and index_row.indisready) <> 3 then
+    raise exception 'Task 2 exact supporting indexes are missing, invalid, or not ready.';
+  end if;
+end
+$$;
+
+set constraints financial_reconciliation_automatic_rule_configs_priority_key deferred;
+update public.financial_reconciliation_automatic_rule_configs config
+set enabled = true,
+    allow_manual_execution = true,
+    include_in_scheduled_batch = true,
+    difference_allowed = case
+      when config.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination' then 0
+      else 1234.56
+    end,
+    max_difference_days = case
+      when config.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination' then 90
+      else 31
+    end,
+    priority = case
+      when config.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination' then 7
+      else 6
+    end,
+    updated_by = 'smoke:task2-administrator'
+where config.rule_key in (
+  'fdm_bank_transfer_cgd_bank_statement_combination',
+  'cgd_bank_statement_fdm_adyen_monthly_payments'
+);
+
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+
+do $$
+begin
+  if not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+        and config.rule_version = 1
+        and config.enabled
+        and config.allow_manual_execution
+        and config.include_in_scheduled_batch
+        and config.difference_allowed = 0
+        and config.max_difference_days = 90
+        and config.priority = 7
+        and config.updated_by = 'smoke:task2-administrator'
+    ) or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and config.rule_version = 1
+        and config.enabled
+        and config.allow_manual_execution
+        and config.include_in_scheduled_batch
+        and config.difference_allowed = 1234.56
+        and config.max_difference_days = 31
+        and config.priority = 6
+        and config.updated_by = 'smoke:task2-administrator'
+    ) then
+    raise exception 'Task 2 migration reapply overwrote administrator-controlled settings.';
+  end if;
+
+  if exists (
+    select 1
+    from task2_existing_config_baseline baseline
+    join public.financial_reconciliation_automatic_rule_configs config
+      on config.rule_key = baseline.rule_key
+    where to_jsonb(config) is distinct from baseline.row_snapshot
+  ) then
+    raise exception 'Task 2 migration reapply changed an existing managed rule or its relative priority.';
+  end if;
+end
+$$;
+
+create or replace function pg_temp.task2_assert_settings_rejected(
+  p_rules jsonb,
+  p_expected_error text,
+  p_label text
+)
+returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_before_schedule jsonb;
+  v_after_schedule jsonb;
+  v_before_configs jsonb;
+  v_after_configs jsonb;
+  v_rejected boolean := false;
+begin
+  select to_jsonb(schedule) into strict v_before_schedule
+  from public.financial_reconciliation_automatic_schedule schedule
+  where schedule.id = true;
+  select jsonb_agg(to_jsonb(config) order by config.rule_key)
+  into strict v_before_configs
+  from public.financial_reconciliation_automatic_rule_configs config;
+
+  begin
+    perform public.replace_financial_reconciliation_automation_settings(
+      jsonb_build_object(
+        'enabled', not (v_before_schedule->>'enabled')::boolean,
+        'time_of_day', '05:45',
+        'time_zone', 'Europe/Lisbon'
+      ),
+      p_rules,
+      'smoke:task2-invalid'
+    );
+  exception when others then
+    v_rejected := true;
+    if sqlerrm is distinct from p_expected_error then
+      raise exception 'Task 2 % failed with unexpected error: %', p_label, sqlerrm;
+    end if;
+  end;
+
+  select to_jsonb(schedule) into strict v_after_schedule
+  from public.financial_reconciliation_automatic_schedule schedule
+  where schedule.id = true;
+  select jsonb_agg(to_jsonb(config) order by config.rule_key)
+  into strict v_after_configs
+  from public.financial_reconciliation_automatic_rule_configs config;
+
+  if not v_rejected then
+    raise exception 'Task 2 % was accepted.', p_label;
+  end if;
+  if v_after_schedule is distinct from v_before_schedule
+    or v_after_configs is distinct from v_before_configs then
+    raise exception 'Task 2 % changed schedule or managed config rows despite rejection.', p_label;
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_rules jsonb;
+  v_invalid jsonb;
+  v_settings jsonb;
+  v_key text;
+  v_field text;
+begin
+  select jsonb_agg(jsonb_build_object(
+    'rule_key', config.rule_key,
+    'rule_version', config.rule_version,
+    'enabled', config.enabled,
+    'allow_manual_execution', config.allow_manual_execution,
+    'include_in_scheduled_batch', config.include_in_scheduled_batch,
+    'difference_allowed', to_char(config.difference_allowed,
+      'FM999999999999990.00'),
+    'max_difference_days', config.max_difference_days,
+    'priority', config.priority
+  ) order by config.priority, config.rule_key)
+  into strict v_rules
+  from public.financial_reconciliation_automatic_rule_configs config;
+
+  v_settings := public.replace_financial_reconciliation_automation_settings(
+    '{"enabled":true,"time_of_day":"04:15","time_zone":"Europe/Lisbon"}'::jsonb,
+    v_rules,
+    'smoke:task2-seven-rule-success'
+  );
+  if jsonb_array_length(v_settings->'rules') <> 7
+    or (select count(*)
+        from public.financial_reconciliation_automatic_rule_configs) <> 7 then
+    raise exception 'Task 2 Settings replacement did not atomically return all seven managed rules.';
+  end if;
+
+  foreach v_key in array array[
+    'fdm_bank_transfer_cgd_bank_statement_combination',
+    'cgd_bank_statement_fdm_adyen_monthly_payments'
+  ] loop
+    select coalesce(jsonb_agg(rule.value order by rule.ordinality), '[]'::jsonb)
+    into v_invalid
+    from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality)
+    where rule.value->>'rule_key' <> v_key;
+    perform pg_temp.task2_assert_settings_rejected(
+      v_invalid,
+      'Automatic rules payload must contain the seven managed rule objects.',
+      format('missing managed key %s', v_key)
+    );
+  end loop;
+
+  select jsonb_agg(case
+    when rule.value->>'rule_key' =
+        'cgd_bank_statement_fdm_adyen_monthly_payments'
+      then jsonb_set(rule.value, '{rule_key}',
+        '"fdm_bank_transfer_cgd_bank_statement_combination"'::jsonb)
+    else rule.value
+  end order by rule.ordinality)
+  into v_invalid
+  from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality);
+  perform pg_temp.task2_assert_settings_rejected(
+    v_invalid, 'Duplicate automatic rule.', 'duplicate key'
+  );
+
+  select jsonb_agg(case
+    when rule.value->>'rule_key' =
+        'cgd_bank_statement_fdm_adyen_monthly_payments'
+      then jsonb_set(rule.value, '{priority}', to_jsonb((
+        select (bank_rule.value->>'priority')::integer
+        from jsonb_array_elements(v_rules) bank_rule(value)
+        where bank_rule.value->>'rule_key' =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+      )))
+    else rule.value
+  end order by rule.ordinality)
+  into v_invalid
+  from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality);
+  perform pg_temp.task2_assert_settings_rejected(
+    v_invalid, 'Duplicate automatic rule priority.', 'duplicate priority'
+  );
+
+  select jsonb_agg(case
+    when rule.value->>'rule_key' =
+        'fdm_bank_transfer_cgd_bank_statement_combination'
+      then jsonb_set(rule.value, '{rule_version}', '2'::jsonb)
+    else rule.value
+  end order by rule.ordinality)
+  into v_invalid
+  from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality);
+  perform pg_temp.task2_assert_settings_rejected(
+    v_invalid, 'Automatic rule/version is invalid.', 'unsupported version'
+  );
+
+  select jsonb_agg(case
+    when rule.value->>'rule_key' =
+        'fdm_bank_transfer_cgd_bank_statement_combination'
+      then jsonb_set(rule.value, '{difference_allowed}', '"0.01"'::jsonb)
+    else rule.value
+  end order by rule.ordinality)
+  into v_invalid
+  from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality);
+  perform pg_temp.task2_assert_settings_rejected(
+    v_invalid,
+    'Bank Reservation automatic rule requires zero difference allowed.',
+    'Bank Reservation nonzero allowance'
+  );
+
+  select jsonb_agg(case
+    when rule.value->>'rule_key' =
+        'fdm_bank_transfer_cgd_bank_statement_combination'
+      then jsonb_set(rule.value, '{max_difference_days}', '91'::jsonb)
+    else rule.value
+  end order by rule.ordinality)
+  into v_invalid
+  from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality);
+  perform pg_temp.task2_assert_settings_rejected(
+    v_invalid, 'Automatic rule values are invalid.', 'Bank Reservation day 91'
+  );
+
+  select jsonb_agg(case
+    when rule.value->>'rule_key' =
+        'cgd_bank_statement_fdm_adyen_monthly_payments'
+      then jsonb_set(rule.value, '{max_difference_days}', '30'::jsonb)
+    else rule.value
+  end order by rule.ordinality)
+  into v_invalid
+  from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality);
+  perform pg_temp.task2_assert_settings_rejected(
+    v_invalid,
+    'Adyen automatic rule requires the fixed 31-day calendar-month property.',
+    'Adyen non-calendar day'
+  );
+
+  select jsonb_agg(case
+    when rule.value->>'rule_key' =
+        'cgd_bank_statement_fdm_adyen_monthly_payments'
+      then jsonb_set(rule.value, '{difference_allowed}', '"-0.01"'::jsonb)
+    else rule.value
+  end order by rule.ordinality)
+  into v_invalid
+  from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality);
+  perform pg_temp.task2_assert_settings_rejected(
+    v_invalid, 'Automatic rule values are invalid.', 'negative Adyen allowance'
+  );
+
+  foreach v_field in array array[
+    'definition', 'base_source_type', 'destination_source_types', 'strategy',
+    'maxSourceRecords', 'candidatePoolLimit', 'stateLimit',
+    'evidenceGroupLimit'
+  ] loop
+    select jsonb_agg(case
+      when rule.value->>'rule_key' =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+        then rule.value || jsonb_build_object(v_field, 'attempted mutation')
+      else rule.value
+    end order by rule.ordinality)
+    into v_invalid
+    from jsonb_array_elements(v_rules) with ordinality rule(value, ordinality);
+    perform pg_temp.task2_assert_settings_rejected(
+      v_invalid, 'Automatic rule fields are invalid.',
+      format('immutable field %s mutation', v_field)
+    );
+  end loop;
+end
+$$;
+
+do $$
+declare
+  v_signature text :=
+    'public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)';
+begin
+  if not (
+      select procedure.prosecdef
+        and coalesce(procedure.proconfig, '{}'::text[])
+          @> array['search_path=public, pg_temp']
+      from pg_proc procedure
+      where procedure.oid = v_signature::regprocedure
+    )
+    or exists (
+      select 1
+      from pg_proc procedure,
+           lateral aclexplode(coalesce(
+             procedure.proacl,
+             acldefault('f', procedure.proowner)
+           )) privilege
+      where procedure.oid = v_signature::regprocedure
+        and privilege.grantee = 0
+        and privilege.privilege_type = 'EXECUTE'
+    )
+    or has_function_privilege('anon', v_signature, 'EXECUTE')
+    or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+    or not has_function_privilege('service_role', v_signature, 'EXECUTE') then
+    raise exception 'Task 2 seven-rule Settings RPC security is invalid.';
+  end if;
+end
+$$;
+
 rollback;

@@ -33,6 +33,12 @@ const requireManagedAutomaticSourceRules = (rules) => {
       operator: "-",
       displayName: "POS income",
     },
+    {
+      baseSourceType: "import_fdm_accounts",
+      matchingSourceType: "import_cgd_extrato_ordem",
+      operator: "-",
+      displayName: "Bank Reservation",
+    },
   ]) {
     const valid = rules.some((rule) =>
       rule.baseSourceType === managedRule.baseSourceType
