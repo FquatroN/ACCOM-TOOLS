@@ -21739,8 +21739,18 @@ function isReconciliationAutomationAmountOnlyRule(ruleKey) {
     || key === "financial_documents_cgd_credit_card_amount_only";
 }
 
+function isBankReservationAutomationRule(ruleKey) {
+  return clean(ruleKey) === "fdm_bank_transfer_cgd_bank_statement_combination";
+}
+
+function isAdyenMonthlyAutomationRule(ruleKey) {
+  return clean(ruleKey) === "cgd_bank_statement_fdm_adyen_monthly_payments";
+}
+
 function isFinancialReconciliationMonthlyAggregateRule(ruleKey) {
-  return clean(ruleKey) === "cgd_bank_statement_fdm_credit_card_monthly_income";
+  const key = clean(ruleKey);
+  return key === "cgd_bank_statement_fdm_credit_card_monthly_income"
+    || key === "cgd_bank_statement_fdm_adyen_monthly_payments";
 }
 
 function applyReconciliationAutomationSettingsResult(result) {
@@ -21764,7 +21774,9 @@ function applyReconciliationAutomationSettingsResult(result) {
     enabled: rule?.enabled === true,
     allowManualExecution: rule?.allowManualExecution === true,
     includeInScheduledBatch: rule?.includeInScheduledBatch === true,
-    differenceAllowed: isReconciliationAutomationAmountOnlyRule(rule?.ruleKey) ? "0.00" : clean(rule?.differenceAllowed) || "0.00",
+    differenceAllowed: isReconciliationAutomationAmountOnlyRule(rule?.ruleKey) || isBankReservationAutomationRule(rule?.ruleKey)
+      ? "0.00"
+      : clean(rule?.differenceAllowed) || "0.00",
     maxDifferenceDays: isFinancialReconciliationMonthlyAggregateRule(rule?.ruleKey) ? 31 : Number(rule?.maxDifferenceDays),
     priority: Number.isInteger(Number(rule?.priority)) && Number(rule.priority) > 0 ? Number(rule.priority) : index + 1,
   })).sort((left, right) => left.priority - right.priority || left.ruleKey.localeCompare(right.ruleKey));
@@ -21788,7 +21800,9 @@ function reconciliationAutomationSettingsPayload() {
     const rule = orderedRules[index];
     const ruleKey = clean(rule?.ruleKey);
     const ruleVersion = Number(rule?.ruleVersion);
-    const differenceAllowed = isReconciliationAutomationAmountOnlyRule(ruleKey) ? "0.00" : clean(rule?.differenceAllowed);
+    const differenceAllowed = isReconciliationAutomationAmountOnlyRule(ruleKey) || isBankReservationAutomationRule(ruleKey)
+      ? "0.00"
+      : clean(rule?.differenceAllowed);
     const maxDifferenceDaysText = isFinancialReconciliationMonthlyAggregateRule(ruleKey) ? "31" : clean(rule?.maxDifferenceDays);
     const maxDifferenceDays = Number(maxDifferenceDaysText);
     if (!ruleKey || !Number.isInteger(ruleVersion) || ruleVersion < 1) return null;
@@ -21939,12 +21953,19 @@ function renderReconciliationAutomationSettings() {
         ? `<label>Difference allowed
       <output class="financial-reconciliation-automation-fixed-value" aria-label="Difference allowed, fixed">0.00 €</output>
     </label>`
+        : isBankReservationAutomationRule(ruleKey)
+          ? `<label>Difference allowed<input type="number" class="financial-reconciliation-automation-fixed-value" aria-label="Difference allowed, fixed" data-reconciliation-automation-rule-fixed="differenceAllowed" value="0.00" disabled /></label>`
         : `<label>Difference allowed<input type="number" min="0" step="0.01" inputmode="decimal" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="differenceAllowed" value="${escape(rule?.differenceAllowed)}" ${current.loading ? "disabled" : ""} /></label>`;
       const maxDifferenceDaysControl = isFinancialReconciliationMonthlyAggregateRule(ruleKey)
-        ? `<label>Max difference days
+        ? isAdyenMonthlyAutomationRule(ruleKey)
+          ? `<label>Max difference days<input type="number" class="financial-reconciliation-automation-fixed-value" aria-label="Maximum difference in days, fixed" data-reconciliation-automation-rule-fixed="maxDifferenceDays" value="31" disabled /></label>`
+          : `<label>Max difference days
       <output class="financial-reconciliation-automation-fixed-value" aria-label="Maximum difference in days, fixed">31 days</output>
     </label>`
         : `<label>Max difference days<input type="number" min="0" max="90" step="1" inputmode="numeric" aria-describedby="financial-reconciliation-automation-status" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="maxDifferenceDays" value="${escape(rule?.maxDifferenceDays)}" ${current.loading ? "disabled" : ""} /></label>`;
+      const maxSourceRecordsControl = isBankReservationAutomationRule(ruleKey)
+        ? `<label>Max FDM records<input type="number" class="financial-reconciliation-automation-fixed-value" aria-label="Maximum FDM records, fixed" data-reconciliation-automation-rule-fixed="maxSourceRecords" value="10" disabled /></label>`
+        : "";
       return `<article class="financial-reconciliation-automation-rule-card" data-reconciliation-automation-rule-card="${escape(ruleKey)}" tabindex="-1">
   <div class="financial-reconciliation-automation-rule-head">
     <div><h4>${escape(rule?.displayName || ruleKey || "Managed rule")}</h4><span class="financial-reconciliation-automation-rule-version">Version ${escape(rule?.ruleVersion)} · managed definition</span></div>
@@ -21957,6 +21978,7 @@ function renderReconciliationAutomationSettings() {
     <label class="financial-reconciliation-automation-check"><input type="checkbox" data-reconciliation-automation-rule-key="${escape(ruleKey)}" data-reconciliation-automation-rule-field="includeInScheduledBatch" ${rule?.includeInScheduledBatch === true ? "checked" : ""} ${current.loading ? "disabled" : ""} />Scheduled</label>
     ${differenceAllowedControl}
     ${maxDifferenceDaysControl}
+    ${maxSourceRecordsControl}
   </div>
   <details class="financial-reconciliation-automation-definition"><summary>Managed definition (read only)</summary><pre class="financial-reconciliation-automation-logic">${escape(logicText)}</pre></details>
 </article>`;
@@ -22034,7 +22056,7 @@ function onReconciliationAutomationSettingsInput(event) {
   const field = clean(target.dataset.reconciliationAutomationRuleField);
   const rule = current.rules.find((item) => clean(item?.ruleKey) === ruleKey);
   if (!rule || !["enabled", "allowManualExecution", "includeInScheduledBatch", "differenceAllowed", "maxDifferenceDays"].includes(field)) return;
-  if (field === "differenceAllowed" && isReconciliationAutomationAmountOnlyRule(ruleKey)) {
+  if (field === "differenceAllowed" && (isReconciliationAutomationAmountOnlyRule(ruleKey) || isBankReservationAutomationRule(ruleKey))) {
     rule.differenceAllowed = "0.00";
     return;
   }
@@ -22401,11 +22423,16 @@ function financialReconciliationAutomationOpenRun(run) {
 function financialReconciliationAutomationProgressLabel(run) {
   const processed = Math.max(0, Number(run?.analysisProcessed) || 0);
   const total = Math.max(processed, Number(run?.analysisTotal) || 0);
-  const monthly = (Array.isArray(run?.definitions) ? run.definitions : []).some((definition) => (
-    String(definition?.ruleKey ?? "").trim() === "cgd_bank_statement_fdm_credit_card_monthly_income"
-    && [1, 2].includes(Number(definition?.ruleVersion))
-  ));
-  return `Analyzing ${processed} of ${total} ${monthly ? "months" : "records"}...`;
+  const analysisUnit = String(run?.analysisUnit ?? "").trim();
+  const definitionRuleKey = String((Array.isArray(run?.definitions) ? run.definitions : [])[0]?.ruleKey ?? "").trim();
+  const unit = analysisUnit === "bank_anchors" || definitionRuleKey === "fdm_bank_transfer_cgd_bank_statement_combination"
+    ? "bank anchors"
+    : analysisUnit === "calendar_months"
+      || definitionRuleKey === "cgd_bank_statement_fdm_credit_card_monthly_income"
+      || definitionRuleKey === "cgd_bank_statement_fdm_adyen_monthly_payments"
+      ? "calendar months"
+      : "records";
+  return `Analyzing ${processed} of ${total} ${unit}...`;
 }
 
 function finalizeFinancialReconciliationAutomationAnalysis() {
@@ -22612,13 +22639,33 @@ function financialReconciliationAutomationMembershipKey(proposalId, role) {
   return `${clean(proposalId)}:${role}`;
 }
 
-function financialReconciliationAutomationMonthlyMemberMarkup(member) {
+function financialReconciliationAutomationMemberPresentation(ruleKey, role) {
+  const source = role === "source";
+  if (isBankReservationAutomationRule(ruleKey)) {
+    return source
+      ? { groupLabel: "FDM sources", memberLabel: "FDM source", numbered: true }
+      : { groupLabel: "Bank destination", memberLabel: "Bank destination", numbered: false };
+  }
+  if (isAdyenMonthlyAutomationRule(ruleKey)) {
+    return source
+      ? { groupLabel: "Bank sources", memberLabel: "Bank source", numbered: true }
+      : { groupLabel: "FDM destinations", memberLabel: "FDM destination", numbered: true };
+  }
+  return source
+    ? { groupLabel: "CGD Bank Statement", memberLabel: "Bank source", numbered: true }
+    : { groupLabel: "FDM Accounts", memberLabel: "FDM destination", numbered: true };
+}
+
+function financialReconciliationAutomationMonthlyMemberMarkup(member, memberLabel = "") {
   const value = member && typeof member === "object" ? member : {};
   const sourceId = clean(value.sourceId) || "-";
   const account = clean(value.account);
+  const date = formatDateOnly(value.sourceDate) || "-";
+  const label = clean(memberLabel) || date;
+  const detail = [date, account ? `Account ${account}` : ""].filter(Boolean).join(" · ");
   return `<article class="financial-reconciliation-automation-member-row">
     <div class="financial-reconciliation-automation-item-head">
-      <span><strong>${escape(formatDateOnly(value.sourceDate) || "-")}</strong>${account ? `<small>FDM account ${escape(account)}</small>` : ""}</span>
+      <span><strong>${escape(label)}</strong><small>${escape(detail)}</small></span>
       <strong class="financial-reconciliation-automation-item-amount">${escape(formatMoney(Number(value.amount || 0)))}</strong>
     </div>
     <p class="financial-reconciliation-automation-member-row-description">${escape(clean(value.description) || "-")}</p>
@@ -22626,17 +22673,36 @@ function financialReconciliationAutomationMonthlyMemberMarkup(member) {
   </article>`;
 }
 
-function financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, role, summary, membership) {
+function financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, role, summary, membership, ruleKey = "") {
   const state = membership && typeof membership === "object" ? membership : {};
   const source = role === "source";
-  const label = source ? "CGD Bank Statement" : "FDM Accounts";
-  const count = Math.max(0, Number(source ? summary?.sourceCount : summary?.destinationCount) || 0);
-  const total = Number(source ? summary?.sourceTotal : summary?.destinationTotal) || 0;
+  const presentation = financialReconciliationAutomationMemberPresentation(ruleKey, role);
+  const stateCountValue = source ? state.sourceCount : state.destinationCount;
+  const summaryCountValue = source ? summary?.sourceCount : summary?.destinationCount;
+  const stateTotalValue = source ? state.sourceTotal : state.destinationTotal;
+  const summaryTotalValue = source ? summary?.sourceTotal : summary?.destinationTotal;
+  const stateCount = stateCountValue == null ? Number.NaN : Number(stateCountValue);
+  const summaryCount = summaryCountValue == null ? Number.NaN : Number(summaryCountValue);
+  const stateTotal = stateTotalValue == null ? Number.NaN : Number(stateTotalValue);
+  const summaryTotal = summaryTotalValue == null ? Number.NaN : Number(summaryTotalValue);
+  const count = Math.max(0, Number.isFinite(stateCount) ? stateCount : (Number.isFinite(summaryCount) ? summaryCount : 0));
+  const total = Number.isFinite(stateTotal) ? stateTotal : (Number.isFinite(summaryTotal) ? summaryTotal : 0);
   const members = Array.isArray(state.members) ? state.members : [];
   const totalCount = Math.max(count, Number(state.totalCount) || 0);
   const loading = state.loading === true;
   const error = clean(state.error);
-  const memberRows = members.map((member) => financialReconciliationAutomationMonthlyMemberMarkup(member)).join("");
+  const orderedMembers = members.slice().sort((left, right) => (
+    Number(left?.ordinal) - Number(right?.ordinal)
+    || clean(left?.sourceDate).localeCompare(clean(right?.sourceDate))
+    || clean(left?.sourceId).localeCompare(clean(right?.sourceId))
+  ));
+  const memberRows = orderedMembers.map((member) => {
+    const ordinal = Number(member?.ordinal);
+    const label = presentation.numbered && Number.isInteger(ordinal) && ordinal > 0
+      ? `${presentation.memberLabel} ${ordinal}`
+      : presentation.memberLabel;
+    return financialReconciliationAutomationMonthlyMemberMarkup(member, label);
+  }).join("");
   const status = loading
     ? '<p class="financial-reconciliation-automation-member-status" role="status">Loading members…</p>'
     : error
@@ -22647,15 +22713,15 @@ function financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, 
   const loadMore = state.loaded === true && members.length < totalCount
     ? `<div class="financial-reconciliation-automation-member-actions"><button type="button" class="ghost financial-reconciliation-automation-member-load-more" data-financial-reconciliation-automation-member-more data-proposal-id="${escape(clean(proposalId))}" data-role="${escape(role)}" ${loading ? "disabled" : ""}>${loading ? "Loading…" : "Load more"}</button></div>`
     : "";
-  return `<summary>${escape(label)} (#${escape(count)}; ${escape(formatMoney(total))})</summary>
+  return `<summary>${escape(presentation.groupLabel)} (#${escape(count)}; ${escape(formatMoney(total))})</summary>
     <div class="financial-reconciliation-automation-member-list">${memberRows}${status}${loadMore}</div>`;
 }
 
-function financialReconciliationAutomationMemberGroupMarkup(proposalId, role, summary, memberships) {
+function financialReconciliationAutomationMemberGroupMarkup(proposalId, role, summary, memberships, ruleKey = "") {
   const key = financialReconciliationAutomationMembershipKey(proposalId, role);
   const membership = memberships && typeof memberships === "object" ? memberships[key] : null;
-  return `<details class="financial-reconciliation-automation-member-group" data-role="${escape(role)}" data-financial-reconciliation-automation-members data-proposal-id="${escape(clean(proposalId))}" ${membership?.open === true ? "open" : ""}>
-    ${financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, role, summary, membership)}
+  return `<details class="financial-reconciliation-automation-member-group" data-role="${escape(role)}" data-financial-reconciliation-automation-member-role="${escape(role)}" data-financial-reconciliation-automation-members data-proposal-id="${escape(clean(proposalId))}" ${membership?.open === true ? "open" : ""}>
+    ${financialReconciliationAutomationMemberGroupContentsMarkup(proposalId, role, summary, membership, ruleKey)}
   </details>`;
 }
 
@@ -22664,38 +22730,52 @@ function financialReconciliationAutomationMonthlyProposalMarkup(proposal, run, r
   const status = clean(value.status).toLowerCase();
   const executable = status === "proposed";
   const selected = executable && selectedProposalIds instanceof Set && selectedProposalIds.has(clean(value.id));
+  const proposalId = clean(value.id);
+  const proposalIdToken = proposalId.replace(/[^a-zA-Z0-9_-]/g, "") || "unknown";
+  const bankReservation = isBankReservationAutomationRule(value.ruleKey);
+  const adyenMonthly = isAdyenMonthlyAutomationRule(value.ruleKey);
   const definition = financialReconciliationAutomationRunDefinition(value, run);
   const rule = (Array.isArray(rules) ? rules : []).find((entry) => clean(entry?.ruleKey) === clean(value.ruleKey) && Number(entry?.ruleVersion) === Number(value.ruleVersion)) || definition;
   const summary = value.summarySnapshot && typeof value.summarySnapshot === "object" ? value.summarySnapshot : {};
   const rawMonth = clean(summary.calendarMonth) || clean(value.groupingKey).split(":").at(-1) || "-";
   const month = rawMonth.match(/^(\d{4}-(?:0[1-9]|1[0-2]))(?:-01)?$/)?.[1] || rawMonth;
-  const reason = executable || !clean(value.reason) ? "" : `<p class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;
-  const accessibleName = `Execute automatic monthly proposal for ${month}`;
+  const bankAnchor = formatDateOnly(clean(value.baseSnapshot?.sourceDate) || rawMonth) || rawMonth;
+  const summaryId = `financial-reconciliation-automation-proposal-summary-${proposalIdToken}`;
+  const reasonId = `financial-reconciliation-automation-proposal-reason-${proposalIdToken}`;
+  const reason = executable || !clean(value.reason) ? "" : `<p id="${escape(reasonId)}" class="financial-reconciliation-automation-reason">${escape(financialReconciliationAutomationReasonLabel(value.reason))}</p>`;
+  const accessibleName = bankReservation
+    ? `Execute automatic Bank Reservation proposal ${proposalId}`
+    : `Execute automatic monthly proposal ${proposalId} for ${month}`;
   const executionOutcome = (Array.isArray(run?.executionOutcomes) ? run.executionOutcomes : []).find((outcome) => clean(outcome?.proposalId ?? outcome?.id) === clean(value.id));
   const executionOutcomeStatus = clean(executionOutcome?.status).toLowerCase();
   const executionOutcomeMarkup = executionOutcomeStatus && executionOutcomeStatus !== status
     ? `<p class="financial-reconciliation-automation-attempt financial-reconciliation-automation-attempt--${escape(executionOutcomeStatus)}">Execution attempt: ${escape(executionOutcomeStatus)} &middot; ${escape(financialReconciliationAutomationReasonLabel(executionOutcome.reason))}</p>`
     : "";
-  const selectionMarkup = !executable ? "" : `<label class="financial-reconciliation-automation-proposal-selection"><input type="checkbox" aria-label="${escape(accessibleName)}" data-financial-reconciliation-automation-proposal-id="${escape(clean(value.id))}" ${selected ? "checked" : ""} ${pending ? "disabled" : ""} /><span>Execute proposal</span></label>`;
-  return `<article class="financial-reconciliation-automation-proposal financial-reconciliation-automation-proposal--monthly financial-reconciliation-automation-proposal--${escape(status || "unknown")}" tabindex="-1">
+  const selectionMarkup = !executable ? "" : `<label class="financial-reconciliation-automation-proposal-selection"><input type="checkbox" name="automatic-proposal-${escape(proposalId)}" aria-label="${escape(accessibleName)}" aria-describedby="${escape(summaryId)}" data-financial-reconciliation-automation-proposal-id="${escape(proposalId)}" ${selected ? "checked" : ""} ${pending ? "disabled" : ""} /><span>Execute proposal</span></label>`;
+  const layoutClass = bankReservation || adyenMonthly
+    ? "financial-reconciliation-automation-proposal--grouped"
+    : "financial-reconciliation-automation-proposal--monthly";
+  const summaryTitle = bankReservation ? "Bank Reservation summary" : "Monthly summary";
+  const periodLabel = bankReservation ? `Bank anchor ${bankAnchor}` : `Month ${month}`;
+  return `<article class="financial-reconciliation-automation-proposal ${layoutClass} financial-reconciliation-automation-proposal--${escape(status || "unknown")}" tabindex="-1">
     <section class="financial-reconciliation-automation-proposal-meta">
-      <h4>Monthly summary</h4>
+      <h4>${escape(summaryTitle)}</h4>
       ${selectionMarkup}
       <span class="financial-reconciliation-automation-proposal-status">${escape(status || "unknown")}</span>
       ${reason}${executionOutcomeMarkup}
-      <strong>Month ${escape(month)}</strong>
+      <strong id="${escape(summaryId)}">${escape(periodLabel)}</strong>
       <strong>Difference ${escape(formatMoney(Number(value.calculatedDifference || 0)))}</strong>
       <span>Allowed ${escape(formatMoney(Number(value.allowedDifference ?? definition.differenceAllowed ?? 0)))}</span>
       <span>${escape(clean(rule.displayName) || clean(value.ruleKey))} &middot; version ${escape(Number(value.ruleVersion) || 1)}</span>
     </section>
-    ${financialReconciliationAutomationMemberGroupMarkup(value.id, "source", summary, memberships)}
-    ${financialReconciliationAutomationMemberGroupMarkup(value.id, "destination", summary, memberships)}
+    ${financialReconciliationAutomationMemberGroupMarkup(proposalId, "source", summary, memberships, value.ruleKey)}
+    ${financialReconciliationAutomationMemberGroupMarkup(proposalId, "destination", summary, memberships, value.ruleKey)}
   </article>`;
 }
 
 function financialReconciliationAutomationProposalMarkup(proposal, run, rules, selectedProposalIds, pending, memberships = {}) {
   const value = proposal && typeof proposal === "object" ? proposal : {};
-  if (isFinancialReconciliationMonthlyAggregateRule(value.ruleKey)) {
+  if (isFinancialReconciliationMonthlyAggregateRule(value.ruleKey) || isBankReservationAutomationRule(value.ruleKey)) {
     return financialReconciliationAutomationMonthlyProposalMarkup(value, run, rules, selectedProposalIds, pending, memberships);
   }
   const status = clean(value.status).toLowerCase();
@@ -22965,6 +23045,10 @@ function financialReconciliationAutomationMembershipState(automation, proposalId
       members: [],
       offset: 0,
       totalCount: 0,
+      sourceCount: null,
+      sourceTotal: null,
+      destinationCount: null,
+      destinationTotal: null,
       loaded: false,
       loading: false,
       error: "",
@@ -22984,7 +23068,7 @@ function financialReconciliationAutomationRefreshMemberGroup(proposalId, role) {
   const memberRole = clean(role);
   const proposal = (Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
     .find((entry) => clean(entry?.id) === id);
-  if (!proposal || !isFinancialReconciliationMonthlyAggregateRule(proposal.ruleKey)) return;
+  if (!proposal || !(isFinancialReconciliationMonthlyAggregateRule(proposal.ruleKey) || isBankReservationAutomationRule(proposal.ruleKey))) return;
   const details = Array.from(container.querySelectorAll("details[data-financial-reconciliation-automation-members]"))
     .find((entry) => clean(entry.dataset?.proposalId) === id && clean(entry.dataset?.role) === memberRole);
   if (!details) return;
@@ -23012,7 +23096,7 @@ function financialReconciliationAutomationRefreshMemberGroup(proposalId, role) {
   const openRecordIds = new Set(Array.from(details.querySelectorAll("details.financial-reconciliation-automation-item-id[open]"))
     .map((entry) => clean(entry.dataset?.financialReconciliationAutomationMemberRecordId))
     .filter(Boolean));
-  details.innerHTML = financialReconciliationAutomationMemberGroupContentsMarkup(id, memberRole, proposal.summarySnapshot, membership);
+  details.innerHTML = financialReconciliationAutomationMemberGroupContentsMarkup(id, memberRole, proposal.summarySnapshot, membership, proposal.ruleKey);
   details.open = membership.open === true;
   const nextRecordDetails = Array.from(details.querySelectorAll("details.financial-reconciliation-automation-item-id"));
   for (const entry of nextRecordDetails) {
@@ -23058,7 +23142,7 @@ async function loadFinancialReconciliationAutomationMembers(proposalId, role) {
   const memberRole = clean(role);
   if (memberRole !== "source" && memberRole !== "destination") return;
   const proposal = (Array.isArray(automation.run?.proposals) ? automation.run.proposals : [])
-    .find((entry) => clean(entry?.id) === id && isFinancialReconciliationMonthlyAggregateRule(entry?.ruleKey));
+    .find((entry) => clean(entry?.id) === id && (isFinancialReconciliationMonthlyAggregateRule(entry?.ruleKey) || isBankReservationAutomationRule(entry?.ruleKey)));
   const runId = clean(automation.run?.runId);
   if (!proposal || !runId) return;
   const membership = financialReconciliationAutomationMembershipState(automation, id, memberRole);
@@ -23095,11 +23179,34 @@ async function loadFinancialReconciliationAutomationMembers(proposalId, role) {
         throw new Error("The member page contains invalid or duplicate records.");
       }
       seenIds.add(sourceId);
-      return { ...member };
+      const amount = Number(member?.amount);
+      if (!Number.isFinite(amount)) throw new Error("The member page contains an invalid amount.");
+      return {
+        role: memberRole,
+        sourceType: clean(member?.sourceType),
+        sourceId,
+        ordinal: Number(member?.ordinal),
+        sourceDate: clean(member?.sourceDate),
+        amount,
+        description: clean(member?.description),
+        account: clean(member?.account),
+      };
     });
-    membership.members = membership.members.concat(nextMembers);
+    membership.members = membership.members.concat(nextMembers).sort((left, right) => (
+      Number(left?.ordinal) - Number(right?.ordinal)
+      || clean(left?.sourceDate).localeCompare(clean(right?.sourceDate))
+      || clean(left?.sourceId).localeCompare(clean(right?.sourceId))
+    ));
     membership.offset = membership.members.length;
     membership.totalCount = totalCount;
+    for (const field of ["sourceCount", "destinationCount"]) {
+      const count = Number(page?.[field]);
+      if (Number.isInteger(count) && count >= 0) membership[field] = count;
+    }
+    for (const field of ["sourceTotal", "destinationTotal"]) {
+      const total = Number(page?.[field]);
+      if (Number.isFinite(total)) membership[field] = total;
+    }
     membership.loaded = true;
   } catch (error) {
     membership.error = `Could not load members: ${clean(error?.message) || "Unknown error"}`;

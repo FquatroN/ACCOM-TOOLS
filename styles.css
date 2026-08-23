@@ -1315,7 +1315,7 @@ td {
 
 .financial-reconciliation-automation-rule-controls {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: .5rem;
   align-items: end;
   margin-top: .6rem;
@@ -1346,6 +1346,11 @@ td {
   background: #f7f4ee;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+input.financial-reconciliation-automation-fixed-value:disabled {
+  opacity: 1;
+  cursor: not-allowed;
 }
 
 .financial-reconciliation-automation-settings input[aria-invalid="true"] {
@@ -7025,8 +7030,24 @@ button[id^="close-settings"] {
   grid-template-columns: minmax(11rem, .55fr) minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.financial-reconciliation-automation-proposal--grouped {
+  grid-template-columns: minmax(11rem, .55fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
 .financial-reconciliation-automation-proposal--monthly .financial-reconciliation-automation-proposal-meta {
   border-right: 0;
+}
+
+.financial-reconciliation-automation-proposal--grouped .financial-reconciliation-automation-proposal-meta {
+  border-right: 0;
+}
+
+.financial-reconciliation-automation-proposal--grouped > .financial-reconciliation-automation-member-group[data-financial-reconciliation-automation-member-role="source"] {
+  grid-column: 2;
+}
+
+.financial-reconciliation-automation-proposal--grouped > .financial-reconciliation-automation-member-group[data-financial-reconciliation-automation-member-role="destination"] {
+  grid-column: 3;
 }
 
 .financial-reconciliation-automation-member-group {
@@ -7380,10 +7401,24 @@ button[id^="close-settings"] {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .financial-reconciliation-automation-proposal--grouped {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .financial-reconciliation-automation-proposal--monthly .financial-reconciliation-automation-proposal-meta {
     grid-template-columns: minmax(0, 1fr);
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .financial-reconciliation-automation-proposal--grouped .financial-reconciliation-automation-proposal-meta {
+    grid-template-columns: minmax(0, 1fr);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .financial-reconciliation-automation-proposal--grouped > .financial-reconciliation-automation-member-group[data-financial-reconciliation-automation-member-role] {
+    grid-column: 1;
   }
 
   .financial-reconciliation-automation-member-group {

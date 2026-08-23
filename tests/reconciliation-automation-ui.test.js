@@ -111,7 +111,18 @@ function monthlyIncomeRule(overrides = {}) {
 }
 
 function isMonthlyIncomeRuleKey(ruleKey) {
-  return String(ruleKey ?? "").trim() === "cgd_bank_statement_fdm_credit_card_monthly_income";
+  return [
+    "cgd_bank_statement_fdm_credit_card_monthly_income",
+    "cgd_bank_statement_fdm_adyen_monthly_payments",
+  ].includes(String(ruleKey ?? "").trim());
+}
+
+function isBankReservationRuleKey(ruleKey) {
+  return String(ruleKey ?? "").trim() === "fdm_bank_transfer_cgd_bank_statement_combination";
+}
+
+function isAdyenMonthlyRuleKey(ruleKey) {
+  return String(ruleKey ?? "").trim() === "cgd_bank_statement_fdm_adyen_monthly_payments";
 }
 
 function isAmountOnlyRuleKey(ruleKey) {
@@ -137,11 +148,12 @@ function compilePayload(state) {
   return new Function(
     "state",
     "isReconciliationAutomationAmountOnlyRule",
+    "isBankReservationAutomationRule",
     "isFinancialReconciliationMonthlyAggregateRule",
     `${appFunctionSource("clean")}
      ${appFunctionSource("reconciliationAutomationSettingsPayload")}
      return reconciliationAutomationSettingsPayload;`,
-  )(state, isAmountOnlyRuleKey, isMonthlyIncomeRuleKey);
+  )(state, isAmountOnlyRuleKey, isBankReservationRuleKey, isMonthlyIncomeRuleKey);
 }
 
 function fakeClassList() {
@@ -203,6 +215,8 @@ function renderAutomationSettings(settings, { dirty = false, canOpenWorkbench = 
     "reconciliationAutomationSettingsPayload",
     "updateReconciliationAutomationControls",
     "isReconciliationAutomationAmountOnlyRule",
+    "isBankReservationAutomationRule",
+    "isAdyenMonthlyAutomationRule",
     "isFinancialReconciliationMonthlyAggregateRule",
     `${appFunctionSource("renderReconciliationAutomationSettings")}
      return renderReconciliationAutomationSettings;`,
@@ -222,6 +236,8 @@ function renderAutomationSettings(settings, { dirty = false, canOpenWorkbench = 
     payload,
     updateControls,
     isAmountOnlyRuleKey,
+    isBankReservationRuleKey,
+    isAdyenMonthlyRuleKey,
     isMonthlyIncomeRuleKey,
   );
   render();
@@ -413,6 +429,7 @@ test("server-loaded amount-only tolerances canonicalize to zero without changing
     "clean",
     "clone",
     "isReconciliationAutomationAmountOnlyRule",
+    "isBankReservationAutomationRule",
     "isFinancialReconciliationMonthlyAggregateRule",
     `${appFunctionSource("applyReconciliationAutomationSettingsResult")}
      return applyReconciliationAutomationSettingsResult;`,
@@ -421,6 +438,7 @@ test("server-loaded amount-only tolerances canonicalize to zero without changing
     new Function(`${appFunctionSource("clean")}; return clean;`)(),
     new Function(`${appFunctionSource("clone")}; return clone;`)(),
     isAmountOnlyRuleKey,
+    isBankReservationRuleKey,
     isMonthlyIncomeRuleKey,
   );
 
@@ -608,12 +626,13 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     "state",
     "clean",
     "isReconciliationAutomationAmountOnlyRule",
+    "isBankReservationAutomationRule",
     "isFinancialReconciliationMonthlyAggregateRule",
     "updateReconciliationAutomationNextExecution",
     "updateReconciliationAutomationControls",
     `${appFunctionSource("onReconciliationAutomationSettingsInput")}
      return onReconciliationAutomationSettingsInput;`,
-  )(FakeHTMLElement, state, (value) => String(value ?? "").trim(), isAmountOnlyRuleKey, isMonthlyIncomeRuleKey, () => {}, () => { validationUpdates += 1; });
+  )(FakeHTMLElement, state, (value) => String(value ?? "").trim(), isAmountOnlyRuleKey, isBankReservationRuleKey, isMonthlyIncomeRuleKey, () => {}, () => { validationUpdates += 1; });
   input({ target: new FakeHTMLElement({ reconciliationAutomationRuleKey: "rule-a", reconciliationAutomationRuleField: "differenceAllowed" }, { value: "3.25" }) });
   assert.equal(settings.rules.find((rule) => rule.ruleKey === "rule-a").differenceAllowed, "3.25");
   assert.equal(state.reconciliationAutomationSettingsDirty, true);
@@ -642,6 +661,7 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     "clean",
     "clone",
     "isReconciliationAutomationAmountOnlyRule",
+    "isBankReservationAutomationRule",
     "isFinancialReconciliationMonthlyAggregateRule",
     `${appFunctionSource("applyReconciliationAutomationSettingsResult")}
      return applyReconciliationAutomationSettingsResult;`,
@@ -650,6 +670,7 @@ test("automation inputs change only the local draft until one atomic Save", asyn
     new Function(`${appFunctionSource("clean")}; return clean;`)(),
     new Function(`${appFunctionSource("clone")}; return clone;`)(),
     isAmountOnlyRuleKey,
+    isBankReservationRuleKey,
     isMonthlyIncomeRuleKey,
   );
   const financialState = new Function(
@@ -957,8 +978,8 @@ test("monthly analysis progress is expressed in calendar months", () => {
   };
   const { els } = renderAutomationWorkbench(run);
 
-  assert.match(progressLabel(run), /Analyzing 2 of 4 months/i);
-  assert.match(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /Analyzing 2 of 4 months/i);
+  assert.match(progressLabel(run), /Analyzing 2 of 4 calendar months/i);
+  assert.match(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /Analyzing 2 of 4 calendar months/i);
   assert.doesNotMatch(els.financialReconciliationWorkbenchAutomationProposals.innerHTML, /\brecords\b/i);
 });
 
@@ -1365,6 +1386,7 @@ function compileWorkbenchProposalMarkup() {
      ${appFunctionSource("financialReconciliationAutomationIdentityEvidenceMarkup")}
      ${appFunctionSource("financialReconciliationAutomationItemMarkup")}
      ${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
+     ${appFunctionSource("isBankReservationAutomationRule")}
      ${appFunctionSource("financialReconciliationAutomationProposalMarkup")}
      return financialReconciliationAutomationProposalMarkup;`,
   )(
@@ -1419,11 +1441,14 @@ function compileMonthlyProposalMarkup() {
     "formatDateOnly",
     "formatMoney",
     `${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
+     ${appFunctionSource("isBankReservationAutomationRule")}
+     ${appFunctionSource("isAdyenMonthlyAutomationRule")}
      ${appFunctionSource("financialReconciliationAutomationMembershipKey")}
      ${appFunctionSource("financialReconciliationAutomationReasonLabel")}
      ${appFunctionSource("financialReconciliationAutomationRunDefinition")}
      ${appFunctionSource("financialReconciliationAutomationIdentityEvidenceMarkup")}
      ${appFunctionSource("financialReconciliationAutomationItemMarkup")}
+     ${appFunctionSource("financialReconciliationAutomationMemberPresentation")}
      ${appFunctionSource("financialReconciliationAutomationMonthlyMemberMarkup")}
      ${appFunctionSource("financialReconciliationAutomationMemberGroupContentsMarkup")}
      ${appFunctionSource("financialReconciliationAutomationMemberGroupMarkup")}
@@ -1557,6 +1582,21 @@ test("loaded monthly members stay escaped and expose record IDs only in disclosu
   assert.match(markup, /<details class="financial-reconciliation-automation-item-id"[^>]*data-financial-reconciliation-automation-member-record-id="destination-001"[^>]*><summary>Record ID<\/summary><code>destination-001<\/code><\/details>/);
 });
 
+test("unloaded member-page state retains the public proposal totals until its first page arrives", () => {
+  const proposalMarkup = compileMonthlyProposalMarkup();
+  const proposal = monthlyProposal();
+  const memberships = {
+    [`${proposal.id}:source`]: {
+      role: "source", members: [], totalCount: 0,
+      sourceCount: null, sourceTotal: null, destinationCount: null, destinationTotal: null,
+      loaded: false, loading: false, error: "", open: false,
+    },
+  };
+  const markup = proposalMarkup(proposal, monthlyRun(proposal), [monthlyIncomeRule()], new Set([proposal.id]), false, memberships);
+
+  assert.match(markup, /CGD Bank Statement \(#73; 12500\.25 €\)/);
+});
+
 function compileMonthlyMembershipLoader(current, api, refresh = () => {}) {
   return new Function(
     "financialReconciliationState",
@@ -1566,6 +1606,7 @@ function compileMonthlyMembershipLoader(current, api, refresh = () => {}) {
     `${appFunctionSource("financialReconciliationAutomationMembershipKey")}
      ${appFunctionSource("financialReconciliationAutomationMembershipState")}
      ${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
+     ${appFunctionSource("isBankReservationAutomationRule")}
      ${appFunctionSource("loadFinancialReconciliationAutomationMembers").replace(/^function /, "async function ")}
      return loadFinancialReconciliationAutomationMembers;`,
   )(
@@ -1684,8 +1725,11 @@ function compileMonthlyMembershipDomRuntime(current, api, fixture) {
     "els",
     "document",
     `${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
+     ${appFunctionSource("isBankReservationAutomationRule")}
+     ${appFunctionSource("isAdyenMonthlyAutomationRule")}
      ${appFunctionSource("financialReconciliationAutomationMembershipKey")}
      ${appFunctionSource("financialReconciliationAutomationMembershipState")}
+     ${appFunctionSource("financialReconciliationAutomationMemberPresentation")}
      ${appFunctionSource("financialReconciliationAutomationMonthlyMemberMarkup")}
      ${appFunctionSource("financialReconciliationAutomationMemberGroupContentsMarkup")}
      ${appFunctionSource("financialReconciliationAutomationRefreshMemberGroup")}
@@ -3183,4 +3227,301 @@ test("persisted failures are not double-counted as transport-uncertain attempts"
     deselected: 0,
     attemptFailures: 0,
   });
+});
+
+const TASK7_BANK_RULE_KEY = "fdm_bank_transfer_cgd_bank_statement_combination";
+const TASK7_ADYEN_RULE_KEY = "cgd_bank_statement_fdm_adyen_monthly_payments";
+const TASK7_BANK_PROPOSAL_ID = "00000000-0000-0000-0000-000000000701";
+const TASK7_ADYEN_PROPOSAL_ID = "00000000-0000-0000-0000-000000000702";
+
+function task7BankReservationRule(overrides = {}) {
+  return {
+    ruleKey: TASK7_BANK_RULE_KEY,
+    ruleVersion: 1,
+    displayName: "FDM Accounts – Bank Reservation Payments",
+    baseSourceType: "import_fdm_accounts",
+    destinationSourceTypes: ["import_cgd_extrato_ordem"],
+    logicDescription: "One Bank record is matched to one through ten exact Bank Transfer FDM records.",
+    definition: { strategy: "bounded_exact_combination", maxSourceRecords: 10 },
+    enabled: true,
+    allowManualExecution: true,
+    includeInScheduledBatch: true,
+    differenceAllowed: "99.99",
+    maxDifferenceDays: 3,
+    priority: 6,
+    ...overrides,
+  };
+}
+
+function task7AdyenMonthlyRule(overrides = {}) {
+  return {
+    ruleKey: TASK7_ADYEN_RULE_KEY,
+    ruleVersion: 1,
+    displayName: "FDM Accounts – Adyen Reservation Payments",
+    baseSourceType: "import_cgd_extrato_ordem",
+    destinationSourceTypes: ["import_fdm_accounts"],
+    logicDescription: "Every eligible Bank and FDM Adyen record in a closed calendar month is reviewed together.",
+    definition: { strategy: "closed_calendar_month", monthMarkerDays: 31 },
+    enabled: true,
+    allowManualExecution: true,
+    includeInScheduledBatch: false,
+    differenceAllowed: "2000.00",
+    maxDifferenceDays: 2,
+    priority: 7,
+    ...overrides,
+  };
+}
+
+function task7Proposal(ruleKey, proposalId, overrides = {}) {
+  const bank = ruleKey === TASK7_BANK_RULE_KEY;
+  return {
+    id: proposalId,
+    ruleKey,
+    ruleVersion: 1,
+    status: "proposed",
+    reason: "",
+    groupingKey: bank ? "bank-reservation:2026-07-04" : "adyen:2026-07",
+    baseSourceId: bank ? "fdm-base-001" : "bank-base-001",
+    baseSnapshot: {
+      sourceType: bank ? "import_fdm_accounts" : "import_cgd_extrato_ordem",
+      sourceId: bank ? "fdm-base-001" : "bank-base-001",
+      sourceDate: "2026-07-04",
+      privateSnapshot: "must-never-render",
+    },
+    items: [{ privateItem: "must-never-render" }],
+    candidateGroups: [],
+    summarySnapshot: bank
+      ? { classification: "proposed", reason: "unique_qualifying_combination", candidateCount: 2 }
+      : {
+        calendarMonth: "2026-07-01",
+        sourceCount: 2,
+        sourceTotal: "120.00",
+        destinationCount: 2,
+        destinationTotal: "-120.00",
+      },
+    calculatedDifference: bank ? "0.00" : "5.00",
+    allowedDifference: bank ? "0.00" : "2000.00",
+    ...overrides,
+  };
+}
+
+function task7Run(proposal) {
+  const bank = proposal.ruleKey === TASK7_BANK_RULE_KEY;
+  const run = workbenchRun([proposal]);
+  run.definitions = [{
+    ruleKey: proposal.ruleKey,
+    ruleVersion: 1,
+    displayName: bank ? "FDM Accounts – Bank Reservation Payments" : "FDM Accounts – Adyen Reservation Payments",
+    operator: bank ? "+" : "-",
+    differenceAllowed: bank ? "0.00" : "2000.00",
+  }];
+  run.analysisUnit = bank ? "bank_anchors" : "calendar_months";
+  return run;
+}
+
+function task7Member(role, ordinal, overrides = {}) {
+  const bankReservation = overrides.ruleKey === TASK7_BANK_RULE_KEY;
+  const sourceType = bankReservation
+    ? (role === "source" ? "import_fdm_accounts" : "import_cgd_extrato_ordem")
+    : (role === "source" ? "import_cgd_extrato_ordem" : "import_fdm_accounts");
+  const prefix = sourceType === "import_fdm_accounts" ? "fdm" : "bank";
+  return {
+    role,
+    sourceType,
+    sourceId: `${prefix}-${String(ordinal).padStart(3, "0")}`,
+    ordinal,
+    sourceDate: `2026-07-${String(((ordinal - 1) % 28) + 1).padStart(2, "0")}`,
+    amount: sourceType === "import_fdm_accounts" ? `-${ordinal * 50}.00` : `${ordinal * 50}.00`,
+    description: `${prefix} <description ${ordinal}>`,
+    account: sourceType === "import_fdm_accounts" ? "Bank <Transfer>" : "",
+    rowSnapshot: { privateAuditField: "must-never-render" },
+    ...overrides,
+  };
+}
+
+function task7Card(markup, ruleKey) {
+  return markup.match(new RegExp(`<article[^>]*data-reconciliation-automation-rule-card="${ruleKey}"[\\s\\S]*?<\\/article>`))?.[0] || "";
+}
+
+function compileTask7Classifiers() {
+  return new Function(`${appFunctionSource("clean")}
+${appFunctionSource("isBankReservationAutomationRule")}
+${appFunctionSource("isAdyenMonthlyAutomationRule")}
+${appFunctionSource("isFinancialReconciliationMonthlyAggregateRule")}
+return { isBankReservationAutomationRule, isAdyenMonthlyAutomationRule, isFinancialReconciliationMonthlyAggregateRule };`)();
+}
+
+test("Task 7 uses exact Bank Reservation and Adyen classifiers with fixed Settings fields and authoritative serialization", () => {
+  const classifiers = compileTask7Classifiers();
+  assert.equal(classifiers.isBankReservationAutomationRule(TASK7_BANK_RULE_KEY), true);
+  assert.equal(classifiers.isBankReservationAutomationRule("FDM Accounts – Bank Reservation Payments"), false);
+  assert.equal(classifiers.isAdyenMonthlyAutomationRule(TASK7_ADYEN_RULE_KEY), true);
+  assert.equal(classifiers.isAdyenMonthlyAutomationRule("FDM Accounts – Adyen Reservation Payments"), false);
+  assert.equal(classifiers.isFinancialReconciliationMonthlyAggregateRule(TASK7_ADYEN_RULE_KEY), true);
+
+  const bankRule = task7BankReservationRule();
+  const adyenRule = task7AdyenMonthlyRule();
+  const settings = automationSettings({ rules: [bankRule, adyenRule] });
+  const markup = renderAutomationSettings(settings).financialReconciliationAutomationRules.innerHTML;
+  const bankCard = task7Card(markup, TASK7_BANK_RULE_KEY);
+  const adyenCard = task7Card(markup, TASK7_ADYEN_RULE_KEY);
+
+  assert.match(bankCard, /data-reconciliation-automation-rule-fixed="differenceAllowed"[^>]*value="0\.00"[^>]*disabled/);
+  assert.match(bankCard, /<input type="number" min="0" max="90"[^>]*data-reconciliation-automation-rule-field="maxDifferenceDays"/);
+  assert.match(bankCard, /data-reconciliation-automation-rule-fixed="maxSourceRecords"[^>]*value="10"[^>]*disabled/);
+  assert.match(bankCard, /Managed definition \(read only\)/);
+  assert.doesNotMatch(bankCard, /data-reconciliation-automation-rule-field="(?:definition|logicDescription|ruleVersion|differenceAllowed)"/);
+  assert.match(adyenCard, /data-reconciliation-automation-rule-field="differenceAllowed"/);
+  assert.match(adyenCard, /data-reconciliation-automation-rule-fixed="maxDifferenceDays"[^>]*value="31"[^>]*disabled/);
+  assert.doesNotMatch(adyenCard, /data-reconciliation-automation-rule-field="maxDifferenceDays"/);
+  for (const card of [bankCard, adyenCard]) {
+    for (const field of ["enabled", "allowManualExecution", "includeInScheduledBatch"]) {
+      assert.match(card, new RegExp(`data-reconciliation-automation-rule-field="${field}"`));
+    }
+    assert.match(card, /data-reconciliation-automation-move="up"/);
+  }
+
+  const payload = compilePayload({ reconciliationAutomationSettings: settings })();
+  assert.deepEqual(payload.rules, [
+    {
+      ruleKey: TASK7_BANK_RULE_KEY,
+      ruleVersion: 1,
+      enabled: true,
+      allowManualExecution: true,
+      includeInScheduledBatch: true,
+      differenceAllowed: "0.00",
+      maxDifferenceDays: 3,
+      priority: 1,
+    },
+    {
+      ruleKey: TASK7_ADYEN_RULE_KEY,
+      ruleVersion: 1,
+      enabled: true,
+      allowManualExecution: true,
+      includeInScheduledBatch: false,
+      differenceAllowed: "2000.00",
+      maxDifferenceDays: 31,
+      priority: 2,
+    },
+  ]);
+});
+
+test("Task 7 keeps manual Bank and Adyen identity locked for an open run even if their catalog flags later change", () => {
+  const bankRule = task7BankReservationRule({ enabled: false, allowManualExecution: false });
+  const adyenRule = task7AdyenMonthlyRule({ enabled: true, allowManualExecution: true });
+  const openProposal = task7Proposal(TASK7_BANK_RULE_KEY, TASK7_BANK_PROPOSAL_ID);
+  const openRun = task7Run(openProposal);
+  openRun.status = "ready";
+  openRun.finishedAt = null;
+  const { els, state } = renderAutomationWorkbench(openRun, new Set(), {
+    rules: [bankRule, adyenRule],
+    selectedRuleKey: TASK7_ADYEN_RULE_KEY,
+  });
+
+  assert.equal(state.automation.selectedRuleKey, TASK7_BANK_RULE_KEY);
+  assert.equal(els.financialReconciliationWorkbenchAutomationRule.disabled, true);
+  assert.match(els.financialReconciliationWorkbenchAutomationRule.innerHTML, new RegExp(`value="${TASK7_BANK_RULE_KEY}" selected>[\\s\\S]*\\(active run\\)<\\/option>`));
+  assert.doesNotMatch(els.financialReconciliationWorkbenchAutomationRule.innerHTML, new RegExp(`value="${TASK7_ADYEN_RULE_KEY}"[^>]*selected`));
+});
+
+test("Task 7 renders Bank Reservation and Adyen proposal memberships as escaped, selectable three-column review rows", () => {
+  const proposalMarkup = compileMonthlyProposalMarkup();
+  const bankProposal = task7Proposal(TASK7_BANK_RULE_KEY, TASK7_BANK_PROPOSAL_ID);
+  const adyenProposal = task7Proposal(TASK7_ADYEN_RULE_KEY, TASK7_ADYEN_PROPOSAL_ID);
+  const bankMemberships = {
+    [`${bankProposal.id}:source`]: {
+      role: "source", open: true, loaded: true, loading: false, error: "", totalCount: 2,
+      sourceCount: 2, sourceTotal: "-150.00", destinationCount: 1, destinationTotal: "150.00",
+      members: [
+        task7Member("source", 2, { ruleKey: TASK7_BANK_RULE_KEY }),
+        task7Member("source", 1, { ruleKey: TASK7_BANK_RULE_KEY }),
+      ],
+    },
+    [`${bankProposal.id}:destination`]: {
+      role: "destination", open: true, loaded: true, loading: false, error: "", totalCount: 1,
+      sourceCount: 2, sourceTotal: "-150.00", destinationCount: 1, destinationTotal: "150.00",
+      members: [task7Member("destination", 1, { ruleKey: TASK7_BANK_RULE_KEY })],
+    },
+  };
+  const adyenMemberships = {
+    [`${adyenProposal.id}:source`]: {
+      role: "source", open: true, loaded: true, loading: false, error: "", totalCount: 2,
+      sourceCount: 2, sourceTotal: "120.00", destinationCount: 2, destinationTotal: "-120.00",
+      members: [task7Member("source", 2), task7Member("source", 1)],
+    },
+    [`${adyenProposal.id}:destination`]: {
+      role: "destination", open: true, loaded: true, loading: false, error: "", totalCount: 2,
+      sourceCount: 2, sourceTotal: "120.00", destinationCount: 2, destinationTotal: "-120.00",
+      members: [task7Member("destination", 2), task7Member("destination", 1)],
+    },
+  };
+
+  const bankMarkup = proposalMarkup(bankProposal, task7Run(bankProposal), [task7BankReservationRule()], new Set([bankProposal.id]), false, bankMemberships);
+  const adyenMarkup = proposalMarkup(adyenProposal, task7Run(adyenProposal), [task7AdyenMonthlyRule()], new Set([adyenProposal.id]), false, adyenMemberships);
+
+  assert.match(bankMarkup, /financial-reconciliation-automation-proposal--grouped/);
+  assert.match(bankMarkup, /FDM sources \(#2; -150\.00 €\)[\s\S]*Bank destination \(#1; 150\.00 €\)/);
+  assert.ok(bankMarkup.indexOf("FDM source 1") < bankMarkup.indexOf("FDM source 2"));
+  assert.match(bankMarkup, /Bank destination/);
+  assert.match(bankMarkup, /Bank &lt;Transfer&gt;/);
+  assert.match(bankMarkup, /&lt;description 1&gt;/);
+  assert.match(bankMarkup, /data-financial-reconciliation-automation-member-record-id="fdm-001"/);
+  assert.match(bankMarkup, new RegExp(`name="automatic-proposal-${TASK7_BANK_PROPOSAL_ID}"`));
+  assert.match(bankMarkup, /aria-describedby="financial-reconciliation-automation-proposal-summary-/);
+  assert.doesNotMatch(bankMarkup, /must-never-render|privateAuditField|<description 1>|Bank <Transfer>/);
+
+  assert.match(adyenMarkup, /financial-reconciliation-automation-proposal--grouped/);
+  assert.match(adyenMarkup, /Bank sources \(#2; 120\.00 €\)[\s\S]*FDM destinations \(#2; -120\.00 €\)/);
+  assert.ok(adyenMarkup.indexOf("Bank source 1") < adyenMarkup.indexOf("Bank source 2"));
+  assert.ok(adyenMarkup.indexOf("FDM destination 1") < adyenMarkup.indexOf("FDM destination 2"));
+
+  const ambiguous = proposalMarkup({ ...bankProposal, status: "ambiguous", reason: "candidate_limit" }, task7Run(bankProposal), [task7BankReservationRule()], new Set(), false, bankMemberships);
+  assert.doesNotMatch(ambiguous, /data-financial-reconciliation-automation-proposal-id=|name="automatic-proposal-/);
+
+  const visible = compileVisibleAutomationProposals();
+  const completedRun = task7Run(adyenProposal);
+  completedRun.finishedAt = "2026-08-23T12:00:00.000Z";
+  completedRun.proposals = [{ ...adyenProposal, status: "completed" }, { ...adyenProposal, id: "other-adyen", status: "ambiguous", reason: "monthly_difference_exceeded" }];
+  assert.deepEqual(visible(completedRun).map((proposal) => proposal.id), [adyenProposal.id]);
+});
+
+test("Task 7 fetches ordered Bank members through stable pages and recovers a failed page without exposing raw snapshots", async () => {
+  const bankProposal = task7Proposal(TASK7_BANK_RULE_KEY, TASK7_BANK_PROPOSAL_ID);
+  const current = { automation: { run: task7Run(bankProposal), memberships: {} } };
+  const calls = [];
+  const responses = [
+    async () => { throw new Error("temporary network failure"); },
+    async () => ({
+      runId: current.automation.run.runId,
+      proposalId: bankProposal.id,
+      role: "source",
+      offset: 0,
+      limit: 50,
+      totalCount: 2,
+      sourceCount: 2,
+      sourceTotal: "-150.00",
+      destinationCount: 1,
+      destinationTotal: "150.00",
+      members: [
+        task7Member("source", 1, { ruleKey: TASK7_BANK_RULE_KEY }),
+        task7Member("source", 2, { ruleKey: TASK7_BANK_RULE_KEY }),
+      ],
+    }),
+  ];
+  const load = compileMonthlyMembershipLoader(current, async (url) => {
+    calls.push(url);
+    return responses.shift()();
+  });
+
+  await load(bankProposal.id, "source");
+  const stateAfterFailure = current.automation.memberships[`${bankProposal.id}:source`];
+  assert.match(stateAfterFailure.error, /temporary network failure/);
+  assert.equal(stateAfterFailure.loading, false);
+
+  await load(bankProposal.id, "source");
+  assert.deepEqual(calls.map((url) => new URL(url, "https://example.test").searchParams.get("offset")), ["0", "0"]);
+  const loaded = current.automation.memberships[`${bankProposal.id}:source`];
+  assert.deepEqual(loaded.members.map((member) => member.ordinal), [1, 2]);
+  assert.equal(loaded.sourceTotal, -150);
+  assert.equal(JSON.stringify(loaded.members), JSON.stringify(loaded.members).replace(/privateAuditField|must-never-render/g, ""), "raw private member snapshots are not retained by the UI pager");
 });

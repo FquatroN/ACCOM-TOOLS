@@ -188,7 +188,7 @@ test("automatic reconciliation settings stay dense, wrapping, and reachable on n
   assert.match(css, /\.financial-reconciliation-automation-rule-list\s*\{[\s\S]*display:\s*grid;[\s\S]*gap:\s*\.65rem;/);
   assert.match(css, /\.financial-reconciliation-automation-schedule\s*\{[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(10rem,\s*1fr\)\);/);
   assert.match(css, /\.financial-reconciliation-automation-logic\s*\{[\s\S]*overflow-wrap:\s*anywhere;[\s\S]*white-space:\s*pre-wrap;/);
-  assert.match(css, /\.financial-reconciliation-automation-rule-controls\s*\{[\s\S]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(css, /\.financial-reconciliation-automation-rule-controls\s*\{[\s\S]*grid-template-columns:\s*repeat\(6,\s*minmax\(0,\s*1fr\)\);/);
   assert.match(css, /\.financial-reconciliation-automation-fixed-value\s*\{[\s\S]*min-height:[\s\S]*border:[\s\S]*background:/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-automation-rule-controls\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.financial-reconciliation-automation-fixed-value\s*\{[\s\S]*font-size:\s*16px;/);
@@ -511,6 +511,19 @@ test("monthly proposal groups stack with horizontal separators and usable contro
   assert.match(narrowCss, /\.financial-reconciliation-automation-member-group\s*>\s*summary\s*,\s*\.financial-reconciliation-automation-member-load-more\s*\{[^}]*font-size:\s*16px[^}]*\}/);
   assert.match(narrowCss, /\.financial-reconciliation-automation-member-row-description\s*\{[^}]*overflow-wrap:\s*anywhere[^}]*white-space:\s*normal[^}]*\}/);
   assert.match(narrowCss, /\.financial-reconciliation-automation-member-actions\s*\{[^}]*flex-wrap:\s*wrap[^}]*\}/);
+});
+
+test("Bank Reservation and Adyen grouped proposals retain their three review columns and stack safely when narrow", () => {
+  assert.match(css, /\.financial-reconciliation-automation-proposal--grouped\s*\{[^}]*grid-template-columns:\s*minmax\(11rem,\s*\.55fr\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal--grouped\s*>\s*\.financial-reconciliation-automation-member-group\[data-financial-reconciliation-automation-member-role="source"\]\s*\{[^}]*grid-column:\s*2[^}]*\}/);
+  assert.match(css, /\.financial-reconciliation-automation-proposal--grouped\s*>\s*\.financial-reconciliation-automation-member-group\[data-financial-reconciliation-automation-member-role="destination"\]\s*\{[^}]*grid-column:\s*3[^}]*\}/);
+
+  const narrowStart = css.indexOf("@media (max-width: 768px)", css.indexOf(".financial-reconciliation-automation-proposal--grouped"));
+  const narrowEnd = css.indexOf("@media", narrowStart + 1);
+  assert.notEqual(narrowStart, -1);
+  const narrowCss = css.slice(narrowStart, narrowEnd === -1 ? css.length : narrowEnd);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal--grouped\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*\}/);
+  assert.match(narrowCss, /\.financial-reconciliation-automation-proposal--grouped\s*>\s*\.financial-reconciliation-automation-member-group\[data-financial-reconciliation-automation-member-role\]\s*\{[^}]*grid-column:\s*1[^}]*\}/);
 });
 
 test("workbench rule snapshots keep only valid unique signed sources", () => {
