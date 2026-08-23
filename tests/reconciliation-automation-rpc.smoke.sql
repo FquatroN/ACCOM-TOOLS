@@ -11606,12 +11606,16 @@ as $$
     'maxDifferenceDays', p_days,
     'destinationSourceType', 'import_cgd_extrato_ordem',
     'definition', definition.definition,
-    'operator', '-'
+    'operator', source_rule.operator
   ))
   from public.financial_reconciliation_automatic_rule_definitions definition
   join public.financial_reconciliation_automatic_rule_configs config
     on config.rule_key = definition.rule_key
    and config.rule_version = definition.version
+  join public.financial_reconciliation_source_rules source_rule
+    on source_rule.base_source_type = definition.base_source_type
+   and source_rule.matching_source_type = 'import_cgd_extrato_ordem'
+   and source_rule.operator = '+'
   where definition.rule_key =
       'fdm_bank_transfer_cgd_bank_statement_combination'
     and definition.version = 1
@@ -13655,6 +13659,1088 @@ begin
         where population.run_id = 'd4500000-0000-0000-0000-000000000100')
       is distinct from 52 then
     raise exception 'Task 4 Adyen wrong-column FK fixture did not restore exact projection state.';
+  end if;
+end
+$$;
+
+-- Task 5 Bank Reservation executes all eleven immutable members and retries idempotently
+-- Task 5 Adyen zero and allowed nonzero execution preserve history and audit
+-- Task 5 member identity type date amount description and Account drift
+-- Task 5 group eligibility configuration definition operator and overlap drift
+-- Task 5 deletion consumption and source-lock stale outcomes are atomic
+-- Task 5 malformed snapshots fail stale without unsafe casts
+-- Task 5 post-start and competing writes roll back every lifecycle row
+-- Task 5 unexpected database failures persist only sanitized diagnostics
+-- Task 5 execution helpers are private and top-level dispatch is literal
+
+-- Task 4 intentionally left analysis-only proposals reviewable. They have
+-- already served their paging assertions; deselect them so Task 5 can prove a
+-- fresh successful execution without manufacturing a cross-proposal overlap.
+update public.financial_reconciliation_automatic_proposals
+set status = 'deselected', updated_at = now()
+where run_id = 'd4500000-0000-0000-0000-000000000100'
+  and status in ('proposed','ambiguous');
+
+update public.financial_reconciliation_source_rules source_rule
+set operator = case
+      when source_rule.base_source_type = 'import_fdm_accounts' then '+'
+      else '-'
+    end
+where (source_rule.base_source_type, source_rule.matching_source_type) in (
+  ('import_fdm_accounts', 'import_cgd_extrato_ordem'),
+  ('import_cgd_extrato_ordem', 'import_fdm_accounts')
+);
+
+update public.financial_reconciliation_automatic_rule_configs config
+set enabled = true,
+    allow_manual_execution = true,
+    difference_allowed = case
+      when config.rule_key =
+        'fdm_bank_transfer_cgd_bank_statement_combination' then 0
+      else 20
+    end,
+    max_difference_days = case
+      when config.rule_key =
+        'fdm_bank_transfer_cgd_bank_statement_combination' then 3
+      else 31
+    end
+where config.rule_key in (
+  'fdm_bank_transfer_cgd_bank_statement_combination',
+  'cgd_bank_statement_fdm_adyen_monthly_payments'
+);
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values (
+  'f5100000-0000-0000-0000-000000000001',
+  'smoke-task5-bank', 'task5-bank-reservation', date '2099-11-15',
+  'Reservation settlement', 100.00
+);
+
+insert into public.import_fdm_accounts (
+  id, import_batch, source_row_number, account, date_time_raw, event_date,
+  category, amount, description
+)
+select
+  ('f5110000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task5-bank', series, 'Bank Transfer', '2099-11-15',
+  date '2099-11-15', 'Reservation',
+  case when series < 10 then -1.00 else -91.00 end,
+  'Task 5 reservation member ' || series
+from generate_series(1, 10) series;
+
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'f5200000-0000-0000-0000-000000000001', 'manual', 'rule', 'analyzing',
+  'smoke:task5-bank', 'f5200000-0000-0000-0000-000000000001',
+  pg_temp.task3_bank_snapshot(3), 0, 0
+);
+
+do $$
+declare
+  v_result jsonb;
+  v_attempt integer := 0;
+begin
+  loop
+    v_attempt := v_attempt + 1;
+    v_result := public.continue_financial_reconciliation_automatic_analysis(
+      'f5200000-0000-0000-0000-000000000001', 'smoke:task5-bank'
+    );
+    exit when v_result->>'status' <> 'analyzing';
+    if v_attempt >= 100 then
+      raise exception 'Task 5 Bank analysis did not terminate: %.', v_result;
+    end if;
+  end loop;
+  if v_result->>'status' <> 'ready' then
+    raise exception 'Task 5 Bank execution fixture was not reviewable: %.', v_result;
+  end if;
+end
+$$;
+
+create temporary table task5_bank_target on commit drop as
+select proposal.id as proposal_id, proposal.run_id,
+       proposal.candidate_groups, proposal.evidence,
+       proposal.summary_snapshot, proposal.base_snapshot
+from public.financial_reconciliation_automatic_proposals proposal
+where proposal.run_id = 'f5200000-0000-0000-0000-000000000001'
+  and proposal.grouping_key = 'f5100000-0000-0000-0000-000000000001'
+  and proposal.status = 'proposed';
+
+do $$
+begin
+  if (select count(*) from task5_bank_target) <> 1
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        join task5_bank_target target on target.proposal_id = member.proposal_id)
+      <> 11
+    or (select run.definition_config_snapshot#>>'{0,operator}'
+        from public.financial_reconciliation_automatic_runs run
+        where run.id = 'f5200000-0000-0000-0000-000000000001')
+      is distinct from '+'
+    or (select target.summary_snapshot->>'operator'
+        from task5_bank_target target) is distinct from '+'
+    or not exists (
+      select 1 from public.financial_reconciliation_source_rules source_rule
+      where source_rule.base_source_type = 'import_fdm_accounts'
+        and source_rule.matching_source_type = 'import_cgd_extrato_ordem'
+        and source_rule.operator = '+'
+    ) then
+    raise exception 'Task 5 Bank analysis did not produce the exact 10 + 1 group.';
+  end if;
+end
+$$;
+
+create or replace function pg_temp.task5_clone_grouped_proposal(
+  p_source_proposal_id uuid,
+  p_run_id uuid,
+  p_proposal_id uuid,
+  p_actor text,
+  p_membership_mutation text default ''
+)
+returns uuid
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_source_run_id uuid;
+begin
+  select proposal.run_id into strict v_source_run_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = p_source_proposal_id;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    id, trigger, scope, status, actor, client_request_id,
+    definition_config_snapshot, counts, analysis_completed_at
+  )
+  select p_run_id, 'manual', 'rule', 'ready', p_actor, p_run_id,
+         source_run.definition_config_snapshot, source_run.counts, now()
+  from public.financial_reconciliation_automatic_runs source_run
+  where source_run.id = v_source_run_id;
+
+  insert into public.financial_reconciliation_automatic_proposals (
+    id, run_id, rule_key, rule_version, base_source_type, base_source_id,
+    base_source_date, base_snapshot, items, evidence, candidate_groups,
+    calculated_difference, allowed_difference, status, reason, signature,
+    reconciliation_id, error, error_detail, completed_at,
+    grouping_key, summary_snapshot
+  )
+  select p_proposal_id, p_run_id, proposal.rule_key, proposal.rule_version,
+         proposal.base_source_type, proposal.base_source_id,
+         proposal.base_source_date, proposal.base_snapshot, proposal.items,
+         proposal.evidence, proposal.candidate_groups,
+          proposal.calculated_difference, proposal.allowed_difference,
+          'proposed', proposal.reason, proposal.signature, null, '', '', null,
+         proposal.grouping_key, proposal.summary_snapshot
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = p_source_proposal_id;
+
+  insert into public.financial_reconciliation_automatic_proposal_memberships (
+    proposal_id, role, source_type, source_id, ordinal, source_date,
+    amount, description, account, row_snapshot
+  )
+  select
+    p_proposal_id,
+    membership.role,
+    case
+      when p_membership_mutation = 'member_type'
+        and membership.role = 'source' and membership.ordinal = 1
+        then case membership.source_type
+          when 'import_fdm_accounts' then 'import_cgd_extrato_ordem'
+          else 'import_fdm_accounts'
+        end
+      else membership.source_type
+    end,
+    case
+      when p_membership_mutation = 'member_id'
+        and membership.role = 'source' and membership.ordinal = 1
+        then 'f5ff0000-0000-0000-0000-000000000001'::uuid
+      else membership.source_id
+    end,
+    membership.ordinal, membership.source_date, membership.amount,
+    membership.description, membership.account, membership.row_snapshot
+  from public.financial_reconciliation_automatic_proposal_memberships membership
+  where membership.proposal_id = p_source_proposal_id
+    and not (
+      p_membership_mutation = 'group_count'
+      and membership.role = 'source'
+      and membership.ordinal = (
+        select max(last_member.ordinal)
+        from public.financial_reconciliation_automatic_proposal_memberships last_member
+        where last_member.proposal_id = p_source_proposal_id
+          and last_member.role = 'source'
+      )
+    )
+  order by membership.source_type, membership.source_id;
+
+  return p_proposal_id;
+end
+$$;
+
+create or replace function pg_temp.task5_assert_stale(
+  p_proposal_id uuid,
+  p_reason text
+)
+returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor text;
+  v_run_id uuid;
+  v_candidate_groups jsonb;
+  v_evidence jsonb;
+  v_summary_snapshot jsonb;
+  v_base_snapshot jsonb;
+  v_result jsonb;
+  v_reconciliation_count bigint;
+  v_item_count bigint;
+  v_audit_count bigint;
+begin
+  select run.actor, run.id,
+         proposal.candidate_groups, proposal.evidence,
+         proposal.summary_snapshot, proposal.base_snapshot
+  into strict v_actor, v_run_id,
+       v_candidate_groups, v_evidence,
+       v_summary_snapshot, v_base_snapshot
+  from public.financial_reconciliation_automatic_proposals proposal
+  join public.financial_reconciliation_automatic_runs run
+    on run.id = proposal.run_id
+  where proposal.id = p_proposal_id;
+
+  select count(*) into v_reconciliation_count
+  from public.financial_reconciliations;
+  select count(*) into v_item_count
+  from public.financial_reconciliation_items;
+  select count(*) into v_audit_count
+  from public.financial_reconciliation_audit;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    p_proposal_id, v_actor
+  );
+  if v_result is distinct from jsonb_build_object(
+      'proposalId', p_proposal_id,
+      'runId', v_run_id,
+      'status', 'stale',
+      'reason', p_reason
+    )
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = p_proposal_id
+        and proposal.status = 'stale'
+        and proposal.reason = p_reason
+        and proposal.reconciliation_id is null
+        and proposal.completed_at is null
+        and proposal.error = ''
+        and proposal.error_detail = ''
+        and proposal.candidate_groups is not distinct from
+          v_candidate_groups
+        and proposal.evidence is not distinct from v_evidence
+        and proposal.summary_snapshot is not distinct from
+          v_summary_snapshot
+        and proposal.base_snapshot is not distinct from v_base_snapshot
+    )
+    or (select count(*) from public.financial_reconciliations) <>
+      v_reconciliation_count
+    or (select count(*) from public.financial_reconciliation_items) <>
+      v_item_count
+    or (select count(*) from public.financial_reconciliation_audit) <>
+      v_audit_count then
+    raise exception 'Task 5 stale execution was not atomic/sanitized for %: %.',
+      p_proposal_id, v_result;
+  end if;
+end
+$$;
+
+create or replace function pg_temp.task5_assert_failed(p_proposal_id uuid)
+returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor text;
+  v_run_id uuid;
+  v_result jsonb;
+  v_reconciliation_count bigint;
+  v_item_count bigint;
+  v_audit_count bigint;
+begin
+  select run.actor, run.id into strict v_actor, v_run_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  join public.financial_reconciliation_automatic_runs run
+    on run.id = proposal.run_id
+  where proposal.id = p_proposal_id;
+  select count(*) into v_reconciliation_count
+  from public.financial_reconciliations;
+  select count(*) into v_item_count
+  from public.financial_reconciliation_items;
+  select count(*) into v_audit_count
+  from public.financial_reconciliation_audit;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    p_proposal_id, v_actor
+  );
+  if v_result is distinct from jsonb_build_object(
+      'proposalId', p_proposal_id,
+      'runId', v_run_id,
+      'status', 'failed',
+      'reason', 'execution_failed'
+    )
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = p_proposal_id
+        and proposal.status = 'failed'
+        and proposal.reason = 'execution_failed'
+        and proposal.reconciliation_id is null
+        and proposal.completed_at is null
+        and proposal.error = 'Automatic reconciliation execution failed.'
+        and proposal.error_detail = ''
+    )
+    or v_result::text like '%task5 secret%'
+    or (select proposal.error || proposal.error_detail
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = p_proposal_id) like '%task5 secret%'
+    or (select count(*) from public.financial_reconciliations) <>
+      v_reconciliation_count
+    or (select count(*) from public.financial_reconciliation_items) <>
+      v_item_count
+    or (select count(*) from public.financial_reconciliation_audit) <>
+      v_audit_count then
+    raise exception 'Task 5 failure did not roll back/sanitize: %.', v_result;
+  end if;
+end
+$$;
+
+-- Every case runs in its own subtransaction and deliberately rolls its fixture
+-- back after assertions, so the exact same analyzed evidence can prove that
+-- each independent mismatch is sufficient to produce stale.
+do $$
+declare
+  v_source_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+  v_mutation text;
+  v_member_id uuid;
+  v_reconciliation_id uuid;
+begin
+  foreach v_mutation in array array['member_id','member_type','group_count']
+  loop
+    begin
+      update public.financial_reconciliation_automatic_proposals
+      set status = 'deselected' where id = v_source_proposal_id;
+      perform pg_temp.task5_clone_grouped_proposal(
+        v_source_proposal_id,
+        'f5300000-0000-0000-0000-000000000001',
+        'f5310000-0000-0000-0000-000000000001',
+        'smoke:task5-bank-stale', v_mutation
+      );
+      perform pg_temp.task5_assert_stale(
+        'f5310000-0000-0000-0000-000000000001',
+        'source_snapshot_changed'
+      );
+      raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+    exception when sqlstate 'T5001' then null;
+    end;
+  end loop;
+
+  foreach v_mutation in array array[
+    'date','amount','description','account','bank_eligibility','fdm_eligibility'
+  ]
+  loop
+    begin
+      update public.financial_reconciliation_automatic_proposals
+      set status = 'deselected' where id = v_source_proposal_id;
+      perform pg_temp.task5_clone_grouped_proposal(
+        v_source_proposal_id,
+        'f5300000-0000-0000-0000-000000000001',
+        'f5310000-0000-0000-0000-000000000001',
+        'smoke:task5-bank-stale', ''
+      );
+      select member.source_id into strict v_member_id
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id =
+          'f5310000-0000-0000-0000-000000000001'
+        and member.role = 'source'
+      order by member.ordinal limit 1;
+      if v_mutation = 'date' then
+        update public.import_fdm_accounts set event_date = event_date + 1
+        where id = v_member_id;
+      elsif v_mutation = 'amount' then
+        update public.import_fdm_accounts set amount = amount - 0.01
+        where id = v_member_id;
+      elsif v_mutation = 'description' then
+        update public.import_fdm_accounts set description = description || ' drift'
+        where id = v_member_id;
+      elsif v_mutation in ('account','fdm_eligibility') then
+        update public.import_fdm_accounts set account = 'Bank transfer'
+        where id = v_member_id;
+      else
+        update public.import_cgd_extrato_ordem set data = null
+        where id = 'f5100000-0000-0000-0000-000000000001';
+      end if;
+      perform pg_temp.task5_assert_stale(
+        'f5310000-0000-0000-0000-000000000001',
+        'source_snapshot_changed'
+      );
+      raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+    exception when sqlstate 'T5001' then null;
+    end;
+  end loop;
+
+  -- An active source lock and a completed consumption are independently stale.
+  foreach v_mutation in array array['source_lock','consumption']
+  loop
+    begin
+      update public.financial_reconciliation_automatic_proposals
+      set status = 'deselected' where id = v_source_proposal_id;
+      perform pg_temp.task5_clone_grouped_proposal(
+        v_source_proposal_id,
+        'f5300000-0000-0000-0000-000000000001',
+        'f5310000-0000-0000-0000-000000000001',
+        'smoke:task5-bank-stale', ''
+      );
+      select member.source_id into strict v_member_id
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = 'f5310000-0000-0000-0000-000000000001'
+      order by member.source_type, member.source_id limit 1;
+      insert into public.financial_reconciliations (
+        status, base_source_type, matching_source_types, completion_type,
+        difference_amount, created_by, completed_by, completed_at
+      ) values (
+        case when v_mutation = 'source_lock' then 'started' else 'complete' end,
+        'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+        case when v_mutation = 'consumption' then 'normal' else null end,
+        0, 'smoke:task5-lock-owner',
+        case when v_mutation = 'consumption'
+          then 'smoke:task5-lock-owner' else null end,
+        case when v_mutation = 'consumption'
+          then timezone('utc', now()) else null end
+      ) returning id into v_reconciliation_id;
+      insert into public.financial_reconciliation_items (
+        reconciliation_id, source_type, source_id, amount_snapshot, created_by
+      )
+      select v_reconciliation_id, member.source_type, member.source_id,
+             member.amount, 'smoke:task5-lock-owner'
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = 'f5310000-0000-0000-0000-000000000001'
+        and member.source_id = v_member_id;
+      perform pg_temp.task5_assert_stale(
+        'f5310000-0000-0000-0000-000000000001',
+        'source_snapshot_changed'
+      );
+      raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+    exception when sqlstate 'T5001' then null;
+    end;
+  end loop;
+
+  -- Deleted live membership.
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'deselected' where id = v_source_proposal_id;
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5300000-0000-0000-0000-000000000001',
+      'f5310000-0000-0000-0000-000000000001',
+      'smoke:task5-bank-stale', ''
+    );
+    select member.source_id into strict v_member_id
+    from public.financial_reconciliation_automatic_proposal_memberships member
+    where member.proposal_id = 'f5310000-0000-0000-0000-000000000001'
+      and member.role = 'source'
+    order by member.ordinal limit 1;
+    delete from public.import_fdm_accounts where id = v_member_id;
+    perform pg_temp.task5_assert_stale(
+      'f5310000-0000-0000-0000-000000000001',
+      'source_snapshot_changed'
+    );
+    raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+  exception when sqlstate 'T5001' then null;
+  end;
+
+  -- An independently proposed overlapping group makes this clone stale.
+  begin
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5300000-0000-0000-0000-000000000001',
+      'f5310000-0000-0000-0000-000000000001',
+      'smoke:task5-bank-stale', ''
+    );
+    perform pg_temp.task5_assert_stale(
+      'f5310000-0000-0000-0000-000000000001',
+      'source_snapshot_changed'
+    );
+    raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+  exception when sqlstate 'T5001' then null;
+  end;
+end
+$$;
+
+-- Rule/config/operator and malformed textual snapshots are each independently
+-- rejected before any numeric cast or reconciliation mutation.
+do $$
+declare
+  v_source_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+  v_mutation text;
+begin
+  foreach v_mutation in array array[
+    'days','priority','definition_strategy','definition_version','operator',
+    'malformed_integer','malformed_numeric'
+  ]
+  loop
+    begin
+      update public.financial_reconciliation_automatic_proposals
+      set status = 'deselected' where id = v_source_proposal_id;
+      perform pg_temp.task5_clone_grouped_proposal(
+        v_source_proposal_id,
+        'f5300000-0000-0000-0000-000000000001',
+        'f5310000-0000-0000-0000-000000000001',
+        'smoke:task5-bank-stale', ''
+      );
+      if v_mutation = 'days' then
+        update public.financial_reconciliation_automatic_rule_configs
+        set max_difference_days = 4
+        where rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination';
+      elsif v_mutation = 'priority' then
+        update public.financial_reconciliation_automatic_rule_configs
+        set priority = priority + 100
+        where rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination';
+      elsif v_mutation = 'definition_strategy' then
+        update public.financial_reconciliation_automatic_rule_definitions
+        set definition = jsonb_set(
+          definition, '{strategy}', '"drifted_strategy"'::jsonb
+        )
+        where rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination'
+          and version = 1;
+      elsif v_mutation = 'definition_version' then
+        insert into public.financial_reconciliation_automatic_rule_definitions (
+          rule_key, version, display_name, base_source_type,
+          destination_source_types, logic_description, definition
+        )
+        select definition.rule_key, 2, definition.display_name,
+               definition.base_source_type, definition.destination_source_types,
+               definition.logic_description, definition.definition
+        from public.financial_reconciliation_automatic_rule_definitions definition
+        where definition.rule_key =
+            'fdm_bank_transfer_cgd_bank_statement_combination'
+          and definition.version = 1;
+        update public.financial_reconciliation_automatic_rule_configs
+        set rule_version = 2
+        where rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination';
+      elsif v_mutation = 'operator' then
+        update public.financial_reconciliation_source_rules
+        set operator = '-'
+        where base_source_type = 'import_fdm_accounts'
+          and matching_source_type = 'import_cgd_extrato_ordem';
+      elsif v_mutation = 'malformed_integer' then
+        update public.financial_reconciliation_automatic_runs
+        set definition_config_snapshot = jsonb_set(
+          definition_config_snapshot, '{0,priority}', '"2147483648x"'::jsonb
+        )
+        where id = 'f5300000-0000-0000-0000-000000000001';
+      else
+        update public.financial_reconciliation_automatic_runs
+        set definition_config_snapshot = jsonb_set(
+          definition_config_snapshot,
+          '{0,differenceAllowed}', '"999999999999999999999"'::jsonb
+        )
+        where id = 'f5300000-0000-0000-0000-000000000001';
+      end if;
+      perform pg_temp.task5_assert_stale(
+        'f5310000-0000-0000-0000-000000000001',
+        case
+          when v_mutation = 'operator' then 'operator_changed'
+          else 'rule_snapshot_changed'
+        end
+      );
+      raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+    exception when sqlstate 'T5001' then null;
+    end;
+  end loop;
+end
+$$;
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values
+  (
+    'f5400000-0000-0000-0000-000000000001',
+    'smoke-task5-adyen', 'task5-adyen-june', date '2026-06-20',
+    'Merchant ADYEN settlement', 60.00
+  ),
+  (
+    'f5400000-0000-0000-0000-000000000002',
+    'smoke-task5-adyen', 'task5-adyen-july', date '2026-07-20',
+    'Adyen settlement', 25.00
+  );
+
+insert into public.import_fdm_accounts (
+  id, import_batch, account, date_time_raw, event_date, category,
+  amount, description
+) values (
+  'f5410000-0000-0000-0000-000000000001',
+  'smoke-task5-adyen', 'Adyen', '2026-07-20', date '2026-07-20',
+  'Reservation', 25.00, 'Task 5 Adyen July'
+);
+
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'f5500000-0000-0000-0000-000000000001', 'manual', 'rule', 'analyzing',
+  'smoke:task5-adyen', 'f5500000-0000-0000-0000-000000000001',
+  pg_temp.task4_adyen_snapshot(20.00), 0, 0
+);
+
+do $$
+declare
+  v_result jsonb;
+  v_attempt integer := 0;
+begin
+  loop
+    v_attempt := v_attempt + 1;
+    v_result := public.continue_financial_reconciliation_automatic_analysis(
+      'f5500000-0000-0000-0000-000000000001', 'smoke:task5-adyen'
+    );
+    exit when v_result->>'status' <> 'analyzing';
+    if v_attempt >= 10 then
+      raise exception 'Task 5 Adyen analysis did not terminate: %.', v_result;
+    end if;
+  end loop;
+  if v_result->>'status' <> 'ready'
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = 'f5500000-0000-0000-0000-000000000001'
+          and proposal.grouping_key in ('2026-06','2026-07')
+          and proposal.status = 'proposed') <> 2 then
+    raise exception 'Task 5 Adyen execution months were not proposed: %.', v_result;
+  end if;
+end
+$$;
+
+create temporary table task5_adyen_targets on commit drop as
+select proposal.grouping_key, proposal.id as proposal_id
+from public.financial_reconciliation_automatic_proposals proposal
+where proposal.run_id = 'f5500000-0000-0000-0000-000000000001'
+  and proposal.grouping_key in ('2026-06','2026-07');
+
+-- Adyen Description, Account, group expansion, and allowance drift each stale
+-- an otherwise unchanged month and preserve its immutable evidence.
+do $$
+declare
+  v_source_proposal_id uuid := (
+    select target.proposal_id from task5_adyen_targets target
+    where target.grouping_key = '2026-07'
+  );
+  v_mutation text;
+begin
+  foreach v_mutation in array array[
+    'bank_description','fdm_account','new_member','allowance'
+  ]
+  loop
+    begin
+      update public.financial_reconciliation_automatic_proposals
+      set status = 'deselected' where id = v_source_proposal_id;
+      perform pg_temp.task5_clone_grouped_proposal(
+        v_source_proposal_id,
+        'f5600000-0000-0000-0000-000000000001',
+        'f5610000-0000-0000-0000-000000000001',
+        'smoke:task5-adyen-stale', ''
+      );
+      if v_mutation = 'bank_description' then
+        update public.import_cgd_extrato_ordem
+        set descritivo = 'Payment provider'
+        where id = 'f5400000-0000-0000-0000-000000000002';
+      elsif v_mutation = 'fdm_account' then
+        update public.import_fdm_accounts set account = 'adyen'
+        where id = 'f5410000-0000-0000-0000-000000000001';
+      elsif v_mutation = 'new_member' then
+        insert into public.import_fdm_accounts (
+          id, import_batch, account, date_time_raw, event_date, category,
+          amount, description
+        ) values (
+          'f5410000-0000-0000-0000-000000000002',
+          'smoke-task5-adyen', 'Adyen', '2026-07-21', date '2026-07-21',
+          'Reservation', 1.00, 'Task 5 gained member'
+        );
+      else
+        update public.financial_reconciliation_automatic_rule_configs
+        set difference_allowed = 21
+        where rule_key = 'cgd_bank_statement_fdm_adyen_monthly_payments';
+      end if;
+      perform pg_temp.task5_assert_stale(
+        'f5610000-0000-0000-0000-000000000001',
+        case
+          when v_mutation = 'allowance' then 'tolerance_changed'
+          else 'source_snapshot_changed'
+        end
+      );
+      raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+    exception when sqlstate 'T5001' then null;
+    end;
+  end loop;
+end
+$$;
+
+create or replace function pg_temp.task5_competing_item_write()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_competing_reconciliation_id uuid;
+begin
+  if new.created_by <> 'smoke:task5-competing' then
+    return new;
+  end if;
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts',
+    '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task5-competing-owner'
+  ) returning id into v_competing_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_competing_reconciliation_id, member.source_type,
+         member.source_id, member.amount, 'smoke:task5-competing-owner'
+  from public.financial_reconciliation_automatic_proposal_memberships member
+  where member.proposal_id = 'f5310000-0000-0000-0000-000000000001'
+  order by member.source_type, member.source_id
+  limit 1;
+  return new;
+end
+$$;
+
+create or replace function pg_temp.task5_secret_audit_failure()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.actor = 'smoke:task5-unexpected'
+    and new.action = 'automatic_complete' then
+    raise exception 'task5 secret database diagnostics must never escape';
+  end if;
+  return new;
+end
+$$;
+
+do $$
+declare
+  v_source_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+begin
+  -- The trigger performs a competing ownership write after reconciliation
+  -- creation. The executor must classify the unique source lock as stale and
+  -- roll both its lifecycle rows and the simulated competing rows back.
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'deselected' where id = v_source_proposal_id;
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5300000-0000-0000-0000-000000000001',
+      'f5310000-0000-0000-0000-000000000001',
+      'smoke:task5-competing', ''
+    );
+    create trigger task5_competing_item_write
+      after insert on public.financial_reconciliations
+      for each row execute function pg_temp.task5_competing_item_write();
+    perform pg_temp.task5_assert_stale(
+      'f5310000-0000-0000-0000-000000000001',
+      'source_snapshot_changed'
+    );
+    raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+  exception when sqlstate 'T5001' then null;
+  end;
+
+  -- A late unexpected audit failure occurs after all items and normal
+  -- completion have been attempted. Only the generic failed proposal remains.
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'deselected' where id = v_source_proposal_id;
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5300000-0000-0000-0000-000000000001',
+      'f5310000-0000-0000-0000-000000000001',
+      'smoke:task5-unexpected', ''
+    );
+    create trigger task5_secret_audit_failure
+      before insert on public.financial_reconciliation_audit
+      for each row execute function pg_temp.task5_secret_audit_failure();
+    perform pg_temp.task5_assert_failed(
+      'f5310000-0000-0000-0000-000000000001'
+    );
+    raise sqlstate 'T5001' using message = 'rollback task5 fixture';
+  exception when sqlstate 'T5001' then null;
+  end;
+end
+$$;
+
+-- Execute the Bank 10 + 1 group and both Adyen outcomes, then prove exact
+-- membership/item identity, automatic provenance, immutable audit evidence,
+-- history totals, deterministic forced comment, and retry idempotency.
+do $$
+declare
+  v_bank_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+  v_adyen_zero_proposal_id uuid := (
+    select target.proposal_id from task5_adyen_targets target
+    where target.grouping_key = '2026-07'
+  );
+  v_adyen_forced_proposal_id uuid := (
+    select target.proposal_id from task5_adyen_targets target
+    where target.grouping_key = '2026-06'
+  );
+  v_bank_result jsonb;
+  v_zero_result jsonb;
+  v_forced_result jsonb;
+  v_retry jsonb;
+  v_reconciliation_id uuid;
+  v_history jsonb;
+  v_history_row jsonb;
+  v_items_before bigint;
+  v_audit_before bigint;
+begin
+  v_bank_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_bank_proposal_id, 'smoke:task5-bank'
+  );
+  v_reconciliation_id := (v_bank_result->>'reconciliationId')::uuid;
+  if v_bank_result->>'status' <> 'completed'
+    or not exists (
+      select 1 from public.financial_reconciliations reconciliation
+      where reconciliation.id = v_reconciliation_id
+        and reconciliation.status = 'complete'
+        and reconciliation.completion_type = 'normal'
+        and reconciliation.difference_amount = 0
+        and reconciliation.base_source_type = 'import_fdm_accounts'
+        and reconciliation.origin = 'automatic'
+        and reconciliation.automatic_rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+        and reconciliation.automatic_run_id =
+          'f5200000-0000-0000-0000-000000000001'
+        and reconciliation.automatic_proposal_id = v_bank_proposal_id
+    )
+    or (select count(*) from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id) <> 11
+    or exists (
+      select member.source_type, member.source_id, member.amount
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_bank_proposal_id
+      except
+      select item.source_type, item.source_id, item.amount_snapshot
+      from public.financial_reconciliation_items item
+      where item.reconciliation_id = v_reconciliation_id
+    )
+    or exists (
+      select item.source_type, item.source_id, item.amount_snapshot
+      from public.financial_reconciliation_items item
+      where item.reconciliation_id = v_reconciliation_id
+      except
+      select member.source_type, member.source_id, member.amount
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_bank_proposal_id
+    )
+    or (select count(*) from public.financial_reconciliation_audit audit
+        where audit.reconciliation_id = v_reconciliation_id) <> 13
+    or not exists (
+      select 1 from public.financial_reconciliation_audit audit
+      where audit.reconciliation_id = v_reconciliation_id
+        and audit.action = 'automatic_complete'
+        and jsonb_array_length(audit.metadata->'membershipSnapshots') = 11
+    ) then
+    raise exception 'Task 5 Bank execution lost lifecycle or audit state: %.',
+      v_bank_result;
+  end if;
+
+  select count(*) into v_items_before
+  from public.financial_reconciliation_items item
+  where item.reconciliation_id = v_reconciliation_id;
+  select count(*) into v_audit_before
+  from public.financial_reconciliation_audit audit
+  where audit.reconciliation_id = v_reconciliation_id;
+  v_retry := public.execute_financial_reconciliation_automatic_proposal(
+    v_bank_proposal_id, 'smoke:task5-bank'
+  );
+  if v_retry is distinct from v_bank_result
+    or (select count(*) from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id) <> v_items_before
+    or (select count(*) from public.financial_reconciliation_audit audit
+        where audit.reconciliation_id = v_reconciliation_id) <> v_audit_before then
+    raise exception 'Task 5 Bank retry was not idempotent: %.', v_retry;
+  end if;
+
+  v_zero_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_adyen_zero_proposal_id, 'smoke:task5-adyen'
+  );
+  v_forced_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_adyen_forced_proposal_id, 'smoke:task5-adyen'
+  );
+  if v_zero_result->>'status' <> 'completed'
+    or v_forced_result->>'status' <> 'completed'
+    or not exists (
+      select 1 from public.financial_reconciliations reconciliation
+      where reconciliation.id = (v_zero_result->>'reconciliationId')::uuid
+        and reconciliation.completion_type = 'normal'
+        and reconciliation.difference_amount = 0
+        and reconciliation.forced_completion_comment is null
+        and reconciliation.origin = 'automatic'
+        and reconciliation.automatic_rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and reconciliation.automatic_run_id =
+          'f5500000-0000-0000-0000-000000000001'
+        and reconciliation.automatic_proposal_id = v_adyen_zero_proposal_id
+    )
+    or not exists (
+      select 1 from public.financial_reconciliations reconciliation
+      where reconciliation.id = (v_forced_result->>'reconciliationId')::uuid
+        and reconciliation.completion_type = 'forced'
+        and reconciliation.difference_amount = 10
+        and reconciliation.forced_completion_comment =
+          'FDM Accounts – Adyen Reservation Payments | month 2026-06 | difference 10.00 EUR | allowance 20.00 EUR.'
+        and reconciliation.origin = 'automatic'
+        and reconciliation.automatic_rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and reconciliation.automatic_run_id =
+          'f5500000-0000-0000-0000-000000000001'
+        and reconciliation.automatic_proposal_id = v_adyen_forced_proposal_id
+    ) then
+    raise exception 'Task 5 Adyen normal/forced outcomes diverged: %, %.',
+      v_zero_result, v_forced_result;
+  end if;
+
+  v_history := public.get_financial_reconciliation_history(
+    null, null, 'automatic', 'complete', null, null, 1, 100
+  );
+  foreach v_reconciliation_id in array array[
+    (v_zero_result->>'reconciliationId')::uuid,
+    (v_forced_result->>'reconciliationId')::uuid
+  ]
+  loop
+    if exists (
+      select member.source_type, member.source_id, member.amount
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      join public.financial_reconciliation_automatic_proposals proposal
+        on proposal.id = member.proposal_id
+      where proposal.reconciliation_id = v_reconciliation_id
+      except
+      select item.source_type, item.source_id, item.amount_snapshot
+      from public.financial_reconciliation_items item
+      where item.reconciliation_id = v_reconciliation_id
+    )
+      or exists (
+        select item.source_type, item.source_id, item.amount_snapshot
+        from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id
+        except
+        select member.source_type, member.source_id, member.amount
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = member.proposal_id
+        where proposal.reconciliation_id = v_reconciliation_id
+      )
+      or not exists (
+        select 1
+        from public.financial_reconciliation_audit audit
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.reconciliation_id = audit.reconciliation_id
+        where audit.reconciliation_id = v_reconciliation_id
+          and audit.action = 'automatic_complete'
+          and jsonb_array_length(audit.metadata->'membershipSnapshots') = (
+            select count(*)
+            from public.financial_reconciliation_automatic_proposal_memberships member
+            where member.proposal_id = proposal.id
+          )
+      ) then
+      raise exception 'Task 5 Adyen reconciliation omitted immutable members.';
+    end if;
+
+    select history.value into strict v_history_row
+    from jsonb_array_elements(v_history->'rows') history(value)
+    where history.value->>'id' = v_reconciliation_id::text;
+    if (v_history_row->>'totalRecords')::bigint is distinct from (
+        select count(*)
+        from public.financial_reconciliation_items item
+        where item.reconciliation_id = v_reconciliation_id
+      )
+      or (v_history_row->>'sourceAmountTotal')::numeric is distinct from (
+        select sum(member.amount)
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = member.proposal_id
+        where proposal.reconciliation_id = v_reconciliation_id
+          and member.role = 'source'
+      )
+      or (v_history_row->>'destinationAmountTotal')::numeric is distinct from (
+        select sum(member.amount)
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = member.proposal_id
+        where proposal.reconciliation_id = v_reconciliation_id
+          and member.role = 'destination'
+      )
+      or not coalesce((v_history_row->'sourceSummary') @> (
+        select jsonb_agg(jsonb_build_object(
+          'sourceType', expected.source_type,
+          'recordCount', expected.record_count,
+          'amountTotal', expected.amount_total
+        ))
+        from (
+          select member.source_type, count(*)::integer as record_count,
+                 sum(member.amount)::numeric as amount_total
+          from public.financial_reconciliation_automatic_proposal_memberships member
+          join public.financial_reconciliation_automatic_proposals proposal
+            on proposal.id = member.proposal_id
+          where proposal.reconciliation_id = v_reconciliation_id
+          group by member.source_type
+        ) expected
+      ), false
+      ) then
+      raise exception 'Task 5 Adyen history lost signed members/totals: %.',
+        v_history_row;
+    end if;
+  end loop;
+
+  select history.value into strict v_history_row
+  from jsonb_array_elements(v_history->'rows') history(value)
+  where history.value->>'id' =
+    (v_bank_result->>'reconciliationId');
+  if (v_history_row->>'totalRecords')::integer <> 11
+    or (v_history_row->>'sourceAmountTotal')::numeric <> -100.00
+    or (v_history_row->>'destinationAmountTotal')::numeric <> 100.00
+    or not (v_history_row->'sourceSummary') @> jsonb_build_array(
+      jsonb_build_object(
+        'sourceType', 'import_fdm_accounts',
+        'recordCount', 10, 'amountTotal', -100.00
+      ),
+      jsonb_build_object(
+        'sourceType', 'import_cgd_extrato_ordem',
+        'recordCount', 1, 'amountTotal', 100.00
+      )
+    ) then
+    raise exception 'Task 5 Bank history lost signed totals: %.', v_history_row;
+  end if;
+
+  select count(*) into v_items_before
+  from public.financial_reconciliation_items item
+  where item.reconciliation_id = (v_forced_result->>'reconciliationId')::uuid;
+  select count(*) into v_audit_before
+  from public.financial_reconciliation_audit audit
+  where audit.reconciliation_id = (v_forced_result->>'reconciliationId')::uuid;
+  v_retry := public.execute_financial_reconciliation_automatic_proposal(
+    v_adyen_forced_proposal_id, 'smoke:task5-adyen'
+  );
+  if v_retry is distinct from v_forced_result
+    or (select count(*) from public.financial_reconciliation_items item
+        where item.reconciliation_id =
+          (v_forced_result->>'reconciliationId')::uuid) <> v_items_before
+    or (select count(*) from public.financial_reconciliation_audit audit
+        where audit.reconciliation_id =
+          (v_forced_result->>'reconciliationId')::uuid) <> v_audit_before then
+    raise exception 'Task 5 Adyen retry changed immutable lifecycle state.';
   end if;
 end
 $$;

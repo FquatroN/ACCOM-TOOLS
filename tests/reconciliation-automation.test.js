@@ -5433,3 +5433,170 @@ test("Adyen analysis groups closed calendar months without changing POS v2", () 
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }
 });
+
+test("Bank Reservation and Adyen proposals execute atomically from immutable memberships", () => {
+  const migration = fs.readFileSync(FDM_BANK_ADYEN_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const functionSource = (functionName) => {
+    const matches = [...migration.matchAll(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "gi",
+    ))];
+    assert.ok(matches.length, `${functionName} must be installed by the dated migration`);
+    return matches.at(-1)[0];
+  };
+
+  const memberLocker = functionSource(
+    "financial_reconciliation_lock_fdm_bank_automatic_members",
+  );
+  assert.match(
+    memberLocker,
+    /order by membership\.source_type, membership\.source_id[\s\S]*for share/i,
+  );
+  assert.match(
+    memberLocker,
+    /if v_member\.source_type = 'import_cgd_extrato_ordem'[\s\S]*from public\.import_cgd_extrato_ordem bank[\s\S]*for update of bank/i,
+  );
+  assert.match(
+    memberLocker,
+    /elsif v_member\.source_type = 'import_fdm_accounts'[\s\S]*from public\.import_fdm_accounts fdm[\s\S]*for update of fdm/i,
+  );
+  assert.match(memberLocker, /to_jsonb\(bank\)[\s\S]*to_jsonb\(fdm\)/i);
+  assert.doesNotMatch(memberLocker, /\bexecute\b|\bformat\s*\(/i);
+
+  const lifecycle = functionSource(
+    "financial_reconciliation_commit_fdm_bank_automatic_proposal",
+  );
+  assert.match(lifecycle, /financial_reconciliation_automatic_proposal_memberships/i);
+  assert.match(lifecycle, /order by membership\.source_type, membership\.source_id/i);
+  assert.match(lifecycle, /financial_reconciliation_difference/i);
+  assert.match(lifecycle, /origin = 'automatic'/i);
+  assert.match(lifecycle, /automatic_rule_key = v_proposal\.rule_key/i);
+  assert.match(lifecycle, /automatic_run_id = v_run\.id/i);
+  assert.match(lifecycle, /automatic_proposal_id = v_proposal\.id/i);
+  assert.match(lifecycle, /'automatic_complete'/i);
+  assert.match(lifecycle, /'membershipSnapshots'/i);
+  assert.match(lifecycle, /financial_reconciliation_action\([\s\S]*'complete'/i);
+  assert.match(lifecycle, /financial_reconciliation_action\([\s\S]*'force_complete'/i);
+  assert.doesNotMatch(lifecycle, /\bexecute\b|\bformat\s*\(/i);
+
+  const bankExecutor = functionSource(
+    "financial_reconciliation_execute_bank_reservation_proposal",
+  );
+  assert.match(bankExecutor, /fdm_bank_transfer_cgd_bank_statement_combination/i);
+  assert.match(bankExecutor, /'bounded_exact_combination'/i);
+  assert.match(bankExecutor, /v_source_count not between 1 and 10/i);
+  assert.match(bankExecutor, /v_destination_count <> 1/i);
+  assert.match(bankExecutor, /membership\.account <> 'Bank Transfer'/i);
+  assert.match(bankExecutor, /abs\(membership\.source_date - v_bank_date\) >\s*v_snapshot_max_difference_days/i);
+  assert.match(bankExecutor, /sign\(round\(membership\.amount \* 100\)::bigint\)/i);
+  assert.match(bankExecutor, /v_equation_cents <> 0/i);
+  assert.match(bankExecutor, /v_rule_snapshot->>'operator' is distinct from '\+'/i);
+  assert.match(bankExecutor, /v_current_operator is distinct from '\+'/i);
+  assert.match(bankExecutor, /financial_reconciliation_items locked/i);
+  assert.match(bankExecutor, /overlap_proposal\.status in \([\s\S]*'proposed'[\s\S]*'completed'/i);
+  assert.match(bankExecutor, /begin[\s\S]*exception[\s\S]*when others/i);
+  assert.match(bankExecutor, /error = 'Automatic reconciliation execution failed\.'/i);
+  assert.match(bankExecutor, /error_detail = ''/i);
+  assert.doesNotMatch(bankExecutor, /\bexecute\b|\bformat\s*\(/i);
+
+  const bankContinuation = functionSource(
+    "financial_reconciliation_continue_automatic_bank_reservation",
+  );
+  assert.match(
+    bankContinuation,
+    /financial_reconciliation_source_rules source_rule[\s\S]*base_source_type = 'import_fdm_accounts'[\s\S]*matching_source_type = 'import_cgd_extrato_ordem'[\s\S]*for share of source_rule/i,
+  );
+  assert.match(bankContinuation, /v_operator is distinct from '\+'/i);
+  assert.match(bankContinuation, /'operator', v_operator/i);
+
+  const adyenExecutor = functionSource(
+    "financial_reconciliation_execute_adyen_monthly_proposal",
+  );
+  assert.match(adyenExecutor, /cgd_bank_statement_fdm_adyen_monthly_payments/i);
+  assert.match(adyenExecutor, /'closed_calendar_month'/i);
+  assert.match(adyenExecutor, /date_trunc\('month', current_date\)/i);
+  assert.match(adyenExecutor, /bank\.descritivo ilike '%Adyen%'/i);
+  assert.match(adyenExecutor, /fdm\.account = 'Adyen'/i);
+  assert.match(adyenExecutor, /v_source_count < 1[\s\S]*v_destination_count < 1/i);
+  assert.match(adyenExecutor, /v_live_difference :=[\s\S]*v_source_total - v_destination_total/i);
+  assert.match(adyenExecutor, /abs\(v_live_difference\) > v_snapshot_difference_allowed/i);
+  assert.match(adyenExecutor, /FDM Accounts – Adyen Reservation Payments/i);
+  assert.match(adyenExecutor, /to_char\(v_calendar_month, 'YYYY-MM'\)/i);
+  assert.match(adyenExecutor, /to_char\(v_live_difference, 'FM999999999990\.00'\)/i);
+  assert.match(adyenExecutor, /to_char\(v_snapshot_difference_allowed, 'FM999999999990\.00'\)/i);
+  assert.match(adyenExecutor, /begin[\s\S]*exception[\s\S]*when others/i);
+  assert.doesNotMatch(adyenExecutor, /\bexecute\b|\bformat\s*\(/i);
+
+  for (const executor of [bankExecutor, adyenExecutor]) {
+    assert.match(
+      executor,
+      /lock table[\s\S]*public\.import_cgd_extrato_ordem[\s\S]*public\.import_fdm_accounts[\s\S]*public\.financial_reconciliation_items[\s\S]*share row exclusive mode/i,
+    );
+    assert.match(executor, /financial_reconciliation_lock_fdm_bank_automatic_members/i);
+    assert.match(executor, /row_snapshot is distinct from\s*locked_member\.row_snapshot/i);
+    assert.match(executor, /status = 'stale'/i);
+    assert.match(executor, /'source_snapshot_changed'/i);
+    assert.match(executor, /reason\s*=\s*v_stale_reason/i);
+  }
+
+  const dispatcher = functionSource(
+    "execute_financial_reconciliation_automatic_proposal",
+  );
+  assert.match(dispatcher, /v_run_actor is distinct from p_actor/i);
+  assert.match(
+    dispatcher,
+    /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*financial_reconciliation_execute_bank_reservation_proposal/i,
+  );
+  assert.match(
+    dispatcher,
+    /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*financial_reconciliation_execute_adyen_monthly_proposal/i,
+  );
+  assert.match(dispatcher, /cgd_bank_statement_fdm_credit_card_monthly_income[\s\S]*financial_reconciliation_execute_monthly_income_proposal/i);
+  for (const [key, version] of [
+    ["financial_documents_cgd_bank_statement", 2],
+    ["financial_documents_cgd_credit_card", 1],
+    ["financial_documents_cgd_bank_statement_amount_only", 1],
+    ["financial_documents_cgd_credit_card_amount_only", 1],
+  ]) {
+    assert.match(dispatcher, new RegExp(`'${key}'\\s*,\\s*${version}`));
+  }
+  assert.match(dispatcher, /financial_reconciliation_execute_prior_proposal/i);
+  assert.match(dispatcher, /select proposal\.status, proposal\.reconciliation_id[\s\S]*into strict v_authoritative_status/i);
+  assert.doesNotMatch(dispatcher, /\bexecute\b|\bformat\s*\(/i);
+
+  assert.match(
+    migration,
+    /revoke all on function public\.financial_reconciliation_lock_fdm_bank_automatic_members\(uuid\)[\s\S]*from public, anon, authenticated, service_role/i,
+  );
+  assert.match(
+    migration,
+    /revoke all on function public\.financial_reconciliation_execute_bank_reservation_proposal\(uuid,text\)[\s\S]*from public, anon, authenticated, service_role/i,
+  );
+  assert.match(
+    migration,
+    /revoke all on function public\.financial_reconciliation_execute_adyen_monthly_proposal\(uuid,text\)[\s\S]*from public, anon, authenticated, service_role/i,
+  );
+  assert.match(
+    migration,
+    /grant execute on function public\.execute_financial_reconciliation_automatic_proposal\(uuid,text\)[\s\S]*to service_role/i,
+  );
+  assert.match(
+    migration,
+    /fdm_bank_transfer_cgd_bank_statement_combination' then '\+'[\s\S]*cgd_bank_statement_fdm_adyen_monthly_payments'[\s\S]*then '-'/i,
+  );
+
+  for (const contract of [
+    "Task 5 Bank Reservation executes all eleven immutable members and retries idempotently",
+    "Task 5 Adyen zero and allowed nonzero execution preserve history and audit",
+    "Task 5 member identity type date amount description and Account drift",
+    "Task 5 group eligibility configuration definition operator and overlap drift",
+    "Task 5 deletion consumption and source-lock stale outcomes are atomic",
+    "Task 5 malformed snapshots fail stale without unsafe casts",
+    "Task 5 post-start and competing writes roll back every lifecycle row",
+    "Task 5 unexpected database failures persist only sanitized diagnostics",
+    "Task 5 execution helpers are private and top-level dispatch is literal",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
+});
