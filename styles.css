@@ -6249,8 +6249,8 @@ button[id^="close-settings"] {
 
 .financial-docs-table th,
 .financial-docs-table td {
-  padding: 0.3rem 0.34rem;
-  font-size: 0.8rem;
+  padding: 0.24rem 0.28rem;
+  font-size: 0.72rem;
   vertical-align: middle;
 }
 
@@ -6456,8 +6456,21 @@ button[id^="close-settings"] {
 .financial-docs-table-editor select {
   width: 100%;
   min-width: 0;
-  font-size: 0.72rem;
-  padding: 0.2rem 0.28rem;
+  font-size: 0.62rem;
+  padding: 0.14rem 0.2rem;
+  line-height: 1.05;
+}
+
+.financial-docs-inline-editor td {
+  padding: 0.18rem 0.2rem;
+}
+
+.financial-docs-inline-editor select[data-financial-doc-new-field="cc"],
+.financial-docs-inline-editor select[data-financial-doc-new-field="docType"],
+.financial-docs-inline-editor select[data-financial-doc-new-field="fat"] {
+  padding-left: 0.08rem;
+  padding-right: 0.42rem;
+  font-size: 0.6rem;
 }
 
 .financial-docs-table-editor input[data-financial-doc-field="amount"],
