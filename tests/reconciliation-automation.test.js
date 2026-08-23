@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -5279,6 +5280,107 @@ test("Bank Reservation analysis is bounded, deterministic, membership-backed, an
     "Task 3 Bank Reservation run population excludes behind and ahead inter-page inserts",
     "Task 3 Bank Reservation run population fails closed on consumed and deleted members",
     "Task 3 Bank Reservation authoritative shared-bank overlap",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
+});
+
+test("Adyen analysis groups closed calendar months without changing POS v2", () => {
+  const migration = fs.readFileSync(FDM_BANK_ADYEN_MIGRATION_PATH, "utf8");
+  const posMigration = fs.readFileSync(POS_INCOME_MIGRATION_PATH);
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const functionSource = (functionName) => {
+    const matches = [...migration.matchAll(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "gi",
+    ))];
+    assert.ok(matches.length, `${functionName} must be installed by the dated migration`);
+    return matches.at(-1)[0];
+  };
+
+  assert.equal(
+    crypto.createHash("sha256").update(posMigration).digest("hex"),
+    "2cf9d822f333e1481d2af3562edb4657216bd113021b41f438918035d86907c2",
+    "the historical POS v2 migration must remain byte-equivalent",
+  );
+
+  for (const signature of [
+    "financial_reconciliation_automatic_adyen_month_count\\(\\)",
+    "financial_reconciliation_automatic_adyen_month_page\\(\\s*p_after_month date,\\s*p_limit integer\\s*\\)",
+    "financial_reconciliation_continue_automatic_adyen_monthly\\(\\s*p_run_id uuid,\\s*p_actor text\\s*\\)",
+  ]) {
+    assert.match(migration, new RegExp(`create or replace function public\\.${signature}`, "i"));
+  }
+
+  const monthCount = functionSource(
+    "financial_reconciliation_automatic_adyen_month_count",
+  );
+  const monthPage = functionSource(
+    "financial_reconciliation_automatic_adyen_month_page",
+  );
+  for (const helper of [monthCount, monthPage]) {
+    assert.match(helper, /bank\.descritivo ilike '%Adyen%'/i);
+    assert.match(helper, /fdm\.account = 'Adyen'/i);
+    assert.match(helper, /date '2026-01-01'/i);
+    assert.match(helper, /date_trunc\('month', current_date\)/i);
+    assert.match(helper, /union/i);
+  }
+  assert.match(monthPage, /returns table\s*\(\s*calendar_month date\s*\)/i);
+  assert.match(monthPage, /calendar_month >\s*coalesce\(p_after_month/i);
+  assert.match(monthPage, /order by (?:eligible\.)?calendar_month[\s\S]*limit p_limit/i);
+
+  const continuation = functionSource(
+    "financial_reconciliation_continue_automatic_adyen_monthly",
+  );
+  assert.match(continuation, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*ruleVersion' is distinct from '1'/i);
+  assert.match(continuation, /'strategy', 'closed_calendar_month'/i);
+  assert.match(continuation, /'bankDescriptionContains', 'Adyen'/i);
+  assert.match(continuation, /'fdmAccount', 'Adyen'/i);
+  assert.match(continuation, /'requiresBothSides', true/i);
+  assert.match(continuation, /'monthMarkerDays', 31/i);
+  assert.match(continuation, /bank\.descritivo ilike '%Adyen%'/i);
+  assert.match(continuation, /fdm\.account = 'Adyen'/i);
+  assert.match(continuation, /cardinality\(v_source_ids\)[\s\S]*cardinality\(v_destination_ids\)[\s\S]*continue/i);
+  assert.match(continuation, /case v_operator[\s\S]*when '-' then[\s\S]*v_source_total - v_destination_total/i);
+  assert.match(continuation, /abs\(v_difference\) <= v_allowed_difference[\s\S]*'proposed'[\s\S]*'ambiguous'/i);
+  assert.match(continuation, /'monthly_difference_exceeded'/i);
+  assert.match(continuation, /to_char\(v_month\.calendar_month, 'YYYY-MM'\)/i);
+  assert.match(continuation, /row_number\(\) over \(order by bank\.data, bank\.id\)/i);
+  assert.match(continuation, /row_number\(\) over \(order by fdm\.event_date, fdm\.id\)/i);
+  assert.match(continuation, /'source'[\s\S]*'destination'/i);
+  assert.match(continuation, /'maxDifferenceDays', 31/i);
+  assert.doesNotMatch(continuation, /interval '31 days'|\bexecute\b|\bformat\s*\(/i);
+
+  const dispatcher = functionSource(
+    "continue_financial_reconciliation_automatic_analysis",
+  );
+  assert.match(
+    dispatcher,
+    /v_rule_key\s*=\s*'cgd_bank_statement_fdm_adyen_monthly_payments'[\s\S]*v_rule_version\s*=\s*1[\s\S]*financial_reconciliation_continue_automatic_adyen_monthly\(\s*p_run_id,\s*p_actor\s*\)/i,
+  );
+  assert.match(
+    dispatcher,
+    /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*financial_reconciliation_continue_automatic_bank_reservation/i,
+  );
+  assert.doesNotMatch(dispatcher, /\bexecute\b|\bformat\s*\(/i);
+
+  const finalizer = functionSource(
+    "financial_reconciliation_finalize_automatic_analysis",
+  );
+  assert.match(finalizer, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*rule_version = 1/i);
+  assert.match(finalizer, /analysis_processed - count\(\*\)/i);
+  assert.match(finalizer, /financial_reconciliation_finalize_automatic_prior_analysis\(\s*p_run_id\s*\)/i);
+
+  assert.doesNotMatch(
+    migration,
+    /create or replace function public\.financial_reconciliation_(?:automatic_monthly_income|continue_automatic_monthly_income)\b/i,
+  );
+
+  for (const contract of [
+    "Task 4 Adyen month union, eligibility, and cursor",
+    "Task 4 Adyen closed-month classifications and omitted empty sides",
+    "Task 4 Adyen memberships, retry, and reapply idempotency",
+    "Task 4 POS v2 helper definitions remain byte-equivalent",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }

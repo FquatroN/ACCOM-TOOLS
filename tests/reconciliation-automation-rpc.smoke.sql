@@ -12471,4 +12471,557 @@ begin
 end
 $$;
 
+-- Task 4 Adyen month union, eligibility, and cursor
+-- Isolate Adyen from any earlier smoke or target-database rows while retaining
+-- every non-Adyen fixture for the existing managed strategies.
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_cgd_extrato_ordem', '["import_fdm_accounts"]'::jsonb,
+    'smoke:task4-isolation'
+  ) returning id into v_reconciliation_id;
+
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_cgd_extrato_ordem', bank.id,
+         bank.montante, 'smoke:task4-isolation'
+  from public.import_cgd_extrato_ordem bank
+  where bank.montante is not null
+    and bank.descritivo ilike '%Adyen%'
+    and not exists (
+      select 1 from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    );
+
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_fdm_accounts', fdm.id,
+         fdm.amount, 'smoke:task4-isolation'
+  from public.import_fdm_accounts fdm
+  where fdm.amount is not null
+    and fdm.account = 'Adyen'
+    and not exists (
+      select 1 from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_fdm_accounts'
+        and locked.source_id = fdm.id
+    );
+end
+$$;
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+)
+select
+  ('d4010000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task4-adyen', 'task4-many-bank-' || series,
+  date '2026-01-01' + ((series - 1) % 28),
+  case when series % 2 = 0 then 'ADYEN settlement' else 'Adyen' end,
+  1.00
+from generate_series(1, 30) series;
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values
+  ('d4020000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'task4-within-bank', date '2026-02-10', 'Adyen within', 110.00),
+  ('d4020000-0000-0000-0000-000000000002', 'smoke-task4-adyen',
+   'task4-nonmatching-bank', date '2026-02-11', 'payment provider', 999.00),
+  ('d4030000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'task4-boundary-bank', date '2026-03-10', 'ADYEN settlement', 120.00),
+  ('d4040000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'task4-over-bank', date '2026-04-10', 'Adyen over', 121.00),
+  ('d4050000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'task4-bank-only', date '2026-05-10', 'Adyen bank only', 50.00),
+  ('d4000000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'task4-pre-floor-bank', date '2025-12-31', 'Adyen pre-floor', 25.00),
+  ('d4090000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'task4-current-bank', date_trunc('month', current_date)::date,
+   'Adyen current', 25.00);
+
+insert into public.import_fdm_accounts (
+  id, import_batch, account, date_time_raw, event_date, category,
+  amount, description
+)
+select
+  ('e4010000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task4-adyen', 'Adyen',
+  to_char(date '2026-01-01' + ((series - 1) % 28), 'YYYY-MM-DD'),
+  date '2026-01-01' + ((series - 1) % 28), 'Reservation',
+  case when series <= 30 then 1.00 else 0.00 end,
+  'many FDM member ' || series
+from generate_series(1, 35) series;
+
+insert into public.import_fdm_accounts (
+  id, import_batch, account, date_time_raw, event_date, category,
+  amount, description
+) values
+  ('e4020000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'Adyen', '2026-02-10', date '2026-02-10', 'Reservation',
+   100.00, 'within FDM'),
+  ('e4020000-0000-0000-0000-000000000002', 'smoke-task4-adyen',
+   'adyen', '2026-02-11', date '2026-02-11', 'Reservation',
+   999.00, 'lowercase near match'),
+  ('e4020000-0000-0000-0000-000000000003', 'smoke-task4-adyen',
+   'Adyen ', '2026-02-12', date '2026-02-12', 'Reservation',
+   999.00, 'space near match'),
+  ('e4030000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'Adyen', '2026-03-10', date '2026-03-10', 'Reservation',
+   100.00, 'boundary FDM'),
+  ('e4040000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'Adyen', '2026-04-10', date '2026-04-10', 'Reservation',
+   100.00, 'over FDM'),
+  ('e4060000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'Adyen', '2026-06-10', date '2026-06-10', 'Reservation',
+   50.00, 'FDM only'),
+  ('e4000000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'Adyen', '2025-12-31', date '2025-12-31', 'Reservation',
+   25.00, 'pre-floor FDM'),
+  ('e4090000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'Adyen', to_char(date_trunc('month', current_date), 'YYYY-MM-DD'),
+   date_trunc('month', current_date)::date, 'Reservation',
+   25.00, 'current FDM');
+
+do $$
+declare
+  v_count bigint;
+  v_first date[];
+  v_second date[];
+  v_end date[];
+  v_rejected boolean := false;
+begin
+  select public.financial_reconciliation_automatic_adyen_month_count()
+  into v_count;
+  select array_agg(page.calendar_month order by page.calendar_month)
+  into v_first
+  from public.financial_reconciliation_automatic_adyen_month_page(null, 3) page;
+  select array_agg(page.calendar_month order by page.calendar_month)
+  into v_second
+  from public.financial_reconciliation_automatic_adyen_month_page(
+    date '2026-03-01', 3
+  ) page;
+  select array_agg(page.calendar_month order by page.calendar_month)
+  into v_end
+  from public.financial_reconciliation_automatic_adyen_month_page(
+    date '2026-06-01', 3
+  ) page;
+
+  if v_count is distinct from 6
+    or v_first is distinct from array[
+      date '2026-01-01', date '2026-02-01', date '2026-03-01'
+    ]
+    or v_second is distinct from array[
+      date '2026-04-01', date '2026-05-01', date '2026-06-01'
+    ]
+    or v_end is not null then
+    raise exception 'Task 4 month union/cursor excluded or reordered a literal fixture: %, %, %, %.',
+      v_count, v_first, v_second, v_end;
+  end if;
+
+  begin
+    perform public.financial_reconciliation_automatic_adyen_month_page(
+      null, 26
+    );
+  exception when others then
+    v_rejected := sqlerrm =
+      'Automatic Adyen month page size must be between 1 and 25.';
+  end;
+  if v_rejected is not true then
+    raise exception 'Task 4 Adyen month page accepted an oversized limit.';
+  end if;
+end
+$$;
+
+create or replace function pg_temp.task4_adyen_snapshot(p_allowance numeric)
+returns jsonb
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_array(jsonb_build_object(
+    'ruleKey', definition.rule_key,
+    'ruleVersion', definition.version,
+    'displayName', definition.display_name,
+    'priority', config.priority,
+    'differenceAllowed', p_allowance,
+    'maxDifferenceDays', 31,
+    'destinationSourceType', 'import_fdm_accounts',
+    'definition', definition.definition,
+    'operator', '-'
+  ))
+  from public.financial_reconciliation_automatic_rule_definitions definition
+  join public.financial_reconciliation_automatic_rule_configs config
+    on config.rule_key = definition.rule_key
+   and config.rule_version = definition.version
+  where definition.rule_key =
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    and definition.version = 1
+$$;
+
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'd4400000-0000-0000-0000-000000000001', 'manual', 'rule', 'analyzing',
+  'smoke:task4-adyen', 'd4400000-0000-0000-0000-000000000001',
+  pg_temp.task4_adyen_snapshot(20.00), 0, 0
+);
+
+-- Task 4 Adyen closed-month classifications and omitted empty sides
+do $$
+declare
+  v_result jsonb;
+begin
+  v_result := public.continue_financial_reconciliation_automatic_analysis(
+    'd4400000-0000-0000-0000-000000000001',
+    'smoke:task4-adyen'
+  );
+
+  if jsonb_typeof(v_result) is distinct from 'object'
+    or v_result->'status' is distinct from '"ready"'::jsonb
+    or v_result->'analysisComplete' is distinct from 'true'::jsonb
+    or v_result->'analysisProcessed' is distinct from '6'::jsonb
+    or v_result->'analysisTotal' is distinct from '6'::jsonb
+    or v_result#>'{counts,bases}' is distinct from '6'::jsonb
+    or v_result#>'{counts,proposed}' is distinct from '3'::jsonb
+    or v_result#>'{counts,ambiguous}' is distinct from '1'::jsonb
+    or v_result#>'{counts,skipped}' is distinct from '2'::jsonb then
+    raise exception 'Task 4 Adyen run lifecycle/counts are invalid: %.', v_result;
+  end if;
+
+  if (select count(*)
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4400000-0000-0000-0000-000000000001')
+        is distinct from 4
+    or (select count(distinct proposal.grouping_key)
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = 'd4400000-0000-0000-0000-000000000001')
+          is distinct from 4
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+        and proposal.grouping_key = '2026-01'
+        and proposal.status = 'proposed' and proposal.reason = ''
+        and proposal.calculated_difference = 0
+    )
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+        and proposal.grouping_key = '2026-02'
+        and proposal.status = 'proposed' and proposal.reason = ''
+        and proposal.calculated_difference = 10
+    )
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+        and proposal.grouping_key = '2026-03'
+        and proposal.status = 'proposed' and proposal.reason = ''
+        and proposal.calculated_difference = 20
+    )
+    or not exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+        and proposal.grouping_key = '2026-04'
+        and proposal.status = 'ambiguous'
+        and proposal.reason = 'monthly_difference_exceeded'
+        and proposal.calculated_difference = 21
+    )
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+        and proposal.grouping_key in ('2025-12','2026-05','2026-06')
+    ) then
+    raise exception 'Task 4 Adyen monthly classifications or empty-side omission are invalid.';
+  end if;
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+      and (
+        proposal.rule_key is distinct from
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        or proposal.rule_version is distinct from 1
+        or proposal.base_source_type is distinct from 'import_cgd_extrato_ordem'
+        or proposal.allowed_difference is distinct from 20
+        or proposal.grouping_key is distinct from to_char(
+          (proposal.summary_snapshot->>'calendarMonth')::date, 'YYYY-MM'
+        )
+        or proposal.summary_snapshot->>'sourceDescriptionContains'
+          is distinct from 'Adyen'
+        or proposal.summary_snapshot->>'destinationAccount'
+          is distinct from 'Adyen'
+        or proposal.summary_snapshot->>'operator' is distinct from '-'
+        or proposal.summary_snapshot->'maxDifferenceDays'
+          is distinct from '31'::jsonb
+        or proposal.summary_snapshot->'differenceAllowed'
+          is distinct from '20.00'::jsonb
+        or proposal.summary_snapshot->'calculatedDifference' is distinct from
+          to_jsonb(proposal.calculated_difference)
+      )
+  ) then
+    raise exception 'Task 4 Adyen proposal snapshot contract is incomplete.';
+  end if;
+end
+$$;
+
+-- Task 4 Adyen memberships, retry, and reapply idempotency
+do $$
+declare
+  v_source_ids uuid[];
+  v_destination_ids uuid[];
+begin
+  select array_agg(member.source_id order by member.source_id)
+  into v_source_ids
+  from public.financial_reconciliation_automatic_proposal_memberships member
+  join public.financial_reconciliation_automatic_proposals proposal
+    on proposal.id = member.proposal_id
+  where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+    and member.role = 'source';
+
+  select array_agg(member.source_id order by member.source_id)
+  into v_destination_ids
+  from public.financial_reconciliation_automatic_proposal_memberships member
+  join public.financial_reconciliation_automatic_proposals proposal
+    on proposal.id = member.proposal_id
+  where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+    and member.role = 'destination';
+
+  if v_source_ids is distinct from array(
+      select expected.id
+      from (
+        select ('d4010000-0000-0000-0000-' ||
+          lpad(series::text, 12, '0'))::uuid as id
+        from generate_series(1, 30) series
+        union all values
+          ('d4020000-0000-0000-0000-000000000001'::uuid),
+          ('d4030000-0000-0000-0000-000000000001'::uuid),
+          ('d4040000-0000-0000-0000-000000000001'::uuid)
+      ) expected order by expected.id
+    )
+    or v_destination_ids is distinct from array(
+      select expected.id
+      from (
+        select ('e4010000-0000-0000-0000-' ||
+          lpad(series::text, 12, '0'))::uuid as id
+        from generate_series(1, 35) series
+        union all values
+          ('e4020000-0000-0000-0000-000000000001'::uuid),
+          ('e4030000-0000-0000-0000-000000000001'::uuid),
+          ('e4040000-0000-0000-0000-000000000001'::uuid)
+      ) expected order by expected.id
+    ) then
+    raise exception 'Task 4 Adyen memberships skipped or included the wrong literal rows.';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      select member.*,
+             row_number() over (
+               partition by member.proposal_id, member.role
+               order by member.source_date, member.source_id
+             )::integer as expected_ordinal
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      join public.financial_reconciliation_automatic_proposals proposal
+        on proposal.id = member.proposal_id
+      where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+    ) member
+    where member.ordinal is distinct from member.expected_ordinal
+      or (member.role = 'source'
+          and member.source_type is distinct from 'import_cgd_extrato_ordem')
+      or (member.role = 'destination'
+          and member.source_type is distinct from 'import_fdm_accounts')
+  )
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = member.proposal_id
+        where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+          and proposal.grouping_key = '2026-01'
+          and member.role = 'source') is distinct from 30
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = member.proposal_id
+        where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+          and proposal.grouping_key = '2026-01'
+          and member.role = 'destination') is distinct from 35 then
+    raise exception 'Task 4 Adyen membership roles, ordinals, or large month are invalid.';
+  end if;
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    left join public.financial_reconciliation_automatic_proposal_memberships member
+      on member.proposal_id = proposal.id
+     and member.role = 'source'
+     and member.ordinal = 1
+    where proposal.run_id = 'd4400000-0000-0000-0000-000000000001'
+      and (
+        member.source_id is null
+        or proposal.base_source_id is distinct from member.source_id
+        or proposal.base_source_date is distinct from member.source_date
+        or proposal.base_snapshot is distinct from member.row_snapshot
+      )
+  ) then
+    raise exception 'Task 4 Adyen canonical Bank is not the first source member.';
+  end if;
+end
+$$;
+
+-- A run whose month union contains only one-sided months completes with no
+-- review proposal while preserving both processed months as skipped accounting.
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_cgd_extrato_ordem', '["import_fdm_accounts"]'::jsonb,
+    'smoke:task4-empty-only-isolation'
+  ) returning id into v_reconciliation_id;
+
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select distinct v_reconciliation_id, member.source_type, member.source_id,
+         member.amount, 'smoke:task4-empty-only-isolation'
+  from public.financial_reconciliation_automatic_proposal_memberships member
+  join public.financial_reconciliation_automatic_proposals proposal
+    on proposal.id = member.proposal_id
+  where proposal.run_id = 'd4400000-0000-0000-0000-000000000001';
+end
+$$;
+
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'd4400000-0000-0000-0000-000000000002', 'manual', 'rule', 'analyzing',
+  'smoke:task4-empty-only', 'd4400000-0000-0000-0000-000000000002',
+  pg_temp.task4_adyen_snapshot(20.00), 0, 0
+);
+
+do $$
+declare
+  v_result jsonb;
+begin
+  v_result := public.continue_financial_reconciliation_automatic_analysis(
+    'd4400000-0000-0000-0000-000000000002',
+    'smoke:task4-empty-only'
+  );
+  if v_result->'status' is distinct from '"completed"'::jsonb
+    or v_result->'analysisComplete' is distinct from 'true'::jsonb
+    or jsonb_typeof(v_result->'finishedAt') is distinct from 'string'
+    or v_result->'analysisProcessed' is distinct from '2'::jsonb
+    or v_result->'analysisTotal' is distinct from '2'::jsonb
+    or v_result#>'{counts,bases}' is distinct from '2'::jsonb
+    or v_result#>'{counts,proposed}' is distinct from '0'::jsonb
+    or v_result#>'{counts,ambiguous}' is distinct from '0'::jsonb
+    or v_result#>'{counts,skipped}' is distinct from '2'::jsonb
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4400000-0000-0000-0000-000000000002'
+    ) then
+    raise exception 'Task 4 empty-side-only run did not complete invisibly: %.',
+      v_result;
+  end if;
+end
+$$;
+
+create temporary table task4_adyen_before_reapply on commit drop as
+select
+  (select count(*) from public.financial_reconciliation_automatic_proposals
+   where run_id = 'd4400000-0000-0000-0000-000000000001') as proposal_count,
+  (select count(*)
+   from public.financial_reconciliation_automatic_proposal_memberships member
+   join public.financial_reconciliation_automatic_proposals proposal
+     on proposal.id = member.proposal_id
+   where proposal.run_id = 'd4400000-0000-0000-0000-000000000001')
+    as membership_count;
+
+-- Task 4 POS v2 helper definitions remain byte-equivalent
+create temporary table task4_pos_v2_before_reapply on commit drop as
+select procedure.oid::regprocedure::text as signature,
+       pg_get_functiondef(procedure.oid) as definition
+from pg_proc procedure
+where procedure.oid in (
+  'public.financial_reconciliation_automatic_monthly_income_count()'::regprocedure,
+  'public.financial_reconciliation_automatic_monthly_income_page(date,integer)'::regprocedure,
+  'public.financial_reconciliation_continue_automatic_monthly_income(uuid,jsonb)'::regprocedure
+);
+
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+
+do $$
+declare
+  v_retry jsonb;
+  v_before record;
+begin
+  select * into strict v_before from task4_adyen_before_reapply;
+  v_retry := public.continue_financial_reconciliation_automatic_analysis(
+    'd4400000-0000-0000-0000-000000000001',
+    'smoke:task4-adyen'
+  );
+
+  if v_retry->'status' is distinct from '"ready"'::jsonb
+    or v_retry->'analysisProcessed' is distinct from '6'::jsonb
+    or v_retry->'analysisTotal' is distinct from '6'::jsonb
+    or (select count(*) from public.financial_reconciliation_automatic_proposals
+        where run_id = 'd4400000-0000-0000-0000-000000000001')
+      is distinct from v_before.proposal_count
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = member.proposal_id
+        where proposal.run_id = 'd4400000-0000-0000-0000-000000000001')
+      is distinct from v_before.membership_count then
+    raise exception 'Task 4 retry or migration reapply duplicated Adyen evidence: %.',
+      v_retry;
+  end if;
+
+  if exists (
+    select before.signature
+    from task4_pos_v2_before_reapply before
+    full join (
+      select procedure.oid::regprocedure::text as signature,
+             pg_get_functiondef(procedure.oid) as definition
+      from pg_proc procedure
+      where procedure.oid in (
+        'public.financial_reconciliation_automatic_monthly_income_count()'::regprocedure,
+        'public.financial_reconciliation_automatic_monthly_income_page(date,integer)'::regprocedure,
+        'public.financial_reconciliation_continue_automatic_monthly_income(uuid,jsonb)'::regprocedure
+      )
+    ) after using (signature)
+    where before.signature is null or after.signature is null
+      or before.definition is distinct from after.definition
+  ) then
+    raise exception 'Task 4 changed an installed POS v2 monthly helper definition.';
+  end if;
+
+  if exists (
+    select 1
+    from (values
+      ('public.financial_reconciliation_automatic_adyen_month_count()'),
+      ('public.financial_reconciliation_automatic_adyen_month_page(date,integer)'),
+      ('public.financial_reconciliation_continue_automatic_adyen_monthly(uuid,text)'),
+      ('public.financial_reconciliation_finalize_automatic_prior_analysis(uuid)')
+    ) expected(signature)
+    where has_function_privilege('anon', expected.signature, 'EXECUTE')
+      or has_function_privilege('authenticated', expected.signature, 'EXECUTE')
+      or has_function_privilege('service_role', expected.signature, 'EXECUTE')
+  ) then
+    raise exception 'Task 4 private helper unexpectedly exposes EXECUTE.';
+  end if;
+end
+$$;
+
 rollback;

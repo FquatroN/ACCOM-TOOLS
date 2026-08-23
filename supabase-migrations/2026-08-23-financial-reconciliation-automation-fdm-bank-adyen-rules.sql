@@ -2029,4 +2029,678 @@ revoke all on function public.continue_financial_reconciliation_automatic_analys
 grant execute on function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
   to service_role;
 
+create or replace function public.financial_reconciliation_automatic_adyen_month_count()
+returns bigint
+language sql
+stable
+security definer set search_path = public, pg_temp
+as $$
+  with eligible_months as (
+    select date_trunc('month', bank.data)::date as calendar_month
+    from public.import_cgd_extrato_ordem bank
+    where bank.data >= date '2026-01-01'
+      and bank.data < date_trunc('month', current_date)::date
+      and bank.montante is not null
+      and bank.descritivo ilike '%Adyen%'
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_cgd_extrato_ordem'
+          and locked.source_id = bank.id
+      )
+    union
+    select date_trunc('month', fdm.event_date)::date as calendar_month
+    from public.import_fdm_accounts fdm
+    where fdm.event_date >= date '2026-01-01'
+      and fdm.event_date < date_trunc('month', current_date)::date
+      and fdm.amount is not null
+      and fdm.account = 'Adyen'
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_fdm_accounts'
+          and locked.source_id = fdm.id
+      )
+  )
+  select count(*) from eligible_months
+$$;
+
+create or replace function public.financial_reconciliation_automatic_adyen_month_page(
+  p_after_month date,
+  p_limit integer
+)
+returns table (
+  calendar_month date
+)
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+begin
+  if p_limit is null or p_limit not between 1 and 25 then
+    raise exception 'Automatic Adyen month page size must be between 1 and 25.';
+  end if;
+
+  return query
+  with eligible_months as (
+    select date_trunc('month', bank.data)::date as calendar_month
+    from public.import_cgd_extrato_ordem bank
+    where bank.data >= date '2026-01-01'
+      and bank.data < date_trunc('month', current_date)::date
+      and bank.montante is not null
+      and bank.descritivo ilike '%Adyen%'
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_cgd_extrato_ordem'
+          and locked.source_id = bank.id
+      )
+    union
+    select date_trunc('month', fdm.event_date)::date as calendar_month
+    from public.import_fdm_accounts fdm
+    where fdm.event_date >= date '2026-01-01'
+      and fdm.event_date < date_trunc('month', current_date)::date
+      and fdm.amount is not null
+      and fdm.account = 'Adyen'
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_fdm_accounts'
+          and locked.source_id = fdm.id
+      )
+  )
+  select eligible.calendar_month
+  from eligible_months eligible
+  where eligible.calendar_month >
+    coalesce(p_after_month, date '0001-01-01')
+  order by eligible.calendar_month
+  limit p_limit;
+end
+$$;
+
+do $migration$
+begin
+  if to_regprocedure(
+      'public.financial_reconciliation_finalize_automatic_prior_analysis(uuid)'
+    ) is null then
+    alter function public.financial_reconciliation_finalize_automatic_analysis(uuid)
+      rename to financial_reconciliation_finalize_automatic_prior_analysis;
+  end if;
+end
+$migration$;
+
+create or replace function public.financial_reconciliation_finalize_automatic_analysis(
+  p_run_id uuid
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_rule jsonb;
+  v_rule_key text;
+  v_rule_version integer;
+begin
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = p_run_id
+  for update;
+  if not found then
+    raise exception 'Automatic analysis run was not found.';
+  end if;
+
+  if jsonb_array_length(v_run.definition_config_snapshot) = 1 then
+    select snapshot.value into strict v_rule
+    from jsonb_array_elements(v_run.definition_config_snapshot) snapshot(value);
+    if coalesce(v_rule->>'ruleVersion', '') ~ '^[0-9]+$'
+      and length(v_rule->>'ruleVersion') <= 10 then
+      v_rule_key := v_rule->>'ruleKey';
+      v_rule_version := (v_rule->>'ruleVersion')::integer;
+    end if;
+  end if;
+
+  if v_rule_key is distinct from
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    or v_rule_version is distinct from 1 then
+    return public.financial_reconciliation_finalize_automatic_prior_analysis(
+      p_run_id
+    );
+  end if;
+
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+  if v_run.status <> 'analyzing'
+    or v_run.analysis_processed is distinct from v_run.analysis_total then
+    raise exception 'Automatic Adyen analysis is not ready to finalize.';
+  end if;
+
+  update public.financial_reconciliation_automatic_runs run
+  set status = case when exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id
+          and proposal.rule_key =
+            'cgd_bank_statement_fdm_adyen_monthly_payments'
+          and proposal.rule_version = 1
+          and proposal.status in ('proposed','ambiguous','stale','failed')
+      ) then 'ready' else 'completed' end,
+      finished_at = case when exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id
+          and proposal.rule_key =
+            'cgd_bank_statement_fdm_adyen_monthly_payments'
+          and proposal.rule_version = 1
+          and proposal.status in ('proposed','ambiguous','stale','failed')
+      ) then null else now() end,
+      analysis_completed_at = now(),
+      updated_at = now(),
+      analysis_error_code = null,
+      analysis_error_at = null,
+      counts = (
+        select jsonb_build_object(
+          'bases', v_run.analysis_total,
+          'proposed', count(*) filter (
+            where proposal.status = 'proposed'
+          ),
+          'ambiguous', count(*) filter (
+            where proposal.status = 'ambiguous'
+          ),
+          'skipped', greatest(
+            v_run.analysis_processed - count(*) filter (
+              where proposal.status in (
+                'proposed','ambiguous','stale','failed'
+              )
+            ),
+            0
+          )
+        )
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id
+          and proposal.rule_key =
+            'cgd_bank_statement_fdm_adyen_monthly_payments'
+          and proposal.rule_version = 1
+      )
+  where run.id = p_run_id and run.analysis_completed_at is null;
+
+  return public.get_financial_reconciliation_automatic_run(p_run_id);
+end
+$$;
+
+create or replace function public.financial_reconciliation_continue_automatic_adyen_monthly(
+  p_run_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_rule jsonb;
+  v_month record;
+  v_page_count integer := 0;
+  v_total bigint;
+  v_last_month date;
+  v_allowed_difference numeric(14,2);
+  v_operator text;
+  v_source_ids uuid[];
+  v_destination_ids uuid[];
+  v_source_count integer;
+  v_destination_count integer;
+  v_source_total numeric(14,2);
+  v_destination_total numeric(14,2);
+  v_difference numeric(14,2);
+  v_base_id uuid;
+  v_base_date date;
+  v_base_snapshot jsonb;
+  v_summary_snapshot jsonb;
+  v_signature text;
+  v_status text;
+  v_reason text;
+  v_proposal_id uuid;
+  v_inserted boolean;
+  v_inserted_count integer;
+  v_inserted_source_ids uuid[];
+  v_inserted_destination_ids uuid[];
+  v_inserted_source_total numeric(14,2);
+  v_inserted_destination_total numeric(14,2);
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = p_run_id
+  for update;
+  if not found then
+    raise exception 'Automatic analysis run was not found.';
+  end if;
+  if v_run.actor <> p_actor then
+    raise exception 'Automatic analysis run belongs to another actor.';
+  end if;
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+  if v_run.status <> 'analyzing' then
+    raise exception 'Automatic analysis run is not resumable.';
+  end if;
+  if jsonb_array_length(v_run.definition_config_snapshot) <> 1 then
+    raise exception
+      'Resumable automatic analysis requires exactly one snapshotted rule.';
+  end if;
+  select snapshot.value into strict v_rule
+  from jsonb_array_elements(v_run.definition_config_snapshot) snapshot(value);
+
+  if jsonb_typeof(v_rule) is distinct from 'object'
+    or v_rule - array[
+      'ruleKey','ruleVersion','displayName','priority','differenceAllowed',
+      'maxDifferenceDays','destinationSourceType','definition','operator'
+    ]::text[] <> '{}'::jsonb
+    or not (v_rule ?& array[
+      'ruleKey','ruleVersion','displayName','priority','differenceAllowed',
+      'maxDifferenceDays','destinationSourceType','definition','operator'
+    ])
+    or v_rule->>'ruleKey' is distinct from
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    or v_rule->>'ruleVersion' is distinct from '1'
+    or v_rule->>'displayName' is distinct from
+      'FDM Accounts – Adyen Reservation Payments'
+    or coalesce(v_rule->>'priority', '') !~ '^[1-9][0-9]*$'
+    or length(v_rule->>'priority') > 10
+    or v_rule->>'destinationSourceType' is distinct from
+      'import_fdm_accounts'
+    or v_rule->>'operator' is distinct from '-'
+    or coalesce(v_rule->>'differenceAllowed', '') !~
+      '^[0-9]+(\.[0-9]+)?$'
+    or length(v_rule->>'differenceAllowed') > 20
+    or (v_rule->>'differenceAllowed')::numeric < 0
+    or v_rule->>'maxDifferenceDays' is distinct from '31'
+    or v_rule->'definition' is distinct from jsonb_build_object(
+      'strategy', 'closed_calendar_month',
+      'bankDescriptionContains', 'Adyen',
+      'fdmAccount', 'Adyen',
+      'requiresBothSides', true,
+      'monthMarkerDays', 31
+    ) then
+    raise exception 'Automatic Adyen monthly rule snapshot contract is invalid.';
+  end if;
+
+  v_allowed_difference :=
+    (v_rule->>'differenceAllowed')::numeric(14,2);
+  v_operator := v_rule->>'operator';
+
+  lock table
+    public.import_cgd_extrato_ordem,
+    public.import_fdm_accounts,
+    public.financial_reconciliation_items
+  in share row exclusive mode;
+
+  select public.financial_reconciliation_automatic_adyen_month_count()
+  into v_total;
+  update public.financial_reconciliation_automatic_runs run
+  set analysis_total = greatest(
+        run.analysis_total, run.analysis_processed, v_total
+      ),
+      updated_at = now()
+  where run.id = p_run_id;
+
+  for v_month in
+    select page.calendar_month
+    from public.financial_reconciliation_automatic_adyen_month_page(
+      v_run.analysis_cursor_date,
+      25
+    ) page
+  loop
+    v_page_count := v_page_count + 1;
+    v_last_month := v_month.calendar_month;
+
+    select
+      array_agg(bank.id order by bank.data, bank.id),
+      count(*)::integer,
+      sum(bank.montante)::numeric(14,2),
+      (array_agg(bank.id order by bank.data, bank.id))[1],
+      (array_agg(bank.data order by bank.data, bank.id))[1]
+    into
+      v_source_ids, v_source_count, v_source_total, v_base_id, v_base_date
+    from public.import_cgd_extrato_ordem bank
+    where bank.data >= v_month.calendar_month
+      and bank.data < v_month.calendar_month + interval '1 month'
+      and bank.data >= date '2026-01-01'
+      and bank.data < date_trunc('month', current_date)::date
+      and bank.montante is not null
+      and bank.descritivo ilike '%Adyen%'
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_cgd_extrato_ordem'
+          and locked.source_id = bank.id
+      );
+
+    select
+      array_agg(fdm.id order by fdm.event_date, fdm.id),
+      count(*)::integer,
+      sum(fdm.amount)::numeric(14,2)
+    into v_destination_ids, v_destination_count, v_destination_total
+    from public.import_fdm_accounts fdm
+    where fdm.event_date >= v_month.calendar_month
+      and fdm.event_date < v_month.calendar_month + interval '1 month'
+      and fdm.event_date >= date '2026-01-01'
+      and fdm.event_date < date_trunc('month', current_date)::date
+      and fdm.amount is not null
+      and fdm.account = 'Adyen'
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_fdm_accounts'
+          and locked.source_id = fdm.id
+      );
+
+    if cardinality(v_source_ids) is null
+      or cardinality(v_destination_ids) is null then
+      continue;
+    end if;
+
+    v_difference := case v_operator
+      when '-' then
+        (v_source_total - v_destination_total)::numeric(14,2)
+      when '+' then
+        (v_source_total + v_destination_total)::numeric(14,2)
+      else null
+    end;
+    if v_difference is null then
+      raise exception 'Automatic Adyen monthly operator is invalid.';
+    end if;
+
+    select to_jsonb(bank)
+    into strict v_base_snapshot
+    from public.import_cgd_extrato_ordem bank
+    where bank.id = v_base_id
+      and bank.id = any(v_source_ids);
+
+    v_status := case
+      when abs(v_difference) <= v_allowed_difference then 'proposed'
+      else 'ambiguous'
+    end;
+    v_reason := case
+      when v_status = 'ambiguous' then 'monthly_difference_exceeded'
+      else ''
+    end;
+    v_signature := public.financial_reconciliation_extension_sha256(
+      jsonb_build_object(
+        'ruleKey', 'cgd_bank_statement_fdm_adyen_monthly_payments',
+        'ruleVersion', 1,
+        'calendarMonth', v_month.calendar_month,
+        'sourceIds', to_jsonb(v_source_ids),
+        'destinationIds', to_jsonb(v_destination_ids),
+        'sourceTotal', v_source_total,
+        'destinationTotal', v_destination_total,
+        'calculatedDifference', v_difference,
+        'differenceAllowed', v_allowed_difference,
+        'operator', v_operator
+      )::text
+    );
+    v_summary_snapshot := jsonb_build_object(
+      'ruleKey', 'cgd_bank_statement_fdm_adyen_monthly_payments',
+      'ruleVersion', 1,
+      'strategy', 'closed_calendar_month',
+      'calendarMonth', v_month.calendar_month,
+      'sourceDescriptionContains', 'Adyen',
+      'destinationAccount', 'Adyen',
+      'operator', v_operator,
+      'differenceAllowed', v_allowed_difference,
+      'maxDifferenceDays', 31,
+      'sourceCount', v_source_count,
+      'sourceTotal', v_source_total,
+      'destinationCount', v_destination_count,
+      'destinationTotal', v_destination_total,
+      'calculatedDifference', v_difference,
+      'technicalBaseSourceId', v_base_id,
+      'technicalBaseSourceDate', v_base_date,
+      'analysisTimestamp', now(),
+      'signature', v_signature
+    );
+
+    v_proposal_id := null;
+    insert into public.financial_reconciliation_automatic_proposals (
+      run_id, rule_key, rule_version, base_source_type,
+      base_source_id, base_source_date, base_snapshot,
+      calculated_difference, allowed_difference, status, reason, signature,
+      grouping_key, summary_snapshot
+    ) values (
+      p_run_id, 'cgd_bank_statement_fdm_adyen_monthly_payments', 1,
+      'import_cgd_extrato_ordem', v_base_id, v_base_date, v_base_snapshot,
+      v_difference, v_allowed_difference, v_status, v_reason, v_signature,
+      to_char(v_month.calendar_month, 'YYYY-MM'), v_summary_snapshot
+    )
+    on conflict do nothing
+    returning id into v_proposal_id;
+    v_inserted := v_proposal_id is not null;
+
+    if not v_inserted then
+      select proposal.id into strict v_proposal_id
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = p_run_id
+        and proposal.rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and proposal.rule_version = 1
+        and proposal.base_source_type = 'import_cgd_extrato_ordem'
+        and proposal.base_source_id = v_base_id
+        and proposal.signature = v_signature;
+    else
+      insert into public.financial_reconciliation_automatic_proposal_memberships (
+        proposal_id, role, source_type, source_id, ordinal, source_date,
+        amount, description, account, row_snapshot
+      )
+      select
+        v_proposal_id, 'source', 'import_cgd_extrato_ordem',
+        source_member.id, source_member.ordinal, source_member.data,
+        source_member.montante, source_member.descritivo, '',
+        source_member.row_snapshot
+      from (
+        select bank.id, bank.data, bank.montante, bank.descritivo,
+               to_jsonb(bank) as row_snapshot,
+               row_number() over (order by bank.data, bank.id)::integer
+                 as ordinal
+        from public.import_cgd_extrato_ordem bank
+        where bank.id = any(v_source_ids)
+      ) source_member
+      order by source_member.ordinal;
+      get diagnostics v_inserted_count = row_count;
+      if v_inserted_count <> v_source_count then
+        raise exception 'Automatic Adyen source membership insert was incomplete.';
+      end if;
+
+      insert into public.financial_reconciliation_automatic_proposal_memberships (
+        proposal_id, role, source_type, source_id, ordinal, source_date,
+        amount, description, account, row_snapshot
+      )
+      select
+        v_proposal_id, 'destination', 'import_fdm_accounts',
+        destination_member.id, destination_member.ordinal,
+        destination_member.event_date, destination_member.amount,
+        destination_member.description, destination_member.account,
+        destination_member.row_snapshot
+      from (
+        select fdm.id, fdm.event_date, fdm.amount, fdm.description,
+               fdm.account, to_jsonb(fdm) as row_snapshot,
+               row_number() over (order by fdm.event_date, fdm.id)::integer
+                 as ordinal
+        from public.import_fdm_accounts fdm
+        where fdm.id = any(v_destination_ids)
+      ) destination_member
+      order by destination_member.ordinal;
+      get diagnostics v_inserted_count = row_count;
+      if v_inserted_count <> v_destination_count then
+        raise exception
+          'Automatic Adyen destination membership insert was incomplete.';
+      end if;
+
+      select
+        array_agg(member.source_id order by member.ordinal),
+        sum(member.amount)::numeric(14,2)
+      into v_inserted_source_ids, v_inserted_source_total
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal_id
+        and member.role = 'source';
+
+      select
+        array_agg(member.source_id order by member.ordinal),
+        sum(member.amount)::numeric(14,2)
+      into v_inserted_destination_ids, v_inserted_destination_total
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal_id
+        and member.role = 'destination';
+
+      if v_inserted_source_ids is distinct from v_source_ids
+        or v_inserted_destination_ids is distinct from v_destination_ids
+        or v_inserted_source_total is distinct from v_source_total
+        or v_inserted_destination_total is distinct from v_destination_total
+        or v_base_id is distinct from v_inserted_source_ids[1] then
+        raise exception
+          'Automatic Adyen proposal summary and memberships diverged.';
+      end if;
+    end if;
+  end loop;
+
+  if v_page_count > 0 then
+    update public.financial_reconciliation_automatic_runs run
+    set analysis_cursor_date = v_last_month,
+        analysis_cursor_id = null,
+        analysis_processed = greatest(
+          run.analysis_processed,
+          run.analysis_processed + v_page_count
+        ),
+        analysis_total = greatest(
+          run.analysis_total,
+          run.analysis_processed + v_page_count
+        ),
+        updated_at = now(),
+        analysis_error_code = null,
+        analysis_error_at = null
+    where run.id = p_run_id
+      and (
+        run.analysis_cursor_date is null
+        or v_last_month > run.analysis_cursor_date
+      );
+  end if;
+
+  if v_page_count < 25 then
+    return public.financial_reconciliation_finalize_automatic_analysis(
+      p_run_id
+    );
+  end if;
+  return public.financial_reconciliation_automatic_progress_or_run(p_run_id);
+end
+$$;
+
+create or replace function public.continue_financial_reconciliation_automatic_analysis(
+  p_run_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_rule jsonb;
+  v_rule_key text;
+  v_rule_version integer;
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = p_run_id
+  for update;
+  if not found then
+    raise exception 'Automatic analysis run was not found.';
+  end if;
+  if v_run.actor <> p_actor then
+    raise exception 'Automatic analysis run belongs to another actor.';
+  end if;
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+  if v_run.status <> 'analyzing' then
+    raise exception 'Automatic analysis run is not resumable.';
+  end if;
+
+  begin
+    if jsonb_array_length(v_run.definition_config_snapshot) <> 1 then
+      raise exception
+        'Resumable automatic analysis requires exactly one snapshotted rule.';
+    end if;
+    select snapshot.value into strict v_rule
+    from jsonb_array_elements(v_run.definition_config_snapshot) snapshot(value);
+    if coalesce(v_rule->>'ruleVersion', '') !~ '^[0-9]+$'
+      or length(v_rule->>'ruleVersion') > 10 then
+      raise exception 'Automatic reconciliation rule is unsupported.';
+    end if;
+    v_rule_key := v_rule->>'ruleKey';
+    v_rule_version := (v_rule->>'ruleVersion')::integer;
+
+    if (v_rule_key, v_rule_version) in (
+        ('financial_documents_cgd_bank_statement', 2),
+        ('financial_documents_cgd_credit_card', 1),
+        ('financial_documents_cgd_bank_statement_amount_only', 1),
+        ('financial_documents_cgd_credit_card_amount_only', 1),
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2)
+      ) then
+      return public.financial_reconciliation_continue_automatic_prior_analysis(
+        p_run_id,
+        p_actor
+      );
+    elsif v_rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination'
+      and v_rule_version = 1 then
+      return public.financial_reconciliation_continue_automatic_bank_reservation(
+        p_run_id,
+        p_actor
+      );
+    elsif v_rule_key = 'cgd_bank_statement_fdm_adyen_monthly_payments'
+      and v_rule_version = 1 then
+      return public.financial_reconciliation_continue_automatic_adyen_monthly(
+        p_run_id,
+        p_actor
+      );
+    end if;
+
+    raise exception 'Automatic reconciliation rule is unsupported.';
+  exception when others then
+    update public.financial_reconciliation_automatic_runs run
+    set status = 'failed',
+        error_summary = 'Automatic analysis could not be completed.',
+        analysis_error_code = 'analysis_continuation_failed',
+        analysis_error_at = now(),
+        finished_at = coalesce(run.finished_at, now()),
+        updated_at = now()
+    where run.id = p_run_id;
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end;
+end
+$$;
+
+revoke all on function public.financial_reconciliation_automatic_adyen_month_count()
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_automatic_adyen_month_page(date,integer)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_continue_automatic_adyen_monthly(uuid,text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_finalize_automatic_prior_analysis(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_finalize_automatic_analysis(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.financial_reconciliation_finalize_automatic_analysis(uuid)
+  to service_role;
+grant execute on function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
+  to service_role;
+
 notify pgrst, 'reload schema';
