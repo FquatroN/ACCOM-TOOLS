@@ -15191,4 +15191,70 @@ begin
 end
 $$;
 
+-- Task 6 terminal manual retry and request rule binding
+do $$
+declare
+  v_client_request_id uuid := 'f6100000-0000-0000-0000-000000000001';
+  v_first jsonb;
+  v_retry jsonb;
+  v_run_id uuid;
+  v_error_at timestamptz := '2026-08-23 14:00:00+00';
+begin
+  update public.financial_reconciliation_automatic_rule_configs config
+  set enabled = true, allow_manual_execution = true
+  where config.rule_key in (
+    'fdm_bank_transfer_cgd_bank_statement_combination',
+    'cgd_bank_statement_fdm_adyen_monthly_payments'
+  );
+
+  v_first := public.create_financial_reconciliation_automatic_analysis(
+    array['fdm_bank_transfer_cgd_bank_statement_combination'],
+    'manual_rule', 'smoke:task6-terminal-retry', v_client_request_id
+  );
+  v_run_id := (v_first->>'runId')::uuid;
+  update public.financial_reconciliation_automatic_runs run
+  set status = 'failed',
+      analysis_processed = 0,
+      analysis_cursor_date = null,
+      analysis_cursor_id = null,
+      analysis_completed_at = null,
+      analysis_error_code = 'analysis_continuation_failed',
+      analysis_error_at = v_error_at,
+      error_summary = 'Automatic analysis could not be completed.',
+      finished_at = v_error_at,
+      updated_at = v_error_at
+  where run.id = v_run_id;
+
+  v_retry := public.create_financial_reconciliation_automatic_analysis(
+    array['fdm_bank_transfer_cgd_bank_statement_combination'],
+    'manual_rule', 'smoke:task6-terminal-retry', v_client_request_id
+  );
+  if v_retry->>'runId' is distinct from v_run_id::text
+    or v_retry->>'status' is distinct from 'failed'
+    or v_retry->>'analysisComplete' is distinct from 'false'
+    or v_retry->>'analysisErrorCode' is distinct from
+      'analysis_continuation_failed'
+    or (v_retry->>'analysisErrorAt')::timestamptz is distinct from v_error_at
+    or (v_retry->>'finishedAt')::timestamptz is distinct from v_error_at
+    or (select run.updated_at from public.financial_reconciliation_automatic_runs run
+        where run.id = v_run_id) is distinct from v_error_at then
+    raise exception 'Task 6 terminal manual retry was not authoritative/idempotent: %.',
+      v_retry;
+  end if;
+
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['cgd_bank_statement_fdm_adyen_monthly_payments'],
+      'manual_rule', 'smoke:task6-terminal-retry', v_client_request_id
+    );
+    raise exception 'Task 6 reused one client request for another rule.';
+  exception when others then
+    if sqlerrm = 'Task 6 reused one client request for another rule.'
+      or sqlerrm not ilike '%client request ID is already bound to another automatic rule%' then
+      raise;
+    end if;
+  end;
+end
+$$;
+
 rollback;

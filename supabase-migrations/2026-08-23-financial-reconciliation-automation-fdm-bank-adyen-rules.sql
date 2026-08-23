@@ -5433,15 +5433,27 @@ begin
     'allowManualExecution', config.allow_manual_execution,
     'differenceAllowed', config.difference_allowed,
     'maxDifferenceDays', config.max_difference_days,
-    'priority', config.priority
+    'priority', config.priority,
+    'operator', source_rule.operator
   ) order by config.priority, definition.rule_key), '[]'::jsonb)
   into v_rules
   from public.financial_reconciliation_automatic_rule_configs config
   join public.financial_reconciliation_automatic_rule_definitions definition
     on definition.rule_key = config.rule_key
    and definition.version = config.rule_version
+  cross join lateral jsonb_array_elements_text(
+    definition.destination_source_types
+  ) destination(source_type)
+  join public.financial_reconciliation_source_rules source_rule
+    on source_rule.base_source_type = definition.base_source_type
+   and source_rule.matching_source_type = destination.source_type
   where config.enabled
     and config.allow_manual_execution
+    and jsonb_array_length(definition.destination_source_types) = 1
+    and source_rule.operator = case when config.rule_key in (
+      'cgd_bank_statement_fdm_credit_card_monthly_income',
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    ) then '-' else '+' end
     and (config.rule_key, config.rule_version) in (
       ('financial_documents_cgd_bank_statement', 2),
       ('financial_documents_cgd_credit_card', 1),
@@ -5511,6 +5523,7 @@ begin
     'differenceAllowed', config.difference_allowed,
     'maxDifferenceDays', config.max_difference_days,
     'priority', config.priority,
+    'operator', source_rule.operator,
     'updatedBy', config.updated_by,
     'updatedAt', config.updated_at
   ) order by config.priority, definition.rule_key), '[]'::jsonb)
@@ -5518,7 +5531,18 @@ begin
   from public.financial_reconciliation_automatic_rule_configs config
   join public.financial_reconciliation_automatic_rule_definitions definition
     on definition.rule_key = config.rule_key
-   and definition.version = config.rule_version;
+   and definition.version = config.rule_version
+  cross join lateral jsonb_array_elements_text(
+    definition.destination_source_types
+  ) destination(source_type)
+  join public.financial_reconciliation_source_rules source_rule
+    on source_rule.base_source_type = definition.base_source_type
+   and source_rule.matching_source_type = destination.source_type
+  where jsonb_array_length(definition.destination_source_types) = 1
+    and source_rule.operator = case when config.rule_key in (
+      'cgd_bank_statement_fdm_credit_card_monthly_income',
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    ) then '-' else '+' end;
   if jsonb_array_length(v_rules) <> 7 then
     raise exception 'Automatic reconciliation managed catalog is invalid.';
   end if;
@@ -5594,7 +5618,19 @@ begin
     'baseSourceType', proposal.base_source_type,
     'baseSourceId', proposal.base_source_id,
     'baseSourceDate', proposal.base_source_date,
-    'baseSnapshot', proposal.base_snapshot,
+    'baseSnapshot', case
+      when (proposal.rule_key, proposal.rule_version) in (
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+        ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+        ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+      ) then jsonb_build_object(
+        'sourceType', proposal.base_source_type,
+        'sourceId', proposal.base_source_id,
+        'sourceDate', proposal.base_source_date
+      )
+      else proposal.base_snapshot
+    end,
     'items', case
       when (proposal.rule_key, proposal.rule_version) in (
         ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),
@@ -5604,7 +5640,15 @@ begin
       ) then '[]'::jsonb
       else proposal.items
     end,
-    'evidence', proposal.evidence,
+    'evidence', case
+      when (proposal.rule_key, proposal.rule_version) in (
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+        ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+        ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+      ) then '[]'::jsonb
+      else proposal.evidence
+    end,
     'candidateGroups', case
       when (proposal.rule_key, proposal.rule_version) in (
         ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),
@@ -5615,7 +5659,27 @@ begin
       else proposal.candidate_groups
     end,
     'groupingKey', proposal.grouping_key,
-    'summarySnapshot', proposal.summary_snapshot,
+    'summarySnapshot', case
+      when (proposal.rule_key, proposal.rule_version) =
+        ('fdm_bank_transfer_cgd_bank_statement_combination', 1) then
+        jsonb_build_object(
+          'classification', proposal.summary_snapshot->'classification',
+          'reason', proposal.summary_snapshot->'reason',
+          'candidateCount', proposal.summary_snapshot->'candidateCount'
+        )
+      when (proposal.rule_key, proposal.rule_version) in (
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+        ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+      ) then jsonb_build_object(
+        'calendarMonth', proposal.summary_snapshot->'calendarMonth',
+        'sourceCount', proposal.summary_snapshot->'sourceCount',
+        'sourceTotal', proposal.summary_snapshot->'sourceTotal',
+        'destinationCount', proposal.summary_snapshot->'destinationCount',
+        'destinationTotal', proposal.summary_snapshot->'destinationTotal'
+      )
+      else proposal.summary_snapshot
+    end,
     'calculatedDifference', proposal.calculated_difference,
     'allowedDifference', proposal.allowed_difference,
     'status', proposal.status,
@@ -6499,6 +6563,10 @@ declare
   v_run_id uuid;
   v_current_run_id uuid;
   v_current_request_id uuid;
+  v_existing_rule_key text;
+  v_existing_rule_version integer;
+  v_existing_finished_at timestamptz;
+  v_existing_snapshot jsonb;
   v_rule_key text;
   v_rule_version integer;
   v_total bigint;
@@ -6519,8 +6587,14 @@ begin
     hashtextextended('financial_reconciliation_automatic_manual:' || p_actor, 0)
   );
 
-  select run.id, run.client_request_id
-  into v_current_run_id, v_current_request_id
+  select run.id, run.client_request_id, run.definition_config_snapshot,
+         run.definition_config_snapshot#>>'{0,ruleKey}',
+         case when coalesce(run.definition_config_snapshot#>>'{0,ruleVersion}', '')
+           ~ '^[0-9]+$' then
+           (run.definition_config_snapshot#>>'{0,ruleVersion}')::integer
+         else null end
+  into v_current_run_id, v_current_request_id, v_existing_snapshot,
+       v_existing_rule_key, v_existing_rule_version
   from public.financial_reconciliation_automatic_runs run
   where run.actor = p_actor
     and run.trigger = 'manual'
@@ -6528,6 +6602,20 @@ begin
   for update;
   if v_current_run_id is not null then
     if v_current_request_id = p_client_request_id then
+      if jsonb_typeof(v_existing_snapshot) is distinct from 'array'
+        or jsonb_array_length(v_existing_snapshot) <> 1
+        or v_existing_rule_key is distinct from p_rule_keys[1]
+        or not coalesce((v_existing_rule_key, v_existing_rule_version) in (
+          ('financial_documents_cgd_bank_statement', 2),
+          ('financial_documents_cgd_credit_card', 1),
+          ('financial_documents_cgd_bank_statement_amount_only', 1),
+          ('financial_documents_cgd_credit_card_amount_only', 1),
+          ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+          ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+          ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+        ), false) then
+        raise exception 'Client request ID is already bound to another automatic rule.';
+      end if;
       return public.continue_financial_reconciliation_automatic_analysis(
         v_current_run_id, p_actor
       );
@@ -6535,11 +6623,36 @@ begin
     raise exception 'Automatic analysis conflict: an unfinished manual run already exists for this actor.';
   end if;
 
-  select run.id into v_run_id
+  select run.id, run.definition_config_snapshot,
+         run.definition_config_snapshot#>>'{0,ruleKey}',
+         case when coalesce(run.definition_config_snapshot#>>'{0,ruleVersion}', '')
+           ~ '^[0-9]+$' then
+           (run.definition_config_snapshot#>>'{0,ruleVersion}')::integer
+         else null end,
+         run.finished_at
+  into v_run_id, v_existing_snapshot, v_existing_rule_key, v_existing_rule_version,
+       v_existing_finished_at
   from public.financial_reconciliation_automatic_runs run
   where run.actor = p_actor
     and run.client_request_id = p_client_request_id;
   if v_run_id is not null then
+    if jsonb_typeof(v_existing_snapshot) is distinct from 'array'
+      or jsonb_array_length(v_existing_snapshot) <> 1
+      or v_existing_rule_key is distinct from p_rule_keys[1]
+      or not coalesce((v_existing_rule_key, v_existing_rule_version) in (
+        ('financial_documents_cgd_bank_statement', 2),
+        ('financial_documents_cgd_credit_card', 1),
+        ('financial_documents_cgd_bank_statement_amount_only', 1),
+        ('financial_documents_cgd_credit_card_amount_only', 1),
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+        ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+        ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+      ), false) then
+      raise exception 'Client request ID is already bound to another automatic rule.';
+    end if;
+    if v_existing_finished_at is not null then
+      return public.get_financial_reconciliation_automatic_run(v_run_id);
+    end if;
     return public.continue_financial_reconciliation_automatic_analysis(
       v_run_id, p_actor
     );

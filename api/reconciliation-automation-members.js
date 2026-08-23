@@ -83,6 +83,61 @@ function isDecimal(value) {
     || (typeof value === "string" && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value));
 }
 
+function pickOwn(record, key, fallbackKey) {
+  if (Object.hasOwn(record, key)) return record[key];
+  return fallbackKey && Object.hasOwn(record, fallbackKey) ? record[fallbackKey] : undefined;
+}
+
+function safeOptionalString(value) {
+  if (value === undefined || value === null || typeof value === "string") return value;
+  throw new Error("Unexpected reconciliation member page response.");
+}
+
+function safeOptionalDecimal(value) {
+  if (value === undefined || value === null || isDecimal(value)) return value;
+  throw new Error("Unexpected reconciliation member page response.");
+}
+
+function safeOptionalCount(value) {
+  if (value === undefined || value === null
+    || (Number.isSafeInteger(value) && value >= 0)) return value;
+  throw new Error("Unexpected reconciliation member page response.");
+}
+
+function compactPublicFields(fields) {
+  return Object.fromEntries(Object.entries(fields).filter(([, nested]) => nested !== undefined));
+}
+
+function shapeSummary(ruleKey, summary) {
+  if (ruleKey === BANK_RESERVATION_RULE_KEY) {
+    return compactPublicFields({
+      classification: safeOptionalString(pickOwn(summary, "classification")),
+      reason: safeOptionalString(pickOwn(summary, "reason")),
+      candidateCount: safeOptionalCount(pickOwn(summary, "candidateCount", "candidate_count")),
+    });
+  }
+  return compactPublicFields({
+    calendarMonth: safeOptionalString(pickOwn(summary, "calendarMonth", "calendar_month")),
+    sourceCount: safeOptionalCount(pickOwn(summary, "sourceCount", "source_count")),
+    sourceTotal: safeOptionalDecimal(pickOwn(summary, "sourceTotal", "source_total")),
+    destinationCount: safeOptionalCount(pickOwn(summary, "destinationCount", "destination_count")),
+    destinationTotal: safeOptionalDecimal(pickOwn(summary, "destinationTotal", "destination_total")),
+  });
+}
+
+function shapeRowSnapshot(snapshot) {
+  return compactPublicFields({
+    id: safeOptionalString(pickOwn(snapshot, "id")),
+    importBatch: safeOptionalString(pickOwn(snapshot, "importBatch", "import_batch")),
+    rowKey: safeOptionalString(pickOwn(snapshot, "rowKey", "row_key")),
+    date: safeOptionalString(pickOwn(snapshot, "date", "data")),
+    description: safeOptionalString(pickOwn(snapshot, "description", "descritivo")),
+    amount: safeOptionalDecimal(pickOwn(snapshot, "amount", "montante")),
+    account: safeOptionalString(pickOwn(snapshot, "account", "conta")),
+    sourceType: safeOptionalString(pickOwn(snapshot, "sourceType", "source_type")),
+  });
+}
+
 function requireMemberPage(value, expected) {
   const page = toAutomationPublicResult(value);
   if (!isPlainRecord(page)
@@ -133,7 +188,7 @@ function requireMemberPage(value, expected) {
       amount: member.amount,
       description: member.description,
       account: member.account,
-      rowSnapshot: member.rowSnapshot,
+      rowSnapshot: shapeRowSnapshot(member.rowSnapshot),
     };
   });
 
@@ -143,7 +198,7 @@ function requireMemberPage(value, expected) {
     ruleKey: page.ruleKey,
     ruleVersion: page.ruleVersion,
     groupingKey: page.groupingKey,
-    summarySnapshot: page.summarySnapshot,
+    summarySnapshot: shapeSummary(page.ruleKey, page.summarySnapshot),
     sourceCount: page.sourceCount,
     sourceTotal: page.sourceTotal,
     destinationCount: page.destinationCount,

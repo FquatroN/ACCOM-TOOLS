@@ -208,6 +208,287 @@ function exactScheduledDefinition(ruleKey, priority) {
   };
 }
 
+function managedDefinition(ruleKey) {
+  if (ruleKey === BANK_STATEMENT_RULE_KEY) {
+    return {
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: ["import_cgd_extrato_ordem"],
+      baseEligibility: { payment: {
+        operator: "exact_text_equal", value: "Banco", caseSensitive: true, trim: false,
+      } },
+      identityBranches: {
+        document_number: { algorithm: "compact_containment" },
+        description_similarity: { algorithm: "similarity" },
+        supplier_similarity: { algorithm: "word_similarity" },
+      },
+      documentNumberMinimumCompactLength: 4,
+      descriptionSimilarityThreshold: 0.60,
+      supplierWordSimilarityThreshold: 0.70,
+      maxDestinationRecords: 4,
+      maxIdentityCandidatesPerBase: 12,
+    };
+  }
+  if (ruleKey === CREDIT_CARD_RULE_KEY) {
+    return {
+      baseEligibility: { payment: {
+        operator: "exact_text_equal", value: "Visa", caseSensitive: true, trim: false,
+      } },
+      identityBranches: {
+        document_number: { algorithm: "symmetric_compact_containment" },
+        description_similarity: { algorithm: "similarity" },
+        supplier_similarity: { algorithm: "word_similarity" },
+      },
+      documentNumberMinimumCompactLength: 4,
+      descriptionSimilarityThreshold: 0.55,
+      supplierWordSimilarityThreshold: 0.60,
+      maxDestinationRecords: 4,
+      maxIdentityCandidatesPerBase: 12,
+    };
+  }
+  if (ruleKey === BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY
+    || ruleKey === CREDIT_CARD_AMOUNT_ONLY_RULE_KEY) {
+    const isBank = ruleKey === BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY;
+    return {
+      baseSourceType: "financial_documents",
+      destinationSourceTypes: [isBank ? "import_cgd_extrato_ordem" : "import_cgd_cartao_credito"],
+      baseEligibility: { payment: {
+        operator: "exact_text_equal", value: isBank ? "Banco" : "Visa", caseSensitive: true, trim: false,
+      } },
+      matchingMode: "amount_only_one_to_one",
+      fixedDifferenceAllowed: 0,
+      maxDifferenceDays: { minimum: 0, maximum: 90, default: 1 },
+      maxDestinationRecords: 1,
+    };
+  }
+  if (ruleKey === MONTHLY_INCOME_RULE_KEY) {
+    return {
+      matchingMode: "monthly_aggregate",
+      sourceDescriptionPattern: "%POS VENDAS%",
+      destinationAccount: "Credit Card",
+      destinationExcludedCategory: "TransferOutToAccount",
+      calendarGrouping: "closed_month",
+      fixedMaxDifferenceDays: 31,
+      eligibilityFloor: "2026-01-01",
+      requiresNonNullAmount: true,
+    };
+  }
+  if (ruleKey === BANK_RESERVATION_RULE_KEY) {
+    return {
+      strategy: "bounded_exact_combination",
+      sourceAccount: "Bank Transfer",
+      maxSourceRecords: 10,
+      candidatePoolLimit: 60,
+      stateLimit: 250000,
+      evidenceGroupLimit: 12,
+      amountMode: "signed_integer_cents",
+      dateMode: "inclusive_days",
+    };
+  }
+  if (ruleKey === ADYEN_MONTHLY_RULE_KEY) {
+    return {
+      strategy: "closed_calendar_month",
+      bankDescriptionContains: "Adyen",
+      fdmAccount: "Adyen",
+      requiresBothSides: true,
+      monthMarkerDays: 31,
+    };
+  }
+  throw new Error(`Unexpected managed rule ${ruleKey}`);
+}
+
+function managedLogicDescription(ruleKey) {
+  if (ruleKey === BANK_STATEMENT_RULE_KEY) {
+    return "Payment must equal exactly Banco. A bank candidate must match at least one of three OR identity branches: compact document-number containment, document-description similarity, or supplier-to-bank-description word similarity. A base record is executable only when exactly one complete destination combination is valid; multiple combinations are reported as ambiguous and are never selected automatically.";
+  }
+  if (ruleKey === CREDIT_CARD_RULE_KEY) {
+    return "Payment must equal exactly Visa. Each credit-card candidate must satisfy invoice containment, description similarity, or supplier word similarity. Exactly one one-to-four-record amount combination is executable.";
+  }
+  if (ruleKey === BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY) {
+    return "Payment must equal exactly Banco. Exactly one CGD Bank Account destination record must make the signed amounts sum to zero within the inclusive configured date window; identity fields and similarity are not used.";
+  }
+  if (ruleKey === CREDIT_CARD_AMOUNT_ONLY_RULE_KEY) {
+    return "Payment must equal exactly Visa. Exactly one CGD Credit Card destination record must make the signed amounts sum to zero within the inclusive configured date window; identity fields and similarity are not used.";
+  }
+  if (ruleKey === MONTHLY_INCOME_RULE_KEY) {
+    return "Every unlocked CGD Bank Statement POS VENDAS record is reconciled against every unlocked FDM Credit Card record in the same closed calendar month, except FDM records categorized as TransferOutToAccount; the difference is Bank Statement total minus FDM Accounts total.";
+  }
+  if (ruleKey === BANK_RESERVATION_RULE_KEY) {
+    return "Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records with opposite signed totals that equal zero exactly in integer cents within the inclusive configured date window.";
+  }
+  if (ruleKey === ADYEN_MONTHLY_RULE_KEY) {
+    return "Every eligible unlocked CGD Bank Statement and FDM Adyen record in the same closed calendar month forms one proposal; both sides are required and the signed difference must be within the configured allowance.";
+  }
+  throw new Error(`Unexpected managed rule ${ruleKey}`);
+}
+
+function manualDefinition(ruleKey, priority = 6) {
+  const destinationSourceType = ruleKey === CREDIT_CARD_RULE_KEY
+    || ruleKey === CREDIT_CARD_AMOUNT_ONLY_RULE_KEY
+    ? "import_cgd_cartao_credito"
+    : ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+      ? "import_fdm_accounts"
+      : "import_cgd_extrato_ordem";
+  const operator = ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+    ? "-"
+    : "+";
+  return {
+    ruleKey,
+    ruleVersion: AUTOMATIC_RULE_VERSIONS[ruleKey],
+    displayName: AUTOMATIC_RULE_DISPLAY_NAMES[ruleKey],
+    priority,
+    differenceAllowed: ruleKey === BANK_RESERVATION_RULE_KEY
+      || ruleKey === BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY
+      || ruleKey === CREDIT_CARD_AMOUNT_ONLY_RULE_KEY ? 0 : 1,
+    maxDifferenceDays: ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+      ? 31 : 3,
+    destinationSourceType,
+    definition: managedDefinition(ruleKey),
+    operator,
+  };
+}
+
+function manualRun(overrides = {}) {
+  const ruleKey = overrides.ruleKey || BANK_RESERVATION_RULE_KEY;
+  const status = overrides.status || "analyzing";
+  const analysisComplete = Object.hasOwn(overrides, "analysisComplete")
+    ? overrides.analysisComplete
+    : status !== "analyzing" && status !== "failed";
+  const finished = new Set(["completed", "partial", "failed"]).has(status);
+  const run = {
+    runId: RUN_ID,
+    trigger: "manual",
+    scope: "rule",
+    status,
+    actor: "user@example.com",
+    clientRequestId: REQUEST_ID,
+    scheduledSlot: null,
+    batchId: null,
+    batchRuleKey: null,
+    batchRulePosition: null,
+    batchRuleCount: null,
+    definitions: [manualDefinition(ruleKey)],
+    counts: {
+      bases: 0, proposed: 0, ambiguous: 0, skipped: 0, deselected: 0,
+      executing: 0, completed: 0, stale: 0, failed: 0,
+    },
+    analysisCursorDate: null,
+    analysisCursorId: null,
+    analysisProcessed: analysisComplete ? 1 : 0,
+    analysisTotal: 1,
+    analysisErrorCode: status === "failed" && !analysisComplete
+      ? "analysis_continuation_failed" : null,
+    analysisErrorAt: status === "failed" && !analysisComplete
+      ? "2026-08-23T12:00:01.000Z" : null,
+    analysisUnit: ruleKey === BANK_RESERVATION_RULE_KEY ? "bank_anchors"
+      : ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+        ? "calendar_months" : "records",
+    analysisComplete,
+    analysisCompletedAt: analysisComplete ? "2026-08-23T12:00:01.000Z" : null,
+    startedAt: "2026-08-23T12:00:00.000Z",
+    finishedAt: finished ? "2026-08-23T12:00:02.000Z" : null,
+    proposals: [],
+    ...overrides,
+  };
+  delete run.ruleKey;
+  return run;
+}
+
+function publicManualRun(overrides = {}) {
+  return toAutomationPublicResult(manualRun(overrides));
+}
+
+function manualProposal(id = PROPOSAL_ID, overrides = {}) {
+  const ruleKey = overrides.ruleKey || BANK_RESERVATION_RULE_KEY;
+  const status = overrides.status || "proposed";
+  const reason = overrides.reason || "";
+  const baseSourceType = ruleKey === BANK_RESERVATION_RULE_KEY
+    ? "import_fdm_accounts"
+    : ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+      ? "import_cgd_extrato_ordem"
+      : "financial_documents";
+  const baseSourceId = uuidFor(700);
+  const baseSourceDate = "2026-08-23";
+  const summarySnapshot = ruleKey === BANK_RESERVATION_RULE_KEY
+    ? { classification: status, reason, candidateCount: 0 }
+    : ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+      ? {
+        calendarMonth: "2026-08-01",
+        sourceCount: 0,
+        sourceTotal: 0,
+        destinationCount: 0,
+        destinationTotal: 0,
+      }
+      : {};
+  return {
+    id,
+    runId: RUN_ID,
+    ruleKey,
+    ruleVersion: AUTOMATIC_RULE_VERSIONS[ruleKey],
+    baseSourceType,
+    baseSourceId,
+    baseSourceDate,
+    baseSnapshot: { sourceType: baseSourceType, sourceId: baseSourceId, sourceDate: baseSourceDate },
+    items: [], evidence: [], candidateGroups: [],
+    groupingKey: new Set([MONTHLY_INCOME_RULE_KEY, BANK_RESERVATION_RULE_KEY, ADYEN_MONTHLY_RULE_KEY])
+      .has(ruleKey) ? `group:${id}` : null,
+    summarySnapshot,
+    calculatedDifference: 0,
+    allowedDifference: 0,
+    status,
+    reason,
+    signature: `signature:${id}`,
+    reconciliationId: null,
+    createdAt: "2026-08-23T12:00:01.000Z",
+    updatedAt: "2026-08-23T12:00:01.000Z",
+    ...overrides,
+  };
+}
+
+function catalogRule(ruleKey, priority, overrides = {}) {
+  const snapshot = manualDefinition(ruleKey, priority);
+  const baseSourceType = ruleKey === BANK_RESERVATION_RULE_KEY
+    ? "import_fdm_accounts"
+    : ruleKey.startsWith("financial_documents_")
+      ? "financial_documents"
+      : "import_cgd_extrato_ordem";
+  return {
+    ruleKey,
+    ruleVersion: snapshot.ruleVersion,
+    displayName: snapshot.displayName,
+    baseSourceType,
+    destinationSourceTypes: [snapshot.destinationSourceType],
+    logicDescription: managedLogicDescription(ruleKey),
+    definition: snapshot.definition,
+    enabled: true,
+    allowManualExecution: true,
+    includeInScheduledBatch: true,
+    differenceAllowed: snapshot.differenceAllowed,
+    maxDifferenceDays: snapshot.maxDifferenceDays,
+    priority,
+    operator: snapshot.operator,
+    updatedBy: "admin@example.com",
+    updatedAt: "2026-08-23T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function sevenRuleRpcCatalog(overrides = {}) {
+  const rules = Object.keys(AUTOMATIC_RULE_VERSIONS)
+    .map((ruleKey, index) => catalogRule(ruleKey, index + 1));
+  return {
+    schedule: {
+      enabled: true,
+      timeOfDay: "02:15",
+      timeZone: AUTOMATIC_TIME_ZONE,
+      updatedBy: "admin@example.com",
+      updatedAt: "2026-08-23T12:00:00.000Z",
+    },
+    rules,
+    lastScheduledBatch: null,
+    ...overrides,
+  };
+}
+
 function scheduledRun(overrides = {}) {
   const run = {
     runId: RUN_ID,
@@ -3283,94 +3564,45 @@ test("automation RPC errors expose safe client statuses", () => {
   }
 });
 
-test("automation settings GET preserves complete pre- and post-migration RPC responses", async () => {
+test("automation settings GET preserves the complete seven-rule post-migration response", async () => {
   const authorizations = [];
   const calls = [];
-  for (const [label, ruleCount] of [["pre-migration", 2], ["post-migration", 4]]) {
-    const response = responseRecorder();
-    await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
-      requireFeature: async (_request, area, feature) => {
-        authorizations.push({ label, area, feature });
-        return {
-          user: { email: "admin@example.com", id: "admin-1" },
-          access: { profile: { id: "admin-profile" } },
-        };
-      },
-      restQuery: async (resource, options) => {
-        calls.push({ label, resource, options });
-        return productionSettingsRpcResult(ruleCount);
-      },
-    }), async (handler) => {
-      await handler({ method: "GET" }, response);
-    });
-
-    assert.equal(response.statusCode, 200, label);
-    assert.deepEqual(response.body, expectedPublicSettings(ruleCount), label);
-  }
-
-  assert.deepEqual(authorizations, [
-    { label: "pre-migration", area: "settings", feature: "financial-reconciliation" },
-    { label: "post-migration", area: "settings", feature: "financial-reconciliation" },
-  ]);
-  assert.deepEqual(calls, ["pre-migration", "post-migration"].map((label) => ({
-    label,
-    resource: "rpc/get_financial_reconciliation_automation_settings",
-    options: { method: "POST", body: {} },
-  })));
-});
-
-test("automation settings GET supplies the managed display name in its five-rule public response", async () => {
+  const rpcResult = sevenRuleRpcCatalog();
   const response = responseRecorder();
   await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
-    restQuery: async () => ({
-      ...productionSettingsRpcResult(4),
-      rules: [...productionSettingsRules(), {
-        rule_key: MONTHLY_INCOME_RULE_KEY,
-        rule_version: 2,
-        enabled: false,
-        allow_manual_execution: false,
-        include_in_scheduled_batch: false,
-        difference_allowed: "7500.00",
-        max_difference_days: 31,
-        priority: 5,
-      }],
-    }),
+    requireFeature: async (_request, area, feature) => {
+      authorizations.push({ area, feature });
+      return { user: { email: "admin@example.com" }, access: { profile: { id: "admin-profile" } } };
+    },
+    restQuery: async (resource, options) => { calls.push({ resource, options }); return rpcResult; },
+  }), async (handler) => handler({ method: "GET" }, response));
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, rpcResult);
+  assert.deepEqual(authorizations, [{ area: "settings", feature: "financial-reconciliation" }]);
+  assert.deepEqual(calls, [{
+    resource: "rpc/get_financial_reconciliation_automation_settings",
+    options: { method: "POST", body: {} },
+  }]);
+});
+
+test("automation settings GET supplies all seven authoritative managed display names", async () => {
+  const response = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => sevenRuleRpcCatalog(),
   }), async (handler) => {
     await handler({ method: "GET" }, response);
   });
 
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body.rules[4], {
-    ruleKey: MONTHLY_INCOME_RULE_KEY,
-    ruleVersion: 2,
-    displayName: "Card Payments - POS - Income",
-    enabled: false,
-    allowManualExecution: false,
-    includeInScheduledBatch: false,
-    differenceAllowed: "7500.00",
-    maxDifferenceDays: 31,
-    priority: 5,
-  });
+  assert.deepEqual(response.body.rules.map(({ ruleKey, displayName }) => [ruleKey, displayName]),
+    Object.entries(AUTOMATIC_RULE_DISPLAY_NAMES));
 });
 
 test("automation settings GET accepts the seven supported tuples and rejects malformed catalogs", async () => {
-  const sevenRpcRules = sevenRuleSettings().rules.map((rule) => ({
-    rule_key: rule.ruleKey,
-    rule_version: rule.ruleVersion,
-    enabled: rule.enabled,
-    allow_manual_execution: rule.allowManualExecution,
-    include_in_scheduled_batch: rule.includeInScheduledBatch,
-    difference_allowed: rule.differenceAllowed,
-    max_difference_days: rule.maxDifferenceDays,
-    priority: rule.priority,
-  }));
+  const sevenRpcRules = sevenRuleRpcCatalog().rules;
   const validResponse = responseRecorder();
   await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
-    restQuery: async () => ({
-      schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
-      rules: sevenRpcRules,
-      last_scheduled_batch: null,
-    }),
+    restQuery: async () => sevenRuleRpcCatalog(),
   }), async (handler) => handler({ method: "GET" }, validResponse));
   assert.equal(validResponse.statusCode, 200);
   assert.deepEqual(
@@ -3379,24 +3611,21 @@ test("automation settings GET accepts the seven supported tuples and rejects mal
   );
 
   const invalidCatalogs = [
-    ["unsupported version", sevenRpcRules.map((rule) => rule.rule_key === BANK_RESERVATION_RULE_KEY
-      ? { ...rule, rule_version: 2 }
+    ["unsupported version", sevenRpcRules.map((rule) => rule.ruleKey === BANK_RESERVATION_RULE_KEY
+      ? { ...rule, ruleVersion: 2 }
       : rule)],
-    ["unknown key", sevenRpcRules.map((rule) => rule.rule_key === ADYEN_MONTHLY_RULE_KEY
-      ? { ...rule, rule_key: `${ADYEN_MONTHLY_RULE_KEY}_near` }
+    ["unknown key", sevenRpcRules.map((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY
+      ? { ...rule, ruleKey: `${ADYEN_MONTHLY_RULE_KEY}_near` }
       : rule)],
     ["duplicate key", [...sevenRpcRules, { ...sevenRpcRules.at(-1), priority: 8 }]],
-    ["duplicate priority", sevenRpcRules.map((rule) => rule.rule_key === ADYEN_MONTHLY_RULE_KEY
+    ["duplicate priority", sevenRpcRules.map((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY
       ? { ...rule, priority: 6 }
       : rule)],
   ];
   for (const [name, rules] of invalidCatalogs) {
     const response = responseRecorder();
     await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
-      restQuery: async () => ({
-        schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
-        rules,
-      }),
+      restQuery: async () => ({ ...sevenRuleRpcCatalog(), rules }),
     }), async (handler) => handler({ method: "GET" }, response));
     assert.equal(response.statusCode, 500, name);
     assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
@@ -3423,10 +3652,10 @@ test("automation settings has no action that creates an analysis run", async () 
   assert.equal(rpcCalled, false);
 });
 
-test("automation settings PUT normalizes the complete two-rule payload and preserves the complete RPC response", async () => {
+test("automation settings PUT normalizes the complete seven-rule payload and preserves the complete RPC response", async () => {
   const calls = [];
   const response = responseRecorder();
-  const input = managedSettings({ rules: [managedSettings().rules[0], creditCardRule] });
+  const input = sevenRuleSettings();
   await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
     requireFeature: async () => ({
       user: { email: " admin@example.com ", id: "admin-1" },
@@ -3434,59 +3663,29 @@ test("automation settings PUT normalizes the complete two-rule payload and prese
     }),
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
-      return productionSettingsRpcResult(2);
+      return sevenRuleRpcCatalog();
     },
   }), async (handler) => {
     await handler({ method: "PUT", body: input }, response);
   });
 
-  assert.deepEqual(calls, [{
-    resource: "rpc/replace_financial_reconciliation_automation_settings",
-    options: {
-      method: "POST",
-      body: {
-        p_schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
-        p_rules: [
-          {
-            rule_key: AUTOMATIC_RULE_KEY,
-            rule_version: 2,
-            enabled: true,
-            allow_manual_execution: true,
-            include_in_scheduled_batch: false,
-            difference_allowed: "1.25",
-            max_difference_days: 7,
-            priority: 1,
-          },
-          {
-            rule_key: CREDIT_CARD_RULE_KEY,
-            rule_version: 1,
-            enabled: false,
-            allow_manual_execution: false,
-            include_in_scheduled_batch: false,
-            difference_allowed: "0.00",
-            max_difference_days: 10,
-            priority: 2,
-          },
-        ],
-        p_actor: "admin@example.com",
-      },
-    },
-  }]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].resource, "rpc/replace_financial_reconciliation_automation_settings");
+  assert.equal(calls[0].options.body.p_actor, "admin@example.com");
+  assert.deepEqual(calls[0].options.body.p_rules.map(({ rule_key }) => rule_key),
+    input.rules.map(({ ruleKey }) => ruleKey));
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, expectedPublicSettings(2));
+  assert.deepEqual(response.body, sevenRuleRpcCatalog());
 });
 
-test("automation settings PUT supports pre-migration two-rule and post-migration four-rule catalogs", async () => {
-  for (const [label, settings] of [
-    ["pre-migration", managedSettings({ rules: [managedSettings().rules[0], creditCardRule] })],
-    ["post-migration", fourRuleSettings()],
-  ]) {
+test("automation settings PUT supports only the post-migration seven-rule catalog", async () => {
+  for (const [label, settings] of [["post-migration", sevenRuleSettings()]]) {
     const calls = [];
     const response = responseRecorder();
     await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
       restQuery: async (resource, options) => {
         calls.push({ resource, options });
-        return productionSettingsRpcResult(settings.rules.length);
+        return sevenRuleRpcCatalog();
       },
     }), async (handler) => {
       await handler({ method: "PUT", body: settings }, response);
@@ -3500,7 +3699,7 @@ test("automation settings PUT supports pre-migration two-rule and post-migration
       settings.rules.map(({ ruleKey, ruleVersion }) => [ruleKey, ruleVersion]),
       label,
     );
-    assert.deepEqual(response.body, expectedPublicSettings(settings.rules.length), label);
+    assert.deepEqual(response.body, sevenRuleRpcCatalog(), label);
   }
 });
 
@@ -3538,7 +3737,7 @@ test("manual automation GET authorizes app access and validates the run detail R
     },
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
-      return { run_id: RUN_ID, proposals: [{ source_id: "bank-1", internal_error: "hidden" }] };
+      return manualRun();
     },
   }), async (handler) => {
     await handler({ method: "GET", query: { run_id: RUN_ID } }, response);
@@ -3550,7 +3749,7 @@ test("manual automation GET authorizes app access and validates the run detail R
     options: { method: "POST", body: { p_run_id: RUN_ID } },
   }]);
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, { runId: RUN_ID, proposals: [{ sourceId: "bank-1" }] });
+  assert.deepEqual(response.body, manualRun());
 
   const invalidResponse = responseRecorder();
   let invalidRpcCalled = false;
@@ -3677,7 +3876,7 @@ test("monthly member paging binds the authenticated app actor to the only data R
       amount: "125.00",
       description: "POS VENDAS",
       account: "",
-      rowSnapshot: { row_key: "bank-73" },
+      rowSnapshot: { rowKey: "bank-73" },
     }],
   });
 });
@@ -3732,6 +3931,115 @@ test("grouped member paging accepts an empty page past the end and rejects incon
   }, invalidResponse));
   assert.equal(invalidResponse.statusCode, 500);
   assert.deepEqual(invalidResponse.body, { error: "Unexpected server error." });
+});
+
+test("grouped member paging explicitly shapes summary and source rows without private nested fields", async () => {
+  const response = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => ({
+      runId: RUN_ID,
+      proposalId: PROPOSAL_ID,
+      ruleKey: BANK_RESERVATION_RULE_KEY,
+      ruleVersion: BANK_RESERVATION_RULE_VERSION,
+      groupingKey: "bank-anchor-1",
+      summarySnapshot: {
+        classification: "proposed",
+        reason: "",
+        candidateCount: 10,
+        candidateGroups: [{ sourceId: uuidFor(995) }],
+        privateDiagnostic: "hidden",
+      },
+      sourceCount: 1,
+      sourceTotal: -100,
+      destinationCount: 1,
+      destinationTotal: 100,
+      role: "destination",
+      offset: 0,
+      limit: 50,
+      totalCount: 1,
+      members: [{
+        role: "destination",
+        sourceType: "import_cgd_extrato_ordem",
+        sourceId: uuidFor(996),
+        ordinal: 1,
+        sourceDate: "2026-08-23",
+        amount: 100,
+        description: "Reservation settlement",
+        account: "",
+        rowSnapshot: {
+          id: uuidFor(996),
+          import_batch: "batch-1",
+          row_key: "bank-row-1",
+          data: "2026-08-23",
+          descritivo: "Reservation settlement",
+          montante: 100,
+          private_secret: "hidden",
+        },
+      }],
+    }),
+  }), async (handler) => handler({
+    method: "GET",
+    query: {
+      run_id: RUN_ID, proposal_id: PROPOSAL_ID,
+      role: "destination", offset: "0", limit: "50",
+    },
+  }, response));
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.summarySnapshot, {
+    classification: "proposed",
+    reason: "",
+    candidateCount: 10,
+  });
+  assert.deepEqual(response.body.members[0].rowSnapshot, {
+    id: uuidFor(996),
+    importBatch: "batch-1",
+    rowKey: "bank-row-1",
+    date: "2026-08-23",
+    description: "Reservation settlement",
+    amount: 100,
+  });
+  assert.doesNotMatch(JSON.stringify(response.body), /candidateGroups|private/i);
+});
+
+test("grouped member paging fails closed when a whitelisted snapshot field is structured", async () => {
+  const response = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => ({
+      runId: RUN_ID,
+      proposalId: PROPOSAL_ID,
+      ruleKey: BANK_RESERVATION_RULE_KEY,
+      ruleVersion: BANK_RESERVATION_RULE_VERSION,
+      groupingKey: "bank-anchor-1",
+      summarySnapshot: { classification: "proposed", reason: "", candidateCount: 1 },
+      sourceCount: 1,
+      sourceTotal: -100,
+      destinationCount: 1,
+      destinationTotal: 100,
+      role: "source",
+      offset: 0,
+      limit: 50,
+      totalCount: 1,
+      members: [{
+        role: "source",
+        sourceType: "import_fdm_accounts",
+        sourceId: uuidFor(997),
+        ordinal: 1,
+        sourceDate: "2026-08-23",
+        amount: -100,
+        description: "Bank Transfer",
+        account: "Bank Transfer",
+        rowSnapshot: { description: { harmless: "unexpected" } },
+      }],
+    }),
+  }), async (handler) => handler({
+    method: "GET",
+    query: {
+      run_id: RUN_ID, proposal_id: PROPOSAL_ID,
+      role: "source", offset: "0", limit: "50",
+    },
+  }, response));
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
 });
 
 test("monthly member paging rejects malformed query values and absent actor before its RPC", async () => {
@@ -3832,10 +4140,17 @@ test("monthly member paging is GET-only, denies fallback access, and sanitizes d
   assert.doesNotMatch(JSON.stringify(errorResponse.body), /task5_private_4f92/);
 });
 
-test("manual automation GET exposes only enabled manual rules from the workbench catalog", async () => {
+test("manual automation GET exposes the authoritative enabled/manual catalog subset", async () => {
   const authorizations = [];
   const calls = [];
   const response = responseRecorder();
+  const rules = Object.keys(AUTOMATIC_RULE_VERSIONS).map((ruleKey, index) => {
+    const rule = catalogRule(ruleKey, index + 1);
+    delete rule.includeInScheduledBatch;
+    delete rule.updatedBy;
+    delete rule.updatedAt;
+    return rule;
+  });
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     requireFeature: async (_request, area, feature) => {
       authorizations.push({ area, feature });
@@ -3844,66 +4159,7 @@ test("manual automation GET exposes only enabled manual rules from the workbench
         access: { profile: { id: "profile-1" } },
       };
     },
-    restQuery: async (resource, options) => {
-      calls.push({ resource, options });
-      return {
-        rules: [
-          {
-            rule_key: AUTOMATIC_RULE_KEY,
-            rule_version: 2,
-            display_name: "Financial Documents to CGD Bank Statement",
-            enabled: true,
-            allow_manual_execution: true,
-            difference_allowed: "1.00",
-            max_difference_days: 7,
-            diagnostic: "hidden",
-          },
-          {
-            rule_key: CREDIT_CARD_RULE_KEY,
-            rule_version: 1,
-            display_name: "Financial Documents to CGD Credit Card",
-            enabled: false,
-            allow_manual_execution: true,
-            difference_allowed: "0.00",
-            max_difference_days: 10,
-          },
-          {
-            rule_key: BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
-            rule_version: 1,
-            display_name: "Financial Documents to CGD Bank Statement (Amount Only)",
-            enabled: true,
-            allow_manual_execution: false,
-            difference_allowed: "0.00",
-            max_difference_days: 1,
-          },
-          {
-            rule_key: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
-            rule_version: 1,
-            display_name: "Financial Documents to CGD Credit Card (Amount Only)",
-            enabled: true,
-            allow_manual_execution: true,
-            difference_allowed: "0.00",
-            max_difference_days: 1,
-          },
-          {
-            rule_key: BANK_RESERVATION_RULE_KEY,
-            rule_version: BANK_RESERVATION_RULE_VERSION,
-            enabled: true,
-            allow_manual_execution: true,
-            difference_allowed: "0.00",
-            max_difference_days: 3,
-          },
-          {
-            rule_key: ADYEN_MONTHLY_RULE_KEY,
-            rule_version: ADYEN_MONTHLY_RULE_VERSION,
-            enabled: true,
-            allow_manual_execution: false,
-            difference_allowed: "2000.00",
-            max_difference_days: 31,
-          },
-        ],
-      };
-    },
+    restQuery: async (resource, options) => { calls.push({ resource, options }); return { rules }; },
   }), async (handler) => {
     await handler({ method: "GET", query: { view: "rules" } }, response);
   });
@@ -3914,37 +4170,7 @@ test("manual automation GET exposes only enabled manual rules from the workbench
     options: { method: "POST", body: {} },
   }]);
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, {
-    rules: [
-      {
-        ruleKey: AUTOMATIC_RULE_KEY,
-        ruleVersion: 2,
-        displayName: "Financial Documents to CGD Bank Statement",
-        enabled: true,
-        allowManualExecution: true,
-        differenceAllowed: "1.00",
-        maxDifferenceDays: 7,
-      },
-      {
-        ruleKey: CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
-        ruleVersion: 1,
-        displayName: "Financial Documents to CGD Credit Card (Amount Only)",
-        enabled: true,
-        allowManualExecution: true,
-        differenceAllowed: "0.00",
-        maxDifferenceDays: 1,
-      },
-      {
-        ruleKey: BANK_RESERVATION_RULE_KEY,
-        ruleVersion: BANK_RESERVATION_RULE_VERSION,
-        displayName: "FDM Accounts – Bank Reservation Payments",
-        enabled: true,
-        allowManualExecution: true,
-        differenceAllowed: "0.00",
-        maxDifferenceDays: 3,
-      },
-    ],
-  });
+  assert.deepEqual(response.body, { rules });
   assert.equal(Object.hasOwn(response.body, "schedule"), false);
 });
 
@@ -3986,15 +4212,7 @@ test("new manual strategies analyze exactly one rule and preserve one unfinished
         calls.push({ resource, options });
         attempt += 1;
         if (attempt === 1) {
-          return {
-            run_id: RUN_ID,
-            trigger: "manual",
-            scope: "rule",
-            actor: "user@example.com",
-            status: "analyzing",
-            finished_at: null,
-            definitions: [{ rule_key: ruleKey, rule_version: ruleVersion }],
-          };
+          return manualRun({ ruleKey });
         }
         const error = new Error("Automatic analysis conflict: an unfinished manual run already exists for this actor.");
         error.supabasePayload = { details: "private lock owner" };
@@ -4017,11 +4235,7 @@ test("new manual strategies analyze exactly one rule and preserve one unfinished
     });
 
     assert.equal(first.statusCode, 200, ruleKey);
-    assert.deepEqual(first.body.definitions, [{
-      ruleKey,
-      ruleVersion,
-      displayName: AUTOMATIC_RULE_DISPLAY_NAMES[ruleKey],
-    }], ruleKey);
+    assert.deepEqual(first.body.definitions, [manualDefinition(ruleKey)], ruleKey);
     assert.equal(second.statusCode, 409, ruleKey);
     assert.deepEqual(second.body, {
       error: "The reconciliation automation state changed. Refresh and try again.",
@@ -4059,7 +4273,7 @@ test("manual active-run lookup and continuation bind the authenticated actor", a
     requireFeature: async () => auth,
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
-      return { run_id: RUN_ID, status: "analyzing", analysis_processed: 25, analysis_total: 100 };
+      return manualRun({ actor: "admin@example.com", analysisProcessed: 25, analysisTotal: 100 });
     },
   });
 
@@ -4084,12 +4298,9 @@ test("manual active-run lookup and continuation bind the authenticated actor", a
   ]);
   for (const response of [activeResponse, continueResponse]) {
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.body, {
-      runId: RUN_ID,
-      status: "analyzing",
-      analysisProcessed: 25,
-      analysisTotal: 100,
-    });
+    assert.deepEqual(response.body, manualRun({
+      actor: "admin@example.com", analysisProcessed: 25, analysisTotal: 100,
+    }));
   }
 
   let invalidRpcCalled = false;
@@ -4106,6 +4317,415 @@ test("manual active-run lookup and continuation bind the authenticated actor", a
   assert.equal(invalidRpcCalled, false);
 });
 
+test("manual run RPCs fail closed on skeletal, foreign, mismatched, private, or prototype-backed results", async () => {
+  const cases = [
+    {
+      name: "analyze skeletal",
+      request: { method: "POST", body: {
+        action: "analyze_rule", ruleKeys: [BANK_RESERVATION_RULE_KEY], clientRequestId: REQUEST_ID,
+      } },
+      responseFor: () => ({ run_id: RUN_ID, status: "analyzing" }),
+    },
+    {
+      name: "active foreign actor",
+      request: { method: "GET", query: { view: "active_run" } },
+      responseFor: () => manualRun({ actor: "other@example.com" }),
+    },
+    {
+      name: "get mismatched run",
+      request: { method: "GET", query: { run_id: RUN_ID } },
+      responseFor: () => manualRun({ runId: uuidFor(991) }),
+    },
+    {
+      name: "continue private field",
+      request: { method: "POST", body: { action: "continue_analysis", runId: RUN_ID } },
+      responseFor: () => ({ ...manualRun(), privateCandidateRows: [{ id: uuidFor(992) }] }),
+    },
+    {
+      name: "analyze prototype backed",
+      request: { method: "POST", body: {
+        action: "analyze_rule", ruleKeys: [BANK_RESERVATION_RULE_KEY], clientRequestId: REQUEST_ID,
+      } },
+      responseFor: () => Object.create(manualRun()),
+    },
+  ];
+
+  for (const entry of cases) {
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => entry.responseFor(),
+    }), async (handler) => handler(entry.request, response));
+    assert.equal(response.statusCode, 500, entry.name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, entry.name);
+  }
+});
+
+test("manual runs preserve schema-authorized ambiguous and skipped proposal statuses", async () => {
+  for (const [ruleKey, status] of [
+    [BANK_RESERVATION_RULE_KEY, "ambiguous"],
+    [ADYEN_MONTHLY_RULE_KEY, "ambiguous"],
+    [BANK_RESERVATION_RULE_KEY, "skipped"],
+  ]) {
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => manualRun({
+        ruleKey,
+        status: "ready",
+        proposals: [manualProposal(PROPOSAL_ID, {
+          ruleKey,
+          status,
+          reason: status === "ambiguous" ? "monthly_difference_exceeded" : "no_qualifying_combination",
+        })],
+      }),
+    }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
+    assert.equal(response.statusCode, 200, `${ruleKey}:${status}`);
+    assert.equal(response.body.proposals[0].status, status, `${ruleKey}:${status}`);
+  }
+});
+
+test("manual proposal execution fails closed on a malformed successful RPC response", async () => {
+  const calls = [];
+  const ready = manualRun({
+    status: "ready",
+    proposals: [manualProposal()],
+  });
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      if (resource === "rpc/get_financial_reconciliation_automatic_run") return ready;
+      if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+        return {
+          proposalId: PROPOSAL_ID,
+          runId: RUN_ID,
+          status: "completed",
+          unexpected: "must not be downgraded to a partial execution failure",
+        };
+      }
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => handler({
+    method: "POST",
+    body: { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID] },
+  }, response));
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
+  assert.deepEqual(calls.map(({ resource }) => resource), [
+    "rpc/get_financial_reconciliation_automatic_run",
+    "rpc/execute_financial_reconciliation_automatic_proposal",
+  ]);
+});
+
+test("manual proposal execution rejects malformed outcome scalar fields", async () => {
+  for (const outcome of [
+    { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "failed", reason: { harmless: "unexpected" } },
+    { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed", reconciliationId: "not-a-uuid" },
+    { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed" },
+  ]) {
+    const calls = [];
+    const ready = manualRun({ status: "ready", proposals: [manualProposal()] });
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        if (resource === "rpc/get_financial_reconciliation_automatic_run") return ready;
+        if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") return outcome;
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => handler({
+      method: "POST",
+      body: { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID] },
+    }, response));
+    assert.equal(response.statusCode, 500, JSON.stringify(outcome));
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, JSON.stringify(outcome));
+    assert.deepEqual(calls.map(({ resource }) => resource), [
+      "rpc/get_financial_reconciliation_automatic_run",
+      "rpc/execute_financial_reconciliation_automatic_proposal",
+    ], JSON.stringify(outcome));
+  }
+});
+
+test("manual proposal execution fails closed when a successful result contradicts the authoritative reload", async () => {
+  const calls = [];
+  let runReads = 0;
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource, options) => {
+      calls.push({ resource, options });
+      if (resource === "rpc/get_financial_reconciliation_automatic_run") {
+        runReads += 1;
+        return manualRun({
+          status: "ready",
+          proposals: [manualProposal(PROPOSAL_ID, {
+            status: runReads === 1 ? "proposed" : "failed",
+            reason: runReads === 1 ? "" : "execution_failed",
+          })],
+        });
+      }
+      if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+        return {
+          proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed", reconciliationId: uuidFor(899),
+        };
+      }
+      if (resource === "rpc/finish_financial_reconciliation_automatic_run") {
+        return manualRun({
+          status: "partial",
+          proposals: [manualProposal(PROPOSAL_ID, { status: "failed", reason: "execution_failed" })],
+        });
+      }
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => handler({
+    method: "POST",
+    body: { action: "execute_selected", runId: RUN_ID, proposalIds: [PROPOSAL_ID] },
+  }, response));
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
+  assert.deepEqual(calls.map(({ resource }) => resource), [
+    "rpc/get_financial_reconciliation_automatic_run",
+    "rpc/execute_financial_reconciliation_automatic_proposal",
+    "rpc/get_financial_reconciliation_automatic_run",
+  ]);
+});
+
+test("manual run and catalog contracts reject classic destination and operator drift", async () => {
+  const runResponse = responseRecorder();
+  const malformedRun = manualRun({
+    ruleKey: BANK_STATEMENT_RULE_KEY,
+    status: "ready",
+    definitions: [{
+      ...manualDefinition(BANK_STATEMENT_RULE_KEY, 1),
+      destinationSourceType: "import_fdm_accounts",
+    }],
+  });
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => malformedRun,
+  }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, runResponse));
+  assert.equal(runResponse.statusCode, 500);
+  assert.deepEqual(runResponse.body, { error: "Unexpected server error." });
+
+  const catalogResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => ({
+      rules: [catalogRule(BANK_STATEMENT_RULE_KEY, 1, { operator: "-" })],
+    }),
+  }), async (handler) => handler({ method: "GET", query: { view: "rules" } }, catalogResponse));
+  assert.equal(catalogResponse.statusCode, 500);
+  assert.deepEqual(catalogResponse.body, { error: "Unexpected server error." });
+});
+
+test("manual finalize fails closed on a skeletal authoritative run before returning HTTP 200", async () => {
+  const ready = manualRun({
+    status: "ready",
+    analysisComplete: true,
+    analysisProcessed: 1,
+    analysisCompletedAt: "2026-08-23T12:00:01.000Z",
+  });
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource) => resource === "rpc/get_financial_reconciliation_automatic_run"
+      ? ready
+      : { runId: RUN_ID, status: "completed", finishedAt: "2026-08-23T12:01:00.000Z" },
+  }), async (handler) => handler({
+    method: "POST",
+    body: { action: "execute_selected", runId: RUN_ID, proposalIds: [] },
+  }, response));
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
+});
+
+test("settings and manual catalogs reject incomplete rule contracts, wrong operators, and unknown fields", async () => {
+  const validSettings = sevenRuleRpcCatalog();
+  const settingsCases = [
+    ["missing schedule", { rules: validSettings.rules, lastScheduledBatch: null }],
+    ["six rules", { ...validSettings, rules: validSettings.rules.slice(0, 6) }],
+    ["Bank allowance", { ...validSettings, rules: validSettings.rules.map((rule) =>
+      rule.ruleKey === BANK_RESERVATION_RULE_KEY ? { ...rule, differenceAllowed: 1 } : rule) }],
+    ["Bank operator", { ...validSettings, rules: validSettings.rules.map((rule) =>
+      rule.ruleKey === BANK_RESERVATION_RULE_KEY ? { ...rule, operator: "-" } : rule) }],
+    ["Adyen days", { ...validSettings, rules: validSettings.rules.map((rule) =>
+      rule.ruleKey === ADYEN_MONTHLY_RULE_KEY ? { ...rule, maxDifferenceDays: 30 } : rule) }],
+    ["Adyen operator", { ...validSettings, rules: validSettings.rules.map((rule) =>
+      rule.ruleKey === ADYEN_MONTHLY_RULE_KEY ? { ...rule, operator: "+" } : rule) }],
+    ["unexpected definition field", { ...validSettings, rules: validSettings.rules.map((rule) =>
+      rule.ruleKey === BANK_RESERVATION_RULE_KEY ? {
+        ...rule,
+        definition: { ...rule.definition, unexpected: true },
+      } : rule) }],
+    ["unknown field", { ...validSettings, privateRuleState: true }],
+  ];
+  for (const [name, rpcResult] of settingsCases) {
+    const response = responseRecorder();
+    await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => rpcResult,
+    }), async (handler) => handler({ method: "GET" }, response));
+    assert.equal(response.statusCode, 500, name);
+  }
+
+  const bankCatalogRule = catalogRule(BANK_RESERVATION_RULE_KEY, 6);
+  delete bankCatalogRule.includeInScheduledBatch;
+  delete bankCatalogRule.updatedBy;
+  delete bankCatalogRule.updatedAt;
+  for (const [name, rule] of [
+    ["missing definition", { ...bankCatalogRule, definition: undefined }],
+    ["wrong operator", { ...bankCatalogRule, operator: "-" }],
+    ["not enabled", { ...bankCatalogRule, enabled: false }],
+    ["unknown nested field", { ...bankCatalogRule, definition: {
+      ...bankCatalogRule.definition, privateCandidateRows: [],
+    } }],
+    ["unexpected definition field", { ...bankCatalogRule, definition: {
+      ...bankCatalogRule.definition, unexpected: true,
+    } }],
+  ]) {
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => ({ rules: [rule] }),
+    }), async (handler) => handler({ method: "GET", query: { view: "rules" } }, response));
+    assert.equal(response.statusCode, 500, name);
+  }
+});
+
+test("settings rejects malformed nested scheduled-batch state before returning it", async () => {
+  const validBatch = {
+    id: BATCH_ID,
+    scheduledSlot: "2026-08-23",
+    status: "partial",
+    counts: {
+      ruleCount: 7, childCount: 7, completedChildren: 6, partialChildren: 1,
+      failedChildren: 0, unfinishedChildren: 0, bases: 1, proposed: 0,
+      ambiguous: 0, skipped: 0, deselected: 0, completed: 1, stale: 0, failed: 0,
+    },
+    ruleCount: 7,
+    childCount: 7,
+    startedAt: "2026-08-23T02:15:00.000Z",
+    finishedAt: "2026-08-23T02:16:00.000Z",
+    updatedAt: "2026-08-23T02:16:00.000Z",
+  };
+  for (const batch of [
+    { ...validBatch, status: "poisoned" },
+    { ...validBatch, counts: { ...validBatch.counts, rawSourceRows: [{ id: uuidFor(998) }] } },
+  ]) {
+    const response = responseRecorder();
+    await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => sevenRuleRpcCatalog({ lastScheduledBatch: batch }),
+    }), async (handler) => handler({ method: "GET" }, response));
+    assert.equal(response.statusCode, 500, JSON.stringify(batch));
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, JSON.stringify(batch));
+  }
+});
+
+test("grouped Bank runs cannot bypass paged memberships through evidence or nested summaries", async () => {
+  const candidateRows = Array.from({ length: 2000 }, (_unused, index) => ({
+    sourceId: uuidFor(2000 + index), amount: -1,
+  }));
+  const proposal = {
+    id: PROPOSAL_ID,
+    runId: RUN_ID,
+    ruleKey: BANK_RESERVATION_RULE_KEY,
+    ruleVersion: BANK_RESERVATION_RULE_VERSION,
+    baseSourceType: "import_fdm_accounts",
+    baseSourceId: uuidFor(993),
+    baseSourceDate: "2026-08-23",
+    baseSnapshot: {},
+    items: [],
+    evidence: candidateRows,
+    candidateGroups: [],
+    groupingKey: uuidFor(994),
+    summarySnapshot: { classification: "proposed", candidateGroups: candidateRows },
+    calculatedDifference: 0,
+    allowedDifference: 0,
+    status: "proposed",
+    reason: "",
+    signature: "safe-signature",
+    reconciliationId: null,
+    createdAt: "2026-08-23T12:00:01.000Z",
+    updatedAt: "2026-08-23T12:00:01.000Z",
+  };
+  const response = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => manualRun({
+      status: "ready",
+      analysisComplete: true,
+      analysisProcessed: 1,
+      analysisCompletedAt: "2026-08-23T12:00:01.000Z",
+      proposals: [proposal],
+    }),
+  }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: "Unexpected server error." });
+  assert.doesNotMatch(JSON.stringify(response.body), new RegExp(uuidFor(2001)));
+});
+
+test("grouped runs fail closed on unallowlisted summary snapshot payloads", async () => {
+  for (const ruleKey of [BANK_RESERVATION_RULE_KEY, ADYEN_MONTHLY_RULE_KEY]) {
+    const proposal = manualProposal(PROPOSAL_ID, {
+      ruleKey,
+      summarySnapshot: ruleKey === BANK_RESERVATION_RULE_KEY
+        ? {
+          classification: "proposed", reason: "", candidateCount: 0,
+          bank_anchor: { row_snapshot: { account: "must stay behind member paging" } },
+        }
+        : {
+          calendarMonth: "2026-08-01", sourceCount: 0, sourceTotal: 0,
+          destinationCount: 0, destinationTotal: 0,
+          raw_members: { row_snapshot: { account: "must stay behind member paging" } },
+        },
+    });
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => manualRun({
+        ruleKey,
+        status: "ready",
+        proposals: [proposal],
+      }),
+    }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
+    assert.equal(response.statusCode, 500, ruleKey);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, ruleKey);
+    assert.doesNotMatch(JSON.stringify(response.body), /bank_anchor|raw_members|must stay behind/i, ruleKey);
+  }
+});
+
+test("manual runs fail closed on malformed analysis error lifecycle fields", async () => {
+  for (const overrides of [
+    { analysisErrorCode: { rawSql: "must not be public" }, analysisErrorAt: null },
+    { analysisErrorCode: "unexpected_analysis_failure", analysisErrorAt: null },
+    { analysisErrorCode: null, analysisErrorAt: "2026-08-23T12:00:01.000Z" },
+  ]) {
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => manualRun({ status: "ready", ...overrides }),
+    }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
+    assert.equal(response.statusCode, 500, JSON.stringify(overrides));
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, JSON.stringify(overrides));
+  }
+});
+
+test("grouped runs cannot bypass paged member shaping through a raw base snapshot", async () => {
+  for (const ruleKey of [BANK_RESERVATION_RULE_KEY, ADYEN_MONTHLY_RULE_KEY]) {
+    const proposal = manualProposal(PROPOSAL_ID, {
+      ruleKey,
+      baseSnapshot: {
+        sourceType: ruleKey === BANK_RESERVATION_RULE_KEY
+          ? "import_fdm_accounts" : "import_cgd_extrato_ordem",
+        sourceId: uuidFor(995),
+        sourceDate: "2026-08-23",
+        rawSourceColumn: "must remain behind the paged membership RPC",
+      },
+    });
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => manualRun({
+        ruleKey,
+        status: "ready",
+        proposals: [proposal],
+      }),
+    }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
+    assert.equal(response.statusCode, 500, ruleKey);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, ruleKey);
+    assert.doesNotMatch(JSON.stringify(response.body), /rawSourceColumn|must remain behind/i, ruleKey);
+  }
+});
+
 test("analyze_rule sends exactly one selected rule for each amount-only key/version", async () => {
   for (const [ruleKey, ruleVersion] of [
     [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION],
@@ -4116,7 +4736,7 @@ test("analyze_rule sends exactly one selected rule for each amount-only key/vers
     await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
       restQuery: async (resource, options) => {
         calls.push({ resource, options });
-        return { run_id: RUN_ID, status: "ready", definitions: [{ rule_key: ruleKey, rule_version: ruleVersion }] };
+        return manualRun({ ruleKey, status: "ready" });
       },
     }), async (handler) => {
       await handler({
@@ -4138,13 +4758,7 @@ test("analyze_rule sends exactly one selected rule for each amount-only key/vers
         },
       },
     }], ruleKey);
-    assert.deepEqual(response.body.definitions, [{
-      ruleKey,
-      ruleVersion,
-      displayName: ruleKey === BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY
-        ? "Financial Documents to CGD Bank Account – AMOUNT ONLY"
-        : "Financial Documents to CGD Credit Card – AMOUNT ONLY",
-    }], ruleKey);
+    assert.deepEqual(response.body.definitions, [manualDefinition(ruleKey)], ruleKey);
   }
 });
 
@@ -4201,6 +4815,31 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
   let runReads = 0;
   let activeExecutions = 0;
   let maximumActiveExecutions = 0;
+  const reconciliationId = uuidFor(900);
+  const initialRun = manualRun({
+    status: "ready",
+    proposals: [
+      manualProposal(PROPOSAL_ID),
+      manualProposal(PROPOSAL_ID_2),
+      manualProposal(PROPOSAL_ID_3),
+    ],
+  });
+  const refreshedRun = manualRun({
+    status: "running",
+    proposals: [
+      manualProposal(PROPOSAL_ID, { status: "completed", reconciliationId }),
+      manualProposal(PROPOSAL_ID_2, { status: "failed", reason: "execution_failed" }),
+      manualProposal(PROPOSAL_ID_3, { status: "stale", reason: "source_snapshot_changed" }),
+    ],
+  });
+  const finalizedRun = manualRun({
+    status: "partial",
+    proposals: [
+      manualProposal(PROPOSAL_ID, { status: "completed", reconciliationId }),
+      manualProposal(PROPOSAL_ID_2, { status: "failed", reason: "execution_failed" }),
+      manualProposal(PROPOSAL_ID_3, { status: "stale", reason: "source_snapshot_changed" }),
+    ],
+  });
   const response = responseRecorder();
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     requireFeature: async (_request, area, feature) => {
@@ -4214,30 +4853,7 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
       calls.push({ resource, options });
       if (resource === "rpc/get_financial_reconciliation_automatic_run") {
         runReads += 1;
-        if (runReads > 1) {
-          return {
-            runId: RUN_ID,
-            trigger: "manual",
-            actor: "user@example.com",
-            finishedAt: null,
-            proposals: [
-              { id: PROPOSAL_ID, status: "completed" },
-              { id: PROPOSAL_ID_2, status: "failed", reason: "execution_failed" },
-              { id: PROPOSAL_ID_3, status: "stale", reason: "source_snapshot_changed" },
-            ],
-          };
-        }
-        return {
-          runId: RUN_ID,
-          trigger: "manual",
-          actor: "user@example.com",
-          finishedAt: null,
-          proposals: [
-            { id: PROPOSAL_ID, status: "proposed" },
-            { id: PROPOSAL_ID_2, status: "proposed" },
-            { id: PROPOSAL_ID_3, status: "proposed" },
-          ],
-        };
+        return runReads > 1 ? refreshedRun : initialRun;
       }
       if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
         activeExecutions += 1;
@@ -4248,9 +4864,9 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
         if (options.body.p_proposal_id === PROPOSAL_ID_3) {
           return { proposalId: PROPOSAL_ID_3, runId: RUN_ID, status: "stale", reason: "source_snapshot_changed" };
         }
-        return { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed" };
+        return { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed", reconciliationId };
       }
-      return { run_id: RUN_ID, status: "partial", diagnostic: "hidden" };
+      return finalizedRun;
     },
   }), async (handler) => {
     await handler({
@@ -4293,9 +4909,16 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
   ]);
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, {
-    run: { runId: RUN_ID, status: "partial" },
+    run: publicManualRun({
+      status: "partial",
+      proposals: [
+        manualProposal(PROPOSAL_ID, { status: "completed", reconciliationId }),
+        manualProposal(PROPOSAL_ID_2, { status: "failed", reason: "execution_failed" }),
+        manualProposal(PROPOSAL_ID_3, { status: "stale", reason: "source_snapshot_changed" }),
+      ],
+    }),
     outcomes: [
-      { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed" },
+      { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed", reconciliationId },
       { proposalId: PROPOSAL_ID_2, status: "failed", reason: "execution_failed" },
       { proposalId: PROPOSAL_ID_3, runId: RUN_ID, status: "stale", reason: "source_snapshot_changed" },
     ],
@@ -4306,26 +4929,16 @@ test("execute_selected runs proposal RPCs sequentially, retains partial failures
 test("execute_selected with zero proposals finalizes the ready manual run without executing proposals", async () => {
   const calls = [];
   const response = responseRecorder();
-  const readyRun = {
-    runId: RUN_ID,
-    trigger: "manual",
-    actor: "user@example.com",
-    status: "ready",
-    analysisCompletedAt: "2026-08-23T12:00:00.000Z",
-    finishedAt: null,
-    proposals: [{ id: PROPOSAL_ID, status: "proposed" }],
-  };
+  const readyRun = manualRun({ status: "ready", proposals: [manualProposal()] });
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
       if (resource === "rpc/get_financial_reconciliation_automatic_run") return readyRun;
       if (resource === "rpc/finish_financial_reconciliation_automatic_run") {
-        return {
-          ...readyRun,
+        return manualRun({
           status: "completed",
-          finishedAt: "2026-08-23T12:01:00.000Z",
-          proposals: [{ id: PROPOSAL_ID, status: "deselected", reason: "not_selected" }],
-        };
+          proposals: [manualProposal(PROPOSAL_ID, { status: "deselected", reason: "not_selected" })],
+        });
       }
       throw new Error(`Unexpected RPC ${resource}`);
     },
@@ -4358,15 +4971,7 @@ test("execute_selected with zero proposals cannot finish an analysis still in pr
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
-      return {
-        runId: RUN_ID,
-        trigger: "manual",
-        actor: "user@example.com",
-        status: "analyzing",
-        analysisCompletedAt: null,
-        finishedAt: null,
-        proposals: [],
-      };
+      return manualRun({ status: "analyzing" });
     },
   }), async (handler) => {
     await handler({
@@ -4391,52 +4996,35 @@ test("Execute Selected empty and nonempty paths remain RPC-only for both new str
     for (const proposalIds of [[], [PROPOSAL_ID]]) {
       const calls = [];
       let runReads = 0;
-      const proposal = {
-        id: PROPOSAL_ID,
-        runId: RUN_ID,
-        ruleKey,
-        ruleVersion,
-        baseSourceDate: "2026-07-01",
-        baseSourceId: uuidFor(910),
-        status: "proposed",
-      };
-      const readyRun = {
-        runId: RUN_ID,
-        trigger: "manual",
-        scope: "rule",
-        actor: "user@example.com",
-        status: "ready",
-        definitions: [{ ruleKey, ruleVersion, priority: 6 }],
-        analysisCompletedAt: "2026-08-23T12:00:00.000Z",
-        finishedAt: null,
-        proposals: [proposal],
-      };
+      const reconciliationId = uuidFor(901);
+      const proposal = manualProposal(PROPOSAL_ID, { ruleKey });
+      const readyRun = manualRun({ ruleKey, status: "ready", proposals: [proposal] });
       const response = responseRecorder();
       await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
         restQuery: async (resource, options) => {
           calls.push({ resource, options });
           if (resource === "rpc/get_financial_reconciliation_automatic_run") {
             runReads += 1;
-            return runReads === 1 ? readyRun : {
-              ...readyRun,
+            return runReads === 1 ? readyRun : manualRun({
+              ruleKey,
               status: "running",
-              proposals: [{ ...proposal, status: "completed" }],
-            };
+              proposals: [manualProposal(PROPOSAL_ID, { ruleKey, status: "completed", reconciliationId })],
+            });
           }
           if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
-            return { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed" };
+            return { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed", reconciliationId };
           }
           if (resource === "rpc/finish_financial_reconciliation_automatic_run") {
-            return {
-              ...readyRun,
+            return manualRun({
+              ruleKey,
               status: "completed",
-              finishedAt: "2026-08-23T12:01:00.000Z",
-              proposals: [{
-                ...proposal,
+              proposals: [manualProposal(PROPOSAL_ID, {
+                ruleKey,
                 status: proposalIds.length ? "completed" : "deselected",
+                ...(proposalIds.length ? { reconciliationId } : {}),
                 ...(proposalIds.length ? {} : { reason: "not_selected" }),
-              }],
-            };
+              })],
+            });
           }
           throw new Error(`Unexpected RPC ${resource}`);
         },
@@ -4465,14 +5053,7 @@ test("execute_selected leaves a transport-uncertain selected proposal resumable"
   const calls = [];
   let runReads = 0;
   const response = responseRecorder();
-  const unresolvedRun = {
-    runId: RUN_ID,
-    trigger: "manual",
-    actor: "user@example.com",
-    status: "ready",
-    finishedAt: null,
-    proposals: [{ id: PROPOSAL_ID, status: "proposed" }],
-  };
+  const unresolvedRun = manualRun({ status: "ready", proposals: [manualProposal()] });
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
@@ -4496,34 +5077,22 @@ test("execute_selected leaves a transport-uncertain selected proposal resumable"
   assert.equal(calls.some(({ resource }) => resource === "rpc/finish_financial_reconciliation_automatic_run"), false);
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, {
-    run: unresolvedRun,
+    run: publicManualRun({ status: "ready", proposals: [manualProposal()] }),
     outcomes: [{ proposalId: PROPOSAL_ID, status: "failed", reason: "execution_failed" }],
   });
 });
 
-test("execute_selected rejects mixed, scheduled, finished, or foreign-actor runs before mutation", async () => {
+test("execute_selected rejects mixed or foreign manual runs and fails closed on a non-manual response", async () => {
   const cases = [
-    ["mixed selection", {
-      runId: RUN_ID,
-      trigger: "manual",
-      actor: "user@example.com",
-      finishedAt: null,
-      proposals: [{ id: PROPOSAL_ID_2, status: "proposed" }],
-    }, 400],
-    ["scheduled run", {
-      runId: RUN_ID,
-      trigger: "scheduled",
-      actor: "user@example.com",
-      finishedAt: null,
-      proposals: [{ id: PROPOSAL_ID, status: "proposed" }],
-    }, 400],
-    ["foreign actor", {
-      runId: RUN_ID,
-      trigger: "manual",
-      actor: "other@example.com",
-      finishedAt: null,
-      proposals: [{ id: PROPOSAL_ID, status: "proposed" }],
-    }, 403],
+    ["mixed selection", manualRun({
+      status: "ready", proposals: [manualProposal(PROPOSAL_ID_2)],
+    }), 400],
+    ["scheduled run", manualRun({
+      trigger: "scheduled", status: "ready", proposals: [manualProposal()],
+    }), 500],
+    ["foreign actor", manualRun({
+      actor: "other@example.com", status: "ready", proposals: [manualProposal()],
+    }), 500],
   ];
 
   for (const [name, run, expectedStatus] of cases) {
@@ -4551,18 +5120,16 @@ test("execute_selected rejects mixed, scheduled, finished, or foreign-actor runs
 test("execute_selected returns authoritative persisted outcomes when a finished manual run is retried", async () => {
   const calls = [];
   const response = responseRecorder();
-  const finishedRun = {
-    runId: RUN_ID,
-    trigger: "manual",
-    actor: "user@example.com",
+  const finishedRun = manualRun({
     status: "partial",
-    finishedAt: "2026-08-14T10:00:00Z",
     proposals: [
-      { id: PROPOSAL_ID, status: "completed", reconciliationId: "00000000-0000-0000-0000-000000000006" },
-      { id: PROPOSAL_ID_2, status: "stale", reason: "source_snapshot_changed" },
-      { id: PROPOSAL_ID_3, status: "failed", reason: "execution_failed" },
+      manualProposal(PROPOSAL_ID, {
+        status: "completed", reconciliationId: "00000000-0000-0000-0000-000000000006",
+      }),
+      manualProposal(PROPOSAL_ID_2, { status: "stale", reason: "source_snapshot_changed" }),
+      manualProposal(PROPOSAL_ID_3, { status: "failed", reason: "execution_failed" }),
     ],
-  };
+  });
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
@@ -4585,7 +5152,16 @@ test("execute_selected returns authoritative persisted outcomes when a finished 
   }]);
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, {
-    run: finishedRun,
+    run: publicManualRun({
+      status: "partial",
+      proposals: [
+        manualProposal(PROPOSAL_ID, {
+          status: "completed", reconciliationId: "00000000-0000-0000-0000-000000000006",
+        }),
+        manualProposal(PROPOSAL_ID_2, { status: "stale", reason: "source_snapshot_changed" }),
+        manualProposal(PROPOSAL_ID_3, { status: "failed", reason: "execution_failed" }),
+      ],
+    }),
     outcomes: [
       {
         proposalId: PROPOSAL_ID,
@@ -4638,7 +5214,7 @@ test("manual automation canonicalizes valid UUID spellings and rejects case-vari
   await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
     restQuery: async (resource, options) => {
       calls.push({ resource, options });
-      return { runId: RUN_ID };
+      return manualRun({ runId: CASE_UUID });
     },
   }), async (handler) => {
     await handler({ method: "GET", query: { run_id: CASE_UUID.toUpperCase() } }, response);
@@ -6166,6 +6742,8 @@ test("Task 6 installs RPC-only manual, membership, serializer, and seven-child s
   assert.match(createAnalysis, /financial_reconciliation_automatic_adyen_month_count\(\)/i);
   assert.match(createAnalysis, /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*is distinct from '\+'/i);
   assert.match(createAnalysis, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*is distinct from '-'/i);
+  assert.match(createAnalysis, /client request ID is already bound to another automatic rule/i);
+  assert.match(createAnalysis, /v_existing_finished_at is not null[\s\S]*get_financial_reconciliation_automatic_run/i);
   for (const [key, version] of tuples) {
     assert.match(createAnalysis, new RegExp(`'${key}'\\s*,\\s*${version}`));
   }
@@ -6179,6 +6757,19 @@ test("Task 6 installs RPC-only manual, membership, serializer, and seven-child s
   }
   assert.match(runSerializer, /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*'\[\]'::jsonb/i);
   assert.match(runSerializer, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*'\[\]'::jsonb/i);
+  assert.match(
+    runSerializer,
+    /'baseSnapshot',\s*case[\s\S]*fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*then jsonb_build_object\(\s*'sourceType', proposal\.base_source_type,\s*'sourceId', proposal\.base_source_id,\s*'sourceDate', proposal\.base_source_date/i,
+  );
+  assert.match(runSerializer, /'evidence',[\s\S]*fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*'\[\]'::jsonb/i);
+  assert.match(
+    runSerializer,
+    /'summarySnapshot',\s*case[\s\S]*fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*then\s*jsonb_build_object\(\s*'classification', proposal\.summary_snapshot->'classification',\s*'reason', proposal\.summary_snapshot->'reason',\s*'candidateCount', proposal\.summary_snapshot->'candidateCount'/i,
+  );
+  assert.match(
+    runSerializer,
+    /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*then jsonb_build_object\(\s*'calendarMonth', proposal\.summary_snapshot->'calendarMonth',\s*'sourceCount', proposal\.summary_snapshot->'sourceCount',\s*'sourceTotal', proposal\.summary_snapshot->'sourceTotal',\s*'destinationCount', proposal\.summary_snapshot->'destinationCount',\s*'destinationTotal', proposal\.summary_snapshot->'destinationTotal'/i,
+  );
 
   const members = functionSource("get_financial_reconciliation_automatic_proposal_members");
   assert.match(members, /fdm_bank_transfer_cgd_bank_statement_combination/i);
@@ -6217,6 +6808,7 @@ test("Task 6 installs RPC-only manual, membership, serializer, and seven-child s
     "Task 6 same-slot retry and oldest cross-midnight child",
     "Task 6 terminal child failure continues and aggregates all seven children",
     "Task 6 malformed batch metadata and progress fail closed",
+    "Task 6 terminal manual retry and request rule binding",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }
