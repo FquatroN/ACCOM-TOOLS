@@ -5194,11 +5194,18 @@ test("Bank Reservation analysis is bounded, deterministic, membership-backed, an
   const continuation = functionSource(
     "financial_reconciliation_continue_automatic_bank_reservation",
   );
-  assert.match(continuation, /financial_reconciliation_automatic_bank_reservation_page\([\s\S]*25/i);
+  assert.match(
+    continuation,
+    /from public\.import_cgd_extrato_ordem bank[\s\S]*bank\.created_at <= v_population_cutoff[\s\S]*order by bank\.data, bank\.id[\s\S]*limit 25/i,
+  );
   assert.match(continuation, /financial_reconciliation_automatic_proposal_memberships/i);
   assert.match(continuation, /'source'[\s\S]*'destination'/i);
   assert.match(continuation, /'overlapping_records'/i);
-  assert.match(continuation, /analysis_total = greatest\([\s\S]*v_total/i);
+  assert.match(continuation, /'source_created_at_cutoff'/i);
+  assert.match(continuation, /bank\.created_at <= v_population_cutoff/i);
+  assert.match(continuation, /analysis_total = v_population_total/i);
+  assert.match(continuation, /v_processed_after is distinct from v_population_total/i);
+  assert.match(continuation, /'analysis_population_changed'/i);
   assert.doesNotMatch(continuation, /\bexecute\b|\bformat\s*\(/i);
 
   const dispatcher = functionSource(
@@ -5214,6 +5221,8 @@ test("Bank Reservation analysis is bounded, deterministic, membership-backed, an
     "Task 3 Bank Reservation helper classifications and hard bounds",
     "Task 3 Bank Reservation continuation pages and retry idempotency",
     "Task 3 Bank Reservation memberships and omitted no-match accounting",
+    "Task 3 Bank Reservation run population excludes inter-page inserts",
+    "Task 3 Bank Reservation run population fails closed on inter-page consumption",
     "Task 3 Bank Reservation authoritative shared-bank overlap",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));

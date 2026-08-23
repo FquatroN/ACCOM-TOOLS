@@ -1086,7 +1086,10 @@ declare
   v_expected_source_count integer;
   v_inserted_source_count integer;
   v_page_count integer := 0;
-  v_total bigint;
+  v_population jsonb;
+  v_population_cutoff timestamptz;
+  v_population_total integer;
+  v_available_population_total integer;
   v_last_date date;
   v_last_id uuid;
   v_processed_after integer;
@@ -1159,24 +1162,105 @@ begin
     public.financial_reconciliation_items
   in share row exclusive mode;
 
-  select public.financial_reconciliation_automatic_bank_reservation_count()
-  into v_total;
-  update public.financial_reconciliation_automatic_runs run
-  set analysis_total = greatest(
-        run.analysis_total,
-        run.analysis_processed,
-        v_total::integer
-      ),
-      updated_at = now()
-  where run.id = p_run_id;
+  v_population := v_run.counts->'bankReservationPopulation';
+  if v_population is null then
+    if v_run.analysis_cursor_date is not null
+      or v_run.analysis_cursor_id is not null
+      or v_run.analysis_processed <> 0 then
+      raise exception
+        'Automatic Bank Reservation run population snapshot is missing.';
+    end if;
+
+    v_population_cutoff := clock_timestamp();
+    select count(*)::integer
+    into v_population_total
+    from public.import_cgd_extrato_ordem bank
+    where bank.data is not null
+      and bank.data >= date '2026-01-01'
+      and bank.montante is not null
+      and bank.created_at <= v_population_cutoff
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_cgd_extrato_ordem'
+          and locked.source_id = bank.id
+      );
+
+    if v_run.analysis_total > v_population_total then
+      update public.financial_reconciliation_automatic_runs run
+      set status = 'failed',
+          error_summary =
+            'The Bank Reservation analysis population changed before it started.',
+          analysis_error_code = 'analysis_population_changed',
+          analysis_error_at = now(),
+          finished_at = coalesce(run.finished_at, now()),
+          updated_at = now()
+      where run.id = p_run_id;
+      return public.get_financial_reconciliation_automatic_run(p_run_id);
+    end if;
+
+    v_population := jsonb_build_object(
+      'mode', 'source_created_at_cutoff',
+      'cutoff', v_population_cutoff,
+      'total', v_population_total
+    );
+    update public.financial_reconciliation_automatic_runs run
+    set analysis_total = v_population_total,
+        counts = run.counts || jsonb_build_object(
+          'bankReservationPopulation', v_population
+        ),
+        updated_at = v_population_cutoff
+    where run.id = p_run_id;
+  else
+    if jsonb_typeof(v_population) is distinct from 'object'
+      or v_population - array['mode','cutoff','total']::text[]
+        is distinct from '{}'::jsonb
+      or (v_population ?& array['mode','cutoff','total']) is not true
+      or v_population->'mode' is distinct from
+        '"source_created_at_cutoff"'::jsonb
+      or jsonb_typeof(v_population->'cutoff') is distinct from 'string'
+      or jsonb_typeof(v_population->'total') is distinct from 'number'
+      or coalesce(v_population->>'total', '') !~ '^(0|[1-9][0-9]*)$'
+      or length(v_population->>'total') > 10 then
+      raise exception
+        'Automatic Bank Reservation run population snapshot is invalid.';
+    end if;
+    v_population_cutoff := (v_population->>'cutoff')::timestamptz;
+    v_population_total := (v_population->>'total')::integer;
+    if v_population_cutoff < v_run.started_at
+      or v_population_cutoff > v_run.updated_at
+      or v_population_total is distinct from v_run.analysis_total
+      or v_run.analysis_processed not between 0 and v_population_total
+      or (v_run.analysis_cursor_date is null) <>
+         (v_run.analysis_cursor_id is null) then
+      raise exception
+        'Automatic Bank Reservation run population snapshot diverged.';
+    end if;
+  end if;
 
   for v_bank in
-    select *
-    from public.financial_reconciliation_automatic_bank_reservation_page(
-      v_run.analysis_cursor_date,
-      v_run.analysis_cursor_id,
-      25
-    )
+    select
+      bank.id as bank_id,
+      bank.data as bank_date,
+      bank.montante as bank_amount
+    from public.import_cgd_extrato_ordem bank
+    where bank.data is not null
+      and bank.data >= date '2026-01-01'
+      and bank.montante is not null
+      and bank.created_at <= v_population_cutoff
+      and (
+        v_run.analysis_cursor_date is null
+        or (bank.data, bank.id) >
+           (v_run.analysis_cursor_date, v_run.analysis_cursor_id)
+      )
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_cgd_extrato_ordem'
+          and locked.source_id = bank.id
+      )
+    order by bank.data, bank.id
+    limit 25
   loop
     v_page_count := v_page_count + 1;
     v_last_date := v_bank.bank_date;
@@ -1383,13 +1467,9 @@ begin
         analysis_cursor_id = v_last_id,
         analysis_processed = greatest(
           run.analysis_processed,
-          least(v_total::integer, run.analysis_processed + v_page_count)
+          least(v_population_total, run.analysis_processed + v_page_count)
         ),
-        analysis_total = greatest(
-          run.analysis_total,
-          v_total::integer,
-          run.analysis_processed + v_page_count
-        ),
+        analysis_total = v_population_total,
         updated_at = now(),
         analysis_error_code = null,
         analysis_error_at = null
@@ -1441,6 +1521,33 @@ begin
   from public.financial_reconciliation_automatic_runs run
   where run.id = p_run_id;
 
+  select count(*)::integer
+  into v_available_population_total
+  from public.import_cgd_extrato_ordem bank
+  where bank.data is not null
+    and bank.data >= date '2026-01-01'
+    and bank.montante is not null
+    and bank.created_at <= v_population_cutoff
+    and not exists (
+      select 1
+      from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    );
+  if v_processed_after is distinct from v_population_total
+    or v_available_population_total is distinct from v_population_total then
+    update public.financial_reconciliation_automatic_runs run
+    set status = 'failed',
+        error_summary =
+          'The Bank Reservation analysis population changed before completion.',
+        analysis_error_code = 'analysis_population_changed',
+        analysis_error_at = now(),
+        finished_at = coalesce(run.finished_at, now()),
+        updated_at = now()
+    where run.id = p_run_id;
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+
   update public.financial_reconciliation_automatic_runs run
   set status = case when exists (
         select 1
@@ -1460,7 +1567,7 @@ begin
       analysis_error_at = null,
       counts = (
         select jsonb_build_object(
-          'bases', run.analysis_total,
+          'bases', v_population_total,
           'proposed', count(*) filter (where proposal.status = 'proposed'),
           'ambiguous', count(*) filter (where proposal.status = 'ambiguous'),
           'skipped', greatest(
@@ -1468,7 +1575,8 @@ begin
               where proposal.status in ('proposed','ambiguous','stale','failed')
             ),
             0
-          )
+          ),
+          'bankReservationPopulation', v_population
         )
         from public.financial_reconciliation_automatic_proposals proposal
         where proposal.run_id = p_run_id

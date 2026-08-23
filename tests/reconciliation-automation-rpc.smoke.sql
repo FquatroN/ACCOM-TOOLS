@@ -11390,6 +11390,7 @@ $$;
 do $$
 declare
   v_group jsonb;
+  v_repeat_group jsonb;
   v_last_page_one_date date;
   v_last_page_one_id uuid;
   v_page_one_ids uuid[];
@@ -11397,7 +11398,8 @@ declare
   v_rejected boolean;
   v_signature text;
 begin
-  if public.financial_reconciliation_automatic_bank_reservation_count() <> 41 then
+  if public.financial_reconciliation_automatic_bank_reservation_count()
+      is distinct from 41 then
     raise exception 'Task 3 Bank anchor count admitted a locked, null, or pre-floor source.';
   end if;
 
@@ -11418,11 +11420,12 @@ begin
   from public.financial_reconciliation_automatic_bank_reservation_page(
     v_last_page_one_date, v_last_page_one_id, 25
   ) page;
-  if cardinality(v_page_one_ids) <> 25
-    or cardinality(v_page_two_ids) <> 16
-    or cardinality(v_page_one_ids || v_page_two_ids) <> 41
+  if cardinality(v_page_one_ids) is distinct from 25
+    or cardinality(v_page_two_ids) is distinct from 16
+    or cardinality(v_page_one_ids || v_page_two_ids) is distinct from 41
     or (select count(distinct page_id)
-        from unnest(v_page_one_ids || v_page_two_ids) page_id) <> 41 then
+        from unnest(v_page_one_ids || v_page_two_ids) page_id)
+      is distinct from 41 then
     raise exception 'Task 3 Bank anchor pages skipped, duplicated, or reordered rows.';
   end if;
 
@@ -11433,8 +11436,11 @@ begin
     'public.financial_reconciliation_continue_automatic_bank_reservation(uuid,text)'
   ] loop
     if has_function_privilege('anon', v_signature, 'EXECUTE')
+        is distinct from false
       or has_function_privilege('authenticated', v_signature, 'EXECUTE')
-      or has_function_privilege('service_role', v_signature, 'EXECUTE') then
+        is distinct from false
+      or has_function_privilege('service_role', v_signature, 'EXECUTE')
+        is distinct from false then
       raise exception 'Task 3 private helper unexpectedly exposes EXECUTE on %.',
         v_signature;
     end if;
@@ -11443,12 +11449,22 @@ begin
   v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
     'b3100000-0000-0000-0000-000000000001', 3, 60, 250000, 12
   );
-  if v_group->>'classification' <> 'proposed'
-    or v_group->>'reason' <> 'unique_qualifying_combination'
-    or jsonb_array_length(v_group->'candidateGroups') <> 1
-    or v_group#>>'{candidateGroups,0,fdmTotalCents}' <> '1000'
-    or v_group#>>'{candidateGroups,0,bankAmountCents}' <> '-1000'
-    or v_group#>>'{candidateGroups,0,equationCents}' <> '0' then
+  if jsonb_typeof(v_group) is distinct from 'object'
+    or (v_group ?& array[
+      'classification','reason','evaluatedStates','candidateCount',
+      'canonicalFdmId','canonicalFdmDate','candidateGroups'
+    ]) is not true
+    or v_group->'classification' is distinct from '"proposed"'::jsonb
+    or v_group->'reason' is distinct from
+      '"unique_qualifying_combination"'::jsonb
+    or jsonb_typeof(v_group->'candidateGroups') is distinct from 'array'
+    or jsonb_array_length(v_group->'candidateGroups') is distinct from 1
+    or v_group#>'{candidateGroups,0,fdmTotalCents}'
+      is distinct from '1000'::jsonb
+    or v_group#>'{candidateGroups,0,bankAmountCents}'
+      is distinct from '-1000'::jsonb
+    or v_group#>'{candidateGroups,0,equationCents}'
+      is distinct from '0'::jsonb then
     raise exception 'Task 3 one-member exact-cents classification is invalid: %.',
       v_group;
   end if;
@@ -11456,10 +11472,14 @@ begin
   v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
     'b3100000-0000-0000-0000-000000000004', 3, 60, 250000, 12
   );
-  if v_group->>'classification' <> 'proposed'
-    or v_group#>>'{candidateGroups,0,fdmIds,0}' <>
-      'c3120000-0000-0000-0000-000000000001'
-    or jsonb_array_length(v_group#>'{candidateGroups,0,fdmIds}') <> 1 then
+  if jsonb_typeof(v_group) is distinct from 'object'
+    or v_group->'classification' is distinct from '"proposed"'::jsonb
+    or jsonb_typeof(v_group#>'{candidateGroups,0,fdmIds}')
+      is distinct from 'array'
+    or v_group#>'{candidateGroups,0,fdmIds,0}' is distinct from
+      '"c3120000-0000-0000-0000-000000000001"'::jsonb
+    or jsonb_array_length(v_group#>'{candidateGroups,0,fdmIds}')
+      is distinct from 1 then
     raise exception 'Task 3 sign, cent, Account, null, lock, or inclusive-day filtering failed: %.',
       v_group;
   end if;
@@ -11467,49 +11487,93 @@ begin
   v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
     'b3100000-0000-0000-0000-000000000005', 3, 60, 250000, 12
   );
-  if v_group->>'classification' <> 'skipped'
-    or v_group->>'reason' <> 'no_qualifying_combination' then
+  if jsonb_typeof(v_group) is distinct from 'object'
+    or v_group->'classification' is distinct from '"skipped"'::jsonb
+    or v_group->'reason' is distinct from
+      '"no_qualifying_combination"'::jsonb
+    or v_group->'candidateGroups' is distinct from '[]'::jsonb then
     raise exception 'Task 3 search admitted an eleven-member group: %.', v_group;
   end if;
 
   v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
     'b3100000-0000-0000-0000-000000000006', 3, 60, 250000, 12
   );
-  if v_group->>'classification' <> 'ambiguous'
-    or v_group->>'reason' <> 'multiple_qualifying_combinations'
-    or jsonb_array_length(v_group->'candidateGroups') <> 2 then
+  if jsonb_typeof(v_group) is distinct from 'object'
+    or v_group->'classification' is distinct from '"ambiguous"'::jsonb
+    or v_group->'reason' is distinct from
+      '"multiple_qualifying_combinations"'::jsonb
+    or jsonb_typeof(v_group->'candidateGroups') is distinct from 'array'
+    or jsonb_array_length(v_group->'candidateGroups') is distinct from 2 then
     raise exception 'Task 3 multiple-combination classification is invalid: %.',
       v_group;
   end if;
 
-  foreach v_group in array array[
+  -- Pool overflow must observe exactly the sixty-first stable candidate.
+  v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
+    'b3100000-0000-0000-0000-000000000007', 3, 60, 250000, 12
+  );
+  v_repeat_group :=
     public.financial_reconciliation_automatic_bank_reservation_groups(
       'b3100000-0000-0000-0000-000000000007', 3, 60, 250000, 12
-    ),
-    public.financial_reconciliation_automatic_bank_reservation_groups(
-      'b3100000-0000-0000-0000-000000000009', 3, 60, 5, 12
-    ),
-    public.financial_reconciliation_automatic_bank_reservation_groups(
-      'b3100000-0000-0000-0000-000000000008', 3, 60, 250000, 12
-    )
-  ] loop
-    if v_group->>'classification' <> 'ambiguous'
-      or v_group->>'reason' <> 'candidate_limit'
-      or jsonb_array_length(v_group->'candidateGroups') > 12 then
-      raise exception 'Task 3 hard ceiling did not fail closed with bounded evidence: %.',
-        v_group;
-    end if;
-  end loop;
+    );
+  if jsonb_typeof(v_group) is distinct from 'object'
+    or v_group->'classification' is distinct from '"ambiguous"'::jsonb
+    or v_group->'reason' is distinct from '"candidate_limit"'::jsonb
+    or v_group->'candidateCount' is distinct from '61'::jsonb
+    or v_group->'evaluatedStates' is distinct from '0'::jsonb
+    or v_group->'candidateGroups' is distinct from '[]'::jsonb
+    or v_repeat_group is distinct from v_group then
+    raise exception 'Task 3 candidate pool boundary is not exact or stable: %, %.',
+      v_group, v_repeat_group;
+  end if;
 
+  -- The production state ceiling must classify after exactly 250,000 states.
+  v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
+    'b3100000-0000-0000-0000-000000000009', 3, 60, 250000, 12
+  );
+  v_repeat_group :=
+    public.financial_reconciliation_automatic_bank_reservation_groups(
+      'b3100000-0000-0000-0000-000000000009', 3, 60, 250000, 12
+    );
+  if jsonb_typeof(v_group) is distinct from 'object'
+    or v_group->'classification' is distinct from '"ambiguous"'::jsonb
+    or v_group->'reason' is distinct from '"candidate_limit"'::jsonb
+    or v_group->'candidateCount' is distinct from '19'::jsonb
+    or v_group->'evaluatedStates' is distinct from '250000'::jsonb
+    or v_group->'candidateGroups' is distinct from '[]'::jsonb
+    or v_repeat_group is distinct from v_group then
+    raise exception 'Task 3 evaluated-state boundary is not exact or stable: %, %.',
+      v_group, v_repeat_group;
+  end if;
+
+  -- Twelve groups are retained; discovering the thirteenth fails closed.
   v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
     'b3100000-0000-0000-0000-000000000008', 3, 60, 250000, 12
   );
-  if v_group->>'canonicalFdmId'
-      is distinct from v_group#>>'{candidateGroups,0,fdmIds,0}'
-    or v_group->>'canonicalFdmId' =
-      'c315f000-0000-0000-0000-000000000001' then
-    raise exception 'Task 3 bounded evidence did not own its canonical FDM member: %.',
-      v_group;
+  v_repeat_group :=
+    public.financial_reconciliation_automatic_bank_reservation_groups(
+      'b3100000-0000-0000-0000-000000000008', 3, 60, 250000, 12
+    );
+  if jsonb_typeof(v_group) is distinct from 'object'
+    or v_group->'classification' is distinct from '"ambiguous"'::jsonb
+    or v_group->'reason' is distinct from '"candidate_limit"'::jsonb
+    or v_group->'candidateCount' is distinct from '14'::jsonb
+    or v_group->'evaluatedStates' is distinct from '14'::jsonb
+    or jsonb_typeof(v_group->'candidateGroups') is distinct from 'array'
+    or jsonb_array_length(v_group->'candidateGroups') is distinct from 12
+    or v_group#>'{candidateGroups,0,fdmIds,0}' is distinct from
+      '"c3160000-0000-0000-0000-000000000001"'::jsonb
+    or v_group->'canonicalFdmId'
+      is distinct from v_group#>'{candidateGroups,0,fdmIds,0}'
+    or exists (
+      select 1
+      from jsonb_array_elements(v_group->'candidateGroups') evidence(value)
+      where evidence.value->'equationCents' is distinct from '0'::jsonb
+        or jsonb_array_length(evidence.value->'fdmIds') is distinct from 1
+    )
+    or v_repeat_group is distinct from v_group then
+    raise exception 'Task 3 thirteenth-group boundary is not exact or stable: %, %.',
+      v_group, v_repeat_group;
   end if;
 
   v_rejected := false;
@@ -11521,7 +11585,7 @@ begin
     v_rejected := sqlerrm =
       'Automatic Bank Reservation page size must be between 1 and 25.';
   end;
-  if not v_rejected then
+  if v_rejected is not true then
     raise exception 'Task 3 Bank page accepted an oversized limit.';
   end if;
 end
@@ -11572,9 +11636,22 @@ begin
   v_first := public.continue_financial_reconciliation_automatic_analysis(
     'b3300000-0000-0000-0000-000000000001', 'smoke:task3-owner'
   );
-  if v_first->>'status' <> 'analyzing'
-    or (v_first->>'analysisProcessed')::integer <> 25
-    or (v_first->>'analysisTotal')::integer <> 41 then
+  if jsonb_typeof(v_first) is distinct from 'object'
+    or (v_first ?& array[
+      'status','analysisComplete','analysisProcessed','analysisTotal','counts'
+    ]) is not true
+    or v_first->'status' is distinct from '"analyzing"'::jsonb
+    or v_first->'analysisComplete' is distinct from 'false'::jsonb
+    or v_first->'analysisProcessed' is distinct from '25'::jsonb
+    or v_first->'analysisTotal' is distinct from '41'::jsonb
+    or jsonb_typeof(v_first#>'{counts,bankReservationPopulation}')
+      is distinct from 'object'
+    or v_first#>'{counts,bankReservationPopulation,mode}' is distinct from
+      '"source_created_at_cutoff"'::jsonb
+    or v_first#>'{counts,bankReservationPopulation,total}'
+      is distinct from '41'::jsonb
+    or jsonb_typeof(v_first#>'{counts,bankReservationPopulation,cutoff}')
+      is distinct from 'string' then
     raise exception 'Task 3 first 25-Bank continuation page is invalid: %.',
       v_first;
   end if;
@@ -11582,10 +11659,18 @@ begin
   v_second := public.continue_financial_reconciliation_automatic_analysis(
     'b3300000-0000-0000-0000-000000000001', 'smoke:task3-owner'
   );
-  if v_second->>'status' <> 'ready'
-    or not (v_second->>'analysisComplete')::boolean
-    or (v_second->>'analysisProcessed')::integer <> 41
-    or (v_second->>'analysisTotal')::integer <> 41 then
+  if jsonb_typeof(v_second) is distinct from 'object'
+    or (v_second ?& array[
+      'status','analysisComplete','analysisProcessed','analysisTotal','counts'
+    ]) is not true
+    or v_second->'status' is distinct from '"ready"'::jsonb
+    or v_second->'analysisComplete' is distinct from 'true'::jsonb
+    or v_second->'analysisProcessed' is distinct from '41'::jsonb
+    or v_second->'analysisTotal' is distinct from '41'::jsonb
+    or v_second#>'{counts,bankReservationPopulation,mode}' is distinct from
+      '"source_created_at_cutoff"'::jsonb
+    or v_second#>'{counts,bankReservationPopulation,total}'
+      is distinct from '41'::jsonb then
     raise exception 'Task 3 final continuation page did not finalize review work: %.',
       v_second;
   end if;
@@ -11631,9 +11716,9 @@ begin
     from public.financial_reconciliation_automatic_proposal_memberships member
     where member.proposal_id = v_proposal.id and member.role = 'source';
 
-    if v_proposal.status <> 'proposed'
-      or v_proposal.reason <> 'unique_qualifying_combination'
-      or cardinality(v_source_ids) <> v_case.source_count
+    if v_proposal.status is distinct from 'proposed'
+      or v_proposal.reason is distinct from 'unique_qualifying_combination'
+      or cardinality(v_source_ids) is distinct from v_case.source_count
       or v_source_ordinals is distinct from
         array(select generate_series(1, v_case.source_count))
       or v_proposal.base_source_id is distinct from v_source_ids[1]
@@ -11641,7 +11726,7 @@ begin
           from public.financial_reconciliation_automatic_proposal_memberships member
           where member.proposal_id = v_proposal.id
             and member.role = 'destination'
-            and member.ordinal = 1) <> 1
+            and member.ordinal = 1) is distinct from 1
       or exists (
         select 1
         from public.financial_reconciliation_automatic_proposal_memberships member
@@ -11654,11 +11739,11 @@ begin
         where member.proposal_id = v_proposal.id
           and (
             (member.role = 'source'
-              and (member.source_type <> 'import_fdm_accounts'
+              and (member.source_type is distinct from 'import_fdm_accounts'
                 or member.row_snapshot is distinct from to_jsonb(fdm)))
             or
             (member.role = 'destination'
-              and (member.source_type <> 'import_cgd_extrato_ordem'
+              and (member.source_type is distinct from 'import_cgd_extrato_ordem'
                 or member.row_snapshot is distinct from to_jsonb(bank)))
           )
       ) then
@@ -11680,13 +11765,14 @@ begin
       where proposal.run_id = 'b3300000-0000-0000-0000-000000000001'
         and proposal.status = 'skipped'
     )
-    or (select (run.counts->>'skipped')::integer
+    or (select run.counts->'skipped'
         from public.financial_reconciliation_automatic_runs run
-        where run.id = 'b3300000-0000-0000-0000-000000000001') <> 1 then
+        where run.id = 'b3300000-0000-0000-0000-000000000001')
+      is distinct from '1'::jsonb then
     raise exception 'Task 3 no-match anchor was visible or missing from skipped accounting.';
   end if;
 
-  if not exists (
+  if (exists (
       select 1
       from public.financial_reconciliation_automatic_proposals proposal
       join public.financial_reconciliation_automatic_proposal_memberships member
@@ -11696,12 +11782,14 @@ begin
         and proposal.status = 'ambiguous'
         and proposal.reason = 'multiple_qualifying_combinations'
         and jsonb_array_length(proposal.candidate_groups) = 2
-    ) or (select count(*)
+    )) is not true
+    or (select count(*)
           from public.financial_reconciliation_automatic_proposals proposal
           where proposal.run_id = 'b3300000-0000-0000-0000-000000000001'
             and proposal.status = 'ambiguous'
             and proposal.reason = 'candidate_limit'
-            and jsonb_array_length(proposal.candidate_groups) <= 12) <> 3
+            and jsonb_array_length(proposal.candidate_groups) <= 12)
+      is distinct from 3
     or (select count(*)
         from public.financial_reconciliation_automatic_proposals proposal
         join public.financial_reconciliation_automatic_proposal_memberships member
@@ -11712,9 +11800,44 @@ begin
             'b3100000-0000-0000-0000-000000000011'
           )
           and proposal.status = 'ambiguous'
-          and proposal.reason = 'overlapping_records') <> 2 then
+          and proposal.reason = 'overlapping_records') is distinct from 2 then
     raise exception 'Task 3 ambiguity, evidence bound, or shared-FDM overlap classification failed.';
   end if;
+
+  for v_case in
+    select * from (values
+      ('b3100000-0000-0000-0000-000000000007'::uuid, 61, 0, 0),
+      ('b3100000-0000-0000-0000-000000000009'::uuid, 19, 250000, 0),
+      ('b3100000-0000-0000-0000-000000000008'::uuid, 14, 14, 12)
+    ) boundary(bank_id, candidate_count, evaluated_states, evidence_count)
+  loop
+    select proposal.* into strict v_proposal
+    from public.financial_reconciliation_automatic_proposals proposal
+    join public.financial_reconciliation_automatic_proposal_memberships bank_member
+      on bank_member.proposal_id = proposal.id
+     and bank_member.role = 'destination'
+     and bank_member.source_type = 'import_cgd_extrato_ordem'
+     and bank_member.source_id = v_case.bank_id
+    where proposal.run_id = 'b3300000-0000-0000-0000-000000000001';
+
+    if v_proposal.status is distinct from 'ambiguous'
+      or v_proposal.reason is distinct from 'candidate_limit'
+      or jsonb_typeof(v_proposal.candidate_groups) is distinct from 'array'
+      or jsonb_array_length(v_proposal.candidate_groups)
+        is distinct from v_case.evidence_count
+      or jsonb_typeof(v_proposal.summary_snapshot) is distinct from 'object'
+      or v_proposal.summary_snapshot->'classification'
+        is distinct from '"ambiguous"'::jsonb
+      or v_proposal.summary_snapshot->'reason'
+        is distinct from '"candidate_limit"'::jsonb
+      or v_proposal.summary_snapshot->'candidateCount'
+        is distinct from to_jsonb(v_case.candidate_count)
+      or v_proposal.summary_snapshot->'evaluatedStates'
+        is distinct from to_jsonb(v_case.evaluated_states) then
+      raise exception 'Task 3 persisted hard boundary is not exact for Bank %: %.',
+        v_case.bank_id, to_jsonb(v_proposal);
+    end if;
+  end loop;
 end
 $$;
 
@@ -11789,15 +11912,244 @@ begin
   v_result := public.continue_financial_reconciliation_automatic_analysis(
     'b3400000-0000-0000-0000-000000000010', 'smoke:task3-zero-review'
   );
-  if v_result->>'status' <> 'completed'
-    or not (v_result->>'analysisComplete')::boolean
-    or (v_result->>'analysisProcessed')::integer <> 1
-    or (v_result->>'analysisTotal')::integer <> 1
-    or (v_result#>>'{counts,skipped}')::integer <> 1
-    or jsonb_array_length(v_result->'proposals') <> 0 then
+  if jsonb_typeof(v_result) is distinct from 'object'
+    or (v_result ?& array[
+      'status','analysisComplete','analysisProcessed','analysisTotal',
+      'counts','proposals'
+    ]) is not true
+    or v_result->'status' is distinct from '"completed"'::jsonb
+    or v_result->'analysisComplete' is distinct from 'true'::jsonb
+    or v_result->'analysisProcessed' is distinct from '1'::jsonb
+    or v_result->'analysisTotal' is distinct from '1'::jsonb
+    or v_result#>'{counts,skipped}' is distinct from '1'::jsonb
+    or v_result#>'{counts,bankReservationPopulation,total}'
+      is distinct from '1'::jsonb
+    or jsonb_typeof(v_result->'proposals') is distinct from 'array'
+    or jsonb_array_length(v_result->'proposals') is distinct from 0 then
     raise exception 'Task 3 zero-review run did not complete with skipped accounting: %.',
       v_result;
   end if;
+end
+$$;
+
+-- Task 3 Bank Reservation run population excludes inter-page inserts.
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task3-zero-population-isolation'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_cgd_extrato_ordem', bank.id,
+         bank.montante, 'smoke:task3-zero-population-isolation'
+  from public.import_cgd_extrato_ordem bank
+  where bank.import_batch = 'smoke-task3-zero-review';
+end
+$$;
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+)
+select
+  ('b3500000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-population-insert', 'task3-population-insert-' || series,
+  date '2230-01-01' + (series - 1), 'population anchor ' || series, -17.00
+from generate_series(1, 26) series;
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'b3500000-0000-0000-0000-000000000100', 'manual', 'rule', 'analyzing',
+  'smoke:task3-population-insert',
+  'b3500000-0000-0000-0000-000000000100',
+  pg_temp.task3_bank_snapshot(3), 0, 0
+);
+
+do $$
+declare
+  v_first jsonb;
+  v_second jsonb;
+  v_cutoff timestamptz;
+begin
+  v_first := public.continue_financial_reconciliation_automatic_analysis(
+    'b3500000-0000-0000-0000-000000000100',
+    'smoke:task3-population-insert'
+  );
+  if jsonb_typeof(v_first) is distinct from 'object'
+    or v_first->'status' is distinct from '"analyzing"'::jsonb
+    or v_first->'analysisProcessed' is distinct from '25'::jsonb
+    or v_first->'analysisTotal' is distinct from '26'::jsonb
+    or v_first#>'{counts,bankReservationPopulation,total}'
+      is distinct from '26'::jsonb
+    or jsonb_typeof(v_first#>'{counts,bankReservationPopulation,cutoff}')
+      is distinct from 'string' then
+    raise exception 'Task 3 population snapshot first page is invalid: %.',
+      v_first;
+  end if;
+  v_cutoff := (v_first#>>'{counts,bankReservationPopulation,cutoff}')::timestamptz;
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante, created_at
+  ) values (
+    'b3500000-0000-0000-0000-999999999999',
+    'smoke-task3-population-insert', 'task3-population-insert-behind-cursor',
+    date '2230-01-05', 'post-cutoff anchor behind cursor', -17.00,
+    v_cutoff + interval '1 second'
+  );
+
+  v_second := public.continue_financial_reconciliation_automatic_analysis(
+    'b3500000-0000-0000-0000-000000000100',
+    'smoke:task3-population-insert'
+  );
+  if jsonb_typeof(v_second) is distinct from 'object'
+    or v_second->'status' is distinct from '"completed"'::jsonb
+    or v_second->'analysisComplete' is distinct from 'true'::jsonb
+    or v_second->'analysisProcessed' is distinct from '26'::jsonb
+    or v_second->'analysisTotal' is distinct from '26'::jsonb
+    or v_second#>'{counts,bases}' is distinct from '26'::jsonb
+    or v_second#>'{counts,skipped}' is distinct from '26'::jsonb
+    or v_second#>'{counts,bankReservationPopulation,mode}' is distinct from
+      '"source_created_at_cutoff"'::jsonb
+    or v_second#>'{counts,bankReservationPopulation,total}'
+      is distinct from '26'::jsonb
+    or jsonb_typeof(v_second->'proposals') is distinct from 'array'
+    or jsonb_array_length(v_second->'proposals') is distinct from 0
+    or public.financial_reconciliation_automatic_bank_reservation_count()
+      is distinct from 27
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      join public.financial_reconciliation_automatic_proposals proposal
+        on proposal.id = member.proposal_id
+      where proposal.run_id = 'b3500000-0000-0000-0000-000000000100'
+        and member.source_id = 'b3500000-0000-0000-0000-999999999999'
+    ) then
+    raise exception 'Task 3 post-cutoff Bank did not wait for the next run: %.',
+      v_second;
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task3-population-insert-isolation'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_cgd_extrato_ordem', bank.id,
+         bank.montante, 'smoke:task3-population-insert-isolation'
+  from public.import_cgd_extrato_ordem bank
+  where bank.import_batch = 'smoke-task3-population-insert';
+end
+$$;
+
+-- Task 3 Bank Reservation run population fails closed on inter-page consumption.
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+)
+select
+  ('b3600000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-population-consumed', 'task3-population-consumed-' || series,
+  date '2240-01-01' + (series - 1), 'consumed anchor ' || series, -19.00
+from generate_series(1, 26) series;
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'b3600000-0000-0000-0000-000000000100', 'manual', 'rule', 'analyzing',
+  'smoke:task3-population-consumed',
+  'b3600000-0000-0000-0000-000000000100',
+  pg_temp.task3_bank_snapshot(3), 0, 0
+);
+
+do $$
+declare
+  v_first jsonb;
+  v_second jsonb;
+  v_reconciliation_id uuid;
+begin
+  v_first := public.continue_financial_reconciliation_automatic_analysis(
+    'b3600000-0000-0000-0000-000000000100',
+    'smoke:task3-population-consumed'
+  );
+  if jsonb_typeof(v_first) is distinct from 'object'
+    or v_first->'status' is distinct from '"analyzing"'::jsonb
+    or v_first->'analysisProcessed' is distinct from '25'::jsonb
+    or v_first->'analysisTotal' is distinct from '26'::jsonb then
+    raise exception 'Task 3 consumed-population first page is invalid: %.',
+      v_first;
+  end if;
+
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task3-population-consumed'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  ) values (
+    v_reconciliation_id, 'import_cgd_extrato_ordem',
+    'b3600000-0000-0000-0000-000000000026', -19.00,
+    'smoke:task3-population-consumed'
+  );
+
+  v_second := public.continue_financial_reconciliation_automatic_analysis(
+    'b3600000-0000-0000-0000-000000000100',
+    'smoke:task3-population-consumed'
+  );
+  if jsonb_typeof(v_second) is distinct from 'object'
+    or v_second->'status' is distinct from '"failed"'::jsonb
+    or v_second->'analysisComplete' is distinct from 'false'::jsonb
+    or v_second->'analysisProcessed' is distinct from '25'::jsonb
+    or v_second->'analysisTotal' is distinct from '26'::jsonb
+    or v_second->'analysisErrorCode' is distinct from
+      '"analysis_population_changed"'::jsonb
+    or v_second#>'{counts,bankReservationPopulation,total}'
+      is distinct from '26'::jsonb
+    or jsonb_typeof(v_second->'finishedAt') is distinct from 'string' then
+    raise exception 'Task 3 consumed population did not fail closed coherently: %.',
+      v_second;
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task3-population-consumed-isolation'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_cgd_extrato_ordem', bank.id,
+         bank.montante, 'smoke:task3-population-consumed-isolation'
+  from public.import_cgd_extrato_ordem bank
+  where bank.import_batch = 'smoke-task3-population-consumed'
+    and not exists (
+      select 1
+      from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    );
 end
 $$;
 
@@ -11821,12 +12173,20 @@ insert into public.import_fdm_accounts (
 
 insert into public.financial_reconciliation_automatic_runs (
   id, trigger, scope, status, actor, client_request_id,
-  definition_config_snapshot, analysis_cursor_date, analysis_cursor_id
+  definition_config_snapshot, analysis_cursor_date, analysis_cursor_id,
+  analysis_processed, analysis_total, counts
 ) values (
   'b3200000-0000-0000-0000-000000000010', 'manual', 'rule', 'analyzing',
   'smoke:task3-shared-bank', 'b3200000-0000-0000-0000-000000000010',
   pg_temp.task3_bank_snapshot(3), date '2200-01-01',
-  'ffffffff-ffff-ffff-ffff-ffffffffffff'
+  'ffffffff-ffff-ffff-ffff-ffffffffffff', 1, 1,
+  jsonb_build_object(
+    'bankReservationPopulation', jsonb_build_object(
+      'mode', 'source_created_at_cutoff',
+      'cutoff', current_timestamp,
+      'total', 1
+    )
+  )
 );
 insert into public.financial_reconciliation_automatic_proposals (
   id, run_id, rule_key, rule_version, base_source_type, base_source_id,
@@ -11881,12 +12241,16 @@ begin
     'b3200000-0000-0000-0000-000000000010',
     'smoke:task3-shared-bank'
   );
-  if v_result->>'status' <> 'ready'
+  if jsonb_typeof(v_result) is distinct from 'object'
+    or v_result->'status' is distinct from '"ready"'::jsonb
+    or v_result->'analysisComplete' is distinct from 'true'::jsonb
+    or v_result->'analysisProcessed' is distinct from '1'::jsonb
+    or v_result->'analysisTotal' is distinct from '1'::jsonb
     or (select count(*)
         from public.financial_reconciliation_automatic_proposals proposal
         where proposal.run_id = 'b3200000-0000-0000-0000-000000000010'
           and proposal.status = 'ambiguous'
-          and proposal.reason = 'overlapping_records') <> 2 then
+          and proposal.reason = 'overlapping_records') is distinct from 2 then
     raise exception 'Task 3 shared Bank overlap did not update every affected proposal: %.',
       v_result;
   end if;
