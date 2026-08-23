@@ -6249,8 +6249,8 @@ button[id^="close-settings"] {
 
 .financial-docs-table th,
 .financial-docs-table td {
-  padding: 0.24rem 0.28rem;
-  font-size: 0.72rem;
+  padding: 0.26rem 0.3rem;
+  font-size: 0.76rem;
   vertical-align: middle;
 }
 
@@ -6300,8 +6300,8 @@ button[id^="close-settings"] {
 
 .financial-docs-table th:nth-child(2),
 .financial-docs-table td:nth-child(2) {
-  min-width: 40px;
-  width: 40px;
+  min-width: 54px;
+  width: 54px;
 }
 
 .financial-docs-table th:nth-child(3),
@@ -6354,8 +6354,14 @@ button[id^="close-settings"] {
 .financial-docs-table td:nth-child(11),
 .financial-docs-table th:nth-child(12),
 .financial-docs-table td:nth-child(12) {
-  min-width: 40px;
-  width: 40px;
+  min-width: 54px;
+  width: 54px;
+}
+
+.financial-docs-table th:nth-child(16),
+.financial-docs-table td:nth-child(16) {
+  min-width: 62px;
+  width: 62px;
 }
 
 .financial-docs-table th:nth-child(14),
@@ -6456,9 +6462,9 @@ button[id^="close-settings"] {
 .financial-docs-table-editor select {
   width: 100%;
   min-width: 0;
-  font-size: 0.62rem;
-  padding: 0.14rem 0.2rem;
-  line-height: 1.05;
+  font-size: 0.68rem;
+  padding: 0.16rem 0.22rem;
+  line-height: 1.1;
 }
 
 .financial-docs-inline-editor td {
@@ -6468,9 +6474,9 @@ button[id^="close-settings"] {
 .financial-docs-inline-editor select[data-financial-doc-new-field="cc"],
 .financial-docs-inline-editor select[data-financial-doc-new-field="docType"],
 .financial-docs-inline-editor select[data-financial-doc-new-field="fat"] {
-  padding-left: 0.08rem;
-  padding-right: 0.42rem;
-  font-size: 0.6rem;
+  padding-left: 0.12rem;
+  padding-right: 0.5rem;
+  font-size: 0.68rem;
 }
 
 .financial-docs-table-editor input[data-financial-doc-field="amount"],
