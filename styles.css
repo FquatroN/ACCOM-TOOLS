@@ -6370,6 +6370,15 @@ button[id^="close-settings"] {
   width: 78px;
 }
 
+.financial-docs-table th:nth-child(15),
+.financial-docs-table td:nth-child(15) {
+  min-width: 58px;
+  width: 58px;
+  max-width: 58px;
+  padding-left: 0.16rem;
+  padding-right: 0.16rem;
+}
+
 .financial-docs-table th:nth-child(5),
 .financial-docs-table td:nth-child(5) {
   min-width: 320px;
