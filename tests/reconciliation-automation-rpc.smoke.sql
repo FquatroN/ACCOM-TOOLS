@@ -14708,10 +14708,12 @@ begin
   from jsonb_array_elements(v_history->'rows') history(value)
   where history.value->>'id' =
     (v_bank_result->>'reconciliationId');
-  if (v_history_row->>'totalRecords')::integer <> 11
-    or (v_history_row->>'sourceAmountTotal')::numeric <> -100.00
-    or (v_history_row->>'destinationAmountTotal')::numeric <> 100.00
-    or not (v_history_row->'sourceSummary') @> jsonb_build_array(
+  if (v_history_row->>'totalRecords')::integer is distinct from 11
+    or (v_history_row->>'sourceAmountTotal')::numeric
+      is distinct from -100.00::numeric
+    or (v_history_row->>'destinationAmountTotal')::numeric
+      is distinct from 100.00::numeric
+    or not coalesce((v_history_row->'sourceSummary') @> jsonb_build_array(
       jsonb_build_object(
         'sourceType', 'import_fdm_accounts',
         'recordCount', 10, 'amountTotal', -100.00
@@ -14720,7 +14722,7 @@ begin
         'sourceType', 'import_cgd_extrato_ordem',
         'recordCount', 1, 'amountTotal', 100.00
       )
-    ) then
+    ), false) then
     raise exception 'Task 5 Bank history lost signed totals: %.', v_history_row;
   end if;
 
