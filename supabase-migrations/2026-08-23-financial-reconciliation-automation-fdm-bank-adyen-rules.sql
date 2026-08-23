@@ -401,6 +401,314 @@ begin
 end
 $migration$;
 
+create table if not exists public.financial_reconciliation_automatic_bank_reservation_population (
+  run_id uuid not null,
+  bank_id uuid not null,
+  ordinal integer not null,
+  bank_date date not null,
+  constraint fr_auto_bank_res_population_run_fkey
+    foreign key (run_id)
+    references public.financial_reconciliation_automatic_runs(id)
+    on delete cascade,
+  constraint fr_auto_bank_res_population_ordinal_check
+    check (ordinal > 0),
+  constraint fr_auto_bank_res_population_pkey
+    primary key (run_id, bank_id),
+  constraint fr_auto_bank_res_population_run_ordinal_key
+    unique (run_id, ordinal)
+);
+
+do $migration$
+declare
+  v_column_count integer;
+  v_constraint_count integer;
+  v_constraint record;
+  v_actual_type "char";
+  v_actual_definition text;
+  v_expected_type "char";
+  v_expected_definition text;
+  v_foreign_key record;
+  v_actual_index record;
+  v_expected_index record;
+begin
+  select count(*) into v_column_count
+  from information_schema.columns column_row
+  where column_row.table_schema = 'public'
+    and column_row.table_name =
+      'financial_reconciliation_automatic_bank_reservation_population';
+
+  if v_column_count is distinct from 4
+    or not exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public'
+        and table_name =
+          'financial_reconciliation_automatic_bank_reservation_population'
+        and ordinal_position = 1 and column_name = 'run_id'
+        and data_type = 'uuid' and is_nullable = 'NO'
+        and column_default is null
+    )
+    or not exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public'
+        and table_name =
+          'financial_reconciliation_automatic_bank_reservation_population'
+        and ordinal_position = 2 and column_name = 'bank_id'
+        and data_type = 'uuid' and is_nullable = 'NO'
+        and column_default is null
+    )
+    or not exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public'
+        and table_name =
+          'financial_reconciliation_automatic_bank_reservation_population'
+        and ordinal_position = 3 and column_name = 'ordinal'
+        and data_type = 'integer' and is_nullable = 'NO'
+        and column_default is null
+    )
+    or not exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public'
+        and table_name =
+          'financial_reconciliation_automatic_bank_reservation_population'
+        and ordinal_position = 4 and column_name = 'bank_date'
+        and data_type = 'date' and is_nullable = 'NO'
+        and column_default is null
+    ) then
+    raise exception 'Installed Bank Reservation population columns differ from the required contract.';
+  end if;
+
+  select count(*) into v_constraint_count
+  from pg_constraint constraint_row
+  where constraint_row.conrelid =
+    'public.financial_reconciliation_automatic_bank_reservation_population'::regclass;
+  if v_constraint_count is distinct from 4 then
+    raise exception 'Installed Bank Reservation population constraint count differs from the required contract.';
+  end if;
+
+  select constraint_row.contype,
+         constraint_row.confrelid,
+         constraint_row.confdeltype,
+         constraint_row.confupdtype,
+         constraint_row.confmatchtype,
+         constraint_row.condeferrable,
+         constraint_row.condeferred,
+         constraint_row.convalidated,
+         constraint_row.conkey,
+         constraint_row.confkey
+  into v_foreign_key
+  from pg_constraint constraint_row
+  where constraint_row.conrelid =
+      'public.financial_reconciliation_automatic_bank_reservation_population'::regclass
+    and constraint_row.conname = 'fr_auto_bank_res_population_run_fkey';
+
+  if not found
+    or v_foreign_key.contype is distinct from 'f'
+    or v_foreign_key.confrelid is distinct from
+      'public.financial_reconciliation_automatic_runs'::regclass
+    or v_foreign_key.confdeltype is distinct from 'c'
+    or v_foreign_key.confupdtype is distinct from 'a'
+    or v_foreign_key.confmatchtype is distinct from 's'
+    or v_foreign_key.condeferrable is distinct from false
+    or v_foreign_key.condeferred is distinct from false
+    or v_foreign_key.convalidated is distinct from true
+    or v_foreign_key.conkey is distinct from array[
+      (select attribute_row.attnum
+       from pg_attribute attribute_row
+       where attribute_row.attrelid =
+         'public.financial_reconciliation_automatic_bank_reservation_population'::regclass
+         and attribute_row.attname = 'run_id'
+         and not attribute_row.attisdropped)
+    ]::smallint[]
+    or v_foreign_key.confkey is distinct from array[
+      (select attribute_row.attnum
+       from pg_attribute attribute_row
+       where attribute_row.attrelid =
+         'public.financial_reconciliation_automatic_runs'::regclass
+         and attribute_row.attname = 'id'
+         and not attribute_row.attisdropped)
+    ]::smallint[] then
+    raise exception 'Installed Bank Reservation population constraint % differs from the required definition.',
+      'fr_auto_bank_res_population_run_fkey';
+  end if;
+
+  create temporary table task3_population_expected (
+    run_id uuid not null,
+    bank_id uuid not null,
+    ordinal integer not null,
+    bank_date date not null,
+    constraint task3_population_expected_ordinal_check
+      check (ordinal > 0),
+    constraint task3_population_expected_pkey
+      primary key (run_id, bank_id),
+    constraint task3_population_expected_run_ordinal_key
+      unique (run_id, ordinal)
+  ) on commit drop;
+
+  for v_constraint in
+    select * from (values
+      ('fr_auto_bank_res_population_ordinal_check',
+       'task3_population_expected_ordinal_check'),
+      ('fr_auto_bank_res_population_pkey',
+       'task3_population_expected_pkey'),
+      ('fr_auto_bank_res_population_run_ordinal_key',
+       'task3_population_expected_run_ordinal_key')
+    ) expected(actual_name, expected_name)
+  loop
+    select constraint_row.contype,
+           pg_get_constraintdef(constraint_row.oid, true)
+    into v_actual_type, v_actual_definition
+    from pg_constraint constraint_row
+    where constraint_row.conrelid =
+        'public.financial_reconciliation_automatic_bank_reservation_population'::regclass
+      and constraint_row.conname = v_constraint.actual_name;
+
+    select constraint_row.contype,
+           pg_get_constraintdef(constraint_row.oid, true)
+    into strict v_expected_type, v_expected_definition
+    from pg_constraint constraint_row
+    where constraint_row.conrelid = 'task3_population_expected'::regclass
+      and constraint_row.conname = v_constraint.expected_name;
+
+    if v_actual_type is distinct from v_expected_type
+      or v_actual_definition is distinct from v_expected_definition then
+      raise exception 'Installed Bank Reservation population constraint % differs from the required definition.',
+        v_constraint.actual_name;
+    end if;
+  end loop;
+
+  if (select count(*)
+      from pg_index index_row
+      where index_row.indrelid =
+        'public.financial_reconciliation_automatic_bank_reservation_population'::regclass)
+      is distinct from 2 then
+    raise exception 'Installed Bank Reservation population index count differs from the required contract.';
+  end if;
+
+  for v_constraint in
+    select * from (values
+      ('fr_auto_bank_res_population_pkey',
+       'task3_population_expected_pkey'),
+      ('fr_auto_bank_res_population_run_ordinal_key',
+       'task3_population_expected_run_ordinal_key')
+    ) expected(actual_name, expected_name)
+  loop
+    select index_row.indisunique,
+           index_row.indisprimary,
+           index_row.indisexclusion,
+           index_row.indimmediate,
+           index_row.indisvalid,
+           index_row.indisready,
+           index_row.indislive,
+           index_row.indnkeyatts,
+           index_row.indnatts,
+           array(
+             select pg_get_indexdef(index_row.indexrelid, ordinal, true)
+             from generate_series(1, index_row.indnatts) ordinal
+             order by ordinal
+           ) as index_columns
+    into v_actual_index
+    from pg_index index_row
+    where index_row.indexrelid =
+      to_regclass('public.' || v_constraint.actual_name);
+
+    select index_row.indisunique,
+           index_row.indisprimary,
+           index_row.indisexclusion,
+           index_row.indimmediate,
+           index_row.indisvalid,
+           index_row.indisready,
+           index_row.indislive,
+           index_row.indnkeyatts,
+           index_row.indnatts,
+           array(
+             select pg_get_indexdef(index_row.indexrelid, ordinal, true)
+             from generate_series(1, index_row.indnatts) ordinal
+             order by ordinal
+           ) as index_columns
+    into strict v_expected_index
+    from pg_index index_row
+    where index_row.indexrelid = to_regclass(v_constraint.expected_name);
+
+    if v_actual_index.indisunique is distinct from v_expected_index.indisunique
+      or v_actual_index.indisprimary is distinct from v_expected_index.indisprimary
+      or v_actual_index.indisexclusion is distinct from v_expected_index.indisexclusion
+      or v_actual_index.indimmediate is distinct from v_expected_index.indimmediate
+      or v_actual_index.indisvalid is distinct from v_expected_index.indisvalid
+      or v_actual_index.indisready is distinct from v_expected_index.indisready
+      or v_actual_index.indislive is distinct from v_expected_index.indislive
+      or v_actual_index.indnkeyatts is distinct from v_expected_index.indnkeyatts
+      or v_actual_index.indnatts is distinct from v_expected_index.indnatts
+      or v_actual_index.index_columns is distinct from v_expected_index.index_columns then
+      raise exception 'Installed Bank Reservation population index % differs from the required definition.',
+        v_constraint.actual_name;
+    end if;
+  end loop;
+
+  drop table task3_population_expected;
+end
+$migration$;
+
+alter table public.financial_reconciliation_automatic_bank_reservation_population
+  enable row level security;
+
+revoke all on table public.financial_reconciliation_automatic_bank_reservation_population
+  from public, anon, authenticated, service_role;
+
+do $migration$
+declare
+  v_role text;
+  v_privilege text;
+begin
+  if not (select relation.relkind = 'r'
+               and relation.relrowsecurity
+               and not relation.relforcerowsecurity
+      from pg_class relation
+      where relation.oid =
+        'public.financial_reconciliation_automatic_bank_reservation_population'::regclass)
+    or exists (
+      select 1
+      from pg_policy policy_row
+      where policy_row.polrelid =
+        'public.financial_reconciliation_automatic_bank_reservation_population'::regclass
+    )
+    or exists (
+      select 1
+      from information_schema.table_privileges grant_row
+      where grant_row.table_schema = 'public'
+        and grant_row.table_name =
+          'financial_reconciliation_automatic_bank_reservation_population'
+        and grant_row.grantee = 'PUBLIC'
+    )
+    or exists (
+      select 1
+      from information_schema.column_privileges grant_row
+      where grant_row.table_schema = 'public'
+        and grant_row.table_name =
+          'financial_reconciliation_automatic_bank_reservation_population'
+        and grant_row.grantee in (
+          'PUBLIC','anon','authenticated','service_role'
+        )
+    ) then
+    raise exception 'Installed Bank Reservation population security differs from the required contract.';
+  end if;
+
+  foreach v_role in array array['anon','authenticated','service_role']
+  loop
+    foreach v_privilege in array array['SELECT','INSERT','UPDATE','DELETE']
+    loop
+      if has_table_privilege(
+          v_role,
+          'public.financial_reconciliation_automatic_bank_reservation_population',
+          v_privilege
+        ) then
+        raise exception 'Installed Bank Reservation population security grants % to %.',
+          v_privilege, v_role;
+      end if;
+    end loop;
+  end loop;
+end
+$migration$;
+
 create or replace function public.replace_financial_reconciliation_automation_settings(
   p_schedule jsonb,
   p_rules jsonb,
@@ -1086,10 +1394,12 @@ declare
   v_expected_source_count integer;
   v_inserted_source_count integer;
   v_page_count integer := 0;
-  v_population jsonb;
-  v_population_cutoff timestamptz;
-  v_population_total integer;
-  v_available_population_total integer;
+  v_population_total integer := 0;
+  v_population_max_ordinal integer;
+  v_population_invalid boolean := false;
+  v_population_error_summary text;
+  v_invalid_bank_id uuid;
+  v_last_ordinal integer;
   v_last_date date;
   v_last_id uuid;
   v_processed_after integer;
@@ -1162,107 +1472,157 @@ begin
     public.financial_reconciliation_items
   in share row exclusive mode;
 
-  v_population := v_run.counts->'bankReservationPopulation';
-  if v_population is null then
+  select count(*)::integer, max(population.ordinal)
+  into v_population_total, v_population_max_ordinal
+  from public.financial_reconciliation_automatic_bank_reservation_population population
+  where population.run_id = p_run_id;
+
+  if v_population_total = 0 then
     if v_run.analysis_cursor_date is not null
       or v_run.analysis_cursor_id is not null
       or v_run.analysis_processed <> 0 then
-      raise exception
-        'Automatic Bank Reservation run population snapshot is missing.';
+      v_population_invalid := true;
+      v_population_error_summary :=
+        'The Bank Reservation analysis population projection is missing.';
+    else
+      insert into public.financial_reconciliation_automatic_bank_reservation_population (
+        run_id, bank_id, ordinal, bank_date
+      )
+      select
+        p_run_id,
+        bank.id,
+        row_number() over (order by bank.data, bank.id)::integer,
+        bank.data
+      from public.import_cgd_extrato_ordem bank
+      where bank.data is not null
+        and bank.data >= date '2026-01-01'
+        and bank.montante is not null
+        and not exists (
+          select 1
+          from public.financial_reconciliation_items locked
+          where locked.source_type = 'import_cgd_extrato_ordem'
+            and locked.source_id = bank.id
+        )
+      order by bank.data, bank.id;
+      get diagnostics v_population_total = row_count;
+      v_population_max_ordinal := nullif(v_population_total, 0);
+
+      if v_run.analysis_total > v_population_total then
+        v_population_invalid := true;
+        v_population_error_summary :=
+          'The Bank Reservation analysis population changed before projection.';
+      else
+        update public.financial_reconciliation_automatic_runs run
+        set analysis_total = v_population_total,
+            updated_at = now()
+        where run.id = p_run_id;
+        v_run.analysis_total := v_population_total;
+      end if;
     end if;
+  elsif v_population_max_ordinal is distinct from v_population_total
+    or v_population_total is distinct from v_run.analysis_total
+    or v_run.analysis_processed not between 0 and v_population_total
+    or (v_run.analysis_processed = 0 and (
+      v_run.analysis_cursor_date is not null
+      or v_run.analysis_cursor_id is not null
+    ))
+    or (v_run.analysis_processed > 0 and not exists (
+      select 1
+      from public.financial_reconciliation_automatic_bank_reservation_population population
+      where population.run_id = p_run_id
+        and population.ordinal = v_run.analysis_processed
+        and population.bank_date = v_run.analysis_cursor_date
+        and population.bank_id = v_run.analysis_cursor_id
+    )) then
+    v_population_invalid := true;
+    v_population_error_summary :=
+      'The Bank Reservation analysis population projection diverged.';
+  end if;
 
-    v_population_cutoff := clock_timestamp();
-    select count(*)::integer
-    into v_population_total
-    from public.import_cgd_extrato_ordem bank
-    where bank.data is not null
-      and bank.data >= date '2026-01-01'
-      and bank.montante is not null
-      and bank.created_at <= v_population_cutoff
-      and not exists (
-        select 1
-        from public.financial_reconciliation_items locked
-        where locked.source_type = 'import_cgd_extrato_ordem'
-          and locked.source_id = bank.id
-      );
-
-    if v_run.analysis_total > v_population_total then
-      update public.financial_reconciliation_automatic_runs run
-      set status = 'failed',
-          error_summary =
-            'The Bank Reservation analysis population changed before it started.',
-          analysis_error_code = 'analysis_population_changed',
-          analysis_error_at = now(),
-          finished_at = coalesce(run.finished_at, now()),
-          updated_at = now()
-      where run.id = p_run_id;
-      return public.get_financial_reconciliation_automatic_run(p_run_id);
+  if not v_population_invalid then
+    select population.bank_id
+    into v_invalid_bank_id
+    from public.financial_reconciliation_automatic_bank_reservation_population population
+    left join public.import_cgd_extrato_ordem bank
+      on bank.id = population.bank_id
+    where population.run_id = p_run_id
+      and (
+        bank.id is null
+        or bank.data is distinct from population.bank_date
+        or bank.data < date '2026-01-01'
+        or bank.montante is null
+        or exists (
+          select 1
+          from public.financial_reconciliation_items locked
+          where locked.source_type = 'import_cgd_extrato_ordem'
+            and locked.source_id = population.bank_id
+        )
+      )
+    order by population.ordinal
+    limit 1;
+    if found then
+      v_population_invalid := true;
+      v_population_error_summary :=
+        'The Bank Reservation analysis population changed before completion.';
     end if;
+  end if;
 
-    v_population := jsonb_build_object(
-      'mode', 'source_created_at_cutoff',
-      'cutoff', v_population_cutoff,
-      'total', v_population_total
-    );
+  if v_population_invalid then
+    update public.financial_reconciliation_automatic_proposals proposal
+    set status = 'stale',
+        reason = 'analysis_population_changed',
+        updated_at = now()
+    where proposal.run_id = p_run_id
+      and proposal.status in ('proposed','ambiguous');
+
     update public.financial_reconciliation_automatic_runs run
-    set analysis_total = v_population_total,
-        counts = run.counts || jsonb_build_object(
-          'bankReservationPopulation', v_population
-        ),
-        updated_at = v_population_cutoff
+    set status = 'failed',
+        error_summary = v_population_error_summary,
+        analysis_completed_at = coalesce(run.analysis_completed_at, now()),
+        analysis_error_code = 'analysis_population_changed',
+        analysis_error_at = now(),
+        finished_at = coalesce(run.finished_at, now()),
+        updated_at = now(),
+        counts = jsonb_build_object(
+          'bases', run.analysis_total,
+          'proposed', 0,
+          'ambiguous', 0,
+          'skipped', greatest(
+            run.analysis_processed - (
+              select count(*)::integer
+              from public.financial_reconciliation_automatic_proposals proposal
+              where proposal.run_id = p_run_id
+                and proposal.status in ('stale','failed')
+            ),
+            0
+          ),
+          'stale', (
+            select count(*)
+            from public.financial_reconciliation_automatic_proposals proposal
+            where proposal.run_id = p_run_id
+              and proposal.status = 'stale'
+          )
+        )
     where run.id = p_run_id;
-  else
-    if jsonb_typeof(v_population) is distinct from 'object'
-      or v_population - array['mode','cutoff','total']::text[]
-        is distinct from '{}'::jsonb
-      or (v_population ?& array['mode','cutoff','total']) is not true
-      or v_population->'mode' is distinct from
-        '"source_created_at_cutoff"'::jsonb
-      or jsonb_typeof(v_population->'cutoff') is distinct from 'string'
-      or jsonb_typeof(v_population->'total') is distinct from 'number'
-      or coalesce(v_population->>'total', '') !~ '^(0|[1-9][0-9]*)$'
-      or length(v_population->>'total') > 10 then
-      raise exception
-        'Automatic Bank Reservation run population snapshot is invalid.';
-    end if;
-    v_population_cutoff := (v_population->>'cutoff')::timestamptz;
-    v_population_total := (v_population->>'total')::integer;
-    if v_population_cutoff < v_run.started_at
-      or v_population_cutoff > v_run.updated_at
-      or v_population_total is distinct from v_run.analysis_total
-      or v_run.analysis_processed not between 0 and v_population_total
-      or (v_run.analysis_cursor_date is null) <>
-         (v_run.analysis_cursor_id is null) then
-      raise exception
-        'Automatic Bank Reservation run population snapshot diverged.';
-    end if;
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
   end if;
 
   for v_bank in
     select
+      population.ordinal,
       bank.id as bank_id,
       bank.data as bank_date,
       bank.montante as bank_amount
-    from public.import_cgd_extrato_ordem bank
-    where bank.data is not null
-      and bank.data >= date '2026-01-01'
-      and bank.montante is not null
-      and bank.created_at <= v_population_cutoff
-      and (
-        v_run.analysis_cursor_date is null
-        or (bank.data, bank.id) >
-           (v_run.analysis_cursor_date, v_run.analysis_cursor_id)
-      )
-      and not exists (
-        select 1
-        from public.financial_reconciliation_items locked
-        where locked.source_type = 'import_cgd_extrato_ordem'
-          and locked.source_id = bank.id
-      )
-    order by bank.data, bank.id
+    from public.financial_reconciliation_automatic_bank_reservation_population population
+    left join public.import_cgd_extrato_ordem bank
+      on bank.id = population.bank_id
+    where population.run_id = p_run_id
+      and population.ordinal > v_run.analysis_processed
+    order by population.ordinal
     limit 25
   loop
     v_page_count := v_page_count + 1;
+    v_last_ordinal := v_bank.ordinal;
     v_last_date := v_bank.bank_date;
     v_last_id := v_bank.bank_id;
     v_groups :=
@@ -1467,21 +1827,21 @@ begin
         analysis_cursor_id = v_last_id,
         analysis_processed = greatest(
           run.analysis_processed,
-          least(v_population_total, run.analysis_processed + v_page_count)
+          v_last_ordinal
         ),
         analysis_total = v_population_total,
         updated_at = now(),
         analysis_error_code = null,
         analysis_error_at = null
     where run.id = p_run_id
-      and (
-        run.analysis_cursor_date is null
-        or (v_last_date, v_last_id) >
-           (run.analysis_cursor_date, run.analysis_cursor_id)
-      );
+      and run.analysis_processed < v_last_ordinal;
   end if;
 
-  if v_page_count = 25 then
+  select run.analysis_processed into strict v_processed_after
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = p_run_id;
+
+  if v_processed_after < v_population_total then
     return public.financial_reconciliation_automatic_progress_or_run(p_run_id);
   end if;
 
@@ -1517,35 +1877,9 @@ begin
       updated_at = now()
   where proposal.id in (select affected.id from affected);
 
-  select run.analysis_processed into strict v_processed_after
-  from public.financial_reconciliation_automatic_runs run
-  where run.id = p_run_id;
-
-  select count(*)::integer
-  into v_available_population_total
-  from public.import_cgd_extrato_ordem bank
-  where bank.data is not null
-    and bank.data >= date '2026-01-01'
-    and bank.montante is not null
-    and bank.created_at <= v_population_cutoff
-    and not exists (
-      select 1
-      from public.financial_reconciliation_items locked
-      where locked.source_type = 'import_cgd_extrato_ordem'
-        and locked.source_id = bank.id
-    );
-  if v_processed_after is distinct from v_population_total
-    or v_available_population_total is distinct from v_population_total then
-    update public.financial_reconciliation_automatic_runs run
-    set status = 'failed',
-        error_summary =
-          'The Bank Reservation analysis population changed before completion.',
-        analysis_error_code = 'analysis_population_changed',
-        analysis_error_at = now(),
-        finished_at = coalesce(run.finished_at, now()),
-        updated_at = now()
-    where run.id = p_run_id;
-    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  if v_processed_after is distinct from v_population_total then
+    raise exception
+      'Automatic Bank Reservation population processing did not reach its exact total.';
   end if;
 
   update public.financial_reconciliation_automatic_runs run
@@ -1575,8 +1909,7 @@ begin
               where proposal.status in ('proposed','ambiguous','stale','failed')
             ),
             0
-          ),
-          'bankReservationPopulation', v_population
+          )
         )
         from public.financial_reconciliation_automatic_proposals proposal
         where proposal.run_id = p_run_id

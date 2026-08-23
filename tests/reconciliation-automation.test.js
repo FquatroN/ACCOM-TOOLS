@@ -1466,6 +1466,47 @@ test("scheduled heartbeat reports a persisted continuation failure without retry
   assert.deepEqual(calls, ["rpc/continue_financial_reconciliation_automatic_oldest_analysis"]);
 });
 
+test("scheduled heartbeat accepts a completed population-change failure with stale evidence", async () => {
+  const failedRun = scheduledRun({
+    status: "failed",
+    analysisComplete: true,
+    analysisCompletedAt: "2026-08-15T02:00:01.000Z",
+    analysisErrorCode: "analysis_population_changed",
+    analysisErrorAt: "2026-08-15T02:00:01.000Z",
+    finishedAt: "2026-08-15T02:00:01.000Z",
+    proposals: [{
+      id: PROPOSAL_ID,
+      ruleKey: AUTOMATIC_RULE_KEY,
+      baseSourceDate: "2026-08-01",
+      baseSourceId: uuidFor(123),
+      status: "stale",
+      reason: "analysis_population_changed",
+    }],
+  });
+  const calls = [];
+  const response = responseRecorder();
+
+  await withCronEnvironment("2026-08-15T02:00:00.000Z", async () => {
+    await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+      exposeOldestAnalysis: true,
+      restQuery: async (resource) => {
+        calls.push(resource);
+        if (resource === "rpc/continue_financial_reconciliation_automatic_oldest_analysis") {
+          return { continued: true, run: failedRun };
+        }
+        throw new Error(`Unexpected RPC ${resource}`);
+      },
+    }), async (handler) => {
+      await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+    });
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.status, "failed");
+  assert.equal(response.body.hasMore, false);
+  assert.deepEqual(calls, ["rpc/continue_financial_reconciliation_automatic_oldest_analysis"]);
+});
+
 test("first scheduled analysis page can fail terminally without returning 500 or more work", async () => {
   const claimedRun = scheduledRun({
     status: "analyzing",
@@ -5195,17 +5236,30 @@ test("Bank Reservation analysis is bounded, deterministic, membership-backed, an
     "financial_reconciliation_continue_automatic_bank_reservation",
   );
   assert.match(
+    migration,
+    /create table if not exists public\.financial_reconciliation_automatic_bank_reservation_population\s*\([\s\S]*run_id uuid not null[\s\S]*bank_id uuid not null[\s\S]*ordinal integer not null[\s\S]*bank_date date not null[\s\S]*on delete cascade[\s\S]*primary key \(run_id, bank_id\)[\s\S]*unique \(run_id, ordinal\)/i,
+  );
+  assert.match(
+    migration,
+    /Installed Bank Reservation population (?:columns|constraint|index|security)[\s\S]*enable row level security[\s\S]*revoke all on table public\.financial_reconciliation_automatic_bank_reservation_population\s+from public, anon, authenticated, service_role/i,
+  );
+  assert.match(
     continuation,
-    /from public\.import_cgd_extrato_ordem bank[\s\S]*bank\.created_at <= v_population_cutoff[\s\S]*order by bank\.data, bank\.id[\s\S]*limit 25/i,
+    /insert into public\.financial_reconciliation_automatic_bank_reservation_population[\s\S]*row_number\(\) over \(order by bank\.data, bank\.id\)[\s\S]*from public\.import_cgd_extrato_ordem bank/i,
+  );
+  assert.match(
+    continuation,
+    /from public\.financial_reconciliation_automatic_bank_reservation_population population[\s\S]*left join public\.import_cgd_extrato_ordem bank[\s\S]*population\.ordinal > v_run\.analysis_processed[\s\S]*order by population\.ordinal[\s\S]*limit 25/i,
   );
   assert.match(continuation, /financial_reconciliation_automatic_proposal_memberships/i);
   assert.match(continuation, /'source'[\s\S]*'destination'/i);
   assert.match(continuation, /'overlapping_records'/i);
-  assert.match(continuation, /'source_created_at_cutoff'/i);
-  assert.match(continuation, /bank\.created_at <= v_population_cutoff/i);
+  assert.match(continuation, /status = 'stale'[\s\S]*reason = 'analysis_population_changed'[\s\S]*proposal\.status in \('proposed','ambiguous'\)/i);
   assert.match(continuation, /analysis_total = v_population_total/i);
+  assert.match(continuation, /analysis_processed = greatest\([\s\S]*v_last_ordinal/i);
   assert.match(continuation, /v_processed_after is distinct from v_population_total/i);
   assert.match(continuation, /'analysis_population_changed'/i);
+  assert.doesNotMatch(continuation, /population_cutoff|source_created_at_cutoff|bankReservationPopulation|bank\.created_at/i);
   assert.doesNotMatch(continuation, /\bexecute\b|\bformat\s*\(/i);
 
   const dispatcher = functionSource(
@@ -5221,8 +5275,9 @@ test("Bank Reservation analysis is bounded, deterministic, membership-backed, an
     "Task 3 Bank Reservation helper classifications and hard bounds",
     "Task 3 Bank Reservation continuation pages and retry idempotency",
     "Task 3 Bank Reservation memberships and omitted no-match accounting",
-    "Task 3 Bank Reservation run population excludes inter-page inserts",
-    "Task 3 Bank Reservation run population fails closed on inter-page consumption",
+    "Task 3 Bank Reservation population projection reapply security and cascade",
+    "Task 3 Bank Reservation run population excludes behind and ahead inter-page inserts",
+    "Task 3 Bank Reservation run population fails closed on consumed and deleted members",
     "Task 3 Bank Reservation authoritative shared-bank overlap",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));

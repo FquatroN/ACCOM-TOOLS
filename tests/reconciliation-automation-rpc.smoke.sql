@@ -11617,6 +11617,106 @@ as $$
     and definition.version = 1
 $$;
 
+-- Task 3 Bank Reservation population projection reapply security and cascade
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'b3250000-0000-0000-0000-000000000001', 'manual', 'rule', 'analyzing',
+  'smoke:task3-population-contract',
+  'b3250000-0000-0000-0000-000000000001',
+  pg_temp.task3_bank_snapshot(3), 0, 1
+);
+insert into public.financial_reconciliation_automatic_bank_reservation_population (
+  run_id, bank_id, ordinal, bank_date
+) values (
+  'b3250000-0000-0000-0000-000000000001',
+  'b3250000-0000-0000-0000-000000000002', 1, date '2160-01-01'
+);
+create temporary table task3_population_reapply_baseline on commit drop as
+select to_jsonb(population) as row_snapshot
+from public.financial_reconciliation_automatic_bank_reservation_population population
+where population.run_id = 'b3250000-0000-0000-0000-000000000001';
+
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+
+do $$
+declare
+  v_role text;
+  v_privilege text;
+begin
+  if (select row_snapshot from task3_population_reapply_baseline)
+      is distinct from (
+        select to_jsonb(population)
+        from public.financial_reconciliation_automatic_bank_reservation_population population
+        where population.run_id = 'b3250000-0000-0000-0000-000000000001'
+      )
+    or not (select relation.relkind = 'r'
+                 and relation.relrowsecurity
+                 and not relation.relforcerowsecurity
+        from pg_class relation
+        where relation.oid =
+          'public.financial_reconciliation_automatic_bank_reservation_population'::regclass)
+    or exists (
+      select 1
+      from pg_policy policy_row
+      where policy_row.polrelid =
+        'public.financial_reconciliation_automatic_bank_reservation_population'::regclass
+    ) then
+    raise exception 'Task 3 population projection changed on reapply or lacks RLS.';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.table_privileges grant_row
+    where grant_row.table_schema = 'public'
+      and grant_row.table_name =
+        'financial_reconciliation_automatic_bank_reservation_population'
+      and grant_row.grantee = 'PUBLIC'
+  ) then
+    raise exception 'Task 3 population projection grants table access to PUBLIC.';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.column_privileges grant_row
+    where grant_row.table_schema = 'public'
+      and grant_row.table_name =
+        'financial_reconciliation_automatic_bank_reservation_population'
+      and grant_row.grantee in (
+        'PUBLIC','anon','authenticated','service_role'
+      )
+  ) then
+    raise exception 'Task 3 population projection grants direct column access.';
+  end if;
+
+  foreach v_role in array array['anon','authenticated','service_role']
+  loop
+    foreach v_privilege in array array['SELECT','INSERT','UPDATE','DELETE']
+    loop
+      if has_table_privilege(
+          v_role,
+          'public.financial_reconciliation_automatic_bank_reservation_population',
+          v_privilege
+        ) then
+        raise exception 'Task 3 population projection grants % to %.',
+          v_privilege, v_role;
+      end if;
+    end loop;
+  end loop;
+
+  delete from public.financial_reconciliation_automatic_runs run
+  where run.id = 'b3250000-0000-0000-0000-000000000001';
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_bank_reservation_population population
+    where population.run_id = 'b3250000-0000-0000-0000-000000000001'
+  ) then
+    raise exception 'Task 3 population projection did not cascade with its run.';
+  end if;
+end
+$$;
+
 -- Task 3 Bank Reservation continuation pages and retry idempotency
 insert into public.financial_reconciliation_automatic_runs (
   id, trigger, scope, status, actor, client_request_id,
@@ -11644,14 +11744,18 @@ begin
     or v_first->'analysisComplete' is distinct from 'false'::jsonb
     or v_first->'analysisProcessed' is distinct from '25'::jsonb
     or v_first->'analysisTotal' is distinct from '41'::jsonb
-    or jsonb_typeof(v_first#>'{counts,bankReservationPopulation}')
-      is distinct from 'object'
-    or v_first#>'{counts,bankReservationPopulation,mode}' is distinct from
-      '"source_created_at_cutoff"'::jsonb
-    or v_first#>'{counts,bankReservationPopulation,total}'
-      is distinct from '41'::jsonb
-    or jsonb_typeof(v_first#>'{counts,bankReservationPopulation,cutoff}')
-      is distinct from 'string' then
+    or (select count(*)
+        from public.financial_reconciliation_automatic_bank_reservation_population population
+        where population.run_id = 'b3300000-0000-0000-0000-000000000001')
+      is distinct from 41
+    or (select min(population.ordinal)
+        from public.financial_reconciliation_automatic_bank_reservation_population population
+        where population.run_id = 'b3300000-0000-0000-0000-000000000001')
+      is distinct from 1
+    or (select max(population.ordinal)
+        from public.financial_reconciliation_automatic_bank_reservation_population population
+        where population.run_id = 'b3300000-0000-0000-0000-000000000001')
+      is distinct from 41 then
     raise exception 'Task 3 first 25-Bank continuation page is invalid: %.',
       v_first;
   end if;
@@ -11667,10 +11771,7 @@ begin
     or v_second->'analysisComplete' is distinct from 'true'::jsonb
     or v_second->'analysisProcessed' is distinct from '41'::jsonb
     or v_second->'analysisTotal' is distinct from '41'::jsonb
-    or v_second#>'{counts,bankReservationPopulation,mode}' is distinct from
-      '"source_created_at_cutoff"'::jsonb
-    or v_second#>'{counts,bankReservationPopulation,total}'
-      is distinct from '41'::jsonb then
+    or v_second#>'{counts,bases}' is distinct from '41'::jsonb then
     raise exception 'Task 3 final continuation page did not finalize review work: %.',
       v_second;
   end if;
@@ -11922,8 +12023,6 @@ begin
     or v_result->'analysisProcessed' is distinct from '1'::jsonb
     or v_result->'analysisTotal' is distinct from '1'::jsonb
     or v_result#>'{counts,skipped}' is distinct from '1'::jsonb
-    or v_result#>'{counts,bankReservationPopulation,total}'
-      is distinct from '1'::jsonb
     or jsonb_typeof(v_result->'proposals') is distinct from 'array'
     or jsonb_array_length(v_result->'proposals') is distinct from 0 then
     raise exception 'Task 3 zero-review run did not complete with skipped accounting: %.',
@@ -11932,7 +12031,7 @@ begin
 end
 $$;
 
--- Task 3 Bank Reservation run population excludes inter-page inserts.
+-- Task 3 Bank Reservation run population excludes behind and ahead inter-page inserts.
 do $$
 declare
   v_reconciliation_id uuid;
@@ -11974,8 +12073,6 @@ insert into public.financial_reconciliation_automatic_runs (
 do $$
 declare
   v_first jsonb;
-  v_second jsonb;
-  v_cutoff timestamptz;
 begin
   v_first := public.continue_financial_reconciliation_automatic_analysis(
     'b3500000-0000-0000-0000-000000000100',
@@ -11985,24 +12082,48 @@ begin
     or v_first->'status' is distinct from '"analyzing"'::jsonb
     or v_first->'analysisProcessed' is distinct from '25'::jsonb
     or v_first->'analysisTotal' is distinct from '26'::jsonb
-    or v_first#>'{counts,bankReservationPopulation,total}'
-      is distinct from '26'::jsonb
-    or jsonb_typeof(v_first#>'{counts,bankReservationPopulation,cutoff}')
-      is distinct from 'string' then
-    raise exception 'Task 3 population snapshot first page is invalid: %.',
+    or (select count(*)
+        from public.financial_reconciliation_automatic_bank_reservation_population population
+        where population.run_id = 'b3500000-0000-0000-0000-000000000100')
+      is distinct from 26
+    or exists (
+      select 1
+      from (
+        select population.ordinal,
+               row_number() over (
+                 order by population.bank_date, population.bank_id
+               )::integer as expected_ordinal
+        from public.financial_reconciliation_automatic_bank_reservation_population population
+        where population.run_id = 'b3500000-0000-0000-0000-000000000100'
+      ) ordered
+      where ordered.ordinal is distinct from ordered.expected_ordinal
+    ) then
+    raise exception 'Task 3 population projection first page is invalid: %.',
       v_first;
   end if;
-  v_cutoff := (v_first#>>'{counts,bankReservationPopulation,cutoff}')::timestamptz;
+end
+$$;
 
-  insert into public.import_cgd_extrato_ordem (
-    id, import_batch, row_key, data, descritivo, montante, created_at
-  ) values (
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante, created_at
+) values
+  (
     'b3500000-0000-0000-0000-999999999999',
     'smoke-task3-population-insert', 'task3-population-insert-behind-cursor',
-    date '2230-01-05', 'post-cutoff anchor behind cursor', -17.00,
-    v_cutoff + interval '1 second'
+    date '2230-01-05', 'post-snapshot anchor behind cursor', -17.00,
+    timestamptz '2000-01-01 00:00:00+00'
+  ),
+  (
+    'b3500000-0000-0000-0000-888888888888',
+    'smoke-task3-population-insert', 'task3-population-insert-ahead-cursor',
+    date '2300-01-05', 'post-snapshot anchor ahead of cursor', -17.00,
+    timestamptz '2000-01-01 00:00:00+00'
   );
 
+do $$
+declare
+  v_second jsonb;
+begin
   v_second := public.continue_financial_reconciliation_automatic_analysis(
     'b3500000-0000-0000-0000-000000000100',
     'smoke:task3-population-insert'
@@ -12014,23 +12135,20 @@ begin
     or v_second->'analysisTotal' is distinct from '26'::jsonb
     or v_second#>'{counts,bases}' is distinct from '26'::jsonb
     or v_second#>'{counts,skipped}' is distinct from '26'::jsonb
-    or v_second#>'{counts,bankReservationPopulation,mode}' is distinct from
-      '"source_created_at_cutoff"'::jsonb
-    or v_second#>'{counts,bankReservationPopulation,total}'
-      is distinct from '26'::jsonb
     or jsonb_typeof(v_second->'proposals') is distinct from 'array'
     or jsonb_array_length(v_second->'proposals') is distinct from 0
     or public.financial_reconciliation_automatic_bank_reservation_count()
-      is distinct from 27
+      is distinct from 28
     or exists (
       select 1
-      from public.financial_reconciliation_automatic_proposal_memberships member
-      join public.financial_reconciliation_automatic_proposals proposal
-        on proposal.id = member.proposal_id
-      where proposal.run_id = 'b3500000-0000-0000-0000-000000000100'
-        and member.source_id = 'b3500000-0000-0000-0000-999999999999'
+      from public.financial_reconciliation_automatic_bank_reservation_population population
+      where population.run_id = 'b3500000-0000-0000-0000-000000000100'
+        and population.bank_id in (
+          'b3500000-0000-0000-0000-999999999999',
+          'b3500000-0000-0000-0000-888888888888'
+        )
     ) then
-    raise exception 'Task 3 post-cutoff Bank did not wait for the next run: %.',
+    raise exception 'Task 3 post-snapshot Banks did not wait for the next run: %.',
       v_second;
   end if;
 end
@@ -12056,7 +12174,7 @@ begin
 end
 $$;
 
--- Task 3 Bank Reservation run population fails closed on inter-page consumption.
+-- Task 3 Bank Reservation run population fails closed on consumed and deleted members.
 insert into public.import_cgd_extrato_ordem (
   id, import_batch, row_key, data, descritivo, montante
 )
@@ -12065,6 +12183,15 @@ select
   'smoke-task3-population-consumed', 'task3-population-consumed-' || series,
   date '2240-01-01' + (series - 1), 'consumed anchor ' || series, -19.00
 from generate_series(1, 26) series;
+insert into public.import_fdm_accounts (
+  id, import_batch, source_row_number, account, date_time_raw, event_date,
+  category, amount, description
+) values (
+  'c3600000-0000-0000-0000-000000000001',
+  'smoke-task3-population-consumed', 1, 'Bank Transfer', '2240-01-01',
+  date '2240-01-01', 'Reservation', 19.00,
+  'proposal made stale by population mutation'
+);
 insert into public.financial_reconciliation_automatic_runs (
   id, trigger, scope, status, actor, client_request_id,
   definition_config_snapshot, analysis_processed, analysis_total
@@ -12072,7 +12199,7 @@ insert into public.financial_reconciliation_automatic_runs (
   'b3600000-0000-0000-0000-000000000100', 'manual', 'rule', 'analyzing',
   'smoke:task3-population-consumed',
   'b3600000-0000-0000-0000-000000000100',
-  pg_temp.task3_bank_snapshot(3), 0, 0
+  pg_temp.task3_bank_snapshot(0), 0, 0
 );
 
 do $$
@@ -12113,14 +12240,25 @@ begin
   );
   if jsonb_typeof(v_second) is distinct from 'object'
     or v_second->'status' is distinct from '"failed"'::jsonb
-    or v_second->'analysisComplete' is distinct from 'false'::jsonb
+    or v_second->'analysisComplete' is distinct from 'true'::jsonb
     or v_second->'analysisProcessed' is distinct from '25'::jsonb
     or v_second->'analysisTotal' is distinct from '26'::jsonb
     or v_second->'analysisErrorCode' is distinct from
       '"analysis_population_changed"'::jsonb
-    or v_second#>'{counts,bankReservationPopulation,total}'
-      is distinct from '26'::jsonb
-    or jsonb_typeof(v_second->'finishedAt') is distinct from 'string' then
+    or jsonb_typeof(v_second->'analysisCompletedAt') is distinct from 'string'
+    or jsonb_typeof(v_second->'finishedAt') is distinct from 'string'
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = 'b3600000-0000-0000-0000-000000000100'
+          and proposal.status = 'stale'
+          and proposal.reason = 'analysis_population_changed')
+      is distinct from 1
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'b3600000-0000-0000-0000-000000000100'
+        and proposal.status in ('proposed','executing')
+    ) then
     raise exception 'Task 3 consumed population did not fail closed coherently: %.',
       v_second;
   end if;
@@ -12153,6 +12291,83 @@ begin
 end
 $$;
 
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+)
+select
+  ('b3700000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-population-deleted', 'task3-population-deleted-' || series,
+  date '2250-01-01' + (series - 1), 'deleted anchor ' || series, -23.00
+from generate_series(1, 26) series;
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'b3700000-0000-0000-0000-000000000100', 'manual', 'rule', 'analyzing',
+  'smoke:task3-population-deleted',
+  'b3700000-0000-0000-0000-000000000100',
+  pg_temp.task3_bank_snapshot(3), 0, 0
+);
+
+do $$
+declare
+  v_first jsonb;
+  v_second jsonb;
+begin
+  v_first := public.continue_financial_reconciliation_automatic_analysis(
+    'b3700000-0000-0000-0000-000000000100',
+    'smoke:task3-population-deleted'
+  );
+  if jsonb_typeof(v_first) is distinct from 'object'
+    or v_first->'status' is distinct from '"analyzing"'::jsonb
+    or v_first->'analysisProcessed' is distinct from '25'::jsonb
+    or v_first->'analysisTotal' is distinct from '26'::jsonb then
+    raise exception 'Task 3 deleted-population first page is invalid: %.',
+      v_first;
+  end if;
+
+  delete from public.import_cgd_extrato_ordem bank
+  where bank.id = 'b3700000-0000-0000-0000-000000000026';
+
+  v_second := public.continue_financial_reconciliation_automatic_analysis(
+    'b3700000-0000-0000-0000-000000000100',
+    'smoke:task3-population-deleted'
+  );
+  if jsonb_typeof(v_second) is distinct from 'object'
+    or v_second->'status' is distinct from '"failed"'::jsonb
+    or v_second->'analysisComplete' is distinct from 'true'::jsonb
+    or v_second->'analysisProcessed' is distinct from '25'::jsonb
+    or v_second->'analysisTotal' is distinct from '26'::jsonb
+    or v_second->'analysisErrorCode' is distinct from
+      '"analysis_population_changed"'::jsonb
+    or jsonb_typeof(v_second->'analysisCompletedAt') is distinct from 'string'
+    or jsonb_typeof(v_second->'finishedAt') is distinct from 'string' then
+    raise exception 'Task 3 deleted population did not fail closed coherently: %.',
+      v_second;
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task3-population-deleted-isolation'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_cgd_extrato_ordem', bank.id,
+         bank.montante, 'smoke:task3-population-deleted-isolation'
+  from public.import_cgd_extrato_ordem bank
+  where bank.import_batch = 'smoke-task3-population-deleted';
+end
+$$;
+
 -- Task 3 Bank Reservation authoritative shared-bank overlap
 insert into public.import_cgd_extrato_ordem (
   id, import_batch, row_key, data, descritivo, montante
@@ -12174,19 +12389,18 @@ insert into public.import_fdm_accounts (
 insert into public.financial_reconciliation_automatic_runs (
   id, trigger, scope, status, actor, client_request_id,
   definition_config_snapshot, analysis_cursor_date, analysis_cursor_id,
-  analysis_processed, analysis_total, counts
+  analysis_processed, analysis_total
 ) values (
   'b3200000-0000-0000-0000-000000000010', 'manual', 'rule', 'analyzing',
   'smoke:task3-shared-bank', 'b3200000-0000-0000-0000-000000000010',
-  pg_temp.task3_bank_snapshot(3), date '2200-01-01',
-  'ffffffff-ffff-ffff-ffff-ffffffffffff', 1, 1,
-  jsonb_build_object(
-    'bankReservationPopulation', jsonb_build_object(
-      'mode', 'source_created_at_cutoff',
-      'cutoff', current_timestamp,
-      'total', 1
-    )
-  )
+  pg_temp.task3_bank_snapshot(3), date '2170-01-10',
+  'b3200000-0000-0000-0000-000000000001', 1, 1
+);
+insert into public.financial_reconciliation_automatic_bank_reservation_population (
+  run_id, bank_id, ordinal, bank_date
+) values (
+  'b3200000-0000-0000-0000-000000000010',
+  'b3200000-0000-0000-0000-000000000001', 1, date '2170-01-10'
 );
 insert into public.financial_reconciliation_automatic_proposals (
   id, run_id, rule_key, rule_version, base_source_type, base_source_id,
