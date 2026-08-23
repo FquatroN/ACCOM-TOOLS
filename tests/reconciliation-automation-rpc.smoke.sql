@@ -10691,6 +10691,175 @@ begin
 end
 $$;
 
+create or replace function pg_temp.task2_installation_state()
+returns jsonb
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_object(
+    'definitions', coalesce((
+      select jsonb_agg(to_jsonb(definition)
+                       order by definition.rule_key, definition.version)
+      from public.financial_reconciliation_automatic_rule_definitions definition
+      where definition.rule_key in (
+        'fdm_bank_transfer_cgd_bank_statement_combination',
+        'cgd_bank_statement_fdm_adyen_monthly_payments'
+      )
+    ), '[]'::jsonb),
+    'configs', coalesce((
+      select jsonb_agg(to_jsonb(config) order by config.rule_key)
+      from public.financial_reconciliation_automatic_rule_configs config
+    ), '[]'::jsonb),
+    'schedule', (
+      select to_jsonb(schedule)
+      from public.financial_reconciliation_automatic_schedule schedule
+      where schedule.id = true
+    ),
+    'constraint', (
+      select jsonb_build_object(
+        'type', constraint_row.contype,
+        'validated', constraint_row.convalidated,
+        'definition', pg_get_constraintdef(constraint_row.oid, true)
+      )
+      from pg_constraint constraint_row
+      where constraint_row.conrelid =
+          'public.financial_reconciliation_automatic_rule_configs'::regclass
+        and constraint_row.conname =
+          'financial_reconciliation_rule_configs_fdm_bank_adyen_check'
+    ),
+    'indexes', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'name', index_class.relname,
+        'definition', pg_get_indexdef(index_row.indexrelid),
+        'valid', index_row.indisvalid,
+        'ready', index_row.indisready
+      ) order by index_class.relname)
+      from pg_index index_row
+      join pg_class index_class on index_class.oid = index_row.indexrelid
+      join pg_namespace namespace_row on namespace_row.oid = index_class.relnamespace
+      where namespace_row.nspname = 'public'
+        and index_class.relname in (
+          'financial_reconciliation_fdm_bank_transfer_lookup_idx',
+          'financial_reconciliation_fdm_adyen_lookup_idx',
+          'financial_reconciliation_bank_date_amount_lookup_idx'
+        )
+    ), '[]'::jsonb),
+    'settingsFunction', (
+      select jsonb_build_object(
+        'definition', pg_get_functiondef(procedure.oid),
+        'securityDefiner', procedure.prosecdef,
+        'configuration', procedure.proconfig,
+        'acl', procedure.proacl
+      )
+      from pg_proc procedure
+      where procedure.oid =
+        'public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)'::regprocedure
+    )
+  )
+$$;
+
+create temporary table task2_installation_baseline on commit drop as
+select pg_temp.task2_installation_state() as state;
+
+savepoint task2_conflicting_definition_fixture;
+
+update public.financial_reconciliation_automatic_rule_definitions definition
+set definition = jsonb_set(definition.definition, '{stateLimit}', '250001'::jsonb)
+where definition.rule_key =
+    'fdm_bank_transfer_cgd_bank_statement_combination'
+  and definition.version = 1;
+
+\set ON_ERROR_STOP off
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+\set task2_conflicting_definition_rejected :ERROR
+\set ON_ERROR_STOP on
+
+rollback to savepoint task2_conflicting_definition_fixture;
+
+\if :task2_conflicting_definition_rejected
+\else
+  \echo 'Task 2 migration accepted a conflicting immutable definition for the managed Bank Reservation key/version.'
+  \quit 1
+\endif
+
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+
+do $$
+begin
+  if (select state from task2_installation_baseline)
+      is distinct from pg_temp.task2_installation_state() then
+    raise exception 'Task 2 definition conflict did not reject and restore the complete installation state.';
+  end if;
+end
+$$;
+
+savepoint task2_conflicting_constraint_fixture;
+
+alter table public.financial_reconciliation_automatic_rule_configs
+  drop constraint financial_reconciliation_rule_configs_fdm_bank_adyen_check;
+alter table public.financial_reconciliation_automatic_rule_configs
+  add constraint financial_reconciliation_rule_configs_fdm_bank_adyen_check
+  check (
+    rule_key <> 'fdm_bank_transfer_cgd_bank_statement_combination'
+    or max_difference_days between 0 and 89
+  ) not valid;
+
+\set ON_ERROR_STOP off
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+\set task2_conflicting_constraint_rejected :ERROR
+\set ON_ERROR_STOP on
+
+rollback to savepoint task2_conflicting_constraint_fixture;
+
+\if :task2_conflicting_constraint_rejected
+\else
+  \echo 'Task 2 migration accepted a conflicting same-named managed configuration constraint.'
+  \quit 1
+\endif
+
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+
+do $$
+begin
+  if (select state from task2_installation_baseline)
+      is distinct from pg_temp.task2_installation_state() then
+    raise exception 'Task 2 constraint conflict did not reject and restore the complete installation state.';
+  end if;
+end
+$$;
+
+savepoint task2_conflicting_index_fixture;
+
+drop index public.financial_reconciliation_fdm_bank_transfer_lookup_idx;
+create index financial_reconciliation_fdm_bank_transfer_lookup_idx
+  on public.import_fdm_accounts (event_date, id)
+  where account = 'Bank Transfer';
+
+\set ON_ERROR_STOP off
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+\set task2_conflicting_index_rejected :ERROR
+\set ON_ERROR_STOP on
+
+rollback to savepoint task2_conflicting_index_fixture;
+
+\if :task2_conflicting_index_rejected
+\else
+  \echo 'Task 2 migration accepted a conflicting same-named FDM Bank Transfer lookup index.'
+  \quit 1
+\endif
+
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+
+do $$
+begin
+  if (select state from task2_installation_baseline)
+      is distinct from pg_temp.task2_installation_state() then
+    raise exception 'Task 2 index conflict did not reject and restore the complete installation state.';
+  end if;
+end
+$$;
+
 set constraints financial_reconciliation_automatic_rule_configs_priority_key deferred;
 update public.financial_reconciliation_automatic_rule_configs config
 set enabled = true,
