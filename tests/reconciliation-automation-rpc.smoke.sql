@@ -14747,4 +14747,448 @@ begin
 end
 $$;
 
+-- Task 6 manual catalog and one-rule actor lifecycle
+do $$
+declare
+  v_catalog jsonb;
+  v_bank_run jsonb;
+  v_bank_retry jsonb;
+  v_adyen_run jsonb;
+  v_locked_run_id uuid := 'f6000000-0000-0000-0000-000000000001';
+begin
+  update public.financial_reconciliation_automatic_rule_configs config
+  set enabled = true,
+      allow_manual_execution = case
+        when config.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination' then true
+        when config.rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments' then false
+        else config.allow_manual_execution
+      end
+  where config.rule_key in (
+    'fdm_bank_transfer_cgd_bank_statement_combination',
+    'cgd_bank_statement_fdm_adyen_monthly_payments'
+  );
+
+  v_catalog := public.get_financial_reconciliation_automatic_manual_rules();
+  if jsonb_typeof(v_catalog->'rules') is distinct from 'array'
+    or not coalesce(v_catalog->'rules' @> jsonb_build_array(
+      jsonb_build_object(
+        'ruleKey', 'fdm_bank_transfer_cgd_bank_statement_combination',
+        'ruleVersion', 1, 'enabled', true,
+        'allowManualExecution', true
+      )
+    ), false)
+    or coalesce(v_catalog->'rules' @> jsonb_build_array(
+      jsonb_build_object(
+        'ruleKey', 'cgd_bank_statement_fdm_adyen_monthly_payments'
+      )
+    ), false) then
+    raise exception 'Task 6 manual catalog did not require enabled and manual flags: %.',
+      v_catalog;
+  end if;
+
+  update public.financial_reconciliation_automatic_rule_configs config
+  set allow_manual_execution = true
+  where config.rule_key in (
+    'fdm_bank_transfer_cgd_bank_statement_combination',
+    'cgd_bank_statement_fdm_adyen_monthly_payments'
+  );
+
+  v_bank_run := public.create_financial_reconciliation_automatic_analysis(
+    array['fdm_bank_transfer_cgd_bank_statement_combination'],
+    'manual_rule', 'smoke:task6-bank',
+    'f6000000-0000-0000-0000-000000000002'
+  );
+  v_bank_retry := public.create_financial_reconciliation_automatic_analysis(
+    array['fdm_bank_transfer_cgd_bank_statement_combination'],
+    'manual_rule', 'smoke:task6-bank',
+    'f6000000-0000-0000-0000-000000000002'
+  );
+  if v_bank_run->>'runId' is distinct from v_bank_retry->>'runId'
+    or v_bank_run->>'trigger' is distinct from 'manual'
+    or v_bank_run->>'scope' is distinct from 'rule'
+    or jsonb_array_length(v_bank_run->'definitions') is distinct from 1
+    or v_bank_run#>>'{definitions,0,ruleKey}' is distinct from
+      'fdm_bank_transfer_cgd_bank_statement_combination'
+    or (v_bank_run#>>'{definitions,0,ruleVersion}')::integer
+      is distinct from 1
+    or v_bank_run#>>'{definitions,0,operator}' is distinct from '+' then
+    raise exception 'Task 6 Bank manual creation lost its one-rule + snapshot: %.',
+      v_bank_run;
+  end if;
+
+  v_adyen_run := public.create_financial_reconciliation_automatic_analysis(
+    array['cgd_bank_statement_fdm_adyen_monthly_payments'],
+    'manual_rule', 'smoke:task6-adyen',
+    'f6000000-0000-0000-0000-000000000003'
+  );
+  if v_adyen_run->>'trigger' is distinct from 'manual'
+    or jsonb_array_length(v_adyen_run->'definitions') is distinct from 1
+    or v_adyen_run#>>'{definitions,0,ruleKey}' is distinct from
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    or (v_adyen_run#>>'{definitions,0,ruleVersion}')::integer
+      is distinct from 1
+    or v_adyen_run#>>'{definitions,0,operator}' is distinct from '-' then
+    raise exception 'Task 6 Adyen manual creation lost its one-rule - snapshot: %.',
+      v_adyen_run;
+  end if;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    id, trigger, scope, actor, client_request_id, status,
+    definition_config_snapshot, analysis_processed, analysis_total
+  ) values (
+    v_locked_run_id, 'manual', 'rule', 'smoke:task6-locked-actor',
+    'f6000000-0000-0000-0000-000000000004', 'analyzing',
+    jsonb_build_array(jsonb_build_object(
+      'ruleKey', 'fdm_bank_transfer_cgd_bank_statement_combination',
+      'ruleVersion', 1, 'priority', 6, 'differenceAllowed', 0,
+      'maxDifferenceDays', 3,
+      'destinationSourceType', 'import_cgd_extrato_ordem',
+      'definition', jsonb_build_object('strategy', 'bounded_exact_combination'),
+      'operator', '+'
+    )), 0, 1
+  );
+  begin
+    perform public.create_financial_reconciliation_automatic_analysis(
+      array['cgd_bank_statement_fdm_adyen_monthly_payments'],
+      'manual_rule', 'smoke:task6-locked-actor',
+      'f6000000-0000-0000-0000-000000000005'
+    );
+    raise exception 'Task 6 accepted a second unfinished manual run.';
+  exception when others then
+    if sqlerrm = 'Task 6 accepted a second unfinished manual run.'
+      or sqlerrm not ilike '%unfinished manual run already exists%' then
+      raise;
+    end if;
+  end;
+end
+$$;
+
+-- Task 6 grouped member paging exposes complete public snapshots
+do $$
+declare
+  v_proposal record;
+  v_page jsonb;
+begin
+  select proposal.* into strict v_proposal
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = 'f5200000-0000-0000-0000-000000000001'
+  order by proposal.created_at, proposal.id
+  limit 1;
+  v_page := public.get_financial_reconciliation_automatic_proposal_members(
+    v_proposal.run_id, v_proposal.id, 'source', 0, 50,
+    'smoke:task5-bank'
+  );
+  if v_page->>'runId' is distinct from v_proposal.run_id::text
+    or v_page->>'proposalId' is distinct from v_proposal.id::text
+    or v_page->>'ruleKey' is distinct from v_proposal.rule_key
+    or (v_page->>'ruleVersion')::integer is distinct from v_proposal.rule_version
+    or v_page->>'groupingKey' is distinct from v_proposal.grouping_key
+    or v_page->'summarySnapshot' is distinct from v_proposal.summary_snapshot
+    or (v_page->>'sourceCount')::integer is distinct from (
+      select count(*)::integer
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal.id and member.role = 'source'
+    )
+    or (v_page->>'sourceTotal')::numeric is distinct from (
+      select sum(member.amount)
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal.id and member.role = 'source'
+    )
+    or (v_page->>'totalCount')::integer is distinct from (
+      select count(*)::integer
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal.id and member.role = 'source'
+    )
+    or jsonb_typeof(v_page->'members') is distinct from 'array'
+    or jsonb_array_length(v_page->'members') < 1
+    or not (v_page->'members'->0 ?& array[
+      'role', 'sourceType', 'sourceId', 'ordinal', 'sourceDate',
+      'amount', 'description', 'account', 'rowSnapshot'
+    ])
+    or jsonb_typeof(v_page#>'{members,0,rowSnapshot}')
+      is distinct from 'object' then
+    raise exception 'Task 6 Bank member page lost public grouped evidence: %.',
+      v_page;
+  end if;
+
+  select proposal.* into strict v_proposal
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = 'f5500000-0000-0000-0000-000000000001'
+  order by proposal.created_at, proposal.id
+  limit 1;
+  v_page := public.get_financial_reconciliation_automatic_proposal_members(
+    v_proposal.run_id, v_proposal.id, 'destination', 0, 50,
+    'smoke:task5-adyen'
+  );
+  if v_page->>'ruleKey' is distinct from
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    or v_page->>'groupingKey' is distinct from v_proposal.grouping_key
+    or v_page->'destinationCount' is distinct from
+      v_proposal.summary_snapshot->'destinationCount'
+    or v_page->'destinationTotal' is distinct from
+      v_proposal.summary_snapshot->'destinationTotal'
+    or jsonb_array_length(v_page->'members') < 1
+    or v_page#>>'{members,0,role}' is distinct from 'destination'
+    or v_page#>>'{members,0,account}' is distinct from 'Adyen' then
+    raise exception 'Task 6 Adyen member page lost public grouped evidence: %.',
+      v_page;
+  end if;
+end
+$$;
+
+-- Task 6 seven-child priority snapshot and strategy totals
+-- Task 6 same-slot retry and oldest cross-midnight child
+-- Task 6 terminal child failure continues and aggregates all seven children
+do $$
+declare
+  v_expected_keys text[] := array[
+    'financial_documents_cgd_bank_statement',
+    'financial_documents_cgd_credit_card',
+    'financial_documents_cgd_bank_statement_amount_only',
+    'financial_documents_cgd_credit_card_amount_only',
+    'cgd_bank_statement_fdm_credit_card_monthly_income',
+    'fdm_bank_transfer_cgd_bank_statement_combination',
+    'cgd_bank_statement_fdm_adyen_monthly_payments'
+  ];
+  v_expected_versions integer[] := array[2, 1, 1, 1, 2, 1, 1];
+  v_claim jsonb;
+  v_retry jsonb;
+  v_cross_midnight_retry jsonb;
+  v_batch jsonb;
+  v_batch_id uuid;
+  v_run_id uuid;
+  v_position integer;
+  v_expected_total bigint;
+begin
+  update public.financial_reconciliation_automatic_batches batch
+  set status = case when batch.status in ('pending', 'running')
+      then 'completed' else batch.status end,
+      finished_at = case when batch.status in ('pending', 'running')
+        then coalesce(batch.finished_at, now()) else batch.finished_at end;
+  update public.financial_reconciliation_automatic_schedule
+  set enabled = true, time_of_day = '00:00', time_zone = 'Europe/Lisbon'
+  where id = true;
+  update public.financial_reconciliation_automatic_rule_configs config
+  set enabled = true,
+      include_in_scheduled_batch = true,
+      priority = case config.rule_key
+        when 'financial_documents_cgd_bank_statement' then 1
+        when 'financial_documents_cgd_credit_card' then 2
+        when 'financial_documents_cgd_bank_statement_amount_only' then 3
+        when 'financial_documents_cgd_credit_card_amount_only' then 4
+        when 'cgd_bank_statement_fdm_credit_card_monthly_income' then 5
+        when 'fdm_bank_transfer_cgd_bank_statement_combination' then 6
+        when 'cgd_bank_statement_fdm_adyen_monthly_payments' then 7
+      end
+  where config.rule_key = any(v_expected_keys);
+
+  v_claim := public.claim_financial_reconciliation_automatic_schedule(
+    '2099-01-01 02:00:00+00', 'system:reconciliation'
+  );
+  v_batch_id := (v_claim->>'batchId')::uuid;
+  v_run_id := (v_claim#>>'{run,runId}')::uuid;
+  v_retry := public.claim_financial_reconciliation_automatic_schedule(
+    '2099-01-01 03:00:00+00', 'system:reconciliation'
+  );
+  v_cross_midnight_retry :=
+    public.claim_financial_reconciliation_automatic_schedule(
+    '2099-01-02 02:00:00+00', 'system:reconciliation'
+  );
+  if v_claim->>'claimed' is distinct from 'true'
+    or v_claim->>'resumed' is distinct from 'false'
+    or v_retry->>'claimed' is distinct from 'true'
+    or v_retry->>'resumed' is distinct from 'true'
+    or v_retry->>'batchId' is distinct from v_batch_id::text
+    or v_retry#>>'{run,runId}' is distinct from v_run_id::text
+    or (v_retry->>'batchRulePosition')::integer is distinct from 1
+    or (v_retry->>'batchRuleCount')::integer is distinct from 7 then
+    raise exception 'Task 6 same-slot retry changed batch child: %, %.',
+      v_claim, v_retry;
+  end if;
+  if v_cross_midnight_retry->>'claimed' is distinct from 'true'
+    or v_cross_midnight_retry->>'resumed' is distinct from 'true'
+    or v_cross_midnight_retry->>'batchId' is distinct from v_batch_id::text
+    or v_cross_midnight_retry#>>'{run,runId}' is distinct from v_run_id::text
+    or (v_cross_midnight_retry->>'batchRulePosition')::integer
+      is distinct from 1
+    or (v_cross_midnight_retry->>'batchRuleCount')::integer
+      is distinct from 7 then
+    raise exception 'Task 6 cross-midnight retry changed batch child: %, %.',
+      v_claim, v_cross_midnight_retry;
+  end if;
+
+  for v_position in 1..7 loop
+    if v_position > 1 then
+      v_claim := public.claim_financial_reconciliation_automatic_schedule(
+        ('2099-01-' || lpad((v_position + 1)::text, 2, '0') ||
+          ' 02:00:00+00')::timestamptz,
+        'system:reconciliation'
+      );
+      v_run_id := (v_claim#>>'{run,runId}')::uuid;
+    end if;
+    if v_claim->>'claimed' is distinct from 'true'
+      or (v_claim->>'batchRulePosition')::integer is distinct from v_position
+      or (v_claim->>'batchRuleCount')::integer is distinct from 7
+      or v_claim#>>'{run,batchRuleKey}' is distinct from
+        v_expected_keys[v_position]
+      or v_claim#>>'{run,definitions,0,ruleKey}' is distinct from
+        v_expected_keys[v_position]
+      or (v_claim#>>'{run,definitions,0,ruleVersion}')::integer
+        is distinct from v_expected_versions[v_position]
+      or (v_claim#>>'{run,batchRuleCount}')::integer is distinct from 7 then
+      raise exception 'Task 6 scheduled child order/tuple diverged at %: %.',
+        v_position, v_claim;
+    end if;
+    if v_position = 6 then
+      select public.financial_reconciliation_automatic_bank_reservation_count()
+      into v_expected_total;
+      if (v_claim#>>'{run,analysisTotal}')::bigint is distinct from v_expected_total
+        or v_claim#>>'{run,analysisUnit}' is distinct from 'bank_anchors' then
+        raise exception 'Task 6 Bank scheduled progress is not Bank anchors: %.',
+          v_claim;
+      end if;
+    elsif v_position = 7 then
+      select public.financial_reconciliation_automatic_adyen_month_count()
+      into v_expected_total;
+      if (v_claim#>>'{run,analysisTotal}')::bigint is distinct from v_expected_total
+        or v_claim#>>'{run,analysisUnit}' is distinct from 'calendar_months' then
+        raise exception 'Task 6 Adyen scheduled progress is not calendar months: %.',
+          v_claim;
+      end if;
+    end if;
+
+    update public.financial_reconciliation_automatic_runs run
+    set status = case when v_position = 3 then 'failed' else 'completed' end,
+        analysis_processed = analysis_total,
+        analysis_cursor_date = case
+          when v_position = 6 and analysis_total > 0 then date '2099-01-06'
+          when v_position = 7 and analysis_total > 0 then date '2099-01-01'
+          else analysis_cursor_date
+        end,
+        analysis_cursor_id = case
+          when v_position = 6 and analysis_total > 0
+            then 'f6000000-0000-0000-0000-000000000006'::uuid
+          when v_position = 7 and analysis_total > 0
+            then 'f6000000-0000-0000-0000-000000000007'::uuid
+          else analysis_cursor_id
+        end,
+        analysis_completed_at = case when v_position = 3 then null else now() end,
+        analysis_error_code = case when v_position = 3
+          then 'analysis_continuation_failed' else null end,
+        analysis_error_at = case when v_position = 3 then now() else null end,
+        finished_at = now(),
+        counts = jsonb_build_object(
+          'bases', v_position,
+          'proposed', v_position,
+          'ambiguous', 0,
+          'skipped', 0,
+          'deselected', 0,
+          'completed', v_position,
+          'stale', 0,
+          'failed', case when v_position = 3 then 1 else 0 end
+        )
+    where run.id = v_run_id;
+  end loop;
+
+  v_batch := public.financial_reconciliation_refresh_automatic_batch(v_batch_id);
+  if v_batch->>'status' is distinct from 'partial'
+    or (v_batch->>'ruleCount')::integer is distinct from 7
+    or (v_batch->>'childCount')::integer is distinct from 7
+    or (v_batch#>>'{counts,completedChildren}')::integer is distinct from 6
+    or (v_batch#>>'{counts,failedChildren}')::integer is distinct from 1
+    or (v_batch#>>'{counts,unfinishedChildren}')::integer is distinct from 0
+    or (v_batch#>>'{counts,bases}')::integer is distinct from 28
+    or (v_batch#>>'{counts,completed}')::integer is distinct from 28
+    or (v_batch#>>'{counts,failed}')::integer is distinct from 1 then
+    raise exception 'Task 6 terminal seven-child aggregate is incomplete: %.',
+      v_batch;
+  end if;
+  v_claim := public.claim_financial_reconciliation_automatic_schedule(
+    '2099-01-01 23:00:00+00', 'system:reconciliation'
+  );
+  if v_claim->>'claimed' is distinct from 'false'
+    or v_claim->>'reason' is distinct from 'batch_complete'
+    or v_claim->>'batchId' is distinct from v_batch_id::text then
+    raise exception 'Task 6 terminal batch retry did not remain idempotent: %.',
+      v_claim;
+  end if;
+end
+$$;
+
+-- Task 6 malformed batch metadata and progress fail closed
+do $$
+declare
+  v_batch_id uuid;
+  v_run_id uuid;
+  v_duplicate_id uuid := 'f6000000-0000-0000-0000-000000000099';
+begin
+  select batch.id into strict v_batch_id
+  from public.financial_reconciliation_automatic_batches batch
+  where batch.scheduled_slot = '2099-01-01';
+  select run.id into strict v_run_id
+  from public.financial_reconciliation_automatic_runs run
+  where run.batch_id = v_batch_id and run.batch_rule_position = 1;
+
+  begin
+    update public.financial_reconciliation_automatic_batches batch
+    set rule_snapshot = jsonb_set(
+      batch.rule_snapshot, '{0,ruleVersion}', '99'::jsonb
+    )
+    where batch.id = v_batch_id;
+    perform public.financial_reconciliation_refresh_automatic_batch(v_batch_id);
+    raise exception 'Task 6 malformed rule tuple was accepted.';
+  exception when others then
+    if sqlerrm = 'Task 6 malformed rule tuple was accepted.'
+      or sqlerrm not ilike '%batch snapshot is invalid%' then
+      raise;
+    end if;
+  end;
+
+  begin
+    insert into public.financial_reconciliation_automatic_runs (
+      id, trigger, scope, actor, scheduled_slot, status,
+      definition_config_snapshot, analysis_processed, analysis_total,
+      batch_id, batch_rule_key, batch_rule_position, batch_rule_count
+    )
+    select v_duplicate_id, run.trigger, run.scope, run.actor,
+      run.scheduled_slot, run.status, run.definition_config_snapshot,
+      run.analysis_processed, run.analysis_total, run.batch_id,
+      run.batch_rule_key, run.batch_rule_position, run.batch_rule_count
+    from public.financial_reconciliation_automatic_runs run
+    where run.id = v_run_id;
+    raise exception 'Task 6 duplicate batch position was accepted.';
+  exception when unique_violation then
+    null;
+  end;
+
+  begin
+    update public.financial_reconciliation_automatic_runs run
+    set batch_rule_count = 6
+    where run.id = v_run_id;
+    perform public.financial_reconciliation_refresh_automatic_batch(v_batch_id);
+    raise exception 'Task 6 wrong child rule count was accepted.';
+  exception when others then
+    if sqlerrm = 'Task 6 wrong child rule count was accepted.'
+      or sqlerrm not ilike '%child metadata is invalid%' then
+      raise;
+    end if;
+  end;
+
+  begin
+    update public.financial_reconciliation_automatic_runs run
+    set analysis_processed = analysis_total + 1
+    where run.id = v_run_id;
+    perform public.financial_reconciliation_refresh_automatic_batch(v_batch_id);
+    raise exception 'Task 6 invalid child progress was accepted.';
+  exception when others then
+    if sqlerrm = 'Task 6 invalid child progress was accepted.'
+      or sqlerrm not ilike '%batch progress is invalid%' then
+      raise;
+    end if;
+  end;
+end
+$$;
+
 rollback;

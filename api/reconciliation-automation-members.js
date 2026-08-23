@@ -1,6 +1,13 @@
 const { cleanText, requireFeature, restQuery, sendError } = require("./_supabase");
 const { mapRpcError } = require("./_reconciliation");
-const { toAutomationPublicResult } = require("./_reconciliation-automation");
+const {
+  ADYEN_MONTHLY_RULE_KEY,
+  ADYEN_MONTHLY_RULE_VERSION,
+  BANK_RESERVATION_RULE_KEY,
+  BANK_RESERVATION_RULE_VERSION,
+  MONTHLY_INCOME_RULE_KEY,
+  toAutomationPublicResult,
+} = require("./_reconciliation-automation");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MEMBER_ROLES = new Set(["source", "destination"]);
@@ -59,6 +66,96 @@ function normalizeInteger(value, label, minimum, maximum = Number.MAX_SAFE_INTEG
   return normalized;
 }
 
+function isPlainRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isPagedRulePair(ruleKey, ruleVersion) {
+  return (ruleKey === MONTHLY_INCOME_RULE_KEY && (ruleVersion === 1 || ruleVersion === 2))
+    || (ruleKey === BANK_RESERVATION_RULE_KEY && ruleVersion === BANK_RESERVATION_RULE_VERSION)
+    || (ruleKey === ADYEN_MONTHLY_RULE_KEY && ruleVersion === ADYEN_MONTHLY_RULE_VERSION);
+}
+
+function isDecimal(value) {
+  return (typeof value === "number" && Number.isFinite(value))
+    || (typeof value === "string" && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value));
+}
+
+function requireMemberPage(value, expected) {
+  const page = toAutomationPublicResult(value);
+  if (!isPlainRecord(page)
+    || page.runId !== expected.runId
+    || page.proposalId !== expected.proposalId
+    || page.role !== expected.role
+    || page.offset !== expected.offset
+    || page.limit !== expected.limit
+    || !isPagedRulePair(page.ruleKey, page.ruleVersion)
+    || typeof page.groupingKey !== "string" || !page.groupingKey
+    || !isPlainRecord(page.summarySnapshot)
+    || !Number.isSafeInteger(page.sourceCount) || page.sourceCount < 0
+    || !isDecimal(page.sourceTotal)
+    || !Number.isSafeInteger(page.destinationCount) || page.destinationCount < 0
+    || !isDecimal(page.destinationTotal)
+    || !Number.isSafeInteger(page.totalCount) || page.totalCount < 0
+    || page.totalCount !== (expected.role === "source" ? page.sourceCount : page.destinationCount)
+    || !Array.isArray(page.members)
+    || page.members.length > expected.limit
+    || (page.members.length === 0
+      ? expected.offset < page.totalCount
+      : expected.offset + page.members.length > page.totalCount)) {
+    throw new Error("Unexpected reconciliation member page response.");
+  }
+
+  const sourceIds = new Set();
+  const members = page.members.map((member, index) => {
+    if (!isPlainRecord(member)
+      || member.role !== expected.role
+      || typeof member.sourceType !== "string" || !member.sourceType
+      || typeof member.sourceId !== "string" || !UUID_PATTERN.test(member.sourceId)
+      || member.ordinal !== expected.offset + index + 1
+      || typeof member.sourceDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(member.sourceDate)
+      || !isDecimal(member.amount)
+      || (member.description !== null && typeof member.description !== "string")
+      || (member.account !== null && typeof member.account !== "string")
+      || !isPlainRecord(member.rowSnapshot)
+      || sourceIds.has(member.sourceId)) {
+      throw new Error("Unexpected reconciliation member page response.");
+    }
+    sourceIds.add(member.sourceId);
+    return {
+      role: member.role,
+      sourceType: member.sourceType,
+      sourceId: member.sourceId,
+      ordinal: member.ordinal,
+      sourceDate: member.sourceDate,
+      amount: member.amount,
+      description: member.description,
+      account: member.account,
+      rowSnapshot: member.rowSnapshot,
+    };
+  });
+
+  return {
+    runId: page.runId,
+    proposalId: page.proposalId,
+    ruleKey: page.ruleKey,
+    ruleVersion: page.ruleVersion,
+    groupingKey: page.groupingKey,
+    summarySnapshot: page.summarySnapshot,
+    sourceCount: page.sourceCount,
+    sourceTotal: page.sourceTotal,
+    destinationCount: page.destinationCount,
+    destinationTotal: page.destinationTotal,
+    role: page.role,
+    offset: page.offset,
+    limit: page.limit,
+    totalCount: page.totalCount,
+    members,
+  };
+}
+
 module.exports = async function handler(req, res) {
   try {
     const auth = await requireManagedFeature(req);
@@ -90,7 +187,13 @@ module.exports = async function handler(req, res) {
         },
       },
     );
-    return res.status(200).json(toAutomationPublicResult(result));
+    return res.status(200).json(requireMemberPage(result, {
+      runId,
+      proposalId,
+      role,
+      offset,
+      limit,
+    }));
   } catch (error) {
     return sendError(res, safePublicError(error));
   }

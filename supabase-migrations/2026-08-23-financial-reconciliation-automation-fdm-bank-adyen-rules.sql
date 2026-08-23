@@ -5393,4 +5393,1469 @@ grant execute on function public.continue_financial_reconciliation_automatic_ana
 grant execute on function public.execute_financial_reconciliation_automatic_proposal(uuid,text)
   to service_role;
 
+create or replace function public.get_financial_reconciliation_automatic_manual_rules()
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_rules jsonb;
+  v_config_count integer;
+begin
+  select count(*)::integer into v_config_count
+  from public.financial_reconciliation_automatic_rule_configs config;
+  if v_config_count <> 7 or exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    where (config.rule_key, config.rule_version) not in (
+      ('financial_documents_cgd_bank_statement', 2),
+      ('financial_documents_cgd_credit_card', 1),
+      ('financial_documents_cgd_bank_statement_amount_only', 1),
+      ('financial_documents_cgd_credit_card_amount_only', 1),
+      ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+      ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+      ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+    )
+  ) then
+    raise exception 'Automatic reconciliation managed catalog is invalid.';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'ruleKey', definition.rule_key,
+    'ruleVersion', config.rule_version,
+    'displayName', definition.display_name,
+    'baseSourceType', definition.base_source_type,
+    'destinationSourceTypes', definition.destination_source_types,
+    'logicDescription', definition.logic_description,
+    'definition', definition.definition,
+    'enabled', config.enabled,
+    'allowManualExecution', config.allow_manual_execution,
+    'differenceAllowed', config.difference_allowed,
+    'maxDifferenceDays', config.max_difference_days,
+    'priority', config.priority
+  ) order by config.priority, definition.rule_key), '[]'::jsonb)
+  into v_rules
+  from public.financial_reconciliation_automatic_rule_configs config
+  join public.financial_reconciliation_automatic_rule_definitions definition
+    on definition.rule_key = config.rule_key
+   and definition.version = config.rule_version
+  where config.enabled
+    and config.allow_manual_execution
+    and (config.rule_key, config.rule_version) in (
+      ('financial_documents_cgd_bank_statement', 2),
+      ('financial_documents_cgd_credit_card', 1),
+      ('financial_documents_cgd_bank_statement_amount_only', 1),
+      ('financial_documents_cgd_credit_card_amount_only', 1),
+      ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+      ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+      ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+    );
+
+  return jsonb_build_object('rules', v_rules);
+end
+$$;
+
+create or replace function public.get_financial_reconciliation_automation_settings()
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_schedule jsonb;
+  v_rules jsonb;
+  v_config_count integer;
+  v_last_scheduled_batch jsonb;
+begin
+  select jsonb_build_object(
+    'enabled', schedule.enabled,
+    'timeOfDay', to_char(schedule.time_of_day, 'HH24:MI'),
+    'timeZone', schedule.time_zone,
+    'updatedBy', schedule.updated_by,
+    'updatedAt', schedule.updated_at
+  )
+  into v_schedule
+  from public.financial_reconciliation_automatic_schedule schedule
+  where schedule.id = true;
+
+  select count(*)::integer into v_config_count
+  from public.financial_reconciliation_automatic_rule_configs config;
+  if v_config_count <> 7 or exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    where (config.rule_key, config.rule_version) not in (
+      ('financial_documents_cgd_bank_statement', 2),
+      ('financial_documents_cgd_credit_card', 1),
+      ('financial_documents_cgd_bank_statement_amount_only', 1),
+      ('financial_documents_cgd_credit_card_amount_only', 1),
+      ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+      ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+      ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+    )
+  ) then
+    raise exception 'Automatic reconciliation managed catalog is invalid.';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'ruleKey', definition.rule_key,
+    'ruleVersion', config.rule_version,
+    'displayName', definition.display_name,
+    'baseSourceType', definition.base_source_type,
+    'destinationSourceTypes', definition.destination_source_types,
+    'logicDescription', definition.logic_description,
+    'definition', definition.definition,
+    'enabled', config.enabled,
+    'allowManualExecution', config.allow_manual_execution,
+    'includeInScheduledBatch', config.include_in_scheduled_batch,
+    'differenceAllowed', config.difference_allowed,
+    'maxDifferenceDays', config.max_difference_days,
+    'priority', config.priority,
+    'updatedBy', config.updated_by,
+    'updatedAt', config.updated_at
+  ) order by config.priority, definition.rule_key), '[]'::jsonb)
+  into v_rules
+  from public.financial_reconciliation_automatic_rule_configs config
+  join public.financial_reconciliation_automatic_rule_definitions definition
+    on definition.rule_key = config.rule_key
+   and definition.version = config.rule_version;
+  if jsonb_array_length(v_rules) <> 7 then
+    raise exception 'Automatic reconciliation managed catalog is invalid.';
+  end if;
+
+  select jsonb_build_object(
+    'id', batch.id,
+    'scheduledSlot', batch.scheduled_slot,
+    'status', batch.status,
+    'counts', batch.counts,
+    'ruleCount', jsonb_array_length(batch.rule_snapshot),
+    'childCount', coalesce((batch.counts->>'childCount')::integer, 0),
+    'startedAt', batch.started_at,
+    'finishedAt', batch.finished_at,
+    'updatedAt', batch.updated_at
+  )
+  into v_last_scheduled_batch
+  from public.financial_reconciliation_automatic_batches batch
+  order by batch.scheduled_slot desc, batch.started_at desc, batch.id desc
+  limit 1;
+
+  return jsonb_build_object(
+    'schedule', v_schedule,
+    'rules', v_rules,
+    'last_scheduled_batch', v_last_scheduled_batch
+  );
+end
+$$;
+
+create or replace function public.get_financial_reconciliation_automatic_run(
+  p_run_id uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_proposals jsonb;
+  v_rule_key text;
+  v_rule_version integer;
+  v_analysis_unit text;
+begin
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs
+  where id = p_run_id;
+  if not found then
+    raise exception 'Automatic analysis run was not found.';
+  end if;
+  if jsonb_typeof(v_run.definition_config_snapshot) = 'array'
+    and jsonb_array_length(v_run.definition_config_snapshot) = 1
+    and coalesce(v_run.definition_config_snapshot#>>'{0,ruleVersion}', '')
+      ~ '^[0-9]+$' then
+    v_rule_key := v_run.definition_config_snapshot#>>'{0,ruleKey}';
+    v_rule_version :=
+      (v_run.definition_config_snapshot#>>'{0,ruleVersion}')::integer;
+  end if;
+  v_analysis_unit := case
+    when v_rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination'
+      and v_rule_version = 1 then 'bank_anchors'
+    when v_rule_key in (
+      'cgd_bank_statement_fdm_credit_card_monthly_income',
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    ) then 'calendar_months'
+    else 'records'
+  end;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', proposal.id,
+    'runId', proposal.run_id,
+    'ruleKey', proposal.rule_key,
+    'ruleVersion', proposal.rule_version,
+    'baseSourceType', proposal.base_source_type,
+    'baseSourceId', proposal.base_source_id,
+    'baseSourceDate', proposal.base_source_date,
+    'baseSnapshot', proposal.base_snapshot,
+    'items', case
+      when (proposal.rule_key, proposal.rule_version) in (
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+        ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+        ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+      ) then '[]'::jsonb
+      else proposal.items
+    end,
+    'evidence', proposal.evidence,
+    'candidateGroups', case
+      when (proposal.rule_key, proposal.rule_version) in (
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+        ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+        ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+      ) then '[]'::jsonb
+      else proposal.candidate_groups
+    end,
+    'groupingKey', proposal.grouping_key,
+    'summarySnapshot', proposal.summary_snapshot,
+    'calculatedDifference', proposal.calculated_difference,
+    'allowedDifference', proposal.allowed_difference,
+    'status', proposal.status,
+    'reason', proposal.reason,
+    'signature', proposal.signature,
+    'reconciliationId', proposal.reconciliation_id,
+    'createdAt', proposal.created_at,
+    'updatedAt', proposal.updated_at
+  ) order by proposal.base_source_date, proposal.base_source_id,
+             proposal.signature), '[]'::jsonb)
+  into v_proposals
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_run.id;
+
+  return jsonb_build_object(
+    'runId', v_run.id,
+    'trigger', v_run.trigger,
+    'scope', v_run.scope,
+    'status', v_run.status,
+    'actor', v_run.actor,
+    'clientRequestId', v_run.client_request_id,
+    'scheduledSlot', v_run.scheduled_slot,
+    'batchId', v_run.batch_id,
+    'batchRuleKey', v_run.batch_rule_key,
+    'batchRulePosition', v_run.batch_rule_position,
+    'batchRuleCount', v_run.batch_rule_count,
+    'definitions', v_run.definition_config_snapshot,
+    'counts', v_run.counts,
+    'analysisCursorDate', v_run.analysis_cursor_date,
+    'analysisCursorId', v_run.analysis_cursor_id,
+    'analysisProcessed', v_run.analysis_processed,
+    'analysisTotal', v_run.analysis_total,
+    'analysisErrorCode', v_run.analysis_error_code,
+    'analysisErrorAt', v_run.analysis_error_at,
+    'analysisUnit', v_analysis_unit,
+    'analysisComplete', v_run.analysis_completed_at is not null,
+    'analysisCompletedAt', v_run.analysis_completed_at,
+    'startedAt', v_run.started_at,
+    'finishedAt', v_run.finished_at,
+    'proposals', v_proposals
+  );
+end
+$$;
+
+create or replace function public.financial_reconciliation_automatic_progress_or_run(
+  p_run_id uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_rule_key text;
+  v_rule_version integer;
+  v_analysis_unit text;
+begin
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs
+  where id = p_run_id;
+  if not found then
+    raise exception 'Automatic analysis run was not found.';
+  end if;
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+  if jsonb_typeof(v_run.definition_config_snapshot) = 'array'
+    and jsonb_array_length(v_run.definition_config_snapshot) = 1
+    and coalesce(v_run.definition_config_snapshot#>>'{0,ruleVersion}', '')
+      ~ '^[0-9]+$' then
+    v_rule_key := v_run.definition_config_snapshot#>>'{0,ruleKey}';
+    v_rule_version :=
+      (v_run.definition_config_snapshot#>>'{0,ruleVersion}')::integer;
+  end if;
+  v_analysis_unit := case
+    when v_rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination'
+      and v_rule_version = 1 then 'bank_anchors'
+    when v_rule_key in (
+      'cgd_bank_statement_fdm_credit_card_monthly_income',
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    ) then 'calendar_months'
+    else 'records'
+  end;
+
+  return jsonb_build_object(
+    'runId', v_run.id,
+    'trigger', v_run.trigger,
+    'scope', v_run.scope,
+    'status', v_run.status,
+    'actor', v_run.actor,
+    'clientRequestId', v_run.client_request_id,
+    'scheduledSlot', v_run.scheduled_slot,
+    'batchId', v_run.batch_id,
+    'batchRuleKey', v_run.batch_rule_key,
+    'batchRulePosition', v_run.batch_rule_position,
+    'batchRuleCount', v_run.batch_rule_count,
+    'definitions', v_run.definition_config_snapshot,
+    'counts', v_run.counts,
+    'analysisCursorDate', v_run.analysis_cursor_date,
+    'analysisCursorId', v_run.analysis_cursor_id,
+    'analysisProcessed', v_run.analysis_processed,
+    'analysisTotal', v_run.analysis_total,
+    'analysisErrorCode', v_run.analysis_error_code,
+    'analysisErrorAt', v_run.analysis_error_at,
+    'analysisUnit', v_analysis_unit,
+    'analysisComplete', false,
+    'analysisCompletedAt', null,
+    'startedAt', v_run.started_at,
+    'finishedAt', v_run.finished_at,
+    'proposals', '[]'::jsonb
+  );
+end
+$$;
+
+create or replace function public.claim_financial_reconciliation_automatic_schedule(
+  p_now timestamptz,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_schedule public.financial_reconciliation_automatic_schedule%rowtype;
+  v_batch public.financial_reconciliation_automatic_batches%rowtype;
+  v_local timestamp;
+  v_slot text;
+  v_snapshot jsonb;
+  v_enabled_rule_count integer;
+  v_batch_rule_count integer;
+  v_selected_rule jsonb;
+  v_selected_position integer;
+  v_selected_rule_key text;
+  v_selected_rule_version integer;
+  v_analysis_total bigint;
+  v_run_id uuid;
+begin
+  if p_now is null then
+    raise exception 'Schedule time is required.';
+  end if;
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  lock table public.financial_reconciliation_source_rules
+    in share row exclusive mode;
+  lock table public.financial_reconciliation_automatic_rule_configs
+    in share row exclusive mode;
+  select * into strict v_schedule
+  from public.financial_reconciliation_automatic_schedule
+  where id = true
+  for update;
+  if not v_schedule.enabled then
+    return jsonb_build_object('claimed', false, 'reason', 'schedule_disabled');
+  end if;
+
+  v_local := p_now at time zone v_schedule.time_zone;
+  v_slot := to_char(v_local::date, 'YYYY-MM-DD');
+
+  select * into v_batch
+  from public.financial_reconciliation_automatic_batches batch
+  where batch.status in ('pending', 'running')
+  order by batch.scheduled_slot, batch.started_at, batch.id
+  for update
+  limit 1;
+
+  if not found then
+    if v_local::time < v_schedule.time_of_day then
+      return jsonb_build_object(
+        'claimed', false, 'reason', 'before_scheduled_time'
+      );
+    end if;
+
+    select * into v_batch
+    from public.financial_reconciliation_automatic_batches batch
+    where batch.scheduled_slot = v_slot
+    for update;
+
+    if not found then
+      select count(*)::integer into v_enabled_rule_count
+      from public.financial_reconciliation_automatic_rule_configs config
+      where config.enabled
+        and config.include_in_scheduled_batch;
+      if v_enabled_rule_count = 0 then
+        return jsonb_build_object(
+          'claimed', false, 'reason', 'no_enabled_rules'
+        );
+      end if;
+
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'ruleKey', config.rule_key,
+        'ruleVersion', config.rule_version,
+        'displayName', definition.display_name,
+        'priority', config.priority,
+        'differenceAllowed', config.difference_allowed,
+        'maxDifferenceDays', config.max_difference_days,
+        'destinationSourceType', destination.source_type,
+        'definition', definition.definition,
+        'operator', source_rule.operator
+      ) order by config.priority, config.rule_key), '[]'::jsonb)
+      into v_snapshot
+      from public.financial_reconciliation_automatic_rule_configs config
+      join public.financial_reconciliation_automatic_rule_definitions definition
+        on definition.rule_key = config.rule_key
+       and definition.version = config.rule_version
+      cross join lateral jsonb_array_elements_text(
+        definition.destination_source_types
+      ) destination(source_type)
+      join public.financial_reconciliation_source_rules source_rule
+        on source_rule.base_source_type = definition.base_source_type
+       and source_rule.matching_source_type = destination.source_type
+      where config.enabled
+        and config.include_in_scheduled_batch
+        and config.difference_allowed >= 0
+        and jsonb_array_length(definition.destination_source_types) = 1
+        and (config.rule_key, config.rule_version) in (
+          ('financial_documents_cgd_bank_statement', 2),
+          ('financial_documents_cgd_credit_card', 1),
+          ('financial_documents_cgd_bank_statement_amount_only', 1),
+          ('financial_documents_cgd_credit_card_amount_only', 1),
+          ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+          ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+          ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+        )
+        and (
+          (
+            config.rule_key =
+              'fdm_bank_transfer_cgd_bank_statement_combination'
+            and config.difference_allowed = 0
+            and config.max_difference_days between 0 and 90
+            and destination.source_type = 'import_cgd_extrato_ordem'
+            and definition.definition = jsonb_build_object(
+              'strategy', 'bounded_exact_combination',
+              'sourceAccount', 'Bank Transfer',
+              'maxSourceRecords', 10,
+              'candidatePoolLimit', 60,
+              'stateLimit', 250000,
+              'evidenceGroupLimit', 12,
+              'amountMode', 'signed_integer_cents',
+              'dateMode', 'inclusive_days'
+            )
+          )
+          or (
+            config.rule_key =
+              'cgd_bank_statement_fdm_adyen_monthly_payments'
+            and config.max_difference_days = 31
+            and destination.source_type = 'import_fdm_accounts'
+            and definition.definition = jsonb_build_object(
+              'strategy', 'closed_calendar_month',
+              'bankDescriptionContains', 'Adyen',
+              'fdmAccount', 'Adyen',
+              'requiresBothSides', true,
+              'monthMarkerDays', 31
+            )
+          )
+          or (
+            config.rule_key =
+              'cgd_bank_statement_fdm_credit_card_monthly_income'
+            and config.max_difference_days = 31
+            and public.financial_reconciliation_automatic_rule_contract(
+              config.rule_key, config.rule_version
+            )->>'destinationSourceType' = destination.source_type
+          )
+          or (
+            config.rule_key in (
+              'financial_documents_cgd_bank_statement',
+              'financial_documents_cgd_credit_card',
+              'financial_documents_cgd_bank_statement_amount_only',
+              'financial_documents_cgd_credit_card_amount_only'
+            )
+            and config.max_difference_days between 0 and 90
+            and public.financial_reconciliation_automatic_rule_contract(
+              config.rule_key, config.rule_version
+            )->>'destinationSourceType' = destination.source_type
+          )
+        )
+        and source_rule.operator = case
+          when config.rule_key =
+              'fdm_bank_transfer_cgd_bank_statement_combination'
+            then '+'
+          when config.rule_key =
+              'cgd_bank_statement_fdm_adyen_monthly_payments'
+            then '-'
+          when config.rule_key =
+              'cgd_bank_statement_fdm_credit_card_monthly_income'
+            then '-'
+          else '+'
+        end;
+
+      if jsonb_array_length(v_snapshot) <> v_enabled_rule_count then
+        return jsonb_build_object(
+          'claimed', false, 'reason', 'unsupported_rule_set'
+        );
+      end if;
+
+      insert into public.financial_reconciliation_automatic_batches (
+        scheduled_slot, actor, status, rule_snapshot
+      ) values (
+        v_slot, trim(p_actor), 'pending', v_snapshot
+      )
+      on conflict (scheduled_slot) do nothing
+      returning * into v_batch;
+      if not found then
+        select * into strict v_batch
+        from public.financial_reconciliation_automatic_batches batch
+        where batch.scheduled_slot = v_slot
+        for update;
+      end if;
+    end if;
+  end if;
+
+  perform public.financial_reconciliation_refresh_automatic_batch(v_batch.id);
+  select * into strict v_batch
+  from public.financial_reconciliation_automatic_batches batch
+  where batch.id = v_batch.id
+  for update;
+  if v_batch.status in ('completed', 'partial', 'failed') then
+    return jsonb_build_object(
+      'claimed', false,
+      'reason', 'batch_complete',
+      'batchId', v_batch.id
+    );
+  end if;
+
+  v_batch_rule_count := jsonb_array_length(v_batch.rule_snapshot);
+  select run.id into v_run_id
+  from public.financial_reconciliation_automatic_runs run
+  where run.batch_id = v_batch.id
+    and run.scope = 'rule'
+    and run.status in ('analyzing', 'ready', 'running')
+    and run.finished_at is null
+  order by run.batch_rule_position, run.started_at, run.id
+  limit 1;
+  if found then
+    return jsonb_build_object(
+      'claimed', true,
+      'resumed', true,
+      'batchId', v_batch.id,
+      'batchRulePosition', (
+        select run.batch_rule_position
+        from public.financial_reconciliation_automatic_runs run
+        where run.id = v_run_id
+      ),
+      'batchRuleCount', v_batch_rule_count,
+      'run',
+        public.financial_reconciliation_automatic_progress_or_run(v_run_id)
+    );
+  end if;
+
+  select snapshot.value, snapshot.ordinality::integer
+  into v_selected_rule, v_selected_position
+  from jsonb_array_elements(v_batch.rule_snapshot)
+    with ordinality snapshot(value, ordinality)
+  where not exists (
+    select 1
+    from public.financial_reconciliation_automatic_runs run
+    where run.batch_id = v_batch.id
+      and run.batch_rule_position = snapshot.ordinality::integer
+  )
+  order by snapshot.ordinality
+  limit 1;
+
+  if not found then
+    perform public.financial_reconciliation_refresh_automatic_batch(v_batch.id);
+    select * into strict v_batch
+    from public.financial_reconciliation_automatic_batches batch
+    where batch.id = v_batch.id
+    for update;
+    if v_batch.status in ('completed', 'partial', 'failed') then
+      return jsonb_build_object(
+        'claimed', false,
+        'reason', 'batch_complete',
+        'batchId', v_batch.id
+      );
+    end if;
+    raise exception 'Automatic scheduled batch has no resumable rule.';
+  end if;
+
+  v_selected_rule_key := v_selected_rule->>'ruleKey';
+  v_selected_rule_version := (v_selected_rule->>'ruleVersion')::integer;
+  if v_selected_rule_key =
+      'cgd_bank_statement_fdm_credit_card_monthly_income'
+    and v_selected_rule_version = 2 then
+    select public.financial_reconciliation_automatic_monthly_income_count()
+    into v_analysis_total;
+  elsif v_selected_rule_key =
+      'fdm_bank_transfer_cgd_bank_statement_combination'
+    and v_selected_rule_version = 1 then
+    select public.financial_reconciliation_automatic_bank_reservation_count()
+    into v_analysis_total;
+  elsif v_selected_rule_key =
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    and v_selected_rule_version = 1 then
+    select public.financial_reconciliation_automatic_adyen_month_count()
+    into v_analysis_total;
+  else
+    select public.financial_reconciliation_automatic_base_count(
+      v_selected_rule_key, v_selected_rule_version
+    ) into v_analysis_total;
+  end if;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, scheduled_slot, definition_config_snapshot,
+    analysis_processed, analysis_total,
+    batch_id, batch_rule_key, batch_rule_position, batch_rule_count
+  ) values (
+    'scheduled', 'rule', v_batch.actor, v_batch.scheduled_slot,
+    jsonb_build_array(v_selected_rule), 0, v_analysis_total,
+    v_batch.id, v_selected_rule_key, v_selected_position,
+    v_batch_rule_count
+  )
+  on conflict do nothing
+  returning id into v_run_id;
+  if v_run_id is null then
+    select run.id into strict v_run_id
+    from public.financial_reconciliation_automatic_runs run
+    where run.batch_id = v_batch.id
+      and run.batch_rule_position = v_selected_position
+    limit 1;
+    return jsonb_build_object(
+      'claimed', true,
+      'resumed', true,
+      'batchId', v_batch.id,
+      'batchRulePosition', v_selected_position,
+      'batchRuleCount', v_batch_rule_count,
+      'run',
+        public.financial_reconciliation_automatic_progress_or_run(v_run_id)
+    );
+  end if;
+
+  return jsonb_build_object(
+    'claimed', true,
+    'resumed', false,
+    'batchId', v_batch.id,
+    'batchRulePosition', v_selected_position,
+    'batchRuleCount', v_batch_rule_count,
+    'run', public.financial_reconciliation_automatic_progress_or_run(v_run_id)
+  );
+end
+$$;
+
+create or replace function public.financial_reconciliation_refresh_automatic_batch(
+  p_batch_id uuid
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_batch public.financial_reconciliation_automatic_batches%rowtype;
+  v_rule_count integer;
+  v_child_count integer;
+  v_completed_children integer;
+  v_partial_children integer;
+  v_failed_children integer;
+  v_unfinished_children integer;
+  v_counts jsonb;
+  v_children jsonb;
+  v_status text;
+begin
+  if p_batch_id is null then
+    raise exception 'Automatic batch ID is required.';
+  end if;
+  select * into v_batch
+  from public.financial_reconciliation_automatic_batches
+  where id = p_batch_id
+  for update;
+  if not found then
+    raise exception 'Automatic scheduled batch was not found.';
+  end if;
+
+  if jsonb_typeof(v_batch.rule_snapshot) is distinct from 'array' then
+    raise exception 'Automatic scheduled batch snapshot is invalid.';
+  end if;
+  v_rule_count := jsonb_array_length(v_batch.rule_snapshot);
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_runs run
+    where run.batch_id = v_batch.id
+      and run.scope = 'batch'
+  ) then
+    return jsonb_build_object(
+      'id', v_batch.id,
+      'scheduledSlot', v_batch.scheduled_slot,
+      'actor', v_batch.actor,
+      'status', v_batch.status,
+      'ruleCount', v_rule_count,
+      'childCount', 0,
+      'counts', v_batch.counts,
+      'children', '[]'::jsonb,
+      'startedAt', v_batch.started_at,
+      'finishedAt', v_batch.finished_at,
+      'updatedAt', v_batch.updated_at
+    );
+  end if;
+  if v_rule_count not between 1 and 7
+    or exists (
+      select 1
+      from jsonb_array_elements(v_batch.rule_snapshot)
+        with ordinality snapshot(value, position)
+      where jsonb_typeof(snapshot.value) is distinct from 'object'
+        or (select count(*) from jsonb_object_keys(snapshot.value)) <> 9
+        or not (snapshot.value ?& array[
+          'ruleKey','ruleVersion','displayName','priority',
+          'differenceAllowed','maxDifferenceDays','destinationSourceType',
+          'definition','operator'
+        ])
+        or jsonb_typeof(snapshot.value->'ruleKey') is distinct from 'string'
+        or jsonb_typeof(snapshot.value->'ruleVersion') is distinct from 'number'
+        or jsonb_typeof(snapshot.value->'displayName') is distinct from 'string'
+        or jsonb_typeof(snapshot.value->'priority') is distinct from 'number'
+        or jsonb_typeof(snapshot.value->'differenceAllowed')
+          is distinct from 'number'
+        or jsonb_typeof(snapshot.value->'maxDifferenceDays')
+          is distinct from 'number'
+        or jsonb_typeof(snapshot.value->'destinationSourceType')
+          is distinct from 'string'
+        or jsonb_typeof(snapshot.value->'operator') is distinct from 'string'
+        or coalesce(snapshot.value->>'ruleKey', '') = ''
+        or coalesce(snapshot.value->>'displayName', '') = ''
+        or coalesce(snapshot.value->>'ruleVersion', '') !~ '^[0-9]+$'
+        or coalesce(snapshot.value->>'priority', '') !~ '^[1-9][0-9]*$'
+        or coalesce(snapshot.value->>'differenceAllowed', '')
+          !~ '^[0-9]+(\.[0-9]+)?$'
+        or coalesce(snapshot.value->>'maxDifferenceDays', '')
+          !~ '^[0-9]+$'
+        or coalesce(snapshot.value->>'destinationSourceType', '') = ''
+        or jsonb_typeof(snapshot.value->'definition') is distinct from 'object'
+        or coalesce(snapshot.value->>'operator', '') not in ('+', '-')
+        or coalesce(
+          (
+            snapshot.value->>'ruleKey',
+            (snapshot.value->>'ruleVersion')::integer
+          ) in (
+            ('financial_documents_cgd_bank_statement', 2),
+            ('financial_documents_cgd_credit_card', 1),
+            ('financial_documents_cgd_bank_statement_amount_only', 1),
+            ('financial_documents_cgd_credit_card_amount_only', 1),
+            ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+            ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+            ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+          ),
+          false
+        ) = false
+        or (snapshot.value->>'maxDifferenceDays')::integer > 90
+        or (
+          snapshot.value->>'ruleKey' =
+            'fdm_bank_transfer_cgd_bank_statement_combination'
+          and (
+            (snapshot.value->>'differenceAllowed')::numeric <> 0
+            or snapshot.value->>'operator' is distinct from '+'
+            or snapshot.value->>'destinationSourceType' is distinct from
+              'import_cgd_extrato_ordem'
+            or snapshot.value->'definition' is distinct from jsonb_build_object(
+              'strategy', 'bounded_exact_combination',
+              'sourceAccount', 'Bank Transfer',
+              'maxSourceRecords', 10,
+              'candidatePoolLimit', 60,
+              'stateLimit', 250000,
+              'evidenceGroupLimit', 12,
+              'amountMode', 'signed_integer_cents',
+              'dateMode', 'inclusive_days'
+            )
+          )
+        )
+        or (
+          snapshot.value->>'ruleKey' =
+            'cgd_bank_statement_fdm_adyen_monthly_payments'
+          and (
+            (snapshot.value->>'maxDifferenceDays')::integer <> 31
+            or snapshot.value->>'operator' is distinct from '-'
+            or snapshot.value->>'destinationSourceType' is distinct from
+              'import_fdm_accounts'
+            or snapshot.value->'definition' is distinct from jsonb_build_object(
+              'strategy', 'closed_calendar_month',
+              'bankDescriptionContains', 'Adyen',
+              'fdmAccount', 'Adyen',
+              'requiresBothSides', true,
+              'monthMarkerDays', 31
+            )
+          )
+        )
+        or (
+          snapshot.value->>'ruleKey' =
+            'cgd_bank_statement_fdm_credit_card_monthly_income'
+          and (
+            (snapshot.value->>'maxDifferenceDays')::integer <> 31
+            or snapshot.value->>'operator' is distinct from '-'
+          )
+        )
+        or (
+          snapshot.value->>'ruleKey' in (
+            'financial_documents_cgd_bank_statement',
+            'financial_documents_cgd_credit_card',
+            'financial_documents_cgd_bank_statement_amount_only',
+            'financial_documents_cgd_credit_card_amount_only'
+          )
+          and snapshot.value->>'operator' is distinct from '+'
+        )
+        or (
+          snapshot.value->>'ruleKey' not in (
+            'fdm_bank_transfer_cgd_bank_statement_combination',
+            'cgd_bank_statement_fdm_adyen_monthly_payments'
+          )
+          and public.financial_reconciliation_automatic_rule_contract(
+            snapshot.value->>'ruleKey',
+            (snapshot.value->>'ruleVersion')::integer
+          )->>'destinationSourceType' is distinct from
+            snapshot.value->>'destinationSourceType'
+        )
+        or not exists (
+          select 1
+          from public.financial_reconciliation_automatic_rule_definitions definition
+          where definition.rule_key = snapshot.value->>'ruleKey'
+            and definition.version =
+              (snapshot.value->>'ruleVersion')::integer
+            and definition.display_name = snapshot.value->>'displayName'
+            and definition.destination_source_types = jsonb_build_array(
+              snapshot.value->>'destinationSourceType'
+            )
+            and definition.definition = snapshot.value->'definition'
+        )
+    )
+    or exists (
+      select 1
+      from jsonb_array_elements(v_batch.rule_snapshot) snapshot(value)
+      group by snapshot.value->>'ruleKey'
+      having count(*) <> 1
+    )
+    or exists (
+      select 1
+      from jsonb_array_elements(v_batch.rule_snapshot) snapshot(value)
+      group by (snapshot.value->>'priority')::integer
+      having count(*) <> 1
+    )
+    or v_batch.rule_snapshot is distinct from (
+      select jsonb_agg(snapshot.value order by
+        (snapshot.value->>'priority')::integer,
+        snapshot.value->>'ruleKey'
+      )
+      from jsonb_array_elements(v_batch.rule_snapshot) snapshot(value)
+    ) then
+    raise exception 'Automatic scheduled batch snapshot is invalid.';
+  end if;
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_runs run
+    left join lateral (
+      select snapshot.value
+      from jsonb_array_elements(v_batch.rule_snapshot)
+        with ordinality snapshot(value, position)
+      where snapshot.position::integer = run.batch_rule_position
+    ) expected on true
+    where run.batch_id = v_batch.id
+      and (
+        run.trigger is distinct from 'scheduled'
+        or run.scope is distinct from 'rule'
+        or run.actor is distinct from v_batch.actor
+        or run.scheduled_slot is distinct from v_batch.scheduled_slot
+        or run.batch_rule_position is null
+        or run.batch_rule_position not between 1 and v_rule_count
+        or run.batch_rule_count is distinct from v_rule_count
+        or run.batch_rule_key is distinct from expected.value->>'ruleKey'
+        or jsonb_typeof(run.definition_config_snapshot) is distinct from 'array'
+        or jsonb_array_length(run.definition_config_snapshot) <> 1
+        or run.definition_config_snapshot->0 is distinct from expected.value
+        or (
+          run.status in ('completed', 'partial', 'failed')
+          and run.finished_at is null
+        )
+        or (
+          run.status not in ('completed', 'partial', 'failed')
+          and run.finished_at is not null
+        )
+      )
+  ) or exists (
+    select 1
+    from (
+      select
+        run.batch_rule_position,
+        row_number() over (order by run.batch_rule_position) as expected_position
+      from public.financial_reconciliation_automatic_runs run
+      where run.batch_id = v_batch.id
+        and run.scope = 'rule'
+    ) ordered
+    where ordered.batch_rule_position is distinct from ordered.expected_position
+  ) or (
+    select count(*)
+    from public.financial_reconciliation_automatic_runs run
+    where run.batch_id = v_batch.id
+      and run.scope = 'rule'
+      and run.status not in ('completed', 'partial', 'failed')
+  ) > 1 then
+    raise exception 'Automatic scheduled batch child metadata is invalid.';
+  end if;
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_runs run
+    left join lateral (
+      select snapshot.value
+      from jsonb_array_elements(v_batch.rule_snapshot)
+        with ordinality snapshot(value, position)
+      where snapshot.position::integer = run.batch_rule_position
+    ) expected on true
+    where run.batch_id = v_batch.id
+      and run.scope = 'rule'
+      and (
+        run.analysis_processed is null
+        or run.analysis_total is null
+        or run.analysis_processed < 0
+        or run.analysis_total < 0
+        or run.analysis_processed > run.analysis_total
+        or ((run.analysis_error_code is null) <>
+          (run.analysis_error_at is null))
+        or (
+          run.status = 'analyzing'
+          and run.analysis_completed_at is not null
+        )
+        or (
+          run.status in ('ready', 'running', 'completed', 'partial')
+          and run.analysis_completed_at is null
+        )
+        or (
+          run.status in ('completed', 'partial')
+          and run.analysis_processed <> run.analysis_total
+        )
+        or (
+          run.status = 'failed'
+          and run.analysis_completed_at is null
+          and (
+            nullif(run.analysis_error_code, '') is null
+            or run.analysis_error_at is null
+          )
+        )
+        or (
+          expected.value->>'ruleKey' in (
+            'fdm_bank_transfer_cgd_bank_statement_combination',
+            'cgd_bank_statement_fdm_adyen_monthly_payments'
+          )
+          and (
+            (run.analysis_processed = 0 and (
+              run.analysis_cursor_date is not null
+              or run.analysis_cursor_id is not null
+            ))
+            or (run.analysis_processed > 0 and (
+              run.analysis_cursor_date is null
+              or run.analysis_cursor_id is null
+            ))
+            or (
+              run.analysis_completed_at is not null
+              and run.analysis_processed <> run.analysis_total
+            )
+            or (
+              expected.value->>'ruleKey' =
+                'cgd_bank_statement_fdm_adyen_monthly_payments'
+              and run.analysis_cursor_date is not null
+              and extract(day from run.analysis_cursor_date) <> 1
+            )
+          )
+        )
+        or jsonb_typeof(run.counts) is distinct from 'object'
+        or exists (
+          select 1
+          from unnest(array[
+            'bases','proposed','ambiguous','skipped','deselected',
+            'completed','stale','failed'
+          ]) as count_key(value)
+          where coalesce(run.counts->>count_key.value, '0') !~ '^[0-9]+$'
+        )
+      )
+  ) then
+    raise exception 'Automatic scheduled batch progress is invalid.';
+  end if;
+
+  select
+    count(*)::integer,
+    count(*) filter (where run.status = 'completed')::integer,
+    count(*) filter (where run.status = 'partial')::integer,
+    count(*) filter (where run.status = 'failed')::integer,
+    count(*) filter (
+      where run.status not in ('completed', 'partial', 'failed')
+    )::integer,
+    jsonb_build_object(
+      'ruleCount', v_rule_count,
+      'childCount', count(*),
+      'completedChildren', count(*) filter (where run.status = 'completed'),
+      'partialChildren', count(*) filter (where run.status = 'partial'),
+      'failedChildren', count(*) filter (where run.status = 'failed'),
+      'unfinishedChildren', count(*) filter (
+        where run.status not in ('completed', 'partial', 'failed')
+      ),
+      'bases', coalesce(sum((run.counts->>'bases')::bigint), 0),
+      'proposed', coalesce(sum((run.counts->>'proposed')::bigint), 0),
+      'ambiguous', coalesce(sum((run.counts->>'ambiguous')::bigint), 0),
+      'skipped', coalesce(sum((run.counts->>'skipped')::bigint), 0),
+      'deselected', coalesce(sum((run.counts->>'deselected')::bigint), 0),
+      'completed', coalesce(sum((run.counts->>'completed')::bigint), 0),
+      'stale', coalesce(sum((run.counts->>'stale')::bigint), 0),
+      'failed', coalesce(sum((run.counts->>'failed')::bigint), 0)
+    )
+  into
+    v_child_count,
+    v_completed_children,
+    v_partial_children,
+    v_failed_children,
+    v_unfinished_children,
+    v_counts
+  from public.financial_reconciliation_automatic_runs run
+  where run.batch_id = v_batch.id
+    and run.scope = 'rule';
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'runId', run.id,
+    'ruleKey', run.batch_rule_key,
+    'position', run.batch_rule_position,
+    'ruleCount', run.batch_rule_count,
+    'status', run.status,
+    'counts', run.counts,
+    'analysisProcessed', run.analysis_processed,
+    'analysisTotal', run.analysis_total,
+    'analysisCompletedAt', run.analysis_completed_at,
+    'finishedAt', run.finished_at
+  ) order by run.batch_rule_position), '[]'::jsonb)
+  into v_children
+  from public.financial_reconciliation_automatic_runs run
+  where run.batch_id = v_batch.id
+    and run.scope = 'rule';
+
+  v_status := case
+    when v_child_count = 0 then 'pending'
+    when v_child_count < v_rule_count or v_unfinished_children > 0
+      then 'running'
+    when v_failed_children = v_child_count then 'failed'
+    when v_failed_children > 0 or v_partial_children > 0 then 'partial'
+    else 'completed'
+  end;
+
+  update public.financial_reconciliation_automatic_batches batch
+  set status = v_status,
+      counts = v_counts,
+      finished_at = case
+        when v_status in ('completed', 'partial', 'failed')
+          then coalesce(batch.finished_at, now())
+        else null
+      end,
+      updated_at = now()
+  where batch.id = v_batch.id
+  returning * into v_batch;
+
+  return jsonb_build_object(
+    'id', v_batch.id,
+    'scheduledSlot', v_batch.scheduled_slot,
+    'actor', v_batch.actor,
+    'status', v_batch.status,
+    'ruleCount', v_rule_count,
+    'childCount', v_child_count,
+    'counts', v_batch.counts,
+    'children', v_children,
+    'startedAt', v_batch.started_at,
+    'finishedAt', v_batch.finished_at,
+    'updatedAt', v_batch.updated_at
+  );
+end
+$$;
+
+create or replace function public.create_financial_reconciliation_automatic_analysis(
+  p_rule_keys text[],
+  p_mode text,
+  p_actor text,
+  p_client_request_id uuid
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_snapshot jsonb;
+  v_run_id uuid;
+  v_current_run_id uuid;
+  v_current_request_id uuid;
+  v_rule_key text;
+  v_rule_version integer;
+  v_total bigint;
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+  if p_client_request_id is null then
+    raise exception 'Client request ID is required.';
+  end if;
+  if p_mode is null or p_rule_keys is null
+    or p_mode <> 'manual_rule'
+    or cardinality(p_rule_keys) <> 1 then
+    raise exception 'Manual automatic analysis requires exactly one selected rule.';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended('financial_reconciliation_automatic_manual:' || p_actor, 0)
+  );
+
+  select run.id, run.client_request_id
+  into v_current_run_id, v_current_request_id
+  from public.financial_reconciliation_automatic_runs run
+  where run.actor = p_actor
+    and run.trigger = 'manual'
+    and run.finished_at is null
+  for update;
+  if v_current_run_id is not null then
+    if v_current_request_id = p_client_request_id then
+      return public.continue_financial_reconciliation_automatic_analysis(
+        v_current_run_id, p_actor
+      );
+    end if;
+    raise exception 'Automatic analysis conflict: an unfinished manual run already exists for this actor.';
+  end if;
+
+  select run.id into v_run_id
+  from public.financial_reconciliation_automatic_runs run
+  where run.actor = p_actor
+    and run.client_request_id = p_client_request_id;
+  if v_run_id is not null then
+    return public.continue_financial_reconciliation_automatic_analysis(
+      v_run_id, p_actor
+    );
+  end if;
+
+  lock table public.financial_reconciliation_source_rules
+    in share row exclusive mode;
+  lock table public.financial_reconciliation_automatic_rule_configs
+    in share row exclusive mode;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'ruleKey', config.rule_key,
+    'ruleVersion', config.rule_version,
+    'displayName', definition.display_name,
+    'priority', config.priority,
+    'differenceAllowed', config.difference_allowed,
+    'maxDifferenceDays', config.max_difference_days,
+    'destinationSourceType', destination.source_type,
+    'definition', definition.definition,
+    'operator', source_rule.operator
+  )), '[]'::jsonb)
+  into v_snapshot
+  from public.financial_reconciliation_automatic_rule_configs config
+  join public.financial_reconciliation_automatic_rule_definitions definition
+    on definition.rule_key = config.rule_key
+   and definition.version = config.rule_version
+  cross join lateral jsonb_array_elements_text(
+    definition.destination_source_types
+  ) destination(source_type)
+  join public.financial_reconciliation_source_rules source_rule
+    on source_rule.base_source_type = definition.base_source_type
+   and source_rule.matching_source_type = destination.source_type
+  where config.rule_key = p_rule_keys[1]
+    and config.enabled
+    and config.allow_manual_execution
+    and config.difference_allowed >= 0
+    and jsonb_array_length(definition.destination_source_types) = 1
+    and (config.rule_key, config.rule_version) in (
+      ('financial_documents_cgd_bank_statement', 2),
+      ('financial_documents_cgd_credit_card', 1),
+      ('financial_documents_cgd_bank_statement_amount_only', 1),
+      ('financial_documents_cgd_credit_card_amount_only', 1),
+      ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+      ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+      ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+    )
+    and (
+      (
+        config.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+        and config.difference_allowed = 0
+        and config.max_difference_days between 0 and 90
+        and destination.source_type = 'import_cgd_extrato_ordem'
+        and definition.definition = jsonb_build_object(
+          'strategy', 'bounded_exact_combination',
+          'sourceAccount', 'Bank Transfer',
+          'maxSourceRecords', 10,
+          'candidatePoolLimit', 60,
+          'stateLimit', 250000,
+          'evidenceGroupLimit', 12,
+          'amountMode', 'signed_integer_cents',
+          'dateMode', 'inclusive_days'
+        )
+      )
+      or (
+        config.rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and config.max_difference_days = 31
+        and destination.source_type = 'import_fdm_accounts'
+        and definition.definition = jsonb_build_object(
+          'strategy', 'closed_calendar_month',
+          'bankDescriptionContains', 'Adyen',
+          'fdmAccount', 'Adyen',
+          'requiresBothSides', true,
+          'monthMarkerDays', 31
+        )
+      )
+      or (
+        config.rule_key =
+          'cgd_bank_statement_fdm_credit_card_monthly_income'
+        and config.max_difference_days = 31
+        and public.financial_reconciliation_automatic_rule_contract(
+          config.rule_key, config.rule_version
+        )->>'destinationSourceType' = destination.source_type
+      )
+      or (
+        config.rule_key in (
+          'financial_documents_cgd_bank_statement',
+          'financial_documents_cgd_credit_card',
+          'financial_documents_cgd_bank_statement_amount_only',
+          'financial_documents_cgd_credit_card_amount_only'
+        )
+        and config.max_difference_days between 0 and 90
+        and public.financial_reconciliation_automatic_rule_contract(
+          config.rule_key, config.rule_version
+        )->>'destinationSourceType' = destination.source_type
+      )
+    )
+    and source_rule.operator = case
+      when config.rule_key in (
+        'cgd_bank_statement_fdm_credit_card_monthly_income',
+        'cgd_bank_statement_fdm_adyen_monthly_payments'
+      ) then '-'
+      else '+'
+    end;
+
+  if jsonb_array_length(v_snapshot) <> 1 then
+    raise exception 'Automatic rule is not enabled for manual analysis.';
+  end if;
+
+  v_rule_key := v_snapshot->0->>'ruleKey';
+  v_rule_version := (v_snapshot->0->>'ruleVersion')::integer;
+  if v_rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination'
+    and v_snapshot->0->>'operator' is distinct from '+' then
+    raise exception 'Automatic rule source operator is invalid.';
+  end if;
+  if v_rule_key = 'cgd_bank_statement_fdm_adyen_monthly_payments'
+    and v_snapshot->0->>'operator' is distinct from '-' then
+    raise exception 'Automatic rule source operator is invalid.';
+  end if;
+
+  if v_rule_key = 'cgd_bank_statement_fdm_credit_card_monthly_income'
+    and v_rule_version = 2 then
+    select public.financial_reconciliation_automatic_monthly_income_count()
+    into v_total;
+  elsif v_rule_key =
+      'fdm_bank_transfer_cgd_bank_statement_combination'
+    and v_rule_version = 1 then
+    select public.financial_reconciliation_automatic_bank_reservation_count()
+    into v_total;
+  elsif v_rule_key =
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    and v_rule_version = 1 then
+    select public.financial_reconciliation_automatic_adyen_month_count()
+    into v_total;
+  else
+    select public.financial_reconciliation_automatic_base_count(
+      v_rule_key, v_rule_version
+    ) into v_total;
+  end if;
+
+  insert into public.financial_reconciliation_automatic_runs (
+    trigger, scope, actor, client_request_id, definition_config_snapshot,
+    analysis_processed, analysis_total
+  ) values (
+    'manual', 'rule', p_actor, p_client_request_id, v_snapshot, 0, v_total
+  ) returning id into v_run_id;
+
+  return public.continue_financial_reconciliation_automatic_analysis(
+    v_run_id, p_actor
+  );
+end
+$$;
+
+create or replace function public.get_financial_reconciliation_automatic_proposal_members(
+  p_run_id uuid,
+  p_proposal_id uuid,
+  p_role text,
+  p_offset integer,
+  p_limit integer,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run record;
+  v_total integer;
+  v_source_count integer;
+  v_destination_count integer;
+  v_source_total numeric;
+  v_destination_total numeric;
+  v_members jsonb;
+begin
+  if p_run_id is null then
+    raise exception 'Automatic run ID is required.';
+  end if;
+  if p_proposal_id is null then
+    raise exception 'Automatic proposal ID is required.';
+  end if;
+  if p_role is null or p_role not in ('source', 'destination') then
+    raise exception 'Automatic proposal member role is invalid.';
+  end if;
+  if p_offset is null or p_offset < 0 then
+    raise exception 'Automatic proposal member offset must be zero or greater.';
+  end if;
+  if p_limit is null or p_limit < 1 or p_limit > 50 then
+    raise exception 'Automatic proposal member limit must be between 1 and 50.';
+  end if;
+  if p_actor is null or btrim(p_actor) = '' then
+    raise exception 'Automatic proposal member actor is required.';
+  end if;
+
+  select
+    run.trigger,
+    run.actor,
+    run.finished_at,
+    proposal.rule_key,
+    proposal.rule_version,
+    proposal.grouping_key,
+    proposal.summary_snapshot
+  into v_run
+  from public.financial_reconciliation_automatic_runs run
+  join public.financial_reconciliation_automatic_proposals proposal
+    on proposal.run_id = run.id
+  where run.id = p_run_id
+    and proposal.id = p_proposal_id;
+  if not found then
+    raise exception
+      'Automatic grouped proposal was not found for the requested run.';
+  end if;
+  if v_run.trigger <> 'manual' then
+    raise exception 'Automatic proposal members require a manual run.';
+  end if;
+  if (v_run.rule_key, v_run.rule_version) not in (
+    ('cgd_bank_statement_fdm_credit_card_monthly_income', 1),
+    ('cgd_bank_statement_fdm_credit_card_monthly_income', 2),
+    ('fdm_bank_transfer_cgd_bank_statement_combination', 1),
+    ('cgd_bank_statement_fdm_adyen_monthly_payments', 1)
+  ) then
+    raise exception 'Automation proposal does not use a grouped-member rule.';
+  end if;
+  if v_run.finished_at is null and v_run.actor <> p_actor then
+    raise exception 'You do not have permission for this automation run.';
+  end if;
+
+  select
+    count(*) filter (where membership.role = 'source')::integer,
+    coalesce(sum(membership.amount) filter (
+      where membership.role = 'source'
+    ), 0::numeric),
+    count(*) filter (where membership.role = 'destination')::integer,
+    coalesce(sum(membership.amount) filter (
+      where membership.role = 'destination'
+    ), 0::numeric),
+    count(*) filter (where membership.role = p_role)::integer
+  into
+    v_source_count,
+    v_source_total,
+    v_destination_count,
+    v_destination_total,
+    v_total
+  from public.financial_reconciliation_automatic_proposal_memberships membership
+  where membership.proposal_id = p_proposal_id;
+
+  select jsonb_agg(jsonb_build_object(
+    'role', page.role,
+    'sourceType', page.source_type,
+    'sourceId', page.source_id,
+    'ordinal', page.ordinal,
+    'sourceDate', page.source_date,
+    'amount', page.amount,
+    'description', page.description,
+    'account', page.account,
+    'rowSnapshot', page.row_snapshot
+  ) order by page.ordinal)
+  into v_members
+  from (
+    select membership.*
+    from public.financial_reconciliation_automatic_proposal_memberships membership
+    where membership.proposal_id = p_proposal_id
+      and membership.role = p_role
+    order by membership.ordinal
+    offset p_offset
+    limit p_limit
+  ) page;
+
+  return jsonb_build_object(
+    'runId', p_run_id,
+    'proposalId', p_proposal_id,
+    'ruleKey', v_run.rule_key,
+    'ruleVersion', v_run.rule_version,
+    'groupingKey', v_run.grouping_key,
+    'summarySnapshot', v_run.summary_snapshot,
+    'sourceCount', v_source_count,
+    'sourceTotal', v_source_total,
+    'destinationCount', v_destination_count,
+    'destinationTotal', v_destination_total,
+    'role', p_role,
+    'offset', p_offset,
+    'limit', p_limit,
+    'totalCount', v_total,
+    'members', coalesce(v_members, '[]'::jsonb)
+  );
+end
+$$;
+
+revoke all on function public.get_financial_reconciliation_automatic_manual_rules()
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_financial_reconciliation_automation_settings()
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_financial_reconciliation_automatic_run(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_automatic_progress_or_run(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.get_financial_reconciliation_automatic_proposal_members(uuid,uuid,text,integer,integer,text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_refresh_automatic_batch(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.claim_financial_reconciliation_automatic_schedule(timestamptz,text)
+  from public, anon, authenticated, service_role;
+
+grant execute on function public.get_financial_reconciliation_automatic_manual_rules()
+  to service_role;
+grant execute on function public.get_financial_reconciliation_automation_settings()
+  to service_role;
+grant execute on function public.get_financial_reconciliation_automatic_run(uuid)
+  to service_role;
+grant execute on function public.create_financial_reconciliation_automatic_analysis(text[],text,text,uuid)
+  to service_role;
+grant execute on function public.get_financial_reconciliation_automatic_proposal_members(uuid,uuid,text,integer,integer,text)
+  to service_role;
+grant execute on function public.claim_financial_reconciliation_automatic_schedule(timestamptz,text)
+  to service_role;
+
 notify pgrst, 'reload schema';

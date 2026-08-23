@@ -192,6 +192,22 @@ function compareCodeUnits(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+function analysisUnitForRule(ruleKey) {
+  if (ruleKey === BANK_RESERVATION_RULE_KEY) return "bank_anchors";
+  if (ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY) {
+    return "calendar_months";
+  }
+  return "records";
+}
+
+function exactScheduledDefinition(ruleKey, priority) {
+  return {
+    ruleKey,
+    ruleVersion: AUTOMATIC_RULE_VERSIONS[ruleKey],
+    priority,
+  };
+}
+
 function scheduledRun(overrides = {}) {
   const run = {
     runId: RUN_ID,
@@ -211,15 +227,19 @@ function scheduledRun(overrides = {}) {
     analysisTotal: 1,
     analysisErrorCode: null,
     analysisErrorAt: null,
+    analysisUnit: "records",
     analysisComplete: true,
     analysisCompletedAt: "2026-08-15T02:00:01.000Z",
     counts: { bases: 1, proposed: 0, ambiguous: 0, skipped: 0 },
     startedAt: "2026-08-15T02:00:00.000Z",
     finishedAt: null,
-    definitions: [{ ruleKey: AUTOMATIC_RULE_KEY, priority: 1 }],
+    definitions: [exactScheduledDefinition(AUTOMATIC_RULE_KEY, 1)],
     proposals: [],
     ...overrides,
   };
+  if (!Object.hasOwn(overrides, "analysisUnit")) {
+    run.analysisUnit = analysisUnitForRule(run.definitions[0]?.ruleKey);
+  }
   run.proposals = run.proposals.map((proposal) => ({ runId: run.runId, ...proposal }));
   return run;
 }
@@ -1375,6 +1395,7 @@ test("scheduled heartbeat advances one unfinished analysis page before claiming 
     status: "analyzing",
     analysisProcessed: 25,
     analysisTotal: 100,
+    analysisUnit: "records",
     hasMore: true,
   });
 });
@@ -1418,6 +1439,7 @@ test("scheduled heartbeat returns parent and rule progress when continuing a sch
     status: "analyzing",
     analysisProcessed: 25,
     analysisTotal: 100,
+    analysisUnit: "records",
     hasMore: true,
   });
 });
@@ -1462,6 +1484,7 @@ test("scheduled heartbeat reports a persisted continuation failure without retry
     status: "failed",
     analysisProcessed: failedRun.analysisProcessed,
     analysisTotal: failedRun.analysisTotal,
+    analysisUnit: "records",
     hasMore: false,
   });
   assert.deepEqual(calls, ["rpc/continue_financial_reconciliation_automatic_oldest_analysis"]);
@@ -1653,6 +1676,9 @@ test("first scheduled child populates analysis and executes proposals in stable 
     ruleCount: 2,
     runId: RUN_ID,
     status: "partial",
+    analysisProcessed: 1,
+    analysisTotal: 1,
+    analysisUnit: "records",
     counts: {
       bases: 4,
       proposed: 0,
@@ -1680,7 +1706,7 @@ test("terminal scheduled child stops the request and the next heartbeat claims t
     runId: uuidFor(702),
     batchRuleKey: CREDIT_CARD_RULE_KEY,
     batchRulePosition: 2,
-    definitions: [{ ruleKey: CREDIT_CARD_RULE_KEY, priority: 2 }],
+    definitions: [exactScheduledDefinition(CREDIT_CARD_RULE_KEY, 2)],
     status: "completed",
     finishedAt: "2026-08-15T02:01:01.000Z",
   });
@@ -1758,7 +1784,7 @@ test("failed scheduled child returns 200 and the next heartbeat can claim the ne
     runId: uuidFor(703),
     batchRuleKey: CREDIT_CARD_RULE_KEY,
     batchRulePosition: 2,
-    definitions: [{ ruleKey: CREDIT_CARD_RULE_KEY, priority: 2 }],
+    definitions: [exactScheduledDefinition(CREDIT_CARD_RULE_KEY, 2)],
     status: "completed",
     finishedAt: "2026-08-15T02:01:01.000Z",
   });
@@ -1793,6 +1819,168 @@ test("failed scheduled child returns 200 and the next heartbeat can claim the ne
   assert.equal(secondResponse.statusCode, 200);
   assert.equal(secondResponse.body.ruleKey, CREDIT_CARD_RULE_KEY);
   assert.equal(secondResponse.body.rulePosition, 2);
+});
+
+test("seven-rule scheduled heartbeats expose ordered strategy progress and only one child per request", async () => {
+  const orderedRules = sevenRuleSettings().rules.map(({ ruleKey, ruleVersion, priority }) => ({
+    ruleKey,
+    ruleVersion,
+    priority,
+  }));
+  const runs = orderedRules.map((definition, index) => {
+    const newStrategy = definition.ruleKey === BANK_RESERVATION_RULE_KEY
+      || definition.ruleKey === ADYEN_MONTHLY_RULE_KEY;
+    const failedBank = definition.ruleKey === BANK_RESERVATION_RULE_KEY;
+    return scheduledRun({
+      runId: uuidFor(920 + index),
+      batchRuleKey: definition.ruleKey,
+      batchRulePosition: index + 1,
+      batchRuleCount: 7,
+      definitions: [definition],
+      status: failedBank ? "failed" : "completed",
+      analysisCursorDate: newStrategy
+        ? (definition.ruleKey === ADYEN_MONTHLY_RULE_KEY ? "2026-07-01" : "2026-07-31")
+        : null,
+      analysisCursorId: newStrategy ? uuidFor(940 + index) : null,
+      analysisProcessed: failedBank ? 25 : (definition.ruleKey === ADYEN_MONTHLY_RULE_KEY ? 7 : 1),
+      analysisTotal: failedBank ? 26 : (definition.ruleKey === ADYEN_MONTHLY_RULE_KEY ? 7 : 1),
+      analysisComplete: !failedBank,
+      analysisCompletedAt: failedBank ? null : "2026-08-23T02:00:01.000Z",
+      analysisErrorCode: failedBank ? "analysis_continuation_failed" : null,
+      analysisErrorAt: failedBank ? "2026-08-23T02:00:02.000Z" : null,
+      finishedAt: "2026-08-23T02:00:03.000Z",
+      proposals: failedBank ? [{
+        id: uuidFor(960),
+        ruleKey: definition.ruleKey,
+        ruleVersion: definition.ruleVersion,
+        baseSourceDate: "2026-07-01",
+        baseSourceId: uuidFor(961),
+        status: "proposed",
+      }] : [],
+    });
+  });
+  const calls = [];
+  let heartbeat = 0;
+  const responses = [];
+  await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+    restQuery: async (resource) => {
+      calls.push({ heartbeat, resource });
+      if (resource === "rpc/claim_financial_reconciliation_automatic_schedule") {
+        return scheduledClaim(runs[heartbeat], { resumed: false });
+      }
+      throw new Error(`Unexpected RPC ${resource}`);
+    },
+  }), async (handler) => {
+    for (let index = 0; index < runs.length; index += 1) {
+      const response = responseRecorder();
+      await withCronEnvironment(`2026-08-23T02:0${index}:00.000Z`, async () => {
+        await handler({ method: "GET", headers: { authorization: `Bearer ${CRON_SECRET}` } }, response);
+      });
+      responses.push(response);
+      heartbeat += 1;
+    }
+  });
+
+  assert.deepEqual(calls, runs.map((_run, index) => ({
+    heartbeat: index,
+    resource: "rpc/claim_financial_reconciliation_automatic_schedule",
+  })));
+  assert.deepEqual(responses.map(({ statusCode }) => statusCode), Array(7).fill(200));
+  assert.deepEqual(responses.map(({ body }) => ({
+    ruleKey: body.ruleKey,
+    rulePosition: body.rulePosition,
+    ruleCount: body.ruleCount,
+    analysisProcessed: body.analysisProcessed,
+    analysisTotal: body.analysisTotal,
+    analysisUnit: body.analysisUnit,
+    status: body.status,
+    hasMore: body.hasMore,
+  })), runs.map((run) => ({
+    ruleKey: run.batchRuleKey,
+    rulePosition: run.batchRulePosition,
+    ruleCount: 7,
+    analysisProcessed: run.analysisProcessed,
+    analysisTotal: run.analysisTotal,
+    analysisUnit: analysisUnitForRule(run.batchRuleKey),
+    status: run.status,
+    hasMore: false,
+  })));
+  assert.equal(responses[5].body.analysisUnit, "bank_anchors");
+  assert.equal(responses[6].body.analysisUnit, "calendar_months");
+});
+
+test("scheduled heartbeat fails closed on new-strategy tuple or progress drift before a second claim", async () => {
+  const cases = [
+    ["Bank version", scheduledRun({
+      batchRuleKey: BANK_RESERVATION_RULE_KEY,
+      batchRulePosition: 6,
+      batchRuleCount: 7,
+      definitions: [{ ruleKey: BANK_RESERVATION_RULE_KEY, ruleVersion: 2, priority: 6 }],
+      status: "completed",
+      analysisUnit: "bank_anchors",
+      finishedAt: "2026-08-23T02:00:00.000Z",
+    })],
+    ["Adyen version", scheduledRun({
+      batchRuleKey: ADYEN_MONTHLY_RULE_KEY,
+      batchRulePosition: 7,
+      batchRuleCount: 7,
+      definitions: [{ ruleKey: ADYEN_MONTHLY_RULE_KEY, ruleVersion: 2, priority: 7 }],
+      status: "completed",
+      analysisUnit: "calendar_months",
+      finishedAt: "2026-08-23T02:00:00.000Z",
+    })],
+    ["Bank unit", scheduledRun({
+      batchRuleKey: BANK_RESERVATION_RULE_KEY,
+      batchRulePosition: 6,
+      batchRuleCount: 7,
+      definitions: [exactScheduledDefinition(BANK_RESERVATION_RULE_KEY, 6)],
+      analysisUnit: "calendar_months",
+      status: "completed",
+      finishedAt: "2026-08-23T02:00:00.000Z",
+    })],
+    ["Adyen cursor", scheduledRun({
+      batchRuleKey: ADYEN_MONTHLY_RULE_KEY,
+      batchRulePosition: 7,
+      batchRuleCount: 7,
+      definitions: [exactScheduledDefinition(ADYEN_MONTHLY_RULE_KEY, 7)],
+      analysisUnit: "calendar_months",
+      analysisCursorDate: "2026-07-31",
+      analysisCursorId: uuidFor(970),
+      status: "completed",
+      finishedAt: "2026-08-23T02:00:00.000Z",
+    })],
+    ["Bank completed-analysis progress", scheduledRun({
+      batchRuleKey: BANK_RESERVATION_RULE_KEY,
+      batchRulePosition: 6,
+      batchRuleCount: 7,
+      definitions: [exactScheduledDefinition(BANK_RESERVATION_RULE_KEY, 6)],
+      analysisCursorDate: "2026-08-23",
+      analysisCursorId: uuidFor(971),
+      analysisProcessed: 1,
+      analysisTotal: 2,
+      status: "failed",
+      finishedAt: "2026-08-23T02:00:00.000Z",
+    })],
+  ];
+
+  for (const [name, run] of cases) {
+    const calls = [];
+    const response = responseRecorder();
+    await withCronEnvironment("2026-08-23T02:00:00.000Z", async () => {
+      await withMockedHandler(CRON_HANDLER_PATH, mockedSupabase({
+        restQuery: async (resource) => {
+          calls.push(resource);
+          return scheduledClaim(run, { resumed: false });
+        },
+      }), async (handler) => handler({
+        method: "GET",
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }, response));
+    });
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+    assert.deepEqual(calls, ["rpc/claim_financial_reconciliation_automatic_schedule"], name);
+  }
 });
 
 test("scheduled heartbeat finishes one resumed amount-only child before the next heartbeat claims position four", async () => {
@@ -1955,6 +2143,9 @@ test("scheduled heartbeat finishes one resumed amount-only child before the next
       ruleCount: 4,
       runId: amountOnlyRunId,
       status: "completed",
+      analysisProcessed: 26,
+      analysisTotal: 26,
+      analysisUnit: "records",
       counts: {
         bases: 1,
         proposed: 0,
@@ -1979,6 +2170,9 @@ test("scheduled heartbeat finishes one resumed amount-only child before the next
       ruleCount: 4,
       runId: uuidFor(723),
       status: "completed",
+      analysisProcessed: 0,
+      analysisTotal: 0,
+      analysisUnit: "records",
       counts: {
         bases: 0,
         proposed: 0,
@@ -2305,6 +2499,7 @@ test("monthly scheduled continuation exposes only its sanitized terminal failure
     status: "failed",
     analysisProcessed: 2,
     analysisTotal: 3,
+    analysisUnit: "calendar_months",
     hasMore: false,
   });
   assert.doesNotMatch(JSON.stringify(response.body), /secret|diagnostic|stack|errorSummary|errorDetail/);
@@ -3158,6 +3353,56 @@ test("automation settings GET supplies the managed display name in its five-rule
   });
 });
 
+test("automation settings GET accepts the seven supported tuples and rejects malformed catalogs", async () => {
+  const sevenRpcRules = sevenRuleSettings().rules.map((rule) => ({
+    rule_key: rule.ruleKey,
+    rule_version: rule.ruleVersion,
+    enabled: rule.enabled,
+    allow_manual_execution: rule.allowManualExecution,
+    include_in_scheduled_batch: rule.includeInScheduledBatch,
+    difference_allowed: rule.differenceAllowed,
+    max_difference_days: rule.maxDifferenceDays,
+    priority: rule.priority,
+  }));
+  const validResponse = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => ({
+      schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
+      rules: sevenRpcRules,
+      last_scheduled_batch: null,
+    }),
+  }), async (handler) => handler({ method: "GET" }, validResponse));
+  assert.equal(validResponse.statusCode, 200);
+  assert.deepEqual(
+    validResponse.body.rules.map(({ ruleKey, ruleVersion }) => [ruleKey, ruleVersion]),
+    sevenRuleSettings().rules.map(({ ruleKey, ruleVersion }) => [ruleKey, ruleVersion]),
+  );
+
+  const invalidCatalogs = [
+    ["unsupported version", sevenRpcRules.map((rule) => rule.rule_key === BANK_RESERVATION_RULE_KEY
+      ? { ...rule, rule_version: 2 }
+      : rule)],
+    ["unknown key", sevenRpcRules.map((rule) => rule.rule_key === ADYEN_MONTHLY_RULE_KEY
+      ? { ...rule, rule_key: `${ADYEN_MONTHLY_RULE_KEY}_near` }
+      : rule)],
+    ["duplicate key", [...sevenRpcRules, { ...sevenRpcRules.at(-1), priority: 8 }]],
+    ["duplicate priority", sevenRpcRules.map((rule) => rule.rule_key === ADYEN_MONTHLY_RULE_KEY
+      ? { ...rule, priority: 6 }
+      : rule)],
+  ];
+  for (const [name, rules] of invalidCatalogs) {
+    const response = responseRecorder();
+    await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => ({
+        schedule: { enabled: true, time_of_day: "02:15", time_zone: AUTOMATIC_TIME_ZONE },
+        rules,
+      }),
+    }), async (handler) => handler({ method: "GET" }, response));
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+  }
+});
+
 test("automation settings has no action that creates an analysis run", async () => {
   let rpcCalled = false;
   const response = responseRecorder();
@@ -3338,6 +3583,21 @@ test("monthly member paging binds the authenticated app actor to the only data R
       return {
         run_id: RUN_ID,
         proposal_id: PROPOSAL_ID,
+        rule_key: ADYEN_MONTHLY_RULE_KEY,
+        rule_version: ADYEN_MONTHLY_RULE_VERSION,
+        grouping_key: "adyen_month:2026-08",
+        summary_snapshot: {
+          calendar_month: "2026-08-01",
+          source_count: 73,
+          source_total: "9125.00",
+          destination_count: 2,
+          destination_total: "9000.00",
+          diagnostic: "remove nested summary diagnostic",
+        },
+        source_count: 73,
+        source_total: "9125.00",
+        destination_count: 2,
+        destination_total: "9000.00",
         role: "source",
         offset: 50,
         limit: 50,
@@ -3355,6 +3615,7 @@ test("monthly member paging binds the authenticated app actor to the only data R
           internal_error: "remove",
         }],
         diagnostic: "remove",
+        private_diagnostic: "remove unknown top-level fields too",
       };
     },
   }), async (handler) => {
@@ -3389,6 +3650,20 @@ test("monthly member paging binds the authenticated app actor to the only data R
   assert.deepEqual(response.body, {
     runId: RUN_ID,
     proposalId: PROPOSAL_ID,
+    ruleKey: ADYEN_MONTHLY_RULE_KEY,
+    ruleVersion: ADYEN_MONTHLY_RULE_VERSION,
+    groupingKey: "adyen_month:2026-08",
+    summarySnapshot: {
+      calendarMonth: "2026-08-01",
+      sourceCount: 73,
+      sourceTotal: "9125.00",
+      destinationCount: 2,
+      destinationTotal: "9000.00",
+    },
+    sourceCount: 73,
+    sourceTotal: "9125.00",
+    destinationCount: 2,
+    destinationTotal: "9000.00",
     role: "source",
     offset: 50,
     limit: 50,
@@ -3405,6 +3680,58 @@ test("monthly member paging binds the authenticated app actor to the only data R
       rowSnapshot: { row_key: "bank-73" },
     }],
   });
+});
+
+test("grouped member paging accepts an empty page past the end and rejects inconsistent role totals", async () => {
+  const page = {
+    run_id: RUN_ID,
+    proposal_id: PROPOSAL_ID,
+    rule_key: BANK_RESERVATION_RULE_KEY,
+    rule_version: BANK_RESERVATION_RULE_VERSION,
+    grouping_key: "bank-anchor-1",
+    summary_snapshot: { classification: "proposed" },
+    source_count: 1,
+    source_total: "-100.00",
+    destination_count: 1,
+    destination_total: "100.00",
+    role: "source",
+    offset: 50,
+    limit: 50,
+    total_count: 1,
+    members: [],
+  };
+  const response = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => page,
+  }), async (handler) => handler({
+    method: "GET",
+    query: {
+      run_id: RUN_ID,
+      proposal_id: PROPOSAL_ID,
+      role: "source",
+      offset: "50",
+      limit: "50",
+    },
+  }, response));
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.totalCount, 1);
+  assert.deepEqual(response.body.members, []);
+
+  const invalidResponse = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => ({ ...page, offset: 0, total_count: 2 }),
+  }), async (handler) => handler({
+    method: "GET",
+    query: {
+      run_id: RUN_ID,
+      proposal_id: PROPOSAL_ID,
+      role: "source",
+      offset: "0",
+      limit: "50",
+    },
+  }, invalidResponse));
+  assert.equal(invalidResponse.statusCode, 500);
+  assert.deepEqual(invalidResponse.body, { error: "Unexpected server error." });
 });
 
 test("monthly member paging rejects malformed query values and absent actor before its RPC", async () => {
@@ -3558,6 +3885,22 @@ test("manual automation GET exposes only enabled manual rules from the workbench
             difference_allowed: "0.00",
             max_difference_days: 1,
           },
+          {
+            rule_key: BANK_RESERVATION_RULE_KEY,
+            rule_version: BANK_RESERVATION_RULE_VERSION,
+            enabled: true,
+            allow_manual_execution: true,
+            difference_allowed: "0.00",
+            max_difference_days: 3,
+          },
+          {
+            rule_key: ADYEN_MONTHLY_RULE_KEY,
+            rule_version: ADYEN_MONTHLY_RULE_VERSION,
+            enabled: true,
+            allow_manual_execution: false,
+            difference_allowed: "2000.00",
+            max_difference_days: 31,
+          },
         ],
       };
     },
@@ -3591,9 +3934,119 @@ test("manual automation GET exposes only enabled manual rules from the workbench
         differenceAllowed: "0.00",
         maxDifferenceDays: 1,
       },
+      {
+        ruleKey: BANK_RESERVATION_RULE_KEY,
+        ruleVersion: BANK_RESERVATION_RULE_VERSION,
+        displayName: "FDM Accounts – Bank Reservation Payments",
+        enabled: true,
+        allowManualExecution: true,
+        differenceAllowed: "0.00",
+        maxDifferenceDays: 3,
+      },
     ],
   });
   assert.equal(Object.hasOwn(response.body, "schedule"), false);
+});
+
+test("manual rule catalog fails closed on unsupported or duplicate RPC tuples", async () => {
+  const cases = [
+    ["unsupported version", [
+      { rule_key: BANK_RESERVATION_RULE_KEY, rule_version: 2, enabled: true, allow_manual_execution: true },
+    ]],
+    ["unknown key", [
+      { rule_key: `${ADYEN_MONTHLY_RULE_KEY}_near`, rule_version: 1, enabled: true, allow_manual_execution: true },
+    ]],
+    ["duplicate key", [
+      { rule_key: ADYEN_MONTHLY_RULE_KEY, rule_version: 1, enabled: true, allow_manual_execution: true },
+      { rule_key: ADYEN_MONTHLY_RULE_KEY, rule_version: 1, enabled: true, allow_manual_execution: true },
+    ]],
+  ];
+
+  for (const [name, rules] of cases) {
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => ({ rules }),
+    }), async (handler) => {
+      await handler({ method: "GET", query: { view: "rules" } }, response);
+    });
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+  }
+});
+
+test("new manual strategies analyze exactly one rule and preserve one unfinished run per actor", async () => {
+  for (const [ruleKey, ruleVersion] of [
+    [BANK_RESERVATION_RULE_KEY, BANK_RESERVATION_RULE_VERSION],
+    [ADYEN_MONTHLY_RULE_KEY, ADYEN_MONTHLY_RULE_VERSION],
+  ]) {
+    const calls = [];
+    let attempt = 0;
+    const supabase = mockedSupabase({
+      restQuery: async (resource, options) => {
+        calls.push({ resource, options });
+        attempt += 1;
+        if (attempt === 1) {
+          return {
+            run_id: RUN_ID,
+            trigger: "manual",
+            scope: "rule",
+            actor: "user@example.com",
+            status: "analyzing",
+            finished_at: null,
+            definitions: [{ rule_key: ruleKey, rule_version: ruleVersion }],
+          };
+        }
+        const error = new Error("Automatic analysis conflict: an unfinished manual run already exists for this actor.");
+        error.supabasePayload = { details: "private lock owner" };
+        throw error;
+      },
+    });
+    const first = responseRecorder();
+    const second = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, supabase, async (handler) => {
+      await handler({
+        method: "POST",
+        body: { action: "analyze_rule", ruleKeys: [ruleKey], clientRequestId: REQUEST_ID },
+      }, first);
+    });
+    await withMockedHandler(MANUAL_HANDLER_PATH, supabase, async (handler) => {
+      await handler({
+        method: "POST",
+        body: { action: "analyze_rule", ruleKeys: [ruleKey], clientRequestId: uuidFor(880) },
+      }, second);
+    });
+
+    assert.equal(first.statusCode, 200, ruleKey);
+    assert.deepEqual(first.body.definitions, [{
+      ruleKey,
+      ruleVersion,
+      displayName: AUTOMATIC_RULE_DISPLAY_NAMES[ruleKey],
+    }], ruleKey);
+    assert.equal(second.statusCode, 409, ruleKey);
+    assert.deepEqual(second.body, {
+      error: "The reconciliation automation state changed. Refresh and try again.",
+    }, ruleKey);
+    assert.deepEqual(calls.map(({ resource, options }) => ({ resource, body: options.body })), [
+      {
+        resource: "rpc/create_financial_reconciliation_automatic_analysis",
+        body: {
+          p_rule_keys: [ruleKey],
+          p_mode: "manual_rule",
+          p_actor: "user@example.com",
+          p_client_request_id: REQUEST_ID,
+        },
+      },
+      {
+        resource: "rpc/create_financial_reconciliation_automatic_analysis",
+        body: {
+          p_rule_keys: [ruleKey],
+          p_mode: "manual_rule",
+          p_actor: "user@example.com",
+          p_client_request_id: uuidFor(880),
+        },
+      },
+    ], ruleKey);
+  }
 });
 
 test("manual active-run lookup and continuation bind the authenticated actor", async () => {
@@ -3928,6 +4381,84 @@ test("execute_selected with zero proposals cannot finish an analysis still in pr
     resource: "rpc/get_financial_reconciliation_automatic_run",
     options: { method: "POST", body: { p_run_id: RUN_ID } },
   }]);
+});
+
+test("Execute Selected empty and nonempty paths remain RPC-only for both new strategies", async () => {
+  for (const [ruleKey, ruleVersion] of [
+    [BANK_RESERVATION_RULE_KEY, BANK_RESERVATION_RULE_VERSION],
+    [ADYEN_MONTHLY_RULE_KEY, ADYEN_MONTHLY_RULE_VERSION],
+  ]) {
+    for (const proposalIds of [[], [PROPOSAL_ID]]) {
+      const calls = [];
+      let runReads = 0;
+      const proposal = {
+        id: PROPOSAL_ID,
+        runId: RUN_ID,
+        ruleKey,
+        ruleVersion,
+        baseSourceDate: "2026-07-01",
+        baseSourceId: uuidFor(910),
+        status: "proposed",
+      };
+      const readyRun = {
+        runId: RUN_ID,
+        trigger: "manual",
+        scope: "rule",
+        actor: "user@example.com",
+        status: "ready",
+        definitions: [{ ruleKey, ruleVersion, priority: 6 }],
+        analysisCompletedAt: "2026-08-23T12:00:00.000Z",
+        finishedAt: null,
+        proposals: [proposal],
+      };
+      const response = responseRecorder();
+      await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+        restQuery: async (resource, options) => {
+          calls.push({ resource, options });
+          if (resource === "rpc/get_financial_reconciliation_automatic_run") {
+            runReads += 1;
+            return runReads === 1 ? readyRun : {
+              ...readyRun,
+              status: "running",
+              proposals: [{ ...proposal, status: "completed" }],
+            };
+          }
+          if (resource === "rpc/execute_financial_reconciliation_automatic_proposal") {
+            return { proposalId: PROPOSAL_ID, runId: RUN_ID, status: "completed" };
+          }
+          if (resource === "rpc/finish_financial_reconciliation_automatic_run") {
+            return {
+              ...readyRun,
+              status: "completed",
+              finishedAt: "2026-08-23T12:01:00.000Z",
+              proposals: [{
+                ...proposal,
+                status: proposalIds.length ? "completed" : "deselected",
+                ...(proposalIds.length ? {} : { reason: "not_selected" }),
+              }],
+            };
+          }
+          throw new Error(`Unexpected RPC ${resource}`);
+        },
+      }), async (handler) => handler({
+        method: "POST",
+        body: { action: "execute_selected", runId: RUN_ID, proposalIds },
+      }, response));
+
+      assert.equal(response.statusCode, 200, `${ruleKey}:${proposalIds.length}`);
+      assert.equal(response.body.run.status, "completed", `${ruleKey}:${proposalIds.length}`);
+      assert.equal(
+        calls.filter(({ resource }) => resource === "rpc/execute_financial_reconciliation_automatic_proposal").length,
+        proposalIds.length,
+        `${ruleKey}:${proposalIds.length}`,
+      );
+      assert.equal(
+        calls.filter(({ resource }) => resource === "rpc/finish_financial_reconciliation_automatic_run").length,
+        1,
+        `${ruleKey}:${proposalIds.length}`,
+      );
+    }
+  }
 });
 
 test("execute_selected leaves a transport-uncertain selected proposal resumable", async () => {
@@ -5596,6 +6127,96 @@ test("Bank Reservation and Adyen proposals execute atomically from immutable mem
     "Task 5 post-start and competing writes roll back every lifecycle row",
     "Task 5 unexpected database failures persist only sanitized diagnostics",
     "Task 5 execution helpers are private and top-level dispatch is literal",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
+});
+
+test("Task 6 installs RPC-only manual, membership, serializer, and seven-child schedule contracts", () => {
+  const migration = fs.readFileSync(FDM_BANK_ADYEN_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const functionSource = (functionName) => {
+    const matches = [...migration.matchAll(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "gi",
+    ))];
+    assert.ok(matches.length, `${functionName} must be replaced by the dated migration`);
+    return matches.at(-1)[0];
+  };
+  const tuples = [
+    [BANK_STATEMENT_RULE_KEY, BANK_STATEMENT_RULE_VERSION],
+    [CREDIT_CARD_RULE_KEY, CREDIT_CARD_RULE_VERSION],
+    [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION],
+    [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION],
+    [MONTHLY_INCOME_RULE_KEY, 2],
+    [BANK_RESERVATION_RULE_KEY, BANK_RESERVATION_RULE_VERSION],
+    [ADYEN_MONTHLY_RULE_KEY, ADYEN_MONTHLY_RULE_VERSION],
+  ];
+
+  const manualRules = functionSource("get_financial_reconciliation_automatic_manual_rules");
+  assert.match(manualRules, /config\.enabled[\s\S]*config\.allow_manual_execution/i);
+  for (const [key, version] of tuples) {
+    assert.match(manualRules, new RegExp(`'${key}'\\s*,\\s*${version}`));
+  }
+
+  const createAnalysis = functionSource("create_financial_reconciliation_automatic_analysis");
+  assert.match(createAnalysis, /cardinality\(p_rule_keys\)\s*<>\s*1/i);
+  assert.match(createAnalysis, /unfinished manual run already exists for this actor/i);
+  assert.match(createAnalysis, /financial_reconciliation_automatic_bank_reservation_count\(\)/i);
+  assert.match(createAnalysis, /financial_reconciliation_automatic_adyen_month_count\(\)/i);
+  assert.match(createAnalysis, /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*is distinct from '\+'/i);
+  assert.match(createAnalysis, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*is distinct from '-'/i);
+  for (const [key, version] of tuples) {
+    assert.match(createAnalysis, new RegExp(`'${key}'\\s*,\\s*${version}`));
+  }
+
+  const runSerializer = functionSource("get_financial_reconciliation_automatic_run");
+  const progressSerializer = functionSource("financial_reconciliation_automatic_progress_or_run");
+  for (const source of [runSerializer, progressSerializer]) {
+    assert.match(source, /'analysisUnit'/i);
+    assert.match(source, /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*'bank_anchors'/i);
+    assert.match(source, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*'calendar_months'/i);
+  }
+  assert.match(runSerializer, /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*'\[\]'::jsonb/i);
+  assert.match(runSerializer, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*'\[\]'::jsonb/i);
+
+  const members = functionSource("get_financial_reconciliation_automatic_proposal_members");
+  assert.match(members, /fdm_bank_transfer_cgd_bank_statement_combination/i);
+  assert.match(members, /cgd_bank_statement_fdm_adyen_monthly_payments/i);
+  for (const field of [
+    "groupingKey", "summarySnapshot", "sourceCount", "sourceTotal",
+    "destinationCount", "destinationTotal", "rowSnapshot",
+  ]) {
+    assert.match(members, new RegExp(`'${field}'`, "i"));
+  }
+
+  const refreshBatch = functionSource("financial_reconciliation_refresh_automatic_batch");
+  assert.match(refreshBatch, /Automatic scheduled batch snapshot is invalid\./i);
+  assert.match(refreshBatch, /Automatic scheduled batch child metadata is invalid\./i);
+  assert.match(refreshBatch, /Automatic scheduled batch progress is invalid\./i);
+  assert.match(refreshBatch, /unfinishedChildren/i);
+  assert.match(refreshBatch, /order by run\.batch_rule_position/i);
+
+  const claim = functionSource("claim_financial_reconciliation_automatic_schedule");
+  assert.match(claim, /order by config\.priority, config\.rule_key/i);
+  assert.match(claim, /financial_reconciliation_automatic_bank_reservation_count\(\)/i);
+  assert.match(claim, /financial_reconciliation_automatic_adyen_month_count\(\)/i);
+  assert.match(claim, /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*then '\+'/i);
+  assert.match(claim, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*then '-'/i);
+  for (const [key, version] of tuples) {
+    assert.match(claim, new RegExp(`'${key}'\\s*,\\s*${version}`));
+  }
+  for (const source of [manualRules, createAnalysis, runSerializer, progressSerializer, members, refreshBatch, claim]) {
+    assert.doesNotMatch(source, /\bexecute\b|\bformat\s*\(/i, "Task 6 lifecycle must remain literal and RPC-only");
+  }
+
+  for (const contract of [
+    "Task 6 manual catalog and one-rule actor lifecycle",
+    "Task 6 grouped member paging exposes complete public snapshots",
+    "Task 6 seven-child priority snapshot and strategy totals",
+    "Task 6 same-slot retry and oldest cross-midnight child",
+    "Task 6 terminal child failure continues and aggregates all seven children",
+    "Task 6 malformed batch metadata and progress fail closed",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }

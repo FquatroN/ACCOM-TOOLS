@@ -1,6 +1,7 @@
 const { cleanText, parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
 const { mapRpcError } = require("./_reconciliation");
 const {
+  AUTOMATIC_RULE_VERSIONS,
   normalizeAnalyzePayload,
   normalizeAutomationAction,
   normalizeContinueAnalysisPayload,
@@ -14,6 +15,42 @@ function inputError(message) {
   const error = new Error(message);
   error.statusCode = 400;
   return error;
+}
+
+function isPlainRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function requireManualRuleCatalog(value) {
+  const result = toAutomationPublicResult(value);
+  if (!isPlainRecord(result) || !Array.isArray(result.rules)) {
+    throw new Error("Unexpected reconciliation catalog response.");
+  }
+  const seen = new Set();
+  for (const rule of result.rules) {
+    const ruleKey = rule?.ruleKey;
+    if (!isPlainRecord(rule)
+      || !Object.hasOwn(rule, "ruleKey")
+      || !Object.hasOwn(rule, "ruleVersion")
+      || !Object.hasOwn(rule, "enabled")
+      || !Object.hasOwn(rule, "allowManualExecution")
+      || !Object.hasOwn(AUTOMATIC_RULE_VERSIONS, ruleKey)
+      || rule.ruleVersion !== AUTOMATIC_RULE_VERSIONS[ruleKey]
+      || typeof rule.enabled !== "boolean"
+      || typeof rule.allowManualExecution !== "boolean"
+      || seen.has(ruleKey)) {
+      throw new Error("Unexpected reconciliation catalog response.");
+    }
+    seen.add(ruleKey);
+  }
+  return {
+    ...result,
+    rules: result.rules.filter(
+      (rule) => rule.enabled === true && rule.allowManualExecution === true,
+    ),
+  };
 }
 
 function statusError(message, statusCode) {
@@ -198,12 +235,9 @@ module.exports = async function handler(req, res) {
           method: "POST",
           body,
         });
-        const publicResult = toAutomationPublicResult(result);
-        if (view === "rules" && Array.isArray(publicResult?.rules)) {
-          publicResult.rules = publicResult.rules.filter(
-            (rule) => rule?.enabled === true && rule?.allowManualExecution === true,
-          );
-        }
+        const publicResult = view === "rules"
+          ? requireManualRuleCatalog(result)
+          : toAutomationPublicResult(result);
         return res.status(200).json(publicResult);
       }
       const runId = normalizeRunId(req.query?.run_id);

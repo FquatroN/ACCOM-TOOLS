@@ -1,10 +1,41 @@
 const { cleanText, parseBody, requireFeature, restQuery, sendError } = require("./_supabase");
 const { mapRpcError } = require("./_reconciliation");
 const {
+  AUTOMATIC_RULE_VERSIONS,
   normalizeAutomationSettingsPayload,
   toAutomationPublicResult,
   toAutomationSettingsRpcPayload,
 } = require("./_reconciliation-automation");
+
+function isPlainRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function requireSettingsResult(value) {
+  const result = toAutomationPublicResult(value);
+  if (!isPlainRecord(result) || !Array.isArray(result.rules)) {
+    throw new Error("Unexpected reconciliation settings response.");
+  }
+  const ruleKeys = new Set();
+  const priorities = new Set();
+  for (const rule of result.rules) {
+    const ruleKey = rule?.ruleKey;
+    if (!isPlainRecord(rule)
+      || !Object.hasOwn(AUTOMATIC_RULE_VERSIONS, ruleKey)
+      || rule.ruleVersion !== AUTOMATIC_RULE_VERSIONS[ruleKey]
+      || !Number.isSafeInteger(rule.priority)
+      || rule.priority < 1
+      || ruleKeys.has(ruleKey)
+      || priorities.has(rule.priority)) {
+      throw new Error("Unexpected reconciliation settings response.");
+    }
+    ruleKeys.add(ruleKey);
+    priorities.add(rule.priority);
+  }
+  return result;
+}
 
 function actorFor(auth) {
   return cleanText(auth.user?.email) || cleanText(auth.user?.id);
@@ -43,7 +74,7 @@ module.exports = async function handler(req, res) {
         method: "POST",
         body: {},
       });
-      return res.status(200).json(toAutomationPublicResult(result));
+      return res.status(200).json(requireSettingsResult(result));
     }
 
     if (req.method === "PUT") {
@@ -52,7 +83,7 @@ module.exports = async function handler(req, res) {
         method: "POST",
         body: toAutomationSettingsRpcPayload(settings, actorFor(auth)),
       });
-      return res.status(200).json(toAutomationPublicResult(result));
+      return res.status(200).json(requireSettingsResult(result));
     }
 
     res.setHeader("Allow", "GET, PUT");

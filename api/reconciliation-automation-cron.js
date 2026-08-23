@@ -1,6 +1,8 @@
 const { restQuery } = require("./_supabase");
 const {
+  ADYEN_MONTHLY_RULE_KEY,
   AUTOMATIC_RULE_VERSIONS,
+  BANK_RESERVATION_RULE_KEY,
   isCronRequest,
   MONTHLY_INCOME_RULE_KEY,
   toAutomationPublicResult,
@@ -46,6 +48,14 @@ const COUNT_STATUSES = [
   "stale",
   "failed",
 ];
+
+function analysisUnitForRule(ruleKey) {
+  if (ruleKey === BANK_RESERVATION_RULE_KEY) return "bank_anchors";
+  if (ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY) {
+    return "calendar_months";
+  }
+  return "records";
+}
 
 function text(value) {
   return typeof value === "string" ? value : "";
@@ -104,6 +114,7 @@ function requireScheduledRun(value, expectedRun = null) {
       "analysisTotal",
       "analysisErrorCode",
       "analysisErrorAt",
+      "analysisUnit",
       "analysisComplete",
       "analysisCompletedAt",
       "finishedAt",
@@ -126,6 +137,7 @@ function requireScheduledRun(value, expectedRun = null) {
     || run.analysisProcessed > run.analysisTotal
     || (run.analysisErrorCode !== null && typeof run.analysisErrorCode !== "string")
     || (run.analysisErrorAt !== null && !isTimestamp(run.analysisErrorAt))
+    || !new Set(["records", "bank_anchors", "calendar_months"]).has(run.analysisUnit)
     || typeof run.analysisComplete !== "boolean"
     || (run.analysisCompletedAt !== null && !isTimestamp(run.analysisCompletedAt))
     || (run.finishedAt !== null && !isTimestamp(run.finishedAt))
@@ -147,15 +159,28 @@ function requireScheduledRun(value, expectedRun = null) {
   }
   const definition = run.definitions[0];
   const ruleKey = text(definition?.ruleKey);
-  const priority = Number(definition?.priority);
+  const priority = definition?.priority;
   if (!isPlainRecord(definition)
-    || !hasOwnFields(definition, ["ruleKey", "priority"])
+    || !hasOwnFields(definition, ["ruleKey", "ruleVersion", "priority"])
     || !Object.hasOwn(AUTOMATIC_RULE_VERSIONS, ruleKey)
-    || (ruleKey === MONTHLY_INCOME_RULE_KEY
-      && definition.ruleVersion !== AUTOMATIC_RULE_VERSIONS[ruleKey])
+    || definition.ruleVersion !== AUTOMATIC_RULE_VERSIONS[ruleKey]
     || !Number.isSafeInteger(priority) || priority < 1
-    || run.batchRuleKey !== ruleKey) {
+    || run.batchRuleKey !== ruleKey
+    || run.analysisUnit !== analysisUnitForRule(ruleKey)) {
     throw new Error("Scheduled reconciliation rule snapshot is invalid.");
+  }
+
+  const strategyUsesProjectedCursor = ruleKey === BANK_RESERVATION_RULE_KEY
+    || ruleKey === ADYEN_MONTHLY_RULE_KEY;
+  if (strategyUsesProjectedCursor
+    && ((run.analysisProcessed === 0 && run.analysisCursorDate !== null)
+      || (run.analysisProcessed > 0 && run.analysisCursorDate === null)
+      || (ruleKey === ADYEN_MONTHLY_RULE_KEY
+        && run.analysisCursorDate !== null
+        && !/^\d{4}-\d{2}-01$/.test(run.analysisCursorDate))
+      || (run.analysisComplete
+        && run.analysisProcessed !== run.analysisTotal))) {
+    throw new Error("Scheduled reconciliation strategy progress is invalid.");
   }
 
   const proposalIds = new Set();
@@ -182,8 +207,8 @@ function requireScheduledRun(value, expectedRun = null) {
   const analysisFailed = run.status === "failed"
     && !analysisComplete
     && finished
-    && run.proposals.length === 0
-    && run.analysisErrorCode === "analysis_continuation_failed"
+    && typeof run.analysisErrorCode === "string"
+    && run.analysisErrorCode.length > 0
     && isTimestamp(run.analysisErrorAt);
   if ((run.status === "analyzing" && (analysisComplete || finished || run.proposals.length > 0))
     || ((run.status === "ready" || run.status === "running") && (!analysisComplete || finished))
@@ -245,7 +270,7 @@ function requireContinuedAnalysisRun(value) {
     || !hasOwnFields(run, [
       "runId", "status", "analysisCursorDate", "analysisCursorId",
       "analysisProcessed", "analysisTotal", "analysisErrorCode", "analysisErrorAt",
-      "analysisComplete", "analysisCompletedAt",
+      "analysisUnit", "analysisComplete", "analysisCompletedAt",
     ])
     || !UUID_PATTERN.test(text(run.runId))
     || !SAFE_RUN_STATUSES.has(run.status)
@@ -257,6 +282,7 @@ function requireContinuedAnalysisRun(value) {
     || run.analysisProcessed > run.analysisTotal
     || (run.analysisErrorCode !== null && typeof run.analysisErrorCode !== "string")
     || (run.analysisErrorAt !== null && !isTimestamp(run.analysisErrorAt))
+    || !new Set(["records", "bank_anchors", "calendar_months"]).has(run.analysisUnit)
     || typeof run.analysisComplete !== "boolean"
     || (run.analysisCompletedAt !== null && !isTimestamp(run.analysisCompletedAt))
     || run.analysisComplete !== (run.analysisCompletedAt !== null)) {
@@ -328,6 +354,9 @@ function publicRunResponse(claim, run, attemptedCount, hasMore) {
     ruleCount: run.batchRuleCount,
     runId: run.runId,
     status: SAFE_RUN_STATUSES.has(run.status) ? run.status : "running",
+    analysisProcessed: run.analysisProcessed,
+    analysisTotal: run.analysisTotal,
+    analysisUnit: run.analysisUnit,
     counts: publicCounts(run),
     attemptedCount,
     hasMore,
@@ -372,6 +401,7 @@ module.exports = async function handler(req, res) {
         status: run.status,
         analysisProcessed: run.analysisProcessed,
         analysisTotal: run.analysisTotal,
+        analysisUnit: run.analysisUnit,
         hasMore: run.status === "analyzing" && !run.analysisComplete,
       });
     }
