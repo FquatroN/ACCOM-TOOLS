@@ -1931,6 +1931,633 @@ begin
 end
 $migration$;
 
+create table if not exists public.financial_reconciliation_automatic_adyen_population (
+  run_id uuid not null,
+  calendar_month date not null,
+  month_ordinal integer not null,
+  role text not null,
+  source_type text not null,
+  source_id uuid not null,
+  member_ordinal integer not null,
+  source_date date not null,
+  amount numeric(14,2) not null,
+  description text not null,
+  account text not null,
+  row_snapshot jsonb not null,
+  constraint fr_auto_adyen_population_run_fkey
+    foreign key (run_id)
+    references public.financial_reconciliation_automatic_runs(id)
+    on delete cascade,
+  constraint fr_auto_adyen_population_month_ordinal_check
+    check (month_ordinal > 0),
+  constraint fr_auto_adyen_population_member_ordinal_check
+    check (member_ordinal > 0),
+  constraint fr_auto_adyen_population_role_source_check
+    check (
+      (role = 'source' and source_type = 'import_cgd_extrato_ordem')
+      or (role = 'destination' and source_type = 'import_fdm_accounts')
+    ),
+  constraint fr_auto_adyen_population_month_date_check
+    check (
+      calendar_month = date_trunc('month', calendar_month)::date
+      and source_date >= calendar_month
+      and source_date < (calendar_month + interval '1 month')::date
+    ),
+  constraint fr_auto_adyen_population_snapshot_check
+    check (jsonb_typeof(row_snapshot) = 'object'),
+  constraint fr_auto_adyen_population_pkey
+    primary key (run_id, role, source_id),
+  constraint fr_auto_adyen_population_ordinal_key
+    unique (run_id, month_ordinal, role, member_ordinal)
+);
+
+create or replace function public.financial_reconciliation_continue_automatic_adyen_monthly(
+  p_run_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_rule jsonb;
+  v_month record;
+  v_page_count integer := 0;
+  v_population_member_total integer := 0;
+  v_population_total integer := 0;
+  v_population_min_ordinal integer;
+  v_population_max_ordinal integer;
+  v_population_invalid boolean := false;
+  v_population_error_summary text;
+  v_invalid_source_id uuid;
+  v_last_ordinal integer;
+  v_last_month date;
+  v_processed_after integer;
+  v_allowed_difference numeric(14,2);
+  v_operator text;
+  v_source_ids uuid[];
+  v_destination_ids uuid[];
+  v_source_count integer;
+  v_destination_count integer;
+  v_source_total numeric(14,2);
+  v_destination_total numeric(14,2);
+  v_difference numeric(14,2);
+  v_base_id uuid;
+  v_base_date date;
+  v_base_snapshot jsonb;
+  v_summary_snapshot jsonb;
+  v_signature text;
+  v_status text;
+  v_reason text;
+  v_proposal_id uuid;
+  v_inserted boolean;
+  v_inserted_count integer;
+  v_inserted_source_ids uuid[];
+  v_inserted_destination_ids uuid[];
+  v_inserted_source_total numeric(14,2);
+  v_inserted_destination_total numeric(14,2);
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = p_run_id
+  for update;
+  if not found then
+    raise exception 'Automatic analysis run was not found.';
+  end if;
+  if v_run.actor <> p_actor then
+    raise exception 'Automatic analysis run belongs to another actor.';
+  end if;
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+  if v_run.status <> 'analyzing' then
+    raise exception 'Automatic analysis run is not resumable.';
+  end if;
+  if jsonb_array_length(v_run.definition_config_snapshot) <> 1 then
+    raise exception
+      'Resumable automatic analysis requires exactly one snapshotted rule.';
+  end if;
+  select snapshot.value into strict v_rule
+  from jsonb_array_elements(v_run.definition_config_snapshot) snapshot(value);
+
+  if jsonb_typeof(v_rule) is distinct from 'object'
+    or v_rule - array[
+      'ruleKey','ruleVersion','displayName','priority','differenceAllowed',
+      'maxDifferenceDays','destinationSourceType','definition','operator'
+    ]::text[] <> '{}'::jsonb
+    or not (v_rule ?& array[
+      'ruleKey','ruleVersion','displayName','priority','differenceAllowed',
+      'maxDifferenceDays','destinationSourceType','definition','operator'
+    ])
+    or v_rule->>'ruleKey' is distinct from
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    or v_rule->>'ruleVersion' is distinct from '1'
+    or v_rule->>'displayName' is distinct from
+      'FDM Accounts – Adyen Reservation Payments'
+    or coalesce(v_rule->>'priority', '') !~ '^[1-9][0-9]*$'
+    or length(v_rule->>'priority') > 10
+    or v_rule->>'destinationSourceType' is distinct from
+      'import_fdm_accounts'
+    or v_rule->>'operator' is distinct from '-'
+    or coalesce(v_rule->>'differenceAllowed', '') !~
+      '^[0-9]+(\.[0-9]+)?$'
+    or length(v_rule->>'differenceAllowed') > 20
+    or (v_rule->>'differenceAllowed')::numeric < 0
+    or v_rule->>'maxDifferenceDays' is distinct from '31'
+    or v_rule->'definition' is distinct from jsonb_build_object(
+      'strategy', 'closed_calendar_month',
+      'bankDescriptionContains', 'Adyen',
+      'fdmAccount', 'Adyen',
+      'requiresBothSides', true,
+      'monthMarkerDays', 31
+    ) then
+    raise exception 'Automatic Adyen monthly rule snapshot contract is invalid.';
+  end if;
+
+  v_allowed_difference :=
+    (v_rule->>'differenceAllowed')::numeric(14,2);
+  v_operator := v_rule->>'operator';
+
+  lock table
+    public.import_cgd_extrato_ordem,
+    public.import_fdm_accounts,
+    public.financial_reconciliation_items
+  in share row exclusive mode;
+
+  select count(*)::integer,
+         count(distinct population.calendar_month)::integer,
+         min(population.month_ordinal),
+         max(population.month_ordinal)
+  into v_population_member_total, v_population_total,
+       v_population_min_ordinal, v_population_max_ordinal
+  from public.financial_reconciliation_automatic_adyen_population population
+  where population.run_id = p_run_id;
+
+  if v_population_member_total = 0 then
+    if v_run.analysis_cursor_date is not null
+      or v_run.analysis_cursor_id is not null
+      or v_run.analysis_processed <> 0 then
+      v_population_invalid := true;
+      v_population_error_summary :=
+        'The Adyen analysis population projection is missing.';
+    else
+      with bank_eligible as (
+        select
+          date_trunc('month', bank.data)::date as calendar_month,
+          'source'::text as role,
+          'import_cgd_extrato_ordem'::text as source_type,
+          bank.id as source_id,
+          row_number() over (
+            partition by date_trunc('month', bank.data)
+            order by bank.data, bank.id
+          )::integer as member_ordinal,
+          bank.data as source_date,
+          bank.montante::numeric(14,2) as amount,
+          bank.descritivo as description,
+          ''::text as account,
+          to_jsonb(bank) as row_snapshot
+        from public.import_cgd_extrato_ordem bank
+        where bank.data >= date '2026-01-01'
+          and bank.data < date_trunc('month', current_date)::date
+          and bank.montante is not null
+          and bank.descritivo ilike '%Adyen%'
+          and not exists (
+            select 1
+            from public.financial_reconciliation_items locked
+            where locked.source_type = 'import_cgd_extrato_ordem'
+              and locked.source_id = bank.id
+          )
+      ),
+      fdm_eligible as (
+        select
+          date_trunc('month', fdm.event_date)::date as calendar_month,
+          'destination'::text as role,
+          'import_fdm_accounts'::text as source_type,
+          fdm.id as source_id,
+          row_number() over (
+            partition by date_trunc('month', fdm.event_date)
+            order by fdm.event_date, fdm.id
+          )::integer as member_ordinal,
+          fdm.event_date as source_date,
+          fdm.amount::numeric(14,2) as amount,
+          fdm.description,
+          fdm.account,
+          to_jsonb(fdm) as row_snapshot
+        from public.import_fdm_accounts fdm
+        where fdm.event_date >= date '2026-01-01'
+          and fdm.event_date < date_trunc('month', current_date)::date
+          and fdm.amount is not null
+          and fdm.account = 'Adyen'
+          and not exists (
+            select 1
+            from public.financial_reconciliation_items locked
+            where locked.source_type = 'import_fdm_accounts'
+              and locked.source_id = fdm.id
+          )
+      ),
+      eligible as (
+        select * from bank_eligible
+        union all
+        select * from fdm_eligible
+      ),
+      months as (
+        select
+          eligible.calendar_month,
+          row_number() over (order by eligible.calendar_month)::integer
+            as month_ordinal
+        from (
+          select distinct member.calendar_month
+          from eligible member
+        ) eligible
+      )
+      insert into public.financial_reconciliation_automatic_adyen_population (
+        run_id, calendar_month, month_ordinal, role, source_type, source_id,
+        member_ordinal, source_date, amount, description, account, row_snapshot
+      )
+      select
+        p_run_id, eligible.calendar_month, months.month_ordinal,
+        eligible.role, eligible.source_type, eligible.source_id,
+        eligible.member_ordinal, eligible.source_date, eligible.amount,
+        eligible.description, eligible.account, eligible.row_snapshot
+      from eligible
+      join months using (calendar_month)
+      order by months.month_ordinal, eligible.role, eligible.member_ordinal;
+      get diagnostics v_population_member_total = row_count;
+
+      select count(distinct population.calendar_month)::integer,
+             min(population.month_ordinal), max(population.month_ordinal)
+      into v_population_total, v_population_min_ordinal,
+           v_population_max_ordinal
+      from public.financial_reconciliation_automatic_adyen_population population
+      where population.run_id = p_run_id;
+
+      update public.financial_reconciliation_automatic_runs run
+      set analysis_total = v_population_total,
+          updated_at = now()
+      where run.id = p_run_id;
+      v_run.analysis_total := v_population_total;
+    end if;
+  end if;
+
+  if not v_population_invalid and v_population_member_total > 0 then
+    if v_population_min_ordinal is distinct from 1
+      or v_population_max_ordinal is distinct from v_population_total
+      or v_population_total is distinct from v_run.analysis_total
+      or v_run.analysis_processed not between 0 and v_population_total
+      or (v_run.analysis_processed = 0 and (
+        v_run.analysis_cursor_date is not null
+        or v_run.analysis_cursor_id is not null
+      ))
+      or (v_run.analysis_processed > 0 and (
+        v_run.analysis_cursor_id is not null
+        or not exists (
+          select 1
+          from public.financial_reconciliation_automatic_adyen_population population
+          where population.run_id = p_run_id
+            and population.month_ordinal = v_run.analysis_processed
+            and population.calendar_month = v_run.analysis_cursor_date
+        )
+      ))
+      or exists (
+        select 1
+        from public.financial_reconciliation_automatic_adyen_population population
+        where population.run_id = p_run_id
+        group by population.month_ordinal
+        having count(distinct population.calendar_month) <> 1
+      )
+      or exists (
+        select 1
+        from public.financial_reconciliation_automatic_adyen_population population
+        where population.run_id = p_run_id
+        group by population.calendar_month
+        having count(distinct population.month_ordinal) <> 1
+      )
+      or exists (
+        select 1
+        from public.financial_reconciliation_automatic_adyen_population population
+        where population.run_id = p_run_id
+        group by population.calendar_month, population.role
+        having min(population.member_ordinal) <> 1
+          or max(population.member_ordinal) <> count(*)
+      ) then
+      v_population_invalid := true;
+      v_population_error_summary :=
+        'The Adyen analysis population projection diverged.';
+    end if;
+  elsif not v_population_invalid
+    and (v_run.analysis_total <> 0 or v_run.analysis_processed <> 0) then
+    v_population_invalid := true;
+    v_population_error_summary :=
+      'The Adyen analysis population projection diverged.';
+  end if;
+
+  if not v_population_invalid then
+    select population.source_id
+    into v_invalid_source_id
+    from public.financial_reconciliation_automatic_adyen_population population
+    left join public.import_cgd_extrato_ordem bank
+      on population.role = 'source'
+     and bank.id = population.source_id
+    left join public.import_fdm_accounts fdm
+      on population.role = 'destination'
+     and fdm.id = population.source_id
+    where population.run_id = p_run_id
+      and (
+        (
+          population.role = 'source'
+          and (
+            bank.id is null
+            or bank.data is distinct from population.source_date
+            or bank.montante is distinct from population.amount
+            or bank.descritivo is distinct from population.description
+            or population.account is distinct from ''
+            or to_jsonb(bank) is distinct from population.row_snapshot
+            or exists (
+              select 1
+              from public.financial_reconciliation_items locked
+              where locked.source_type = 'import_cgd_extrato_ordem'
+                and locked.source_id = population.source_id
+            )
+          )
+        )
+        or (
+          population.role = 'destination'
+          and (
+            fdm.id is null
+            or fdm.event_date is distinct from population.source_date
+            or fdm.amount is distinct from population.amount
+            or fdm.description is distinct from population.description
+            or fdm.account is distinct from population.account
+            or to_jsonb(fdm) is distinct from population.row_snapshot
+            or exists (
+              select 1
+              from public.financial_reconciliation_items locked
+              where locked.source_type = 'import_fdm_accounts'
+                and locked.source_id = population.source_id
+            )
+          )
+        )
+      )
+    order by population.month_ordinal, population.role,
+             population.member_ordinal
+    limit 1;
+    if found then
+      v_population_invalid := true;
+      v_population_error_summary :=
+        'The Adyen analysis population changed before completion.';
+    end if;
+  end if;
+
+  if v_population_invalid then
+    update public.financial_reconciliation_automatic_proposals proposal
+    set status = 'stale',
+        reason = 'analysis_population_changed',
+        updated_at = now()
+    where proposal.run_id = p_run_id
+      and proposal.status in ('proposed','ambiguous');
+
+    update public.financial_reconciliation_automatic_runs run
+    set status = 'failed',
+        error_summary = v_population_error_summary,
+        analysis_completed_at = coalesce(run.analysis_completed_at, now()),
+        analysis_error_code = 'analysis_population_changed',
+        analysis_error_at = now(),
+        finished_at = coalesce(run.finished_at, now()),
+        updated_at = now(),
+        counts = jsonb_build_object(
+          'bases', run.analysis_total,
+          'proposed', 0,
+          'ambiguous', 0,
+          'skipped', greatest(
+            run.analysis_processed - (
+              select count(*)::integer
+              from public.financial_reconciliation_automatic_proposals proposal
+              where proposal.run_id = p_run_id
+                and proposal.status in ('stale','failed')
+            ),
+            0
+          ),
+          'stale', (
+            select count(*)
+            from public.financial_reconciliation_automatic_proposals proposal
+            where proposal.run_id = p_run_id
+              and proposal.status = 'stale'
+          )
+        )
+    where run.id = p_run_id;
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+
+  for v_month in
+    select population.month_ordinal, population.calendar_month
+    from public.financial_reconciliation_automatic_adyen_population population
+    where population.run_id = p_run_id
+      and population.month_ordinal > v_run.analysis_processed
+    group by population.month_ordinal, population.calendar_month
+    order by population.month_ordinal
+    limit 25
+  loop
+    v_page_count := v_page_count + 1;
+    v_last_ordinal := v_month.month_ordinal;
+    v_last_month := v_month.calendar_month;
+
+    select array_agg(population.source_id order by population.member_ordinal),
+           count(*)::integer, sum(population.amount)::numeric(14,2),
+           (array_agg(population.source_id
+              order by population.member_ordinal))[1],
+           (array_agg(population.source_date
+              order by population.member_ordinal))[1],
+           (array_agg(population.row_snapshot
+              order by population.member_ordinal))[1]
+    into v_source_ids, v_source_count, v_source_total,
+         v_base_id, v_base_date, v_base_snapshot
+    from public.financial_reconciliation_automatic_adyen_population population
+    where population.run_id = p_run_id
+      and population.month_ordinal = v_month.month_ordinal
+      and population.role = 'source';
+
+    select array_agg(population.source_id order by population.member_ordinal),
+           count(*)::integer, sum(population.amount)::numeric(14,2)
+    into v_destination_ids, v_destination_count, v_destination_total
+    from public.financial_reconciliation_automatic_adyen_population population
+    where population.run_id = p_run_id
+      and population.month_ordinal = v_month.month_ordinal
+      and population.role = 'destination';
+
+    if v_source_count = 0 or v_destination_count = 0 then
+      continue;
+    end if;
+
+    v_difference := case v_operator
+      when '-' then
+        (v_source_total - v_destination_total)::numeric(14,2)
+      when '+' then
+        (v_source_total + v_destination_total)::numeric(14,2)
+      else null
+    end;
+    if v_difference is null then
+      raise exception 'Automatic Adyen monthly operator is invalid.';
+    end if;
+
+    v_status := case
+      when abs(v_difference) <= v_allowed_difference then 'proposed'
+      else 'ambiguous'
+    end;
+    v_reason := case
+      when v_status = 'ambiguous' then 'monthly_difference_exceeded'
+      else ''
+    end;
+    v_signature := public.financial_reconciliation_extension_sha256(
+      jsonb_build_object(
+        'ruleKey', 'cgd_bank_statement_fdm_adyen_monthly_payments',
+        'ruleVersion', 1,
+        'calendarMonth', v_month.calendar_month,
+        'sourceIds', to_jsonb(v_source_ids),
+        'destinationIds', to_jsonb(v_destination_ids),
+        'sourceTotal', v_source_total,
+        'destinationTotal', v_destination_total,
+        'calculatedDifference', v_difference,
+        'differenceAllowed', v_allowed_difference,
+        'operator', v_operator
+      )::text
+    );
+    v_summary_snapshot := jsonb_build_object(
+      'ruleKey', 'cgd_bank_statement_fdm_adyen_monthly_payments',
+      'ruleVersion', 1,
+      'strategy', 'closed_calendar_month',
+      'calendarMonth', v_month.calendar_month,
+      'sourceDescriptionContains', 'Adyen',
+      'destinationAccount', 'Adyen',
+      'operator', v_operator,
+      'differenceAllowed', v_allowed_difference,
+      'maxDifferenceDays', 31,
+      'sourceCount', v_source_count,
+      'sourceTotal', v_source_total,
+      'destinationCount', v_destination_count,
+      'destinationTotal', v_destination_total,
+      'calculatedDifference', v_difference,
+      'technicalBaseSourceId', v_base_id,
+      'technicalBaseSourceDate', v_base_date,
+      'analysisTimestamp', now(),
+      'signature', v_signature
+    );
+
+    v_proposal_id := null;
+    insert into public.financial_reconciliation_automatic_proposals (
+      run_id, rule_key, rule_version, base_source_type,
+      base_source_id, base_source_date, base_snapshot,
+      calculated_difference, allowed_difference, status, reason, signature,
+      grouping_key, summary_snapshot
+    ) values (
+      p_run_id, 'cgd_bank_statement_fdm_adyen_monthly_payments', 1,
+      'import_cgd_extrato_ordem', v_base_id, v_base_date, v_base_snapshot,
+      v_difference, v_allowed_difference, v_status, v_reason, v_signature,
+      to_char(v_month.calendar_month, 'YYYY-MM'), v_summary_snapshot
+    )
+    on conflict do nothing
+    returning id into v_proposal_id;
+    v_inserted := v_proposal_id is not null;
+
+    if not v_inserted then
+      select proposal.id into strict v_proposal_id
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = p_run_id
+        and proposal.rule_key =
+          'cgd_bank_statement_fdm_adyen_monthly_payments'
+        and proposal.rule_version = 1
+        and proposal.base_source_type = 'import_cgd_extrato_ordem'
+        and proposal.base_source_id = v_base_id
+        and proposal.signature = v_signature;
+    else
+      insert into public.financial_reconciliation_automatic_proposal_memberships (
+        proposal_id, role, source_type, source_id, ordinal, source_date,
+        amount, description, account, row_snapshot
+      )
+      select
+        v_proposal_id, population.role, population.source_type,
+        population.source_id, population.member_ordinal,
+        population.source_date, population.amount, population.description,
+        population.account, population.row_snapshot
+      from public.financial_reconciliation_automatic_adyen_population population
+      where population.run_id = p_run_id
+        and population.month_ordinal = v_month.month_ordinal
+        and population.role = 'source'
+      order by population.member_ordinal;
+      get diagnostics v_inserted_count = row_count;
+      if v_inserted_count <> v_source_count then
+        raise exception 'Automatic Adyen source membership insert was incomplete.';
+      end if;
+
+      insert into public.financial_reconciliation_automatic_proposal_memberships (
+        proposal_id, role, source_type, source_id, ordinal, source_date,
+        amount, description, account, row_snapshot
+      )
+      select
+        v_proposal_id, population.role, population.source_type,
+        population.source_id, population.member_ordinal,
+        population.source_date, population.amount, population.description,
+        population.account, population.row_snapshot
+      from public.financial_reconciliation_automatic_adyen_population population
+      where population.run_id = p_run_id
+        and population.month_ordinal = v_month.month_ordinal
+        and population.role = 'destination'
+      order by population.member_ordinal;
+      get diagnostics v_inserted_count = row_count;
+      if v_inserted_count <> v_destination_count then
+        raise exception
+          'Automatic Adyen destination membership insert was incomplete.';
+      end if;
+
+      select array_agg(member.source_id order by member.ordinal),
+             sum(member.amount)::numeric(14,2)
+      into v_inserted_source_ids, v_inserted_source_total
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal_id
+        and member.role = 'source';
+      select array_agg(member.source_id order by member.ordinal),
+             sum(member.amount)::numeric(14,2)
+      into v_inserted_destination_ids, v_inserted_destination_total
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal_id
+        and member.role = 'destination';
+
+      if v_inserted_source_ids is distinct from v_source_ids
+        or v_inserted_destination_ids is distinct from v_destination_ids
+        or v_inserted_source_total is distinct from v_source_total
+        or v_inserted_destination_total is distinct from v_destination_total
+        or v_base_id is distinct from v_inserted_source_ids[1] then
+        raise exception
+          'Automatic Adyen proposal summary and memberships diverged.';
+      end if;
+    end if;
+  end loop;
+
+  v_processed_after := v_run.analysis_processed;
+  if v_page_count > 0 then
+    update public.financial_reconciliation_automatic_runs run
+    set analysis_cursor_date = v_last_month,
+        analysis_cursor_id = null,
+        analysis_processed = v_last_ordinal,
+        analysis_total = v_population_total,
+        updated_at = now(),
+        analysis_error_code = null,
+        analysis_error_at = null
+    where run.id = p_run_id
+    returning run.analysis_processed into v_processed_after;
+  end if;
+
+  if v_processed_after is distinct from v_population_total then
+    return public.financial_reconciliation_automatic_progress_or_run(p_run_id);
+  end if;
+  return public.financial_reconciliation_finalize_automatic_analysis(p_run_id);
+end
+$$;
+
 create or replace function public.continue_financial_reconciliation_automatic_analysis(
   p_run_id uuid,
   p_actor text
@@ -2028,6 +2655,278 @@ revoke all on function public.continue_financial_reconciliation_automatic_analys
   from public, anon, authenticated, service_role;
 grant execute on function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
   to service_role;
+
+create table if not exists public.financial_reconciliation_automatic_adyen_population (
+  run_id uuid not null,
+  calendar_month date not null,
+  month_ordinal integer not null,
+  role text not null,
+  source_type text not null,
+  source_id uuid not null,
+  member_ordinal integer not null,
+  source_date date not null,
+  amount numeric(14,2) not null,
+  description text not null,
+  account text not null,
+  row_snapshot jsonb not null,
+  constraint fr_auto_adyen_population_run_fkey
+    foreign key (run_id)
+    references public.financial_reconciliation_automatic_runs(id)
+    on delete cascade,
+  constraint fr_auto_adyen_population_month_ordinal_check
+    check (month_ordinal > 0),
+  constraint fr_auto_adyen_population_member_ordinal_check
+    check (member_ordinal > 0),
+  constraint fr_auto_adyen_population_role_source_check
+    check (
+      (role = 'source' and source_type = 'import_cgd_extrato_ordem')
+      or (role = 'destination' and source_type = 'import_fdm_accounts')
+    ),
+  constraint fr_auto_adyen_population_month_date_check
+    check (
+      calendar_month = date_trunc('month', calendar_month)::date
+      and source_date >= calendar_month
+      and source_date < (calendar_month + interval '1 month')::date
+    ),
+  constraint fr_auto_adyen_population_snapshot_check
+    check (jsonb_typeof(row_snapshot) = 'object'),
+  constraint fr_auto_adyen_population_pkey
+    primary key (run_id, role, source_id),
+  constraint fr_auto_adyen_population_ordinal_key
+    unique (run_id, month_ordinal, role, member_ordinal)
+);
+
+do $migration$
+declare
+  v_column_count integer;
+  v_constraint_count integer;
+  v_pair record;
+  v_actual_type "char";
+  v_actual_definition text;
+  v_expected_type "char";
+  v_expected_definition text;
+  v_foreign_key record;
+begin
+  select count(*) into v_column_count
+  from information_schema.columns column_row
+  where column_row.table_schema = 'public'
+    and column_row.table_name =
+      'financial_reconciliation_automatic_adyen_population';
+
+  if v_column_count is distinct from 12
+    or exists (
+      select 1
+      from (values
+        (1, 'run_id', 'uuid', 'NO'),
+        (2, 'calendar_month', 'date', 'NO'),
+        (3, 'month_ordinal', 'integer', 'NO'),
+        (4, 'role', 'text', 'NO'),
+        (5, 'source_type', 'text', 'NO'),
+        (6, 'source_id', 'uuid', 'NO'),
+        (7, 'member_ordinal', 'integer', 'NO'),
+        (8, 'source_date', 'date', 'NO'),
+        (9, 'amount', 'numeric', 'NO'),
+        (10, 'description', 'text', 'NO'),
+        (11, 'account', 'text', 'NO'),
+        (12, 'row_snapshot', 'jsonb', 'NO')
+      ) expected(ordinal_position, column_name, data_type, is_nullable)
+      left join information_schema.columns actual
+        on actual.table_schema = 'public'
+       and actual.table_name =
+         'financial_reconciliation_automatic_adyen_population'
+       and actual.ordinal_position = expected.ordinal_position
+       and actual.column_name = expected.column_name
+       and actual.data_type = expected.data_type
+       and actual.is_nullable = expected.is_nullable
+       and actual.column_default is null
+      where actual.column_name is null
+    )
+    or not exists (
+      select 1
+      from information_schema.columns actual
+      where actual.table_schema = 'public'
+        and actual.table_name =
+          'financial_reconciliation_automatic_adyen_population'
+        and actual.column_name = 'amount'
+        and actual.numeric_precision = 14
+        and actual.numeric_scale = 2
+    ) then
+    raise exception 'Installed Adyen population columns differ from the required contract.';
+  end if;
+
+  select count(*) into v_constraint_count
+  from pg_constraint constraint_row
+  where constraint_row.conrelid =
+    'public.financial_reconciliation_automatic_adyen_population'::regclass;
+  if v_constraint_count is distinct from 8 then
+    raise exception 'Installed Adyen population constraint count differs from the required contract.';
+  end if;
+
+  select constraint_row.contype, constraint_row.confrelid,
+         constraint_row.confdeltype, constraint_row.confupdtype,
+         constraint_row.confmatchtype, constraint_row.condeferrable,
+         constraint_row.condeferred, constraint_row.convalidated
+  into v_foreign_key
+  from pg_constraint constraint_row
+  where constraint_row.conrelid =
+      'public.financial_reconciliation_automatic_adyen_population'::regclass
+    and constraint_row.conname = 'fr_auto_adyen_population_run_fkey';
+  if not found
+    or v_foreign_key.contype is distinct from 'f'
+    or v_foreign_key.confrelid is distinct from
+      'public.financial_reconciliation_automatic_runs'::regclass
+    or v_foreign_key.confdeltype is distinct from 'c'
+    or v_foreign_key.confupdtype is distinct from 'a'
+    or v_foreign_key.confmatchtype is distinct from 's'
+    or v_foreign_key.condeferrable is distinct from false
+    or v_foreign_key.condeferred is distinct from false
+    or v_foreign_key.convalidated is distinct from true then
+    raise exception 'Installed Adyen population constraint % differs from the required definition.',
+      'fr_auto_adyen_population_run_fkey';
+  end if;
+
+  create temporary table task4_adyen_population_expected (
+    run_id uuid not null,
+    calendar_month date not null,
+    month_ordinal integer not null,
+    role text not null,
+    source_type text not null,
+    source_id uuid not null,
+    member_ordinal integer not null,
+    source_date date not null,
+    amount numeric(14,2) not null,
+    description text not null,
+    account text not null,
+    row_snapshot jsonb not null,
+    constraint task4_adyen_population_month_ordinal_check
+      check (month_ordinal > 0),
+    constraint task4_adyen_population_member_ordinal_check
+      check (member_ordinal > 0),
+    constraint task4_adyen_population_role_source_check
+      check (
+        (role = 'source' and source_type = 'import_cgd_extrato_ordem')
+        or (role = 'destination' and source_type = 'import_fdm_accounts')
+      ),
+    constraint task4_adyen_population_month_date_check
+      check (
+        calendar_month = date_trunc('month', calendar_month)::date
+        and source_date >= calendar_month
+        and source_date < (calendar_month + interval '1 month')::date
+      ),
+    constraint task4_adyen_population_snapshot_check
+      check (jsonb_typeof(row_snapshot) = 'object'),
+    constraint task4_adyen_population_pkey
+      primary key (run_id, role, source_id),
+    constraint task4_adyen_population_ordinal_key
+      unique (run_id, month_ordinal, role, member_ordinal)
+  ) on commit drop;
+
+  for v_pair in
+    select * from (values
+      ('fr_auto_adyen_population_month_ordinal_check',
+       'task4_adyen_population_month_ordinal_check'),
+      ('fr_auto_adyen_population_member_ordinal_check',
+       'task4_adyen_population_member_ordinal_check'),
+      ('fr_auto_adyen_population_role_source_check',
+       'task4_adyen_population_role_source_check'),
+      ('fr_auto_adyen_population_month_date_check',
+       'task4_adyen_population_month_date_check'),
+      ('fr_auto_adyen_population_snapshot_check',
+       'task4_adyen_population_snapshot_check'),
+      ('fr_auto_adyen_population_pkey',
+       'task4_adyen_population_pkey'),
+      ('fr_auto_adyen_population_ordinal_key',
+       'task4_adyen_population_ordinal_key')
+    ) expected(actual_name, expected_name)
+  loop
+    select constraint_row.contype,
+           pg_get_constraintdef(constraint_row.oid, true)
+    into v_actual_type, v_actual_definition
+    from pg_constraint constraint_row
+    where constraint_row.conrelid =
+        'public.financial_reconciliation_automatic_adyen_population'::regclass
+      and constraint_row.conname = v_pair.actual_name;
+    select constraint_row.contype,
+           pg_get_constraintdef(constraint_row.oid, true)
+    into strict v_expected_type, v_expected_definition
+    from pg_constraint constraint_row
+    where constraint_row.conrelid =
+        'task4_adyen_population_expected'::regclass
+      and constraint_row.conname = v_pair.expected_name;
+    if v_actual_type is distinct from v_expected_type
+      or v_actual_definition is distinct from v_expected_definition then
+      raise exception 'Installed Adyen population constraint % differs from the required definition.',
+        v_pair.actual_name;
+    end if;
+  end loop;
+
+  if (select count(*) from pg_index index_row
+      where index_row.indrelid =
+        'public.financial_reconciliation_automatic_adyen_population'::regclass)
+      is distinct from 2 then
+    raise exception 'Installed Adyen population index count differs from the required contract.';
+  end if;
+  drop table task4_adyen_population_expected;
+end
+$migration$;
+
+alter table public.financial_reconciliation_automatic_adyen_population
+  enable row level security;
+
+revoke all on table public.financial_reconciliation_automatic_adyen_population
+  from public, anon, authenticated, service_role;
+
+do $migration$
+declare
+  v_role text;
+  v_privilege text;
+begin
+  if not (select relation.relkind = 'r'
+               and relation.relrowsecurity
+               and not relation.relforcerowsecurity
+      from pg_class relation
+      where relation.oid =
+        'public.financial_reconciliation_automatic_adyen_population'::regclass)
+    or exists (
+      select 1 from pg_policy policy_row
+      where policy_row.polrelid =
+        'public.financial_reconciliation_automatic_adyen_population'::regclass
+    )
+    or exists (
+      select 1 from information_schema.table_privileges grant_row
+      where grant_row.table_schema = 'public'
+        and grant_row.table_name =
+          'financial_reconciliation_automatic_adyen_population'
+        and grant_row.grantee = 'PUBLIC'
+    )
+    or exists (
+      select 1 from information_schema.column_privileges grant_row
+      where grant_row.table_schema = 'public'
+        and grant_row.table_name =
+          'financial_reconciliation_automatic_adyen_population'
+        and grant_row.grantee in (
+          'PUBLIC','anon','authenticated','service_role'
+        )
+    ) then
+    raise exception 'Installed Adyen population security differs from the required contract.';
+  end if;
+
+  foreach v_role in array array['anon','authenticated','service_role']
+  loop
+    foreach v_privilege in array array['SELECT','INSERT','UPDATE','DELETE']
+    loop
+      if has_table_privilege(
+          v_role,
+          'public.financial_reconciliation_automatic_adyen_population',
+          v_privilege
+        ) then
+        raise exception 'Installed Adyen population security grants % to %.',
+          v_privilege, v_role;
+      end if;
+    end loop;
+  end loop;
+end
+$migration$;
 
 create or replace function public.financial_reconciliation_automatic_adyen_month_count()
 returns bigint
@@ -2160,12 +3059,27 @@ begin
     end if;
   end if;
 
-  if v_rule_key is distinct from
-      'cgd_bank_statement_fdm_adyen_monthly_payments'
-    or v_rule_version is distinct from 1 then
+  if (v_rule_key, v_rule_version) in (
+      ('financial_documents_cgd_bank_statement', 2),
+      ('financial_documents_cgd_credit_card', 1),
+      ('financial_documents_cgd_bank_statement_amount_only', 1),
+      ('financial_documents_cgd_credit_card_amount_only', 1),
+      ('cgd_bank_statement_fdm_credit_card_monthly_income', 2)
+    ) then
     return public.financial_reconciliation_finalize_automatic_prior_analysis(
       p_run_id
     );
+  elsif v_rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination'
+    and v_rule_version = 1 then
+    if v_run.analysis_completed_at is not null then
+      return public.get_financial_reconciliation_automatic_run(p_run_id);
+    end if;
+    raise exception
+      'Automatic Bank Reservation analysis uses strategy-specific finalization.';
+  elsif v_rule_key is distinct from
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    or v_rule_version is distinct from 1 then
+    raise exception 'Automatic reconciliation rule is unsupported.';
   end if;
 
   if v_run.analysis_completed_at is not null then
@@ -2229,7 +3143,7 @@ begin
 end
 $$;
 
-create or replace function public.financial_reconciliation_continue_automatic_adyen_monthly(
+create or replace function public.financial_reconciliation_continue_automatic_adyen_mutable_prior(
   p_run_id uuid,
   p_actor text
 )
@@ -2596,6 +3510,8 @@ begin
   return public.financial_reconciliation_automatic_progress_or_run(p_run_id);
 end
 $$;
+
+drop function public.financial_reconciliation_continue_automatic_adyen_mutable_prior(uuid,text);
 
 create or replace function public.continue_financial_reconciliation_automatic_analysis(
   p_run_id uuid,

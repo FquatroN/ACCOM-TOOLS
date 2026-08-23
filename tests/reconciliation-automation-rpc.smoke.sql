@@ -12539,6 +12539,10 @@ insert into public.import_cgd_extrato_ordem (
    'task4-over-bank', date '2026-04-10', 'Adyen over', 121.00),
   ('d4050000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
    'task4-bank-only', date '2026-05-10', 'Adyen bank only', 50.00),
+  ('d4080000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'task4-null-date-bank', null, 'Adyen null date', 25.00),
+  ('d4080000-0000-0000-0000-000000000002', 'smoke-task4-adyen',
+   'task4-null-amount-bank', date '2026-02-15', 'Adyen null amount', null),
   ('d4000000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
    'task4-pre-floor-bank', date '2025-12-31', 'Adyen pre-floor', 25.00),
   ('d4090000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
@@ -12580,6 +12584,11 @@ insert into public.import_fdm_accounts (
   ('e4060000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
    'Adyen', '2026-06-10', date '2026-06-10', 'Reservation',
    50.00, 'FDM only'),
+  ('e4080000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
+   'Adyen', '', null, 'Reservation', 25.00, 'null date FDM'),
+  ('e4080000-0000-0000-0000-000000000002', 'smoke-task4-adyen',
+   'Adyen', '2026-02-15', date '2026-02-15', 'Reservation',
+   null, 'null amount FDM'),
   ('e4000000-0000-0000-0000-000000000001', 'smoke-task4-adyen',
    'Adyen', '2025-12-31', date '2025-12-31', 'Reservation',
    25.00, 'pre-floor FDM'),
@@ -12777,6 +12786,52 @@ declare
   v_source_ids uuid[];
   v_destination_ids uuid[];
 begin
+  if (select count(*)
+      from public.financial_reconciliation_automatic_adyen_population population
+      where population.run_id = 'd4400000-0000-0000-0000-000000000001')
+      is distinct from 73
+    or (select count(distinct population.calendar_month)
+        from public.financial_reconciliation_automatic_adyen_population population
+        where population.run_id = 'd4400000-0000-0000-0000-000000000001')
+      is distinct from 6
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_adyen_population population
+      left join public.import_cgd_extrato_ordem bank
+        on population.role = 'source' and bank.id = population.source_id
+      left join public.import_fdm_accounts fdm
+        on population.role = 'destination' and fdm.id = population.source_id
+      where population.run_id = 'd4400000-0000-0000-0000-000000000001'
+        and (
+          (population.role = 'source' and (
+            population.source_type is distinct from 'import_cgd_extrato_ordem'
+            or population.source_date is distinct from bank.data
+            or population.amount is distinct from bank.montante
+            or population.description is distinct from bank.descritivo
+            or population.account is distinct from ''
+            or population.row_snapshot is distinct from to_jsonb(bank)
+          ))
+          or (population.role = 'destination' and (
+            population.source_type is distinct from 'import_fdm_accounts'
+            or population.source_date is distinct from fdm.event_date
+            or population.amount is distinct from fdm.amount
+            or population.description is distinct from fdm.description
+            or population.account is distinct from fdm.account
+            or population.row_snapshot is distinct from to_jsonb(fdm)
+          ))
+        )
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_adyen_population population
+      where population.run_id = 'd4400000-0000-0000-0000-000000000001'
+      group by population.calendar_month, population.role
+      having min(population.member_ordinal) is distinct from 1
+        or max(population.member_ordinal) is distinct from count(*)
+    ) then
+    raise exception 'Task 4 Adyen projected identities, ordinals, or audit snapshots diverged.';
+  end if;
+
   select array_agg(member.source_id order by member.source_id)
   into v_source_ids
   from public.financial_reconciliation_automatic_proposal_memberships member
@@ -12937,6 +12992,405 @@ begin
 end
 $$;
 
+-- Task 4 Adyen frozen population pages and inter-page inserts
+-- The projection is seeded directly here so this transactional fixture remains
+-- a deterministic >25-month paging test even when run before 2028.
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+)
+select
+  ('d4500000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task4-frozen', 'task4-frozen-bank-' || series,
+  (date '2026-01-10' + make_interval(months => (series - 1) * 2))::date,
+  'Adyen frozen month ' || series, 10.00
+from generate_series(1, 26) series;
+
+insert into public.import_fdm_accounts (
+  id, import_batch, source_row_number, account, date_time_raw, event_date,
+  category, amount, description
+)
+select
+  ('e4500000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task4-frozen', series, 'Adyen',
+  to_char(
+    date '2026-01-10' + make_interval(months => (series - 1) * 2),
+    'YYYY-MM-DD'
+  ),
+  (date '2026-01-10' + make_interval(months => (series - 1) * 2))::date,
+  'Reservation', 10.00, 'Adyen frozen month ' || series
+from generate_series(1, 26) series;
+
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'd4500000-0000-0000-0000-000000000100', 'manual', 'rule', 'analyzing',
+  'smoke:task4-frozen', 'd4500000-0000-0000-0000-000000000100',
+  pg_temp.task4_adyen_snapshot(0.00), 0, 26
+);
+
+insert into public.financial_reconciliation_automatic_adyen_population (
+  run_id, calendar_month, month_ordinal, role, source_type, source_id,
+  member_ordinal, source_date, amount, description, account, row_snapshot
+)
+select
+  'd4500000-0000-0000-0000-000000000100',
+  date_trunc('month', bank.data)::date, series, 'source',
+  'import_cgd_extrato_ordem', bank.id, 1, bank.data, bank.montante,
+  bank.descritivo, '', to_jsonb(bank)
+from generate_series(1, 26) series
+join public.import_cgd_extrato_ordem bank
+  on bank.id = ('d4500000-0000-0000-0000-' ||
+    lpad(series::text, 12, '0'))::uuid
+union all
+select
+  'd4500000-0000-0000-0000-000000000100',
+  date_trunc('month', fdm.event_date)::date, series, 'destination',
+  'import_fdm_accounts', fdm.id, 1, fdm.event_date, fdm.amount,
+  fdm.description, fdm.account, to_jsonb(fdm)
+from generate_series(1, 26) series
+join public.import_fdm_accounts fdm
+  on fdm.id = ('e4500000-0000-0000-0000-' ||
+    lpad(series::text, 12, '0'))::uuid;
+
+do $$
+declare
+  v_first jsonb;
+begin
+  v_first := public.continue_financial_reconciliation_automatic_analysis(
+    'd4500000-0000-0000-0000-000000000100', 'smoke:task4-frozen'
+  );
+  if v_first->'status' is distinct from '"analyzing"'::jsonb
+    or v_first->'analysisComplete' is distinct from 'false'::jsonb
+    or v_first->'analysisProcessed' is distinct from '25'::jsonb
+    or v_first->'analysisTotal' is distinct from '26'::jsonb
+    or (select count(distinct population.month_ordinal)
+        from public.financial_reconciliation_automatic_adyen_population population
+        where population.run_id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from 26
+    or (select count(*)
+        from public.financial_reconciliation_automatic_adyen_population population
+        where population.run_id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from 52 then
+    raise exception 'Task 4 frozen Adyen first page/counters are invalid: %.',
+      v_first;
+  end if;
+end
+$$;
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values
+  ('d4510000-0000-0000-0000-000000000001', 'smoke-task4-frozen-new',
+   'task4-new-month-behind', date '2026-02-10', 'Adyen new behind', 3.00),
+  ('d4510000-0000-0000-0000-000000000002', 'smoke-task4-frozen-new',
+   'task4-new-month-ahead', date '2030-02-10', 'Adyen new ahead', 4.00),
+  ('d4510000-0000-0000-0000-000000000003', 'smoke-task4-frozen-new',
+   'task4-new-member-processed', date '2026-01-20',
+   'Adyen new processed member', 5.00);
+insert into public.import_fdm_accounts (
+  id, import_batch, source_row_number, account, date_time_raw, event_date,
+  category, amount, description
+) values
+  ('e4510000-0000-0000-0000-000000000001', 'smoke-task4-frozen-new', 1,
+   'Adyen', '2026-02-10', date '2026-02-10', 'Reservation', 3.00,
+   'new month behind'),
+  ('e4510000-0000-0000-0000-000000000002', 'smoke-task4-frozen-new', 2,
+   'Adyen', '2030-02-10', date '2030-02-10', 'Reservation', 4.00,
+   'new month ahead'),
+  ('e4510000-0000-0000-0000-000000000003', 'smoke-task4-frozen-new', 3,
+   'Adyen', '2026-01-20', date '2026-01-20', 'Reservation', 5.00,
+   'new processed member');
+
+do $$
+declare
+  v_second jsonb;
+  v_retry jsonb;
+begin
+  v_second := public.continue_financial_reconciliation_automatic_analysis(
+    'd4500000-0000-0000-0000-000000000100', 'smoke:task4-frozen'
+  );
+  v_retry := public.continue_financial_reconciliation_automatic_analysis(
+    'd4500000-0000-0000-0000-000000000100', 'smoke:task4-frozen'
+  );
+  if v_second->'status' is distinct from '"ready"'::jsonb
+    or v_second->'analysisComplete' is distinct from 'true'::jsonb
+    or v_second->'analysisProcessed' is distinct from '26'::jsonb
+    or v_second->'analysisTotal' is distinct from '26'::jsonb
+    or v_second#>'{counts,bases}' is distinct from '26'::jsonb
+    or v_second#>'{counts,proposed}' is distinct from '26'::jsonb
+    or v_retry is distinct from v_second
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from 26
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        join public.financial_reconciliation_automatic_proposals proposal
+          on proposal.id = member.proposal_id
+        where proposal.run_id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from 52
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_adyen_population population
+      where population.run_id = 'd4500000-0000-0000-0000-000000000100'
+        and population.source_id in (
+          'd4510000-0000-0000-0000-000000000001',
+          'd4510000-0000-0000-0000-000000000002',
+          'd4510000-0000-0000-0000-000000000003',
+          'e4510000-0000-0000-0000-000000000001',
+          'e4510000-0000-0000-0000-000000000002',
+          'e4510000-0000-0000-0000-000000000003'
+        )
+    ) then
+    raise exception 'Task 4 frozen Adyen second page/retry changed population: %, %.',
+      v_second, v_retry;
+  end if;
+end
+$$;
+
+-- Task 4 Adyen frozen population fails closed on changed future members
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+)
+select fixture.run_id, 'manual', 'rule', 'analyzing', fixture.actor,
+       fixture.run_id, pg_temp.task4_adyen_snapshot(0.00), 0, 26
+from (values
+  ('d4600000-0000-0000-0000-000000000101'::uuid,
+   'smoke:task4-frozen-consumed'),
+  ('d4600000-0000-0000-0000-000000000102'::uuid,
+   'smoke:task4-frozen-mutated'),
+  ('d4600000-0000-0000-0000-000000000103'::uuid,
+   'smoke:task4-frozen-deleted')
+) fixture(run_id, actor);
+
+insert into public.financial_reconciliation_automatic_adyen_population (
+  run_id, calendar_month, month_ordinal, role, source_type, source_id,
+  member_ordinal, source_date, amount, description, account, row_snapshot
+)
+select fixture.run_id, population.calendar_month, population.month_ordinal,
+       population.role, population.source_type, population.source_id,
+       population.member_ordinal, population.source_date, population.amount,
+       population.description, population.account, population.row_snapshot
+from public.financial_reconciliation_automatic_adyen_population population
+cross join (values
+  ('d4600000-0000-0000-0000-000000000101'::uuid),
+  ('d4600000-0000-0000-0000-000000000102'::uuid),
+  ('d4600000-0000-0000-0000-000000000103'::uuid)
+) fixture(run_id)
+where population.run_id = 'd4500000-0000-0000-0000-000000000100';
+
+do $$
+declare
+  v_case record;
+  v_first jsonb;
+begin
+  for v_case in
+    select * from (values
+      ('d4600000-0000-0000-0000-000000000101'::uuid,
+       'smoke:task4-frozen-consumed'),
+      ('d4600000-0000-0000-0000-000000000102'::uuid,
+       'smoke:task4-frozen-mutated'),
+      ('d4600000-0000-0000-0000-000000000103'::uuid,
+       'smoke:task4-frozen-deleted')
+    ) fixture(run_id, actor)
+  loop
+    v_first := public.continue_financial_reconciliation_automatic_analysis(
+      v_case.run_id, v_case.actor
+    );
+    if v_first->'status' is distinct from '"analyzing"'::jsonb
+      or v_first->'analysisProcessed' is distinct from '25'::jsonb
+      or v_first->'analysisTotal' is distinct from '26'::jsonb then
+      raise exception 'Task 4 mutation setup page is invalid for %: %.',
+        v_case.run_id, v_first;
+    end if;
+  end loop;
+end
+$$;
+
+do $$
+declare
+  v_result jsonb;
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_cgd_extrato_ordem', '["import_fdm_accounts"]'::jsonb,
+    'smoke:task4-frozen-consumed'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  ) values (
+    v_reconciliation_id, 'import_cgd_extrato_ordem',
+    'd4500000-0000-0000-0000-000000000026', 10.00,
+    'smoke:task4-frozen-consumed'
+  );
+
+  v_result := public.continue_financial_reconciliation_automatic_analysis(
+    'd4600000-0000-0000-0000-000000000101',
+    'smoke:task4-frozen-consumed'
+  );
+  if v_result->'status' is distinct from '"failed"'::jsonb
+    or v_result->'analysisComplete' is distinct from 'true'::jsonb
+    or v_result->'analysisProcessed' is distinct from '25'::jsonb
+    or v_result->'analysisTotal' is distinct from '26'::jsonb
+    or v_result->'analysisErrorCode' is distinct from
+      '"analysis_population_changed"'::jsonb
+    or jsonb_typeof(v_result->'finishedAt') is distinct from 'string'
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4600000-0000-0000-0000-000000000101'
+        and proposal.status in ('proposed','ambiguous','executing')
+    )
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = 'd4600000-0000-0000-0000-000000000101'
+          and proposal.status = 'stale'
+          and proposal.reason = 'analysis_population_changed')
+      is distinct from 25 then
+    raise exception 'Task 4 consumed projected member did not fail safely: %.',
+      v_result;
+  end if;
+  delete from public.financial_reconciliation_items item
+  where item.reconciliation_id = v_reconciliation_id;
+end
+$$;
+
+do $$
+declare
+  v_result jsonb;
+begin
+  update public.import_fdm_accounts fdm
+  set amount = 11.00
+  where fdm.id = 'e4500000-0000-0000-0000-000000000026';
+  v_result := public.continue_financial_reconciliation_automatic_analysis(
+    'd4600000-0000-0000-0000-000000000102',
+    'smoke:task4-frozen-mutated'
+  );
+  if v_result->'status' is distinct from '"failed"'::jsonb
+    or v_result->'analysisErrorCode' is distinct from
+      '"analysis_population_changed"'::jsonb
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4600000-0000-0000-0000-000000000102'
+        and proposal.status in ('proposed','ambiguous','executing')
+    ) then
+    raise exception 'Task 4 mutated projected member did not fail safely: %.',
+      v_result;
+  end if;
+  update public.import_fdm_accounts fdm
+  set amount = 10.00
+  where fdm.id = 'e4500000-0000-0000-0000-000000000026';
+end
+$$;
+
+do $$
+declare
+  v_result jsonb;
+begin
+  delete from public.import_fdm_accounts fdm
+  where fdm.id = 'e4500000-0000-0000-0000-000000000026';
+  v_result := public.continue_financial_reconciliation_automatic_analysis(
+    'd4600000-0000-0000-0000-000000000103',
+    'smoke:task4-frozen-deleted'
+  );
+  if v_result->'status' is distinct from '"failed"'::jsonb
+    or v_result->'analysisErrorCode' is distinct from
+      '"analysis_population_changed"'::jsonb
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'd4600000-0000-0000-0000-000000000103'
+        and proposal.status in ('proposed','ambiguous','executing')
+    ) then
+    raise exception 'Task 4 deleted projected member did not fail safely: %.',
+      v_result;
+  end if;
+end
+$$;
+
+-- Task 4 finalizer literal seven-tuple allowlist
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values
+  (
+    'd4800000-0000-0000-0000-000000000001', 'manual', 'rule', 'analyzing',
+    'smoke:task4-finalizer-unknown',
+    'd4800000-0000-0000-0000-000000000001',
+    '[{"ruleKey":"unknown_rule","ruleVersion":1}]'::jsonb, 0, 0
+  ),
+  (
+    'd4800000-0000-0000-0000-000000000002', 'manual', 'rule', 'analyzing',
+    'smoke:task4-finalizer-bank',
+    'd4800000-0000-0000-0000-000000000002',
+    pg_temp.task3_bank_snapshot(3), 0, 0
+  );
+
+do $$
+declare
+  v_unknown_rejected boolean := false;
+  v_bank_rejected boolean := false;
+  v_completed_bank jsonb;
+begin
+  begin
+    perform public.financial_reconciliation_finalize_automatic_analysis(
+      'd4800000-0000-0000-0000-000000000001'
+    );
+  exception when others then
+    v_unknown_rejected := sqlerrm =
+      'Automatic reconciliation rule is unsupported.';
+  end;
+  begin
+    perform public.financial_reconciliation_finalize_automatic_analysis(
+      'd4800000-0000-0000-0000-000000000002'
+    );
+  exception when others then
+    v_bank_rejected := sqlerrm =
+      'Automatic Bank Reservation analysis uses strategy-specific finalization.';
+  end;
+  v_completed_bank := public.financial_reconciliation_finalize_automatic_analysis(
+    'b3300000-0000-0000-0000-000000000001'
+  );
+  if not v_unknown_rejected or not v_bank_rejected
+    or v_completed_bank->'status' is distinct from '"ready"'::jsonb
+    or v_completed_bank->'analysisComplete' is distinct from 'true'::jsonb
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_runs run
+      where run.id in (
+          'd4800000-0000-0000-0000-000000000001',
+          'd4800000-0000-0000-0000-000000000002'
+        )
+        and (
+          run.status is distinct from 'analyzing'
+          or run.analysis_completed_at is not null
+        )
+    ) then
+    raise exception 'Task 4 finalizer did not fail closed for unknown/Bank tuples.';
+  end if;
+end
+$$;
+
+-- Task 4 Adyen population reapply security and run cascade
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'd4700000-0000-0000-0000-000000000001', 'manual', 'rule', 'analyzing',
+  'smoke:task4-cascade', 'd4700000-0000-0000-0000-000000000001',
+  pg_temp.task4_adyen_snapshot(0.00), 0, 1
+);
+insert into public.financial_reconciliation_automatic_adyen_population (
+  run_id, calendar_month, month_ordinal, role, source_type, source_id,
+  member_ordinal, source_date, amount, description, account, row_snapshot
+)
+select 'd4700000-0000-0000-0000-000000000001', date_trunc('month', bank.data),
+       1, 'source', 'import_cgd_extrato_ordem', bank.id, 1, bank.data,
+       bank.montante, bank.descritivo, '', to_jsonb(bank)
+from public.import_cgd_extrato_ordem bank
+where bank.id = 'd4500000-0000-0000-0000-000000000001';
+
 create temporary table task4_adyen_before_reapply on commit drop as
 select
   (select count(*) from public.financial_reconciliation_automatic_proposals
@@ -12959,12 +13413,22 @@ where procedure.oid in (
   'public.financial_reconciliation_continue_automatic_monthly_income(uuid,jsonb)'::regprocedure
 );
 
+create temporary table task4_bank_before_reapply on commit drop as
+select run.status, run.analysis_processed, run.analysis_total, run.counts,
+       (select count(*)
+        from public.financial_reconciliation_automatic_bank_reservation_population population
+        where population.run_id = run.id) as population_count
+from public.financial_reconciliation_automatic_runs run
+where run.id = 'b3300000-0000-0000-0000-000000000001';
+
 \ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
 
 do $$
 declare
   v_retry jsonb;
   v_before record;
+  v_role text;
+  v_privilege text;
 begin
   select * into strict v_before from task4_adyen_before_reapply;
   v_retry := public.continue_financial_reconciliation_automatic_analysis(
@@ -13020,6 +13484,81 @@ begin
       or has_function_privilege('service_role', expected.signature, 'EXECUTE')
   ) then
     raise exception 'Task 4 private helper unexpectedly exposes EXECUTE.';
+  end if;
+
+  if (select count(*)
+      from information_schema.columns column_row
+      where column_row.table_schema = 'public'
+        and column_row.table_name =
+          'financial_reconciliation_automatic_adyen_population')
+      is distinct from 12
+    or (select count(*)
+        from pg_constraint constraint_row
+        where constraint_row.conrelid =
+          'public.financial_reconciliation_automatic_adyen_population'::regclass)
+      is distinct from 8
+    or (select count(*)
+        from pg_index index_row
+        where index_row.indrelid =
+          'public.financial_reconciliation_automatic_adyen_population'::regclass)
+      is distinct from 2
+    or not (select relation.relrowsecurity and not relation.relforcerowsecurity
+            from pg_class relation
+            where relation.oid =
+              'public.financial_reconciliation_automatic_adyen_population'::regclass)
+    or exists (
+      select 1 from pg_policy policy_row
+      where policy_row.polrelid =
+        'public.financial_reconciliation_automatic_adyen_population'::regclass
+    )
+    or (select count(*)
+        from public.financial_reconciliation_automatic_adyen_population population
+        where population.run_id = 'd4700000-0000-0000-0000-000000000001')
+      is distinct from 1 then
+    raise exception 'Task 4 Adyen population reapply/catalog contract changed.';
+  end if;
+
+  foreach v_role in array array['anon','authenticated','service_role']
+  loop
+    foreach v_privilege in array array['SELECT','INSERT','UPDATE','DELETE']
+    loop
+      if has_table_privilege(
+          v_role,
+          'public.financial_reconciliation_automatic_adyen_population',
+          v_privilege
+        ) then
+        raise exception 'Task 4 Adyen population grants % to %.',
+          v_privilege, v_role;
+      end if;
+    end loop;
+  end loop;
+
+  if exists (
+    select 1
+    from task4_bank_before_reapply before
+    full join (
+      select run.status, run.analysis_processed, run.analysis_total, run.counts,
+             (select count(*)
+              from public.financial_reconciliation_automatic_bank_reservation_population population
+              where population.run_id = run.id) as population_count
+      from public.financial_reconciliation_automatic_runs run
+      where run.id = 'b3300000-0000-0000-0000-000000000001'
+    ) after using (
+      status, analysis_processed, analysis_total, counts, population_count
+    )
+    where before.status is null or after.status is null
+  ) then
+    raise exception 'Task 4 reapply changed the Task 3 Bank population lifecycle.';
+  end if;
+
+  delete from public.financial_reconciliation_automatic_runs run
+  where run.id = 'd4700000-0000-0000-0000-000000000001';
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_adyen_population population
+    where population.run_id = 'd4700000-0000-0000-0000-000000000001'
+  ) then
+    raise exception 'Task 4 Adyen population did not cascade with its run.';
   end if;
 end
 $$;

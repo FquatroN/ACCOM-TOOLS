@@ -5332,21 +5332,40 @@ test("Adyen analysis groups closed calendar months without changing POS v2", () 
   const continuation = functionSource(
     "financial_reconciliation_continue_automatic_adyen_monthly",
   );
+  assert.match(
+    migration,
+    /create table if not exists public\.financial_reconciliation_automatic_adyen_population\s*\([\s\S]*run_id uuid not null[\s\S]*calendar_month date not null[\s\S]*month_ordinal integer not null[\s\S]*role text not null[\s\S]*source_type text not null[\s\S]*source_id uuid not null[\s\S]*member_ordinal integer not null[\s\S]*source_date date not null[\s\S]*amount numeric\(14,2\) not null[\s\S]*description text not null[\s\S]*account text not null[\s\S]*row_snapshot jsonb not null[\s\S]*on delete cascade/i,
+  );
+  assert.match(
+    migration,
+    /Installed Adyen population (?:columns|constraint|index|security)[\s\S]*enable row level security[\s\S]*revoke all on table public\.financial_reconciliation_automatic_adyen_population\s+from public, anon, authenticated, service_role/i,
+  );
   assert.match(continuation, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*ruleVersion' is distinct from '1'/i);
   assert.match(continuation, /'strategy', 'closed_calendar_month'/i);
   assert.match(continuation, /'bankDescriptionContains', 'Adyen'/i);
   assert.match(continuation, /'fdmAccount', 'Adyen'/i);
   assert.match(continuation, /'requiresBothSides', true/i);
   assert.match(continuation, /'monthMarkerDays', 31/i);
+  assert.match(continuation, /insert into public\.financial_reconciliation_automatic_adyen_population/i);
   assert.match(continuation, /bank\.descritivo ilike '%Adyen%'/i);
   assert.match(continuation, /fdm\.account = 'Adyen'/i);
-  assert.match(continuation, /cardinality\(v_source_ids\)[\s\S]*cardinality\(v_destination_ids\)[\s\S]*continue/i);
+  assert.match(continuation, /row_number\(\) over \(order by eligible\.calendar_month\)/i);
+  assert.match(continuation, /row_number\(\) over \(\s*partition by date_trunc\('month', bank\.data\)[\s\S]*order by bank\.data, bank\.id/i);
+  assert.match(continuation, /row_number\(\) over \(\s*partition by date_trunc\('month', fdm\.event_date\)[\s\S]*order by fdm\.event_date, fdm\.id/i);
+  assert.match(continuation, /from public\.financial_reconciliation_automatic_adyen_population population[\s\S]*population\.month_ordinal > v_run\.analysis_processed[\s\S]*limit 25/i);
+  assert.match(continuation, /to_jsonb\(bank\) is distinct from population\.row_snapshot[\s\S]*to_jsonb\(fdm\) is distinct from population\.row_snapshot/i);
+  assert.match(continuation, /status = 'stale'[\s\S]*reason = 'analysis_population_changed'[\s\S]*proposal\.status in \('proposed','ambiguous'\)/i);
+  assert.match(continuation, /analysis_total = v_population_total/i);
+  assert.match(continuation, /analysis_processed = v_last_ordinal/i);
+  assert.doesNotMatch(
+    continuation,
+    /financial_reconciliation_automatic_adyen_month_(?:count|page)\s*\(/i,
+  );
+  assert.match(continuation, /v_source_count = 0[\s\S]*v_destination_count = 0[\s\S]*continue/i);
   assert.match(continuation, /case v_operator[\s\S]*when '-' then[\s\S]*v_source_total - v_destination_total/i);
   assert.match(continuation, /abs\(v_difference\) <= v_allowed_difference[\s\S]*'proposed'[\s\S]*'ambiguous'/i);
   assert.match(continuation, /'monthly_difference_exceeded'/i);
   assert.match(continuation, /to_char\(v_month\.calendar_month, 'YYYY-MM'\)/i);
-  assert.match(continuation, /row_number\(\) over \(order by bank\.data, bank\.id\)/i);
-  assert.match(continuation, /row_number\(\) over \(order by fdm\.event_date, fdm\.id\)/i);
   assert.match(continuation, /'source'[\s\S]*'destination'/i);
   assert.match(continuation, /'maxDifferenceDays', 31/i);
   assert.doesNotMatch(continuation, /interval '31 days'|\bexecute\b|\bformat\s*\(/i);
@@ -5369,6 +5388,17 @@ test("Adyen analysis groups closed calendar months without changing POS v2", () 
   );
   assert.match(finalizer, /cgd_bank_statement_fdm_adyen_monthly_payments[\s\S]*rule_version = 1/i);
   assert.match(finalizer, /analysis_processed - count\(\*\)/i);
+  for (const [key, version] of [
+    ["financial_documents_cgd_bank_statement", 2],
+    ["financial_documents_cgd_credit_card", 1],
+    ["financial_documents_cgd_bank_statement_amount_only", 1],
+    ["financial_documents_cgd_credit_card_amount_only", 1],
+    ["cgd_bank_statement_fdm_credit_card_monthly_income", 2],
+  ]) {
+    assert.match(finalizer, new RegExp(`'${key}'\\s*,\\s*${version}`));
+  }
+  assert.match(finalizer, /fdm_bank_transfer_cgd_bank_statement_combination[\s\S]*Automatic Bank Reservation analysis uses strategy-specific finalization/i);
+  assert.match(finalizer, /raise exception 'Automatic reconciliation rule is unsupported\.'/i);
   assert.match(finalizer, /financial_reconciliation_finalize_automatic_prior_analysis\(\s*p_run_id\s*\)/i);
 
   assert.doesNotMatch(
@@ -5380,6 +5410,10 @@ test("Adyen analysis groups closed calendar months without changing POS v2", () 
     "Task 4 Adyen month union, eligibility, and cursor",
     "Task 4 Adyen closed-month classifications and omitted empty sides",
     "Task 4 Adyen memberships, retry, and reapply idempotency",
+    "Task 4 Adyen frozen population pages and inter-page inserts",
+    "Task 4 Adyen frozen population fails closed on changed future members",
+    "Task 4 Adyen population reapply security and run cascade",
+    "Task 4 finalizer literal seven-tuple allowlist",
     "Task 4 POS v2 helper definitions remain byte-equivalent",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
