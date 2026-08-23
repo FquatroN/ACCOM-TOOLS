@@ -689,4 +689,903 @@ revoke all on function public.replace_financial_reconciliation_automation_settin
 grant execute on function public.replace_financial_reconciliation_automation_settings(jsonb,jsonb,text)
   to service_role;
 
+create or replace function public.financial_reconciliation_automatic_bank_reservation_count()
+returns bigint
+language sql
+stable
+security definer set search_path = public, pg_temp
+as $$
+  select count(*)
+  from public.import_cgd_extrato_ordem bank
+  where bank.data is not null
+    and bank.data >= date '2026-01-01'
+    and bank.montante is not null
+    and not exists (
+      select 1
+      from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    )
+$$;
+
+create or replace function public.financial_reconciliation_automatic_bank_reservation_page(
+  p_after_date date,
+  p_after_id uuid,
+  p_limit integer
+)
+returns table (
+  bank_id uuid,
+  bank_date date,
+  bank_amount numeric
+)
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+begin
+  if p_limit is null or p_limit not between 1 and 25 then
+    raise exception
+      'Automatic Bank Reservation page size must be between 1 and 25.';
+  end if;
+  if (p_after_date is null) <> (p_after_id is null) then
+    raise exception
+      'Automatic Bank Reservation page cursor must contain both date and ID.';
+  end if;
+
+  return query
+  select bank.id, bank.data, bank.montante
+  from public.import_cgd_extrato_ordem bank
+  where bank.data is not null
+    and bank.data >= date '2026-01-01'
+    and bank.montante is not null
+    and (
+      p_after_date is null
+      or (bank.data, bank.id) > (p_after_date, p_after_id)
+    )
+    and not exists (
+      select 1
+      from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    )
+  order by bank.data, bank.id
+  limit p_limit;
+end
+$$;
+
+create or replace function public.financial_reconciliation_automatic_bank_reservation_groups(
+  p_bank_id uuid,
+  p_max_difference_days integer,
+  p_candidate_pool_limit integer,
+  p_state_limit integer,
+  p_evidence_limit integer
+)
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_bank_date date;
+  v_bank_amount_cents bigint;
+  v_bank_record jsonb;
+  v_target_cents bigint;
+  v_candidate_ids uuid[];
+  v_candidate_dates date[];
+  v_candidate_cents bigint[];
+  v_candidate_count integer := 0;
+  v_path integer[] := '{}'::integer[];
+  v_depth integer;
+  v_current_position integer;
+  v_next_position integer;
+  v_prefix_total_cents bigint;
+  v_path_total_cents bigint := 0;
+  v_path_signed_total_cents bigint;
+  v_evaluated_states integer := 0;
+  v_qualifying_count integer := 0;
+  v_candidate_groups jsonb := '[]'::jsonb;
+  v_group_ids uuid[];
+  v_group_records jsonb;
+  v_descended boolean;
+  v_advanced boolean;
+  v_state_limited boolean := false;
+  v_group_limited boolean := false;
+begin
+  if p_bank_id is null then
+    raise exception 'Automatic Bank Reservation Bank ID is required.';
+  end if;
+  if p_max_difference_days is null
+    or p_max_difference_days not between 0 and 90 then
+    raise exception
+      'Automatic Bank Reservation day limit must be between 0 and 90.';
+  end if;
+  if p_candidate_pool_limit is null
+    or p_candidate_pool_limit not between 1 and 60 then
+    raise exception
+      'Automatic Bank Reservation candidate limit must be between 1 and 60.';
+  end if;
+  if p_state_limit is null or p_state_limit not between 1 and 250000 then
+    raise exception
+      'Automatic Bank Reservation state limit must be between 1 and 250000.';
+  end if;
+  if p_evidence_limit is null or p_evidence_limit not between 1 and 12 then
+    raise exception
+      'Automatic Bank Reservation evidence limit must be between 1 and 12.';
+  end if;
+
+  select
+    bank.data,
+    round(bank.montante * 100)::bigint,
+    jsonb_build_object(
+      'sourceType', 'import_cgd_extrato_ordem',
+      'sourceId', bank.id,
+      'sourceDate', bank.data,
+      'amount', bank.montante,
+      'description', bank.descritivo,
+      'account', '',
+      'rowSnapshot', to_jsonb(bank)
+    )
+  into v_bank_date, v_bank_amount_cents, v_bank_record
+  from public.import_cgd_extrato_ordem bank
+  where bank.id = p_bank_id
+    and bank.data is not null
+    and bank.data >= date '2026-01-01'
+    and bank.montante is not null
+    and not exists (
+      select 1
+      from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    );
+  if not found then
+    raise exception 'Automatic Bank Reservation Bank anchor is not eligible.';
+  end if;
+  v_target_cents := abs(v_bank_amount_cents);
+
+  select
+    array_agg(candidate.id order by candidate.event_date, candidate.id),
+    array_agg(candidate.event_date order by candidate.event_date, candidate.id),
+    array_agg(candidate.amount_cents order by candidate.event_date, candidate.id)
+  into
+    v_candidate_ids,
+    v_candidate_dates,
+    v_candidate_cents
+  from (
+    select
+      fdm.id,
+      fdm.event_date,
+      fdm.amount,
+      round(fdm.amount * 100)::bigint as amount_cents
+    from public.import_fdm_accounts fdm
+    where fdm.account = 'Bank Transfer'
+      and fdm.event_date is not null
+      and fdm.event_date >= date '2026-01-01'
+      and fdm.event_date between
+          v_bank_date - p_max_difference_days
+          and v_bank_date + p_max_difference_days
+      and fdm.amount is not null
+      and round(fdm.amount * 100)::bigint <> 0
+      and sign(round(fdm.amount * 100)::bigint) =
+          -sign(v_bank_amount_cents)
+      and abs(round(fdm.amount * 100)::bigint) <= v_target_cents
+      and not exists (
+        select 1
+        from public.financial_reconciliation_items locked
+        where locked.source_type = 'import_fdm_accounts'
+          and locked.source_id = fdm.id
+      )
+    order by fdm.event_date, fdm.id
+    limit p_candidate_pool_limit + 1
+  ) candidate;
+
+  v_candidate_count := coalesce(cardinality(v_candidate_ids), 0);
+  if v_candidate_count > p_candidate_pool_limit then
+    return jsonb_build_object(
+      'classification', 'ambiguous',
+      'reason', 'candidate_limit',
+      'evaluatedStates', 0,
+      'candidateCount', v_candidate_count,
+      'canonicalFdmId', v_candidate_ids[1],
+      'canonicalFdmDate', v_candidate_dates[1],
+      'candidateGroups', v_candidate_groups
+    );
+  end if;
+
+  if v_candidate_count > 0 and v_target_cents > 0 then
+    v_path := array[1];
+    v_path_total_cents := abs(v_candidate_cents[1]);
+  end if;
+
+  while cardinality(v_path) > 0 loop
+    if v_evaluated_states >= p_state_limit then
+      v_state_limited := true;
+      exit;
+    end if;
+    v_evaluated_states := v_evaluated_states + 1;
+
+    if v_path_total_cents = v_target_cents then
+      v_path_signed_total_cents := case
+        when v_candidate_cents[v_path[1]] < 0 then -v_path_total_cents
+        else v_path_total_cents
+      end;
+      v_qualifying_count := v_qualifying_count + 1;
+      if v_qualifying_count > p_evidence_limit then
+        v_group_limited := true;
+        exit;
+      end if;
+
+      select array_agg(v_candidate_ids[path.position] order by path.ordinality)
+      into v_group_ids
+      from unnest(v_path) with ordinality path(position, ordinality);
+
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'sourceType', 'import_fdm_accounts',
+        'sourceId', fdm.id,
+        'sourceDate', fdm.event_date,
+        'amount', fdm.amount,
+        'description', fdm.description,
+        'account', fdm.account,
+        'rowSnapshot', to_jsonb(fdm)
+      ) order by fdm.event_date, fdm.id), '[]'::jsonb)
+      into v_group_records
+      from public.import_fdm_accounts fdm
+      where fdm.id = any(v_group_ids);
+
+      v_candidate_groups := v_candidate_groups || jsonb_build_array(
+        jsonb_build_object(
+          'fdmIds', to_jsonb(v_group_ids),
+          'fdmTotalCents', v_path_signed_total_cents,
+          'bankAmountCents', v_bank_amount_cents,
+          'equationCents', v_path_signed_total_cents + v_bank_amount_cents,
+          'fdmRecords', v_group_records,
+          'bankRecord', v_bank_record
+        )
+      );
+    end if;
+
+    v_descended := false;
+    v_depth := cardinality(v_path);
+    v_current_position := v_path[v_depth];
+    if v_path_total_cents < v_target_cents
+      and cardinality(v_path) < 10
+      and v_current_position < v_candidate_count then
+      for v_next_position in v_current_position + 1..v_candidate_count loop
+        if v_path_total_cents + abs(v_candidate_cents[v_next_position])
+            <= v_target_cents then
+          v_path := array_append(v_path, v_next_position);
+          v_path_total_cents :=
+            v_path_total_cents + abs(v_candidate_cents[v_next_position]);
+          v_descended := true;
+          exit;
+        end if;
+      end loop;
+    end if;
+    if v_descended then
+      continue;
+    end if;
+
+    v_advanced := false;
+    while cardinality(v_path) > 0 loop
+      v_depth := cardinality(v_path);
+      v_current_position := v_path[v_depth];
+      v_prefix_total_cents :=
+        v_path_total_cents - abs(v_candidate_cents[v_current_position]);
+
+      if v_current_position < v_candidate_count then
+        for v_next_position in v_current_position + 1..v_candidate_count loop
+          if v_prefix_total_cents + abs(v_candidate_cents[v_next_position])
+              <= v_target_cents then
+            v_path[v_depth] := v_next_position;
+            v_path_total_cents :=
+              v_prefix_total_cents + abs(v_candidate_cents[v_next_position]);
+            v_advanced := true;
+            exit;
+          end if;
+        end loop;
+      end if;
+      if v_advanced then
+        exit;
+      end if;
+
+      if v_depth = 1 then
+        v_path := '{}'::integer[];
+        v_path_total_cents := 0;
+      else
+        v_path := v_path[1:v_depth - 1];
+        v_path_total_cents := v_prefix_total_cents;
+      end if;
+    end loop;
+  end loop;
+
+  if v_state_limited or v_group_limited then
+    return jsonb_build_object(
+      'classification', 'ambiguous',
+      'reason', 'candidate_limit',
+      'evaluatedStates', v_evaluated_states,
+      'candidateCount', v_candidate_count,
+      'canonicalFdmId', coalesce(
+        (v_candidate_groups#>>'{0,fdmIds,0}')::uuid,
+        v_candidate_ids[1]
+      ),
+      'canonicalFdmDate', (
+        select fdm.event_date
+        from public.import_fdm_accounts fdm
+        where fdm.id = coalesce(
+          (v_candidate_groups#>>'{0,fdmIds,0}')::uuid,
+          v_candidate_ids[1]
+        )
+      ),
+      'candidateGroups', v_candidate_groups
+    );
+  elsif v_qualifying_count = 0 then
+    return jsonb_build_object(
+      'classification', 'skipped',
+      'reason', 'no_qualifying_combination',
+      'evaluatedStates', v_evaluated_states,
+      'candidateCount', v_candidate_count,
+      'canonicalFdmId', v_candidate_ids[1],
+      'canonicalFdmDate', v_candidate_dates[1],
+      'candidateGroups', v_candidate_groups
+    );
+  elsif v_qualifying_count = 1 then
+    return jsonb_build_object(
+      'classification', 'proposed',
+      'reason', 'unique_qualifying_combination',
+      'evaluatedStates', v_evaluated_states,
+      'candidateCount', v_candidate_count,
+      'canonicalFdmId', (v_candidate_groups#>>'{0,fdmIds,0}')::uuid,
+      'canonicalFdmDate', (
+        select fdm.event_date
+        from public.import_fdm_accounts fdm
+        where fdm.id = (v_candidate_groups#>>'{0,fdmIds,0}')::uuid
+      ),
+      'candidateGroups', v_candidate_groups
+    );
+  end if;
+
+  return jsonb_build_object(
+    'classification', 'ambiguous',
+    'reason', 'multiple_qualifying_combinations',
+    'evaluatedStates', v_evaluated_states,
+    'candidateCount', v_candidate_count,
+    'canonicalFdmId', (v_candidate_groups#>>'{0,fdmIds,0}')::uuid,
+    'canonicalFdmDate', (
+      select fdm.event_date
+      from public.import_fdm_accounts fdm
+      where fdm.id = (v_candidate_groups#>>'{0,fdmIds,0}')::uuid
+    ),
+    'candidateGroups', v_candidate_groups
+  );
+end
+$$;
+
+create or replace function public.financial_reconciliation_continue_automatic_bank_reservation(
+  p_run_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_rule jsonb;
+  v_bank record;
+  v_groups jsonb;
+  v_candidate_groups jsonb;
+  v_classification text;
+  v_reason text;
+  v_canonical_fdm_id uuid;
+  v_canonical_fdm_date date;
+  v_base_snapshot jsonb;
+  v_bank_snapshot jsonb;
+  v_summary_snapshot jsonb;
+  v_signature text;
+  v_proposal_id uuid;
+  v_inserted boolean;
+  v_expected_source_count integer;
+  v_inserted_source_count integer;
+  v_page_count integer := 0;
+  v_total bigint;
+  v_last_date date;
+  v_last_id uuid;
+  v_processed_after integer;
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = p_run_id
+  for update;
+  if not found then
+    raise exception 'Automatic analysis run was not found.';
+  end if;
+  if v_run.actor <> p_actor then
+    raise exception 'Automatic analysis run belongs to another actor.';
+  end if;
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+  if v_run.status <> 'analyzing' then
+    raise exception 'Automatic analysis run is not resumable.';
+  end if;
+  if jsonb_array_length(v_run.definition_config_snapshot) <> 1 then
+    raise exception
+      'Resumable automatic analysis requires exactly one snapshotted rule.';
+  end if;
+  select snapshot.value into strict v_rule
+  from jsonb_array_elements(v_run.definition_config_snapshot) snapshot(value);
+
+  if jsonb_typeof(v_rule) is distinct from 'object'
+    or v_rule - array[
+      'ruleKey','ruleVersion','displayName','priority','differenceAllowed',
+      'maxDifferenceDays','destinationSourceType','definition','operator'
+    ]::text[] <> '{}'::jsonb
+    or not (v_rule ?& array[
+      'ruleKey','ruleVersion','displayName','priority','differenceAllowed',
+      'maxDifferenceDays','destinationSourceType','definition','operator'
+    ])
+    or v_rule->>'ruleKey' is distinct from
+      'fdm_bank_transfer_cgd_bank_statement_combination'
+    or v_rule->>'ruleVersion' is distinct from '1'
+    or v_rule->>'displayName' is distinct from
+      'FDM Accounts – Bank Reservation Payments'
+    or coalesce(v_rule->>'priority', '') !~ '^[1-9][0-9]*$'
+    or length(v_rule->>'priority') > 10
+    or v_rule->>'destinationSourceType' is distinct from
+      'import_cgd_extrato_ordem'
+    or v_rule->>'operator' is distinct from '-'
+    or coalesce(v_rule->>'differenceAllowed', '') !~ '^0(?:\.0+)?$'
+    or coalesce(v_rule->>'maxDifferenceDays', '') !~ '^[0-9]+$'
+    or (v_rule->>'maxDifferenceDays')::integer not between 0 and 90
+    or v_rule->'definition' is distinct from jsonb_build_object(
+      'strategy', 'bounded_exact_combination',
+      'sourceAccount', 'Bank Transfer',
+      'maxSourceRecords', 10,
+      'candidatePoolLimit', 60,
+      'stateLimit', 250000,
+      'evidenceGroupLimit', 12,
+      'amountMode', 'signed_integer_cents',
+      'dateMode', 'inclusive_days'
+    ) then
+    raise exception 'Automatic Bank Reservation rule snapshot contract is invalid.';
+  end if;
+
+  lock table
+    public.import_cgd_extrato_ordem,
+    public.import_fdm_accounts,
+    public.financial_reconciliation_items
+  in share row exclusive mode;
+
+  select public.financial_reconciliation_automatic_bank_reservation_count()
+  into v_total;
+  update public.financial_reconciliation_automatic_runs run
+  set analysis_total = greatest(
+        run.analysis_total,
+        run.analysis_processed,
+        v_total::integer
+      ),
+      updated_at = now()
+  where run.id = p_run_id;
+
+  for v_bank in
+    select *
+    from public.financial_reconciliation_automatic_bank_reservation_page(
+      v_run.analysis_cursor_date,
+      v_run.analysis_cursor_id,
+      25
+    )
+  loop
+    v_page_count := v_page_count + 1;
+    v_last_date := v_bank.bank_date;
+    v_last_id := v_bank.bank_id;
+    v_groups :=
+      public.financial_reconciliation_automatic_bank_reservation_groups(
+        v_bank.bank_id,
+        (v_rule->>'maxDifferenceDays')::integer,
+        60,
+        250000,
+        12
+      );
+    v_classification := v_groups->>'classification';
+    v_reason := v_groups->>'reason';
+
+    if v_classification = 'skipped' then
+      continue;
+    end if;
+    if v_classification not in ('proposed', 'ambiguous')
+      or v_reason not in (
+        'unique_qualifying_combination',
+        'multiple_qualifying_combinations',
+        'candidate_limit'
+      ) then
+      raise exception 'Automatic Bank Reservation search classification is invalid.';
+    end if;
+
+    v_candidate_groups := v_groups->'candidateGroups';
+    v_canonical_fdm_id := (v_groups->>'canonicalFdmId')::uuid;
+    v_canonical_fdm_date := (v_groups->>'canonicalFdmDate')::date;
+    if v_canonical_fdm_id is null or v_canonical_fdm_date is null then
+      raise exception 'Automatic Bank Reservation canonical FDM member is missing.';
+    end if;
+
+    select jsonb_build_object(
+      'sourceType', 'import_fdm_accounts',
+      'sourceId', fdm.id,
+      'sourceDate', fdm.event_date,
+      'amount', fdm.amount,
+      'description', fdm.description,
+      'account', fdm.account,
+      'rowSnapshot', to_jsonb(fdm)
+    )
+    into strict v_base_snapshot
+    from public.import_fdm_accounts fdm
+    where fdm.id = v_canonical_fdm_id
+      and fdm.event_date = v_canonical_fdm_date
+      and fdm.account = 'Bank Transfer'
+      and fdm.amount is not null;
+
+    select jsonb_build_object(
+      'sourceType', 'import_cgd_extrato_ordem',
+      'sourceId', bank.id,
+      'sourceDate', bank.data,
+      'amount', bank.montante,
+      'description', bank.descritivo,
+      'account', '',
+      'rowSnapshot', to_jsonb(bank)
+    )
+    into strict v_bank_snapshot
+    from public.import_cgd_extrato_ordem bank
+    where bank.id = v_bank.bank_id
+      and bank.data = v_bank.bank_date
+      and bank.montante = v_bank.bank_amount;
+
+    v_signature := public.financial_reconciliation_extension_sha256(
+      jsonb_build_object(
+        'ruleKey', 'fdm_bank_transfer_cgd_bank_statement_combination',
+        'ruleVersion', 1,
+        'bankId', v_bank.bank_id,
+        'bankDate', v_bank.bank_date,
+        'bankAmount', v_bank.bank_amount,
+        'classification', v_classification,
+        'reason', v_reason,
+        'candidateGroups', v_candidate_groups,
+        'operator', '-',
+        'maxDifferenceDays', (v_rule->>'maxDifferenceDays')::integer
+      )::text
+    );
+    v_summary_snapshot := jsonb_build_object(
+      'ruleKey', 'fdm_bank_transfer_cgd_bank_statement_combination',
+      'ruleVersion', 1,
+      'bankAnchor', v_bank_snapshot,
+      'candidateGroups', v_candidate_groups,
+      'classification', v_classification,
+      'reason', v_reason,
+      'evaluatedStates', (v_groups->>'evaluatedStates')::integer,
+      'candidateCount', (v_groups->>'candidateCount')::integer,
+      'operator', '-',
+      'differenceAllowed', 0,
+      'maxDifferenceDays', (v_rule->>'maxDifferenceDays')::integer,
+      'maxSourceRecords', 10,
+      'analysisTimestamp', now(),
+      'signature', v_signature
+    );
+
+    v_proposal_id := null;
+    insert into public.financial_reconciliation_automatic_proposals (
+      run_id, rule_key, rule_version, base_source_type,
+      base_source_id, base_source_date, base_snapshot, items, evidence,
+      candidate_groups, calculated_difference, allowed_difference,
+      status, reason, signature, grouping_key, summary_snapshot
+    ) values (
+      p_run_id, 'fdm_bank_transfer_cgd_bank_statement_combination', 1,
+      'import_fdm_accounts', v_canonical_fdm_id, v_canonical_fdm_date,
+      v_base_snapshot, '[]'::jsonb, v_candidate_groups,
+      v_candidate_groups, 0, 0, v_classification, v_reason, v_signature,
+      v_bank.bank_id::text, v_summary_snapshot
+    )
+    on conflict do nothing
+    returning id into v_proposal_id;
+    v_inserted := v_proposal_id is not null;
+
+    if not v_inserted then
+      select proposal.id into strict v_proposal_id
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = p_run_id
+        and proposal.rule_key =
+          'fdm_bank_transfer_cgd_bank_statement_combination'
+        and proposal.rule_version = 1
+        and proposal.base_source_type = 'import_fdm_accounts'
+        and proposal.base_source_id = v_canonical_fdm_id
+        and proposal.signature = v_signature;
+    else
+      with selected_ids as (
+        select distinct selected.id
+        from (
+          select fdm_id.value::uuid as id
+          from jsonb_array_elements(v_candidate_groups) candidate_group(value)
+          cross join lateral jsonb_array_elements_text(
+            candidate_group.value->'fdmIds'
+          )
+            fdm_id(value)
+          union all
+          select v_canonical_fdm_id
+        ) selected
+      ), source_members as (
+        select
+          fdm.*,
+          row_number() over (order by fdm.event_date, fdm.id)::integer
+            as ordinal
+        from public.import_fdm_accounts fdm
+        join selected_ids selected on selected.id = fdm.id
+      )
+      insert into public.financial_reconciliation_automatic_proposal_memberships (
+        proposal_id, role, source_type, source_id, ordinal, source_date,
+        amount, description, account, row_snapshot
+      )
+      select
+        v_proposal_id, 'source', 'import_fdm_accounts', source_member.id,
+        source_member.ordinal, source_member.event_date, source_member.amount,
+        source_member.description, source_member.account,
+        to_jsonb(source_member) - 'ordinal'
+      from source_members source_member
+      order by source_member.ordinal;
+      get diagnostics v_inserted_source_count = row_count;
+
+      select count(distinct selected.id)::integer
+      into v_expected_source_count
+      from (
+        select fdm_id.value::uuid as id
+        from jsonb_array_elements(v_candidate_groups) candidate_group(value)
+        cross join lateral jsonb_array_elements_text(
+          candidate_group.value->'fdmIds'
+        )
+          fdm_id(value)
+        union all
+        select v_canonical_fdm_id
+      ) selected;
+      if v_inserted_source_count <> v_expected_source_count then
+        raise exception
+          'Automatic Bank Reservation source membership insert was incomplete.';
+      end if;
+
+      insert into public.financial_reconciliation_automatic_proposal_memberships (
+        proposal_id, role, source_type, source_id, ordinal, source_date,
+        amount, description, account, row_snapshot
+      )
+      select
+        v_proposal_id, 'destination', 'import_cgd_extrato_ordem', bank.id,
+        1, bank.data, bank.montante, bank.descritivo, '', to_jsonb(bank)
+      from public.import_cgd_extrato_ordem bank
+      where bank.id = v_bank.bank_id;
+
+      if (select member.source_id
+          from public.financial_reconciliation_automatic_proposal_memberships member
+          where member.proposal_id = v_proposal_id
+            and member.role = 'source'
+          order by member.ordinal
+          limit 1) is distinct from v_canonical_fdm_id
+        or (select count(*)
+            from public.financial_reconciliation_automatic_proposal_memberships member
+            where member.proposal_id = v_proposal_id
+              and member.role = 'destination') <> 1 then
+        raise exception
+          'Automatic Bank Reservation proposal and memberships diverged.';
+      end if;
+    end if;
+  end loop;
+
+  if v_page_count > 0 then
+    update public.financial_reconciliation_automatic_runs run
+    set analysis_cursor_date = v_last_date,
+        analysis_cursor_id = v_last_id,
+        analysis_processed = greatest(
+          run.analysis_processed,
+          least(v_total::integer, run.analysis_processed + v_page_count)
+        ),
+        analysis_total = greatest(
+          run.analysis_total,
+          v_total::integer,
+          run.analysis_processed + v_page_count
+        ),
+        updated_at = now(),
+        analysis_error_code = null,
+        analysis_error_at = null
+    where run.id = p_run_id
+      and (
+        run.analysis_cursor_date is null
+        or (v_last_date, v_last_id) >
+           (run.analysis_cursor_date, run.analysis_cursor_id)
+      );
+  end if;
+
+  if v_page_count = 25 then
+    return public.financial_reconciliation_automatic_progress_or_run(p_run_id);
+  end if;
+
+  with shared_members as (
+    select member.source_type, member.source_id
+    from public.financial_reconciliation_automatic_proposal_memberships member
+    join public.financial_reconciliation_automatic_proposals proposal
+      on proposal.id = member.proposal_id
+    where proposal.run_id = p_run_id
+      and proposal.rule_key =
+        'fdm_bank_transfer_cgd_bank_statement_combination'
+      and proposal.rule_version = 1
+      and proposal.status = 'proposed'
+    group by member.source_type, member.source_id
+    having count(distinct member.proposal_id) > 1
+  ), affected as (
+    select distinct proposal.id
+    from public.financial_reconciliation_automatic_proposals proposal
+    join public.financial_reconciliation_automatic_proposal_memberships member
+      on member.proposal_id = proposal.id
+    join shared_members shared
+      on shared.source_type = member.source_type
+     and shared.source_id = member.source_id
+    where proposal.run_id = p_run_id
+      and proposal.rule_key =
+        'fdm_bank_transfer_cgd_bank_statement_combination'
+      and proposal.rule_version = 1
+      and proposal.status = 'proposed'
+  )
+  update public.financial_reconciliation_automatic_proposals proposal
+  set status = 'ambiguous',
+      reason = 'overlapping_records',
+      updated_at = now()
+  where proposal.id in (select affected.id from affected);
+
+  select run.analysis_processed into strict v_processed_after
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = p_run_id;
+
+  update public.financial_reconciliation_automatic_runs run
+  set status = case when exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id
+          and proposal.status in ('proposed','ambiguous','stale','failed')
+      ) then 'ready' else 'completed' end,
+      finished_at = case when exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id
+          and proposal.status in ('proposed','ambiguous','stale','failed')
+      ) then null else now() end,
+      analysis_completed_at = now(),
+      updated_at = now(),
+      analysis_error_code = null,
+      analysis_error_at = null,
+      counts = (
+        select jsonb_build_object(
+          'bases', run.analysis_total,
+          'proposed', count(*) filter (where proposal.status = 'proposed'),
+          'ambiguous', count(*) filter (where proposal.status = 'ambiguous'),
+          'skipped', greatest(
+            v_processed_after - count(*) filter (
+              where proposal.status in ('proposed','ambiguous','stale','failed')
+            ),
+            0
+          )
+        )
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = p_run_id
+      )
+  where run.id = p_run_id and run.analysis_completed_at is null;
+
+  return public.get_financial_reconciliation_automatic_run(p_run_id);
+end
+$$;
+
+do $migration$
+begin
+  if to_regprocedure(
+      'public.financial_reconciliation_continue_automatic_prior_analysis(uuid,text)'
+    ) is null then
+    alter function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
+      rename to financial_reconciliation_continue_automatic_prior_analysis;
+  end if;
+end
+$migration$;
+
+create or replace function public.continue_financial_reconciliation_automatic_analysis(
+  p_run_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  v_run public.financial_reconciliation_automatic_runs%rowtype;
+  v_rule jsonb;
+  v_rule_key text;
+  v_rule_version integer;
+begin
+  if nullif(trim(coalesce(p_actor, '')), '') is null then
+    raise exception 'Actor is required.';
+  end if;
+
+  select * into v_run
+  from public.financial_reconciliation_automatic_runs run
+  where run.id = p_run_id
+  for update;
+  if not found then
+    raise exception 'Automatic analysis run was not found.';
+  end if;
+  if v_run.actor <> p_actor then
+    raise exception 'Automatic analysis run belongs to another actor.';
+  end if;
+  if v_run.analysis_completed_at is not null then
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end if;
+  if v_run.status <> 'analyzing' then
+    raise exception 'Automatic analysis run is not resumable.';
+  end if;
+
+  begin
+    if jsonb_array_length(v_run.definition_config_snapshot) <> 1 then
+      raise exception
+        'Resumable automatic analysis requires exactly one snapshotted rule.';
+    end if;
+    select snapshot.value into strict v_rule
+    from jsonb_array_elements(v_run.definition_config_snapshot) snapshot(value);
+    if coalesce(v_rule->>'ruleVersion', '') !~ '^[0-9]+$'
+      or length(v_rule->>'ruleVersion') > 10 then
+      raise exception 'Automatic reconciliation rule is unsupported.';
+    end if;
+    v_rule_key := v_rule->>'ruleKey';
+    v_rule_version := (v_rule->>'ruleVersion')::integer;
+
+    if (v_rule_key, v_rule_version) in (
+        ('financial_documents_cgd_bank_statement', 2),
+        ('financial_documents_cgd_credit_card', 1),
+        ('financial_documents_cgd_bank_statement_amount_only', 1),
+        ('financial_documents_cgd_credit_card_amount_only', 1),
+        ('cgd_bank_statement_fdm_credit_card_monthly_income', 2)
+      ) then
+      return public.financial_reconciliation_continue_automatic_prior_analysis(
+        p_run_id,
+        p_actor
+      );
+    elsif v_rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination'
+      and v_rule_version = 1 then
+      return public.financial_reconciliation_continue_automatic_bank_reservation(
+        p_run_id,
+        p_actor
+      );
+    end if;
+
+    raise exception 'Automatic reconciliation rule is unsupported.';
+  exception when others then
+    update public.financial_reconciliation_automatic_runs run
+    set status = 'failed',
+        error_summary = 'Automatic analysis could not be completed.',
+        analysis_error_code = 'analysis_continuation_failed',
+        analysis_error_at = now(),
+        finished_at = coalesce(run.finished_at, now()),
+        updated_at = now()
+    where run.id = p_run_id;
+    return public.get_financial_reconciliation_automatic_run(p_run_id);
+  end;
+end
+$$;
+
+revoke all on function public.financial_reconciliation_automatic_bank_reservation_count()
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_automatic_bank_reservation_page(date,uuid,integer)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_automatic_bank_reservation_groups(uuid,integer,integer,integer,integer)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_continue_automatic_bank_reservation(uuid,text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.financial_reconciliation_continue_automatic_prior_analysis(uuid,text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.continue_financial_reconciliation_automatic_analysis(uuid,text)
+  to service_role;
+
 notify pgrst, 'reload schema';

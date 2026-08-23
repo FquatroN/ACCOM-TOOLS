@@ -11183,4 +11183,714 @@ begin
 end
 $$;
 
+-- Task 3 Bank Reservation helper classifications and hard bounds
+-- Isolate the bounded-search fixtures from every source row exercised above by
+-- taking rollback-only reconciliation locks on the remaining unlocked rows.
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task3-isolation'
+  ) returning id into v_reconciliation_id;
+
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_cgd_extrato_ordem', bank.id,
+         bank.montante, 'smoke:task3-isolation'
+  from public.import_cgd_extrato_ordem bank
+  where bank.montante is not null
+    and not exists (
+      select 1 from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    );
+
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_fdm_accounts', fdm.id,
+         fdm.amount, 'smoke:task3-isolation'
+  from public.import_fdm_accounts fdm
+  where fdm.amount is not null
+    and not exists (
+      select 1 from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_fdm_accounts'
+        and locked.source_id = fdm.id
+    );
+end
+$$;
+
+alter table public.import_fdm_accounts alter column amount drop not null;
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values
+  ('b3100000-0000-0000-0000-000000000001', 'smoke-task3-bank',
+   'task3-bank-unique-1', date '2100-01-10', 'unique one', -10.00),
+  ('b3100000-0000-0000-0000-000000000002', 'smoke-task3-bank',
+   'task3-bank-unique-2', date '2100-02-10', 'unique two', -30.00),
+  ('b3100000-0000-0000-0000-000000000003', 'smoke-task3-bank',
+   'task3-bank-unique-10', date '2100-03-10', 'unique ten', -10.00),
+  ('b3100000-0000-0000-0000-000000000004', 'smoke-task3-bank',
+   'task3-bank-exclusions', date '2100-04-10', 'inclusive boundary', -50.00),
+  ('b3100000-0000-0000-0000-000000000005', 'smoke-task3-bank',
+   'task3-bank-eleven', date '2100-05-10', 'eleven rejected', -11.00),
+  ('b3100000-0000-0000-0000-000000000006', 'smoke-task3-bank',
+   'task3-bank-multiple', date '2100-06-10', 'multiple groups', -10.00),
+  ('b3100000-0000-0000-0000-000000000007', 'smoke-task3-bank',
+   'task3-bank-pool-limit', date '2120-01-10', 'pool ceiling', -100.00),
+  ('b3100000-0000-0000-0000-000000000008', 'smoke-task3-bank',
+   'task3-bank-group-limit', date '2110-01-10', 'group ceiling', -10.00),
+  ('b3100000-0000-0000-0000-000000000009', 'smoke-task3-bank',
+   'task3-bank-state-limit', date '2130-01-10', 'state ceiling', -1000.00),
+  ('b3100000-0000-0000-0000-000000000010', 'smoke-task3-bank',
+   'task3-bank-overlap-a', date '2160-01-10', 'shared FDM a', -25.00),
+  ('b3100000-0000-0000-0000-000000000011', 'smoke-task3-bank',
+   'task3-bank-overlap-b', date '2160-01-11', 'shared FDM b', -25.00),
+  ('b3100000-0000-0000-0000-000000000012', 'smoke-task3-bank',
+   'task3-bank-locked', date '2100-07-10', 'locked bank', -10.00),
+  ('b3100000-0000-0000-0000-000000000013', 'smoke-task3-bank',
+   'task3-bank-null-date', null, 'null date', -10.00),
+  ('b3100000-0000-0000-0000-000000000014', 'smoke-task3-bank',
+   'task3-bank-null-amount', date '2100-08-10', 'null amount', null),
+  ('b3100000-0000-0000-0000-000000000015', 'smoke-task3-bank',
+   'task3-bank-pre-floor', date '2025-12-31', 'pre floor', -10.00);
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, source_row_number, data, descritivo, montante
+)
+select
+  ('b3900000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-bank', 'task3-bank-page-' || series, series,
+  date '2150-01-01' + (series - 1), 'stable page ' || series,
+  -(1000 + series)::numeric
+from generate_series(1, 30) series;
+
+insert into public.import_fdm_accounts (
+  id, import_batch, account, date_time_raw, event_date, category,
+  amount, description
+) values
+  ('c3100000-0000-0000-0000-000000000001', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-01-10', date '2100-01-10', 'Reservation',
+   10.00, 'unique one'),
+  ('c3100000-0000-0000-0000-000000000010', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-02-10', date '2100-02-10', 'Reservation',
+   20.00, 'unique two later'),
+  ('c3100000-0000-0000-0000-000000000011', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-02-09', date '2100-02-09', 'Reservation',
+   10.00, 'unique two canonical'),
+  ('c3120000-0000-0000-0000-000000000001', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-04-13', date '2100-04-13', 'Reservation',
+   50.00, 'inclusive day boundary'),
+  ('c3120000-0000-0000-0000-000000000002', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-04-10', date '2100-04-10', 'Reservation',
+   -50.00, 'same sign'),
+  ('c3120000-0000-0000-0000-000000000003', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-04-10', date '2100-04-10', 'Reservation',
+   49.99, 'one cent short'),
+  ('c3120000-0000-0000-0000-000000000004', 'smoke-task3-fdm',
+   'Bank Transfers', '2100-04-10', date '2100-04-10', 'Reservation',
+   50.00, 'near account'),
+  ('c3120000-0000-0000-0000-000000000005', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-04-10', date '2100-04-10', 'Reservation',
+   null, 'null amount'),
+  ('c3120000-0000-0000-0000-000000000006', 'smoke-task3-fdm',
+   'Bank Transfer', '', null, 'Reservation', 50.00, 'null date'),
+  ('c3120000-0000-0000-0000-000000000007', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-04-14', date '2100-04-14', 'Reservation',
+   50.00, 'outside day'),
+  ('c3120000-0000-0000-0000-000000000008', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-04-10', date '2100-04-10', 'Reservation',
+   50.00, 'locked FDM'),
+  ('c3140000-0000-0000-0000-000000000001', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-06-10', date '2100-06-10', 'Reservation',
+   10.00, 'multiple singleton'),
+  ('c3140000-0000-0000-0000-000000000002', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-06-10', date '2100-06-10', 'Reservation',
+   4.00, 'multiple pair a'),
+  ('c3140000-0000-0000-0000-000000000003', 'smoke-task3-fdm',
+   'Bank Transfer', '2100-06-10', date '2100-06-10', 'Reservation',
+   6.00, 'multiple pair b'),
+  ('c315f000-0000-0000-0000-000000000001', 'smoke-task3-fdm',
+   'Bank Transfer', '2110-01-10', date '2110-01-10', 'Reservation',
+   3.00, 'earlier non-qualifying group candidate'),
+  ('c3180000-0000-0000-0000-000000000001', 'smoke-task3-fdm',
+   'Bank Transfer', '2160-01-10', date '2160-01-10', 'Reservation',
+   25.00, 'shared FDM');
+
+insert into public.import_fdm_accounts (
+  id, import_batch, source_row_number, account, date_time_raw, event_date,
+  category, amount, description
+)
+select
+  ('c3110000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-fdm', series, 'Bank Transfer', '2100-03-10',
+  date '2100-03-10', 'Reservation', 1.00, 'ten member ' || series
+from generate_series(1, 10) series
+union all
+select
+  ('c3130000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-fdm', 100 + series, 'Bank Transfer', '2100-05-10',
+  date '2100-05-10', 'Reservation', 1.00, 'eleven member ' || series
+from generate_series(1, 11) series
+union all
+select
+  ('c3150000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-fdm', 200 + series, 'Bank Transfer', '2120-01-10',
+  date '2120-01-10', 'Reservation', 1.00, 'pool member ' || series
+from generate_series(1, 61) series
+union all
+select
+  ('c3160000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-fdm', 300 + series, 'Bank Transfer', '2110-01-10',
+  date '2110-01-10', 'Reservation', 10.00, 'group member ' || series
+from generate_series(1, 13) series
+union all
+select
+  ('c3170000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-fdm', 400 + series, 'Bank Transfer', '2130-01-10',
+  date '2130-01-10', 'Reservation', 1.00, 'state member ' || series
+from generate_series(1, 19) series
+union all
+select
+  ('c3900000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-fdm', 500 + series, 'Bank Transfer',
+  (date '2150-01-01' + (series - 1))::text,
+  date '2150-01-01' + (series - 1), 'Reservation',
+  (1000 + series)::numeric, 'stable page ' || series
+from generate_series(1, 30) series;
+
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task3-explicit-locks'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  ) values
+    (v_reconciliation_id, 'import_cgd_extrato_ordem',
+     'b3100000-0000-0000-0000-000000000012', -10.00,
+     'smoke:task3-explicit-locks'),
+    (v_reconciliation_id, 'import_fdm_accounts',
+     'c3120000-0000-0000-0000-000000000008', 50.00,
+     'smoke:task3-explicit-locks');
+end
+$$;
+
+do $$
+declare
+  v_group jsonb;
+  v_last_page_one_date date;
+  v_last_page_one_id uuid;
+  v_page_one_ids uuid[];
+  v_page_two_ids uuid[];
+  v_rejected boolean;
+  v_signature text;
+begin
+  if public.financial_reconciliation_automatic_bank_reservation_count() <> 41 then
+    raise exception 'Task 3 Bank anchor count admitted a locked, null, or pre-floor source.';
+  end if;
+
+  select array_agg(page.bank_id order by page.bank_date, page.bank_id)
+  into v_page_one_ids
+  from public.financial_reconciliation_automatic_bank_reservation_page(
+    null, null, 25
+  ) page;
+  select page.bank_date, page.bank_id
+  into strict v_last_page_one_date, v_last_page_one_id
+  from public.financial_reconciliation_automatic_bank_reservation_page(
+    null, null, 25
+  ) page
+  order by page.bank_date desc, page.bank_id desc
+  limit 1;
+  select array_agg(page.bank_id order by page.bank_date, page.bank_id)
+  into v_page_two_ids
+  from public.financial_reconciliation_automatic_bank_reservation_page(
+    v_last_page_one_date, v_last_page_one_id, 25
+  ) page;
+  if cardinality(v_page_one_ids) <> 25
+    or cardinality(v_page_two_ids) <> 16
+    or cardinality(v_page_one_ids || v_page_two_ids) <> 41
+    or (select count(distinct page_id)
+        from unnest(v_page_one_ids || v_page_two_ids) page_id) <> 41 then
+    raise exception 'Task 3 Bank anchor pages skipped, duplicated, or reordered rows.';
+  end if;
+
+  foreach v_signature in array array[
+    'public.financial_reconciliation_automatic_bank_reservation_count()',
+    'public.financial_reconciliation_automatic_bank_reservation_page(date,uuid,integer)',
+    'public.financial_reconciliation_automatic_bank_reservation_groups(uuid,integer,integer,integer,integer)',
+    'public.financial_reconciliation_continue_automatic_bank_reservation(uuid,text)'
+  ] loop
+    if has_function_privilege('anon', v_signature, 'EXECUTE')
+      or has_function_privilege('authenticated', v_signature, 'EXECUTE')
+      or has_function_privilege('service_role', v_signature, 'EXECUTE') then
+      raise exception 'Task 3 private helper unexpectedly exposes EXECUTE on %.',
+        v_signature;
+    end if;
+  end loop;
+
+  v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
+    'b3100000-0000-0000-0000-000000000001', 3, 60, 250000, 12
+  );
+  if v_group->>'classification' <> 'proposed'
+    or v_group->>'reason' <> 'unique_qualifying_combination'
+    or jsonb_array_length(v_group->'candidateGroups') <> 1
+    or v_group#>>'{candidateGroups,0,fdmTotalCents}' <> '1000'
+    or v_group#>>'{candidateGroups,0,bankAmountCents}' <> '-1000'
+    or v_group#>>'{candidateGroups,0,equationCents}' <> '0' then
+    raise exception 'Task 3 one-member exact-cents classification is invalid: %.',
+      v_group;
+  end if;
+
+  v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
+    'b3100000-0000-0000-0000-000000000004', 3, 60, 250000, 12
+  );
+  if v_group->>'classification' <> 'proposed'
+    or v_group#>>'{candidateGroups,0,fdmIds,0}' <>
+      'c3120000-0000-0000-0000-000000000001'
+    or jsonb_array_length(v_group#>'{candidateGroups,0,fdmIds}') <> 1 then
+    raise exception 'Task 3 sign, cent, Account, null, lock, or inclusive-day filtering failed: %.',
+      v_group;
+  end if;
+
+  v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
+    'b3100000-0000-0000-0000-000000000005', 3, 60, 250000, 12
+  );
+  if v_group->>'classification' <> 'skipped'
+    or v_group->>'reason' <> 'no_qualifying_combination' then
+    raise exception 'Task 3 search admitted an eleven-member group: %.', v_group;
+  end if;
+
+  v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
+    'b3100000-0000-0000-0000-000000000006', 3, 60, 250000, 12
+  );
+  if v_group->>'classification' <> 'ambiguous'
+    or v_group->>'reason' <> 'multiple_qualifying_combinations'
+    or jsonb_array_length(v_group->'candidateGroups') <> 2 then
+    raise exception 'Task 3 multiple-combination classification is invalid: %.',
+      v_group;
+  end if;
+
+  foreach v_group in array array[
+    public.financial_reconciliation_automatic_bank_reservation_groups(
+      'b3100000-0000-0000-0000-000000000007', 3, 60, 250000, 12
+    ),
+    public.financial_reconciliation_automatic_bank_reservation_groups(
+      'b3100000-0000-0000-0000-000000000009', 3, 60, 5, 12
+    ),
+    public.financial_reconciliation_automatic_bank_reservation_groups(
+      'b3100000-0000-0000-0000-000000000008', 3, 60, 250000, 12
+    )
+  ] loop
+    if v_group->>'classification' <> 'ambiguous'
+      or v_group->>'reason' <> 'candidate_limit'
+      or jsonb_array_length(v_group->'candidateGroups') > 12 then
+      raise exception 'Task 3 hard ceiling did not fail closed with bounded evidence: %.',
+        v_group;
+    end if;
+  end loop;
+
+  v_group := public.financial_reconciliation_automatic_bank_reservation_groups(
+    'b3100000-0000-0000-0000-000000000008', 3, 60, 250000, 12
+  );
+  if v_group->>'canonicalFdmId'
+      is distinct from v_group#>>'{candidateGroups,0,fdmIds,0}'
+    or v_group->>'canonicalFdmId' =
+      'c315f000-0000-0000-0000-000000000001' then
+    raise exception 'Task 3 bounded evidence did not own its canonical FDM member: %.',
+      v_group;
+  end if;
+
+  v_rejected := false;
+  begin
+    perform public.financial_reconciliation_automatic_bank_reservation_page(
+      null, null, 26
+    );
+  exception when others then
+    v_rejected := sqlerrm =
+      'Automatic Bank Reservation page size must be between 1 and 25.';
+  end;
+  if not v_rejected then
+    raise exception 'Task 3 Bank page accepted an oversized limit.';
+  end if;
+end
+$$;
+
+create or replace function pg_temp.task3_bank_snapshot(p_days integer)
+returns jsonb
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_array(jsonb_build_object(
+    'ruleKey', definition.rule_key,
+    'ruleVersion', definition.version,
+    'displayName', definition.display_name,
+    'priority', config.priority,
+    'differenceAllowed', 0,
+    'maxDifferenceDays', p_days,
+    'destinationSourceType', 'import_cgd_extrato_ordem',
+    'definition', definition.definition,
+    'operator', '-'
+  ))
+  from public.financial_reconciliation_automatic_rule_definitions definition
+  join public.financial_reconciliation_automatic_rule_configs config
+    on config.rule_key = definition.rule_key
+   and config.rule_version = definition.version
+  where definition.rule_key =
+      'fdm_bank_transfer_cgd_bank_statement_combination'
+    and definition.version = 1
+$$;
+
+-- Task 3 Bank Reservation continuation pages and retry idempotency
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'b3300000-0000-0000-0000-000000000001', 'manual', 'rule', 'analyzing',
+  'smoke:task3-owner', 'b3300000-0000-0000-0000-000000000001',
+  pg_temp.task3_bank_snapshot(3), 0, 0
+);
+
+do $$
+declare
+  v_first jsonb;
+  v_second jsonb;
+  v_retry jsonb;
+begin
+  v_first := public.continue_financial_reconciliation_automatic_analysis(
+    'b3300000-0000-0000-0000-000000000001', 'smoke:task3-owner'
+  );
+  if v_first->>'status' <> 'analyzing'
+    or (v_first->>'analysisProcessed')::integer <> 25
+    or (v_first->>'analysisTotal')::integer <> 41 then
+    raise exception 'Task 3 first 25-Bank continuation page is invalid: %.',
+      v_first;
+  end if;
+
+  v_second := public.continue_financial_reconciliation_automatic_analysis(
+    'b3300000-0000-0000-0000-000000000001', 'smoke:task3-owner'
+  );
+  if v_second->>'status' <> 'ready'
+    or not (v_second->>'analysisComplete')::boolean
+    or (v_second->>'analysisProcessed')::integer <> 41
+    or (v_second->>'analysisTotal')::integer <> 41 then
+    raise exception 'Task 3 final continuation page did not finalize review work: %.',
+      v_second;
+  end if;
+
+  v_retry := public.continue_financial_reconciliation_automatic_analysis(
+    'b3300000-0000-0000-0000-000000000001', 'smoke:task3-owner'
+  );
+  if v_retry is distinct from v_second then
+    raise exception 'Task 3 completed continuation retry changed the immutable run: %, %.',
+      v_second, v_retry;
+  end if;
+end
+$$;
+
+-- Task 3 Bank Reservation memberships and omitted no-match accounting
+do $$
+declare
+  v_case record;
+  v_proposal public.financial_reconciliation_automatic_proposals%rowtype;
+  v_source_ids uuid[];
+  v_source_ordinals integer[];
+begin
+  for v_case in
+    select * from (values
+      ('b3100000-0000-0000-0000-000000000001'::uuid, 1),
+      ('b3100000-0000-0000-0000-000000000002'::uuid, 2),
+      ('b3100000-0000-0000-0000-000000000003'::uuid, 10),
+      ('b3100000-0000-0000-0000-000000000004'::uuid, 1)
+    ) fixture(bank_id, source_count)
+  loop
+    select proposal.* into strict v_proposal
+    from public.financial_reconciliation_automatic_proposals proposal
+    join public.financial_reconciliation_automatic_proposal_memberships bank_member
+      on bank_member.proposal_id = proposal.id
+     and bank_member.role = 'destination'
+     and bank_member.source_type = 'import_cgd_extrato_ordem'
+     and bank_member.source_id = v_case.bank_id
+    where proposal.run_id = 'b3300000-0000-0000-0000-000000000001';
+
+    select array_agg(member.source_id order by member.ordinal),
+           array_agg(member.ordinal order by member.ordinal)
+    into v_source_ids, v_source_ordinals
+    from public.financial_reconciliation_automatic_proposal_memberships member
+    where member.proposal_id = v_proposal.id and member.role = 'source';
+
+    if v_proposal.status <> 'proposed'
+      or v_proposal.reason <> 'unique_qualifying_combination'
+      or cardinality(v_source_ids) <> v_case.source_count
+      or v_source_ordinals is distinct from
+        array(select generate_series(1, v_case.source_count))
+      or v_proposal.base_source_id is distinct from v_source_ids[1]
+      or (select count(*)
+          from public.financial_reconciliation_automatic_proposal_memberships member
+          where member.proposal_id = v_proposal.id
+            and member.role = 'destination'
+            and member.ordinal = 1) <> 1
+      or exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposal_memberships member
+        left join public.import_fdm_accounts fdm
+          on member.source_type = 'import_fdm_accounts'
+         and member.source_id = fdm.id
+        left join public.import_cgd_extrato_ordem bank
+          on member.source_type = 'import_cgd_extrato_ordem'
+         and member.source_id = bank.id
+        where member.proposal_id = v_proposal.id
+          and (
+            (member.role = 'source'
+              and (member.source_type <> 'import_fdm_accounts'
+                or member.row_snapshot is distinct from to_jsonb(fdm)))
+            or
+            (member.role = 'destination'
+              and (member.source_type <> 'import_cgd_extrato_ordem'
+                or member.row_snapshot is distinct from to_jsonb(bank)))
+          )
+      ) then
+      raise exception 'Task 3 immutable membership/base contract failed for bank %.',
+        v_case.bank_id;
+    end if;
+  end loop;
+
+  if exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      join public.financial_reconciliation_automatic_proposal_memberships member
+        on member.proposal_id = proposal.id
+      where proposal.run_id = 'b3300000-0000-0000-0000-000000000001'
+        and member.source_id = 'b3100000-0000-0000-0000-000000000005'
+    )
+    or exists (
+      select 1 from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.run_id = 'b3300000-0000-0000-0000-000000000001'
+        and proposal.status = 'skipped'
+    )
+    or (select (run.counts->>'skipped')::integer
+        from public.financial_reconciliation_automatic_runs run
+        where run.id = 'b3300000-0000-0000-0000-000000000001') <> 1 then
+    raise exception 'Task 3 no-match anchor was visible or missing from skipped accounting.';
+  end if;
+
+  if not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposals proposal
+      join public.financial_reconciliation_automatic_proposal_memberships member
+        on member.proposal_id = proposal.id
+      where proposal.run_id = 'b3300000-0000-0000-0000-000000000001'
+        and member.source_id = 'b3100000-0000-0000-0000-000000000006'
+        and proposal.status = 'ambiguous'
+        and proposal.reason = 'multiple_qualifying_combinations'
+        and jsonb_array_length(proposal.candidate_groups) = 2
+    ) or (select count(*)
+          from public.financial_reconciliation_automatic_proposals proposal
+          where proposal.run_id = 'b3300000-0000-0000-0000-000000000001'
+            and proposal.status = 'ambiguous'
+            and proposal.reason = 'candidate_limit'
+            and jsonb_array_length(proposal.candidate_groups) <= 12) <> 3
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposals proposal
+        join public.financial_reconciliation_automatic_proposal_memberships member
+          on member.proposal_id = proposal.id
+        where proposal.run_id = 'b3300000-0000-0000-0000-000000000001'
+          and member.source_id in (
+            'b3100000-0000-0000-0000-000000000010',
+            'b3100000-0000-0000-0000-000000000011'
+          )
+          and proposal.status = 'ambiguous'
+          and proposal.reason = 'overlapping_records') <> 2 then
+    raise exception 'Task 3 ambiguity, evidence bound, or shared-FDM overlap classification failed.';
+  end if;
+end
+$$;
+
+-- A run with only an exhausted no-match anchor completes without a visible row.
+do $$
+declare
+  v_reconciliation_id uuid;
+begin
+  insert into public.financial_reconciliations (
+    status, base_source_type, matching_source_types, created_by
+  ) values (
+    'started', 'import_fdm_accounts', '["import_cgd_extrato_ordem"]'::jsonb,
+    'smoke:task3-post-analysis-isolation'
+  ) returning id into v_reconciliation_id;
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_cgd_extrato_ordem', bank.id,
+         bank.montante, 'smoke:task3-post-analysis-isolation'
+  from public.import_cgd_extrato_ordem bank
+  where bank.import_batch = 'smoke-task3-bank'
+    and bank.montante is not null
+    and not exists (
+      select 1 from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_cgd_extrato_ordem'
+        and locked.source_id = bank.id
+    );
+  insert into public.financial_reconciliation_items (
+    reconciliation_id, source_type, source_id, amount_snapshot, created_by
+  )
+  select v_reconciliation_id, 'import_fdm_accounts', fdm.id,
+         fdm.amount, 'smoke:task3-post-analysis-isolation'
+  from public.import_fdm_accounts fdm
+  where fdm.import_batch = 'smoke-task3-fdm'
+    and fdm.amount is not null
+    and not exists (
+      select 1 from public.financial_reconciliation_items locked
+      where locked.source_type = 'import_fdm_accounts'
+        and locked.source_id = fdm.id
+    );
+end
+$$;
+
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values (
+  'b3400000-0000-0000-0000-000000000001', 'smoke-task3-zero-review',
+  'task3-zero-review', date '2180-01-10', 'zero review rows', -11.00
+);
+insert into public.import_fdm_accounts (
+  id, import_batch, source_row_number, account, date_time_raw, event_date,
+  category, amount, description
+)
+select
+  ('c3400000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+  'smoke-task3-zero-review', series, 'Bank Transfer', '2180-01-10',
+  date '2180-01-10', 'Reservation', 1.00, 'zero review ' || series
+from generate_series(1, 11) series;
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'b3400000-0000-0000-0000-000000000010', 'manual', 'rule', 'analyzing',
+  'smoke:task3-zero-review', 'b3400000-0000-0000-0000-000000000010',
+  pg_temp.task3_bank_snapshot(3), 0, 0
+);
+
+do $$
+declare
+  v_result jsonb;
+begin
+  v_result := public.continue_financial_reconciliation_automatic_analysis(
+    'b3400000-0000-0000-0000-000000000010', 'smoke:task3-zero-review'
+  );
+  if v_result->>'status' <> 'completed'
+    or not (v_result->>'analysisComplete')::boolean
+    or (v_result->>'analysisProcessed')::integer <> 1
+    or (v_result->>'analysisTotal')::integer <> 1
+    or (v_result#>>'{counts,skipped}')::integer <> 1
+    or jsonb_array_length(v_result->'proposals') <> 0 then
+    raise exception 'Task 3 zero-review run did not complete with skipped accounting: %.',
+      v_result;
+  end if;
+end
+$$;
+
+-- Task 3 Bank Reservation authoritative shared-bank overlap
+insert into public.import_cgd_extrato_ordem (
+  id, import_batch, row_key, data, descritivo, montante
+) values (
+  'b3200000-0000-0000-0000-000000000001', 'smoke-task3-shared-bank',
+  'task3-shared-bank', date '2170-01-10', 'shared bank', -20.00
+);
+insert into public.import_fdm_accounts (
+  id, import_batch, account, date_time_raw, event_date, category,
+  amount, description
+) values
+  ('c3200000-0000-0000-0000-000000000001', 'smoke-task3-shared-bank',
+   'Bank Transfer', '2170-01-10', date '2170-01-10', 'Reservation',
+   20.00, 'shared bank source a'),
+  ('c3200000-0000-0000-0000-000000000002', 'smoke-task3-shared-bank',
+   'Bank Transfer', '2170-01-10', date '2170-01-10', 'Reservation',
+   20.00, 'shared bank source b');
+
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, client_request_id,
+  definition_config_snapshot, analysis_cursor_date, analysis_cursor_id
+) values (
+  'b3200000-0000-0000-0000-000000000010', 'manual', 'rule', 'analyzing',
+  'smoke:task3-shared-bank', 'b3200000-0000-0000-0000-000000000010',
+  pg_temp.task3_bank_snapshot(3), date '2200-01-01',
+  'ffffffff-ffff-ffff-ffff-ffffffffffff'
+);
+insert into public.financial_reconciliation_automatic_proposals (
+  id, run_id, rule_key, rule_version, base_source_type, base_source_id,
+  base_source_date, base_snapshot, allowed_difference, status, reason,
+  signature, grouping_key, summary_snapshot
+) values
+  ('b3200000-0000-0000-0000-000000000011',
+   'b3200000-0000-0000-0000-000000000010',
+   'fdm_bank_transfer_cgd_bank_statement_combination', 1,
+   'import_fdm_accounts', 'c3200000-0000-0000-0000-000000000001',
+   date '2170-01-10', '{}'::jsonb, 0, 'proposed',
+   'unique_qualifying_combination', 'task3-shared-bank-a',
+   'b3200000-0000-0000-0000-000000000001', '{}'::jsonb),
+  ('b3200000-0000-0000-0000-000000000012',
+   'b3200000-0000-0000-0000-000000000010',
+   'fdm_bank_transfer_cgd_bank_statement_combination', 1,
+   'import_fdm_accounts', 'c3200000-0000-0000-0000-000000000002',
+   date '2170-01-10', '{}'::jsonb, 0, 'proposed',
+   'unique_qualifying_combination', 'task3-shared-bank-b',
+   'b3200000-0000-0000-0000-000000000001', '{}'::jsonb);
+insert into public.financial_reconciliation_automatic_proposal_memberships (
+  proposal_id, role, source_type, source_id, ordinal, source_date,
+  amount, description, account, row_snapshot
+)
+select proposal.id, 'source', 'import_fdm_accounts', proposal.base_source_id,
+       1, fdm.event_date, fdm.amount, fdm.description, fdm.account, to_jsonb(fdm)
+from public.financial_reconciliation_automatic_proposals proposal
+join public.import_fdm_accounts fdm on fdm.id = proposal.base_source_id
+where proposal.id in (
+  'b3200000-0000-0000-0000-000000000011',
+  'b3200000-0000-0000-0000-000000000012'
+);
+insert into public.financial_reconciliation_automatic_proposal_memberships (
+  proposal_id, role, source_type, source_id, ordinal, source_date,
+  amount, description, account, row_snapshot
+)
+select proposal.id, 'destination', 'import_cgd_extrato_ordem', bank.id,
+       1, bank.data, bank.montante, bank.descritivo, '', to_jsonb(bank)
+from public.financial_reconciliation_automatic_proposals proposal
+cross join public.import_cgd_extrato_ordem bank
+where proposal.id in (
+    'b3200000-0000-0000-0000-000000000011',
+    'b3200000-0000-0000-0000-000000000012'
+  )
+  and bank.id = 'b3200000-0000-0000-0000-000000000001';
+
+do $$
+declare
+  v_result jsonb;
+begin
+  v_result := public.continue_financial_reconciliation_automatic_analysis(
+    'b3200000-0000-0000-0000-000000000010',
+    'smoke:task3-shared-bank'
+  );
+  if v_result->>'status' <> 'ready'
+    or (select count(*)
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.run_id = 'b3200000-0000-0000-0000-000000000010'
+          and proposal.status = 'ambiguous'
+          and proposal.reason = 'overlapping_records') <> 2 then
+    raise exception 'Task 3 shared Bank overlap did not update every affected proposal: %.',
+      v_result;
+  end if;
+end
+$$;
+
 rollback;

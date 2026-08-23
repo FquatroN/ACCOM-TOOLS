@@ -105,6 +105,12 @@ const POS_INCOME_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-22-financial-reconciliation-automation-pos-income.sql",
 );
+const FDM_BANK_ADYEN_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql",
+);
 const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
 const PROPOSAL_ID_2 = "00000000-0000-0000-0000-000000000004";
 const PROPOSAL_ID_3 = "00000000-0000-0000-0000-000000000005";
@@ -5150,4 +5156,66 @@ test("automation SQL smoke transaction covers reapply, security, validation, rol
   assert.match(manualSmokeSql, /automaticRuleKey/);
   assert.match(manualSmokeSql, /automaticRuleVersion/);
   assert.match(manualSmokeSql, /automaticRunId/);
+});
+
+test("Bank Reservation analysis is bounded, deterministic, membership-backed, and literally dispatched", () => {
+  const migration = fs.readFileSync(FDM_BANK_ADYEN_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const functionSource = (functionName) => {
+    const match = migration.match(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "i",
+    ));
+    assert.ok(match, `${functionName} must be installed by the dated migration`);
+    return match[0];
+  };
+
+  for (const signature of [
+    "financial_reconciliation_automatic_bank_reservation_count\\(\\)",
+    "financial_reconciliation_automatic_bank_reservation_page\\(\\s*p_after_date date,\\s*p_after_id uuid,\\s*p_limit integer\\s*\\)",
+    "financial_reconciliation_automatic_bank_reservation_groups\\(\\s*p_bank_id uuid,\\s*p_max_difference_days integer,\\s*p_candidate_pool_limit integer,\\s*p_state_limit integer,\\s*p_evidence_limit integer\\s*\\)",
+    "financial_reconciliation_continue_automatic_bank_reservation\\(\\s*p_run_id uuid,\\s*p_actor text\\s*\\)",
+  ]) {
+    assert.match(migration, new RegExp(`create or replace function public\\.${signature}`, "i"));
+  }
+
+  const groupSearch = functionSource(
+    "financial_reconciliation_automatic_bank_reservation_groups",
+  );
+  assert.match(groupSearch, /limit p_candidate_pool_limit \+ 1/i);
+  assert.match(groupSearch, /round\(fdm\.amount \* 100\)::bigint/i);
+  assert.match(groupSearch, /v_evaluated_states\s*:=\s*v_evaluated_states \+ 1/i);
+  assert.match(groupSearch, /cardinality\(v_path\) < 10/i);
+  assert.match(groupSearch, /v_qualifying_count > p_evidence_limit/i);
+  assert.match(groupSearch, /'candidate_limit'/i);
+  assert.match(groupSearch, /'multiple_qualifying_combinations'/i);
+  assert.doesNotMatch(groupSearch, /\bexecute\b|\bformat\s*\(/i);
+
+  const continuation = functionSource(
+    "financial_reconciliation_continue_automatic_bank_reservation",
+  );
+  assert.match(continuation, /financial_reconciliation_automatic_bank_reservation_page\([\s\S]*25/i);
+  assert.match(continuation, /financial_reconciliation_automatic_proposal_memberships/i);
+  assert.match(continuation, /'source'[\s\S]*'destination'/i);
+  assert.match(continuation, /'overlapping_records'/i);
+  assert.match(continuation, /analysis_total = greatest\([\s\S]*v_total/i);
+  assert.doesNotMatch(continuation, /\bexecute\b|\bformat\s*\(/i);
+
+  const dispatcher = functionSource(
+    "continue_financial_reconciliation_automatic_analysis",
+  );
+  assert.match(
+    dispatcher,
+    /v_rule_key\s*=\s*'fdm_bank_transfer_cgd_bank_statement_combination'[\s\S]*v_rule_version\s*=\s*1[\s\S]*financial_reconciliation_continue_automatic_bank_reservation\(\s*p_run_id,\s*p_actor\s*\)/i,
+  );
+  assert.doesNotMatch(dispatcher, /\bexecute\b|\bformat\s*\(/i);
+
+  for (const contract of [
+    "Task 3 Bank Reservation helper classifications and hard bounds",
+    "Task 3 Bank Reservation continuation pages and retry idempotency",
+    "Task 3 Bank Reservation memberships and omitted no-match accounting",
+    "Task 3 Bank Reservation authoritative shared-bank overlap",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
 });
