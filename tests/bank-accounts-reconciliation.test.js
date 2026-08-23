@@ -211,6 +211,7 @@ test("reconciliation list buttons distinguish balanced, different, and unreconci
     reconciliationDifferenceAmount: "0.00",
   });
   assert.match(balanced, /reconciliation-list-button--balanced/);
+  assert.doesNotMatch(balanced, /class="[^"]*\bghost\b/);
   assert.match(balanced, /data-reconciliation-id="reconciliation-1"/);
   assert.match(balanced, /Open balanced completed reconciliation/);
 
@@ -221,6 +222,7 @@ test("reconciliation list buttons distinguish balanced, different, and unreconci
     reconciliationDifferenceAmount: "-0.01",
   });
   assert.match(different, /reconciliation-list-button--difference/);
+  assert.doesNotMatch(different, /class="[^"]*\bghost\b/);
   assert.match(different, /Open reconciliation with a non-zero difference/);
 
   assert.equal(button({ id: "record-3" }), "");

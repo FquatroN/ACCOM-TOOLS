@@ -21536,7 +21536,6 @@ function reconciliationListButton(row, {
     ? `Open balanced${status === "complete" ? " completed" : ""} reconciliation`
     : "Open reconciliation with a non-zero difference";
   const classes = [
-    "ghost",
     "reconciliation-list-button",
     balanced ? "reconciliation-list-button--balanced" : "reconciliation-list-button--difference",
     clean(className),
