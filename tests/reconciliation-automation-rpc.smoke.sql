@@ -12993,6 +12993,7 @@ end
 $$;
 
 -- Task 4 Adyen frozen population pages and inter-page inserts
+-- Task 4 Adyen frozen population cursor pair and retry
 -- The projection is seeded directly here so this transactional fixture remains
 -- a deterministic >25-month paging test even when run before 2028.
 insert into public.import_cgd_extrato_ordem (
@@ -13064,6 +13065,14 @@ begin
     or v_first->'analysisComplete' is distinct from 'false'::jsonb
     or v_first->'analysisProcessed' is distinct from '25'::jsonb
     or v_first->'analysisTotal' is distinct from '26'::jsonb
+    or (select run.analysis_cursor_date
+        from public.financial_reconciliation_automatic_runs run
+        where run.id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from date '2030-01-01'
+    or (select run.analysis_cursor_id
+        from public.financial_reconciliation_automatic_runs run
+        where run.id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from 'd4500000-0000-0000-0000-000000000025'::uuid
     or (select count(distinct population.month_ordinal)
         from public.financial_reconciliation_automatic_adyen_population population
         where population.run_id = 'd4500000-0000-0000-0000-000000000100')
@@ -13077,6 +13086,11 @@ begin
   end if;
 end
 $$;
+
+create temporary table task4_adyen_cursor_checkpoint on commit drop as
+select run.analysis_cursor_date, run.analysis_cursor_id
+from public.financial_reconciliation_automatic_runs run
+where run.id = 'd4500000-0000-0000-0000-000000000100';
 
 insert into public.import_cgd_extrato_ordem (
   id, import_batch, row_key, data, descritivo, montante
@@ -13120,6 +13134,24 @@ begin
     or v_second#>'{counts,bases}' is distinct from '26'::jsonb
     or v_second#>'{counts,proposed}' is distinct from '26'::jsonb
     or v_retry is distinct from v_second
+    or (select checkpoint.analysis_cursor_date
+        from task4_adyen_cursor_checkpoint checkpoint) is null
+    or (select checkpoint.analysis_cursor_id
+        from task4_adyen_cursor_checkpoint checkpoint) is null
+    or (select run.analysis_cursor_date
+        from public.financial_reconciliation_automatic_runs run
+        where run.id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from date '2030-03-01'
+    or (select run.analysis_cursor_id
+        from public.financial_reconciliation_automatic_runs run
+        where run.id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from 'd4500000-0000-0000-0000-000000000026'::uuid
+    or ((select run.analysis_cursor_date
+         from public.financial_reconciliation_automatic_runs run
+         where run.id = 'd4500000-0000-0000-0000-000000000100')
+        > (select checkpoint.analysis_cursor_date
+           from task4_adyen_cursor_checkpoint checkpoint))
+      is distinct from true
     or (select count(*)
         from public.financial_reconciliation_automatic_proposals proposal
         where proposal.run_id = 'd4500000-0000-0000-0000-000000000100')
@@ -13559,6 +13591,70 @@ begin
     where population.run_id = 'd4700000-0000-0000-0000-000000000001'
   ) then
     raise exception 'Task 4 Adyen population did not cascade with its run.';
+  end if;
+end
+$$;
+
+-- Task 4 Adyen population rejects same-named wrong-column FK
+savepoint task4_adyen_wrong_column_fk_fixture;
+
+delete from public.financial_reconciliation_automatic_adyen_population;
+alter table public.financial_reconciliation_automatic_adyen_population
+  drop constraint fr_auto_adyen_population_run_fkey;
+alter table public.financial_reconciliation_automatic_adyen_population
+  add constraint fr_auto_adyen_population_run_fkey
+  foreign key (source_id)
+  references public.financial_reconciliation_automatic_runs(id)
+  on delete cascade;
+
+\set ON_ERROR_STOP off
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+\set task4_adyen_wrong_column_fk_rejected :ERROR
+\set ON_ERROR_STOP on
+
+rollback to savepoint task4_adyen_wrong_column_fk_fixture;
+
+\if :task4_adyen_wrong_column_fk_rejected
+\else
+  \echo 'Task 4 migration accepted a same-named Adyen population FK on source_id instead of run_id.'
+  \quit 1
+\endif
+
+\ir ../supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+
+do $$
+declare
+  v_foreign_key record;
+begin
+  select constraint_row.conkey, constraint_row.confkey
+  into v_foreign_key
+  from pg_constraint constraint_row
+  where constraint_row.conrelid =
+      'public.financial_reconciliation_automatic_adyen_population'::regclass
+    and constraint_row.conname = 'fr_auto_adyen_population_run_fkey';
+
+  if not found
+    or v_foreign_key.conkey is distinct from array[
+      (select attribute_row.attnum
+       from pg_attribute attribute_row
+       where attribute_row.attrelid =
+         'public.financial_reconciliation_automatic_adyen_population'::regclass
+         and attribute_row.attname = 'run_id'
+         and not attribute_row.attisdropped)
+    ]::smallint[]
+    or v_foreign_key.confkey is distinct from array[
+      (select attribute_row.attnum
+       from pg_attribute attribute_row
+       where attribute_row.attrelid =
+         'public.financial_reconciliation_automatic_runs'::regclass
+         and attribute_row.attname = 'id'
+         and not attribute_row.attisdropped)
+    ]::smallint[]
+    or (select count(*)
+        from public.financial_reconciliation_automatic_adyen_population population
+        where population.run_id = 'd4500000-0000-0000-0000-000000000100')
+      is distinct from 52 then
+    raise exception 'Task 4 Adyen wrong-column FK fixture did not restore exact projection state.';
   end if;
 end
 $$;

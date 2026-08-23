@@ -1993,6 +1993,7 @@ declare
   v_invalid_source_id uuid;
   v_last_ordinal integer;
   v_last_month date;
+  v_last_cursor_id uuid;
   v_processed_after integer;
   v_allowed_difference numeric(14,2);
   v_operator text;
@@ -2214,13 +2215,24 @@ begin
         or v_run.analysis_cursor_id is not null
       ))
       or (v_run.analysis_processed > 0 and (
-        v_run.analysis_cursor_id is not null
-        or not exists (
+        not exists (
           select 1
           from public.financial_reconciliation_automatic_adyen_population population
           where population.run_id = p_run_id
             and population.month_ordinal = v_run.analysis_processed
             and population.calendar_month = v_run.analysis_cursor_date
+        )
+        or v_run.analysis_cursor_id is distinct from (
+          select cursor_member.source_id
+          from public.financial_reconciliation_automatic_adyen_population cursor_member
+          where cursor_member.run_id = p_run_id
+            and cursor_member.month_ordinal = v_run.analysis_processed
+          order by case cursor_member.role
+                     when 'source' then 1 else 2
+                   end,
+                   cursor_member.member_ordinal,
+                   cursor_member.source_id
+          limit 1
         )
       ))
       or exists (
@@ -2389,6 +2401,8 @@ begin
       and population.month_ordinal = v_month.month_ordinal
       and population.role = 'destination';
 
+    v_last_cursor_id := coalesce(v_base_id, v_destination_ids[1]);
+
     if v_source_count = 0 or v_destination_count = 0 then
       continue;
     end if;
@@ -2541,7 +2555,7 @@ begin
   if v_page_count > 0 then
     update public.financial_reconciliation_automatic_runs run
     set analysis_cursor_date = v_last_month,
-        analysis_cursor_id = null,
+        analysis_cursor_id = v_last_cursor_id,
         analysis_processed = v_last_ordinal,
         analysis_total = v_population_total,
         updated_at = now(),
@@ -2765,7 +2779,8 @@ begin
   select constraint_row.contype, constraint_row.confrelid,
          constraint_row.confdeltype, constraint_row.confupdtype,
          constraint_row.confmatchtype, constraint_row.condeferrable,
-         constraint_row.condeferred, constraint_row.convalidated
+         constraint_row.condeferred, constraint_row.convalidated,
+         constraint_row.conkey, constraint_row.confkey
   into v_foreign_key
   from pg_constraint constraint_row
   where constraint_row.conrelid =
@@ -2780,7 +2795,23 @@ begin
     or v_foreign_key.confmatchtype is distinct from 's'
     or v_foreign_key.condeferrable is distinct from false
     or v_foreign_key.condeferred is distinct from false
-    or v_foreign_key.convalidated is distinct from true then
+    or v_foreign_key.convalidated is distinct from true
+    or v_foreign_key.conkey is distinct from array[
+      (select attribute_row.attnum
+       from pg_attribute attribute_row
+       where attribute_row.attrelid =
+         'public.financial_reconciliation_automatic_adyen_population'::regclass
+         and attribute_row.attname = 'run_id'
+         and not attribute_row.attisdropped)
+    ]::smallint[]
+    or v_foreign_key.confkey is distinct from array[
+      (select attribute_row.attnum
+       from pg_attribute attribute_row
+       where attribute_row.attrelid =
+         'public.financial_reconciliation_automatic_runs'::regclass
+         and attribute_row.attname = 'id'
+         and not attribute_row.attisdropped)
+    ]::smallint[] then
     raise exception 'Installed Adyen population constraint % differs from the required definition.',
       'fr_auto_adyen_population_run_fkey';
   end if;
@@ -3158,6 +3189,7 @@ declare
   v_page_count integer := 0;
   v_total bigint;
   v_last_month date;
+  v_last_cursor_id uuid;
   v_allowed_difference numeric(14,2);
   v_operator text;
   v_source_ids uuid[];
@@ -3312,6 +3344,8 @@ begin
         where locked.source_type = 'import_fdm_accounts'
           and locked.source_id = fdm.id
       );
+
+    v_last_cursor_id := coalesce(v_base_id, v_destination_ids[1]);
 
     if cardinality(v_source_ids) is null
       or cardinality(v_destination_ids) is null then
@@ -3483,7 +3517,7 @@ begin
   if v_page_count > 0 then
     update public.financial_reconciliation_automatic_runs run
     set analysis_cursor_date = v_last_month,
-        analysis_cursor_id = null,
+        analysis_cursor_id = v_last_cursor_id,
         analysis_processed = greatest(
           run.analysis_processed,
           run.analysis_processed + v_page_count

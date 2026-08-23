@@ -5357,6 +5357,13 @@ test("Adyen analysis groups closed calendar months without changing POS v2", () 
   assert.match(continuation, /status = 'stale'[\s\S]*reason = 'analysis_population_changed'[\s\S]*proposal\.status in \('proposed','ambiguous'\)/i);
   assert.match(continuation, /analysis_total = v_population_total/i);
   assert.match(continuation, /analysis_processed = v_last_ordinal/i);
+  assert.match(continuation, /v_last_cursor_id\s*:=\s*coalesce\(\s*v_base_id,\s*v_destination_ids\[1\]\s*\)/i);
+  assert.match(continuation, /analysis_cursor_date = v_last_month,[\s\S]*analysis_cursor_id = v_last_cursor_id/i);
+  assert.match(
+    continuation,
+    /v_run\.analysis_cursor_id is distinct from \(\s*select cursor_member\.source_id[\s\S]*order by case cursor_member\.role[\s\S]*cursor_member\.member_ordinal[\s\S]*limit 1/i,
+  );
+  assert.doesNotMatch(migration, /analysis_cursor_id\s*=\s*null/i);
   assert.doesNotMatch(
     continuation,
     /financial_reconciliation_automatic_adyen_month_(?:count|page)\s*\(/i,
@@ -5401,6 +5408,11 @@ test("Adyen analysis groups closed calendar months without changing POS v2", () 
   assert.match(finalizer, /raise exception 'Automatic reconciliation rule is unsupported\.'/i);
   assert.match(finalizer, /financial_reconciliation_finalize_automatic_prior_analysis\(\s*p_run_id\s*\)/i);
 
+  assert.match(
+    migration,
+    /constraint_row\.conname = 'fr_auto_adyen_population_run_fkey'[\s\S]*v_foreign_key\.conkey is distinct from array\[[\s\S]*financial_reconciliation_automatic_adyen_population[\s\S]*attribute_row\.attname = 'run_id'[\s\S]*v_foreign_key\.confkey is distinct from array\[[\s\S]*financial_reconciliation_automatic_runs[\s\S]*attribute_row\.attname = 'id'/i,
+  );
+
   assert.doesNotMatch(
     migration,
     /create or replace function public\.financial_reconciliation_(?:automatic_monthly_income|continue_automatic_monthly_income)\b/i,
@@ -5411,8 +5423,10 @@ test("Adyen analysis groups closed calendar months without changing POS v2", () 
     "Task 4 Adyen closed-month classifications and omitted empty sides",
     "Task 4 Adyen memberships, retry, and reapply idempotency",
     "Task 4 Adyen frozen population pages and inter-page inserts",
+    "Task 4 Adyen frozen population cursor pair and retry",
     "Task 4 Adyen frozen population fails closed on changed future members",
     "Task 4 Adyen population reapply security and run cascade",
+    "Task 4 Adyen population rejects same-named wrong-column FK",
     "Task 4 finalizer literal seven-tuple allowlist",
     "Task 4 POS v2 helper definitions remain byte-equivalent",
   ]) {
