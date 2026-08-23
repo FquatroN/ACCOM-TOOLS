@@ -2,25 +2,44 @@ const { SOURCE_TYPES, normalizeSourceType } = require("./_reconciliation");
 
 const BANK_STATEMENT_RULE_KEY = "financial_documents_cgd_bank_statement";
 const BANK_STATEMENT_RULE_VERSION = 2;
+const BANK_STATEMENT_RULE_DISPLAY_NAME = "Financial Documents to CGD Bank Statement";
 const CREDIT_CARD_RULE_KEY = "financial_documents_cgd_credit_card";
 const CREDIT_CARD_RULE_VERSION = 1;
+const CREDIT_CARD_RULE_DISPLAY_NAME = "Financial Documents to CGD Credit Card";
 const BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY = "financial_documents_cgd_bank_statement_amount_only";
 const BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION = 1;
+const BANK_STATEMENT_AMOUNT_ONLY_RULE_DISPLAY_NAME = "Financial Documents to CGD Bank Account – AMOUNT ONLY";
 const CREDIT_CARD_AMOUNT_ONLY_RULE_KEY = "financial_documents_cgd_credit_card_amount_only";
 const CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION = 1;
+const CREDIT_CARD_AMOUNT_ONLY_RULE_DISPLAY_NAME = "Financial Documents to CGD Credit Card – AMOUNT ONLY";
 const MONTHLY_INCOME_RULE_KEY = "cgd_bank_statement_fdm_credit_card_monthly_income";
 const MONTHLY_INCOME_RULE_VERSION = 2;
 const MONTHLY_INCOME_RULE_DISPLAY_NAME = "Card Payments - POS - Income";
-const MONTHLY_AGGREGATE_RULE_KEYS = new Set([MONTHLY_INCOME_RULE_KEY]);
+const BANK_RESERVATION_RULE_KEY = "fdm_bank_transfer_cgd_bank_statement_combination";
+const BANK_RESERVATION_RULE_VERSION = 1;
+const BANK_RESERVATION_RULE_DISPLAY_NAME = "FDM Accounts – Bank Reservation Payments";
+const ADYEN_MONTHLY_RULE_KEY = "cgd_bank_statement_fdm_adyen_monthly_payments";
+const ADYEN_MONTHLY_RULE_VERSION = 1;
+const ADYEN_MONTHLY_RULE_DISPLAY_NAME = "FDM Accounts – Adyen Reservation Payments";
+const COMBINATION_AGGREGATE_RULE_KEYS = new Set([BANK_RESERVATION_RULE_KEY]);
+const MONTHLY_AGGREGATE_RULE_KEYS = new Set([MONTHLY_INCOME_RULE_KEY, ADYEN_MONTHLY_RULE_KEY]);
 const AUTOMATIC_RULE_VERSIONS = Object.freeze({
   [BANK_STATEMENT_RULE_KEY]: BANK_STATEMENT_RULE_VERSION,
   [CREDIT_CARD_RULE_KEY]: CREDIT_CARD_RULE_VERSION,
   [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY]: BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY]: CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
   [MONTHLY_INCOME_RULE_KEY]: MONTHLY_INCOME_RULE_VERSION,
+  [BANK_RESERVATION_RULE_KEY]: BANK_RESERVATION_RULE_VERSION,
+  [ADYEN_MONTHLY_RULE_KEY]: ADYEN_MONTHLY_RULE_VERSION,
 });
 const AUTOMATIC_RULE_DISPLAY_NAMES = Object.freeze({
+  [BANK_STATEMENT_RULE_KEY]: BANK_STATEMENT_RULE_DISPLAY_NAME,
+  [CREDIT_CARD_RULE_KEY]: CREDIT_CARD_RULE_DISPLAY_NAME,
+  [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY]: BANK_STATEMENT_AMOUNT_ONLY_RULE_DISPLAY_NAME,
+  [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY]: CREDIT_CARD_AMOUNT_ONLY_RULE_DISPLAY_NAME,
   [MONTHLY_INCOME_RULE_KEY]: MONTHLY_INCOME_RULE_DISPLAY_NAME,
+  [BANK_RESERVATION_RULE_KEY]: BANK_RESERVATION_RULE_DISPLAY_NAME,
+  [ADYEN_MONTHLY_RULE_KEY]: ADYEN_MONTHLY_RULE_DISPLAY_NAME,
 });
 const AMOUNT_ONLY_RULE_KEYS = Object.freeze([
   BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
@@ -184,6 +203,10 @@ function isAmountOnlyRuleKey(ruleKey) {
   return AMOUNT_ONLY_RULE_KEY_SET.has(ruleKey);
 }
 
+function isCombinationAggregateRule(ruleKey) {
+  return COMBINATION_AGGREGATE_RULE_KEYS.has(normalizeRuleKey(ruleKey));
+}
+
 function isMonthlyAggregateRule(ruleKey) {
   return MONTHLY_AGGREGATE_RULE_KEYS.has(normalizeRuleKey(ruleKey));
 }
@@ -211,9 +234,12 @@ function normalizeManagedRule(value) {
   if (isAmountOnlyRuleKey(ruleKey) && differenceAllowedCents !== 0) {
     throw inputError("Amount-only rules require a zero difference allowed.");
   }
+  if (isCombinationAggregateRule(ruleKey) && differenceAllowedCents !== 0) {
+    throw inputError("Bank Reservation rules require a zero difference allowed.");
+  }
   const maxDifferenceDays = requireInteger(rule.maxDifferenceDays, "Max difference days", 0, 90);
   if (isMonthlyAggregateRule(ruleKey) && maxDifferenceDays !== 31) {
-    throw inputError("Maximum difference in days is invalid.");
+    throw inputError("Maximum difference in days is invalid; monthly aggregate rules require calendar.month mode.");
   }
   return {
     ruleKey,
@@ -337,9 +363,12 @@ function normalizeRpcSettings(settings) {
     if (isAmountOnlyRuleKey(ruleKey) && differenceAllowedCents !== 0) {
       throw inputError("Amount-only rules require a zero difference allowed.");
     }
+    if (isCombinationAggregateRule(ruleKey) && differenceAllowedCents !== 0) {
+      throw inputError("Bank Reservation rules require a zero difference allowed.");
+    }
     const maxDifferenceDays = requireInteger(input.maxDifferenceDays, "Max difference days", 0, 90);
     if (isMonthlyAggregateRule(ruleKey) && maxDifferenceDays !== 31) {
-      throw inputError("Maximum difference in days is invalid.");
+      throw inputError("Maximum difference in days is invalid; monthly aggregate rules require calendar.month mode.");
     }
     const normalized = {
       ruleKey,
@@ -404,7 +433,7 @@ function toAutomationPublicResult(value) {
     result[PUBLIC_KEY_MAP[key] || key] = toAutomationPublicResult(nestedValue);
   }
   const displayName = AUTOMATIC_RULE_DISPLAY_NAMES[result.ruleKey];
-  if (displayName) result.displayName = displayName;
+  if (displayName && !Object.hasOwn(result, "displayName")) result.displayName = displayName;
   return result;
 }
 
@@ -416,6 +445,10 @@ module.exports = {
   AUTOMATIC_RULE_VERSIONS,
   AMOUNT_ONLY_RULE_KEYS,
   AUTOMATION_ACTIONS,
+  ADYEN_MONTHLY_RULE_KEY,
+  ADYEN_MONTHLY_RULE_VERSION,
+  BANK_RESERVATION_RULE_KEY,
+  BANK_RESERVATION_RULE_VERSION,
   BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY,
   BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   BANK_STATEMENT_RULE_KEY,
@@ -428,6 +461,7 @@ module.exports = {
   MONTHLY_INCOME_RULE_KEY,
   SOURCE_TYPES,
   isAmountOnlyRuleKey,
+  isCombinationAggregateRule,
   isCronRequest,
   isMonthlyAggregateRule,
   normalizeAnalyzePayload,

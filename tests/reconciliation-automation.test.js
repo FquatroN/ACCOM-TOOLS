@@ -6,6 +6,7 @@ const path = require("node:path");
 const {
   AUTOMATIC_RULE_KEY,
   AUTOMATIC_RULE_VERSION,
+  AUTOMATIC_RULE_DISPLAY_NAMES,
   AUTOMATIC_RULE_VERSIONS,
   AUTOMATIC_TIME_ZONE,
   AMOUNT_ONLY_RULE_KEYS,
@@ -13,11 +14,16 @@ const {
   BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION,
   BANK_STATEMENT_RULE_KEY,
   BANK_STATEMENT_RULE_VERSION,
+  BANK_RESERVATION_RULE_KEY,
+  BANK_RESERVATION_RULE_VERSION,
   CREDIT_CARD_AMOUNT_ONLY_RULE_KEY,
   CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION,
   CREDIT_CARD_RULE_KEY,
   CREDIT_CARD_RULE_VERSION,
+  ADYEN_MONTHLY_RULE_KEY,
+  ADYEN_MONTHLY_RULE_VERSION,
   isAmountOnlyRuleKey,
+  isCombinationAggregateRule,
   isMonthlyAggregateRule,
   isCronRequest,
   MONTHLY_INCOME_RULE_KEY,
@@ -319,9 +325,83 @@ const monthlyIncomeRule = {
   priority: 5,
 };
 
+const bankReservationRule = {
+  ruleKey: BANK_RESERVATION_RULE_KEY,
+  ruleVersion: BANK_RESERVATION_RULE_VERSION,
+  enabled: false,
+  allowManualExecution: false,
+  includeInScheduledBatch: false,
+  differenceAllowed: "0.00",
+  maxDifferenceDays: 3,
+  priority: 6,
+};
+
+const adyenMonthlyRule = {
+  ruleKey: ADYEN_MONTHLY_RULE_KEY,
+  ruleVersion: ADYEN_MONTHLY_RULE_VERSION,
+  enabled: false,
+  allowManualExecution: false,
+  includeInScheduledBatch: false,
+  differenceAllowed: "2000.00",
+  maxDifferenceDays: 31,
+  priority: 7,
+};
+
 function fiveRuleSettings(overrides = {}) {
   return fourRuleSettings({
     rules: [...fourRuleSettings().rules, monthlyIncomeRule],
+    ...overrides,
+  });
+}
+
+function sevenRuleSettings({
+  bankReservationDifference = bankReservationRule.differenceAllowed,
+  bankReservationMaxDays = bankReservationRule.maxDifferenceDays,
+  adyenDifference = adyenMonthlyRule.differenceAllowed,
+  adyenMaxDays = adyenMonthlyRule.maxDifferenceDays,
+  ...overrides
+} = {}) {
+  return fiveRuleSettings({
+    rules: [
+      ...fiveRuleSettings().rules,
+      { ...bankReservationRule, differenceAllowed: bankReservationDifference, maxDifferenceDays: bankReservationMaxDays },
+      { ...adyenMonthlyRule, differenceAllowed: adyenDifference, maxDifferenceDays: adyenMaxDays },
+    ],
+    ...overrides,
+  });
+}
+
+function sevenRuleRpcSettings({
+  bankReservationDifferenceAllowedCents = 0,
+  bankReservationMaxDifferenceDays = 3,
+  adyenDifferenceAllowedCents = 200000,
+  adyenMaxDifferenceDays = 31,
+  ...overrides
+} = {}) {
+  return fiveRuleRpcSettings({
+    rules: [
+      ...fiveRuleRpcSettings().rules,
+      {
+        ruleKey: BANK_RESERVATION_RULE_KEY,
+        ruleVersion: BANK_RESERVATION_RULE_VERSION,
+        enabled: false,
+        allowManualExecution: false,
+        includeInScheduledBatch: false,
+        differenceAllowedCents: bankReservationDifferenceAllowedCents,
+        maxDifferenceDays: bankReservationMaxDifferenceDays,
+        priority: 6,
+      },
+      {
+        ruleKey: ADYEN_MONTHLY_RULE_KEY,
+        ruleVersion: ADYEN_MONTHLY_RULE_VERSION,
+        enabled: false,
+        allowManualExecution: false,
+        includeInScheduledBatch: false,
+        differenceAllowedCents: adyenDifferenceAllowedCents,
+        maxDifferenceDays: adyenMaxDifferenceDays,
+        priority: 7,
+      },
+    ],
     ...overrides,
   });
 }
@@ -670,6 +750,123 @@ test("managed automation exposes a five-rule response with a fixed monthly incom
   assert.equal(normalizeRpcSettings(authoritative).rules[4].maxDifferenceDays, 31);
   authoritative.rules[4].maxDifferenceDays = 30;
   assert.throws(() => normalizeRpcSettings(authoritative), /Maximum difference in days is invalid/);
+});
+
+test("managed settings accept exactly the seven supported rule versions", () => {
+  const result = normalizeAutomationSettingsPayload(sevenRuleSettings());
+  assert.deepEqual(result.rules.map(({ ruleKey, ruleVersion }) => [ruleKey, ruleVersion]), [
+    [BANK_STATEMENT_RULE_KEY, 2],
+    [CREDIT_CARD_RULE_KEY, 1],
+    [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, 1],
+    [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, 1],
+    [MONTHLY_INCOME_RULE_KEY, 2],
+    [BANK_RESERVATION_RULE_KEY, 1],
+    [ADYEN_MONTHLY_RULE_KEY, 1],
+  ]);
+  assert.equal(isCombinationAggregateRule(BANK_RESERVATION_RULE_KEY), true);
+  assert.equal(isCombinationAggregateRule(ADYEN_MONTHLY_RULE_KEY), false);
+  assert.equal(isMonthlyAggregateRule(ADYEN_MONTHLY_RULE_KEY), true);
+  assert.equal(Object.isFrozen(AUTOMATIC_RULE_VERSIONS), true);
+  assert.equal(Object.keys(AUTOMATIC_RULE_VERSIONS).length, 7);
+  assert.equal(Object.isFrozen(AUTOMATIC_RULE_DISPLAY_NAMES), true);
+  assert.equal(Object.keys(AUTOMATIC_RULE_DISPLAY_NAMES).length, 7);
+  assert.equal(AUTOMATIC_RULE_DISPLAY_NAMES[BANK_RESERVATION_RULE_KEY], "FDM Accounts – Bank Reservation Payments");
+  assert.equal(AUTOMATIC_RULE_DISPLAY_NAMES[ADYEN_MONTHLY_RULE_KEY], "FDM Accounts – Adyen Reservation Payments");
+});
+
+test("Bank Reservation fixes zero tolerance while Adyen fixes calendar-month mode", () => {
+  assert.throws(
+    () => normalizeAutomationSettingsPayload(sevenRuleSettings({ bankReservationDifference: "0.01" })),
+    /zero difference/i,
+  );
+  assert.throws(
+    () => normalizeAutomationSettingsPayload(sevenRuleSettings({ adyenMaxDays: 30 })),
+    /calendar.month/i,
+  );
+  assert.throws(
+    () => normalizeRpcSettings(sevenRuleRpcSettings({ bankReservationDifferenceAllowedCents: 1 })),
+    /zero difference/i,
+  );
+  assert.throws(
+    () => normalizeRpcSettings(sevenRuleRpcSettings({ adyenMaxDifferenceDays: 30 })),
+    /calendar.month/i,
+  );
+});
+
+test("Bank Reservation day bounds and Adyen allowances are rule-specific", () => {
+  for (const maxDifferenceDays of [0, 90]) {
+    assert.equal(
+      normalizeAutomationSettingsPayload(sevenRuleSettings({ bankReservationMaxDays: maxDifferenceDays }))
+        .rules.find((rule) => rule.ruleKey === BANK_RESERVATION_RULE_KEY).maxDifferenceDays,
+      maxDifferenceDays,
+    );
+    assert.equal(
+      normalizeRpcSettings(sevenRuleRpcSettings({ bankReservationMaxDifferenceDays: maxDifferenceDays }))
+        .rules.find((rule) => rule.ruleKey === BANK_RESERVATION_RULE_KEY).maxDifferenceDays,
+      maxDifferenceDays,
+    );
+  }
+  assert.throws(
+    () => normalizeAutomationSettingsPayload(sevenRuleSettings({ bankReservationMaxDays: 91 })),
+    /max difference days/i,
+  );
+  assert.throws(
+    () => normalizeRpcSettings(sevenRuleRpcSettings({ bankReservationMaxDifferenceDays: 91 })),
+    /max difference days/i,
+  );
+  for (const differenceAllowed of ["0.00", "2000.00"]) {
+    assert.equal(
+      normalizeAutomationSettingsPayload(sevenRuleSettings({ adyenDifference: differenceAllowed }))
+        .rules.find((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY).differenceAllowedCents,
+      differenceAllowed === "0.00" ? 0 : 200000,
+    );
+    assert.equal(
+      normalizeRpcSettings(sevenRuleRpcSettings({
+        adyenDifferenceAllowedCents: differenceAllowed === "0.00" ? 0 : 200000,
+      })).rules.find((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY).differenceAllowedCents,
+      differenceAllowed === "0.00" ? 0 : 200000,
+    );
+  }
+});
+
+test("public mapping preserves membership and group summary fields in camel case", () => {
+  assert.deepEqual(toAutomationPublicResult({
+    grouping_key: "2026-08",
+    summary_snapshot: {
+      calendar_month: "2026-08",
+      source_count: 2,
+      source_total: "100.00",
+      destination_count: 1,
+      destination_total: "100.00",
+      total_count: 3,
+    },
+    members: [{
+      role: "source",
+      source_type: "import_fdm_accounts",
+      source_id: "fdm-1",
+      source_date: "2026-08-01",
+      amount_snapshot: "100.00",
+      row_snapshot: { source_type: "import_fdm_accounts" },
+    }],
+  }), {
+    groupingKey: "2026-08",
+    summarySnapshot: {
+      calendarMonth: "2026-08",
+      sourceCount: 2,
+      sourceTotal: "100.00",
+      destinationCount: 1,
+      destinationTotal: "100.00",
+      totalCount: 3,
+    },
+    members: [{
+      role: "source",
+      sourceType: "import_fdm_accounts",
+      sourceId: "fdm-1",
+      sourceDate: "2026-08-01",
+      amountSnapshot: "100.00",
+      rowSnapshot: { sourceType: "import_fdm_accounts" },
+    }],
+  });
 });
 
 test("amount-only tolerance is fixed at zero in both settings shapes", () => {
@@ -2617,7 +2814,12 @@ test("automation public result recursively maps known fields and strips diagnost
 
   assert.deepEqual(toAutomationPublicResult(input), {
     schedule: { timeOfDay: "02:15", timeZone: "Europe/Lisbon" },
-    rules: [{ ruleKey: AUTOMATIC_RULE_KEY, ruleVersion: 1, unknown_key: "kept" }],
+    rules: [{
+      ruleKey: AUTOMATIC_RULE_KEY,
+      ruleVersion: 1,
+      displayName: "Financial Documents to CGD Bank Statement",
+      unknown_key: "kept",
+    }],
     proposals: [{
       runId: RUN_ID,
       candidateGroups: [{ baseSourceId: "doc-1", items: [{ sourceId: "bank-1" }] }],
@@ -3361,7 +3563,13 @@ test("analyze_rule sends exactly one selected rule for each amount-only key/vers
         },
       },
     }], ruleKey);
-    assert.deepEqual(response.body.definitions, [{ ruleKey, ruleVersion }], ruleKey);
+    assert.deepEqual(response.body.definitions, [{
+      ruleKey,
+      ruleVersion,
+      displayName: ruleKey === BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY
+        ? "Financial Documents to CGD Bank Account – AMOUNT ONLY"
+        : "Financial Documents to CGD Credit Card – AMOUNT ONLY",
+    }], ruleKey);
   }
 });
 
