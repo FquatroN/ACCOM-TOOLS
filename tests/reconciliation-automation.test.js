@@ -869,6 +869,80 @@ test("public mapping preserves membership and group summary fields in camel case
   });
 });
 
+test("new rule versions and near-name keys fail closed in managed and RPC settings", () => {
+  for (const ruleKey of [BANK_RESERVATION_RULE_KEY, ADYEN_MONTHLY_RULE_KEY]) {
+    const managedUnsupportedVersion = sevenRuleSettings({
+      rules: sevenRuleSettings().rules.map((rule) => rule.ruleKey === ruleKey
+        ? { ...rule, ruleVersion: 2 }
+        : rule),
+    });
+    assert.throws(() => normalizeAutomationSettingsPayload(managedUnsupportedVersion), /rule version/i, ruleKey);
+
+    const rpcUnsupportedVersion = sevenRuleRpcSettings({
+      rules: sevenRuleRpcSettings().rules.map((rule) => rule.ruleKey === ruleKey
+        ? { ...rule, ruleVersion: 2 }
+        : rule),
+    });
+    assert.throws(() => normalizeRpcSettings(rpcUnsupportedVersion), /rule version/i, ruleKey);
+
+    const nearName = `${ruleKey}_injected`;
+    const managedNearName = sevenRuleSettings({
+      rules: sevenRuleSettings().rules.map((rule) => rule.ruleKey === ruleKey
+        ? { ...rule, ruleKey: nearName }
+        : rule),
+    });
+    assert.throws(() => normalizeAutomationSettingsPayload(managedNearName), /rule key/i, nearName);
+
+    const rpcNearName = sevenRuleRpcSettings({
+      rules: sevenRuleRpcSettings().rules.map((rule) => rule.ruleKey === ruleKey
+        ? { ...rule, ruleKey: nearName }
+        : rule),
+    });
+    assert.throws(() => normalizeRpcSettings(rpcNearName), /rule key/i, nearName);
+  }
+});
+
+test("managed and RPC settings reject prototype-backed and malformed new-rule shapes", () => {
+  for (const ruleKey of [BANK_RESERVATION_RULE_KEY, ADYEN_MONTHLY_RULE_KEY]) {
+    const managedPrototypeRule = sevenRuleSettings({
+      rules: sevenRuleSettings().rules.map((rule) => rule.ruleKey === ruleKey
+        ? Object.assign(Object.create({ inherited: true }), rule)
+        : rule),
+    });
+    assert.throws(() => normalizeAutomationSettingsPayload(managedPrototypeRule), /automation rule must be an object/i, ruleKey);
+
+    const rpcPrototypeRule = sevenRuleRpcSettings({
+      rules: sevenRuleRpcSettings().rules.map((rule) => rule.ruleKey === ruleKey
+        ? Object.assign(Object.create({ inherited: true }), rule)
+        : rule),
+    });
+    assert.throws(() => normalizeRpcSettings(rpcPrototypeRule), /automation rule must be an object/i, ruleKey);
+
+    const managedMalformedRule = sevenRuleSettings({
+      rules: sevenRuleSettings().rules.map((rule) => rule.ruleKey === ruleKey
+        ? { ...rule, unsupportedField: true }
+        : rule),
+    });
+    assert.throws(() => normalizeAutomationSettingsPayload(managedMalformedRule), /editable managed-rule fields/i, ruleKey);
+
+    const rpcMalformedRule = sevenRuleRpcSettings({
+      rules: sevenRuleRpcSettings().rules.map((rule) => rule.ruleKey === ruleKey
+        ? { ...rule, unsupportedField: true }
+        : rule),
+    });
+    assert.throws(() => normalizeRpcSettings(rpcMalformedRule), /unsupported field/i, ruleKey);
+  }
+
+  assert.throws(
+    () => normalizeAutomationSettingsPayload(Object.assign(Object.create({ inherited: true }), sevenRuleSettings())),
+    /automation settings must be an object/i,
+  );
+  assert.throws(
+    () => normalizeRpcSettings(Object.assign(Object.create({ inherited: true }), sevenRuleRpcSettings())),
+    /automation settings must be an object/i,
+  );
+});
+
 test("amount-only tolerance is fixed at zero in both settings shapes", () => {
   assert.throws(() => normalizeAutomationSettingsPayload(fourRuleSettings({
     amountOnlyDifferenceAllowed: "0.01",
