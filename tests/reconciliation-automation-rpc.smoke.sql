@@ -15653,6 +15653,39 @@ insert into public.financial_reconciliation_automatic_runs (
 \ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql
 \ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-completed-overlap-fix.sql
 \ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-completed-overlap-fix.sql
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-v2-analysis-gate-fix.sql
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-v2-analysis-gate-fix.sql
+
+-- The manual analysis gate must accept the immutable Adyen v2 definition,
+-- including its excluded FDM category, after all shared rule upgrades run.
+do $$
+declare
+  v_result jsonb;
+begin
+  update public.financial_reconciliation_automatic_rule_configs config
+  set enabled = true,
+      allow_manual_execution = true,
+      updated_at = now()
+  where config.rule_key =
+    'cgd_bank_statement_fdm_adyen_monthly_payments';
+
+  v_result := public.create_financial_reconciliation_automatic_analysis(
+    array['cgd_bank_statement_fdm_adyen_monthly_payments'],
+    'manual_rule', 'smoke:adyen-v2-analysis-gate',
+    'a2420000-0000-0000-0000-000000000001'
+  );
+
+  if v_result#>>'{definitions,0,ruleKey}' is distinct from
+      'cgd_bank_statement_fdm_adyen_monthly_payments'
+    or v_result#>>'{definitions,0,ruleVersion}' is distinct from '2'
+    or v_result#>>'{definitions,0,operator}' is distinct from '-'
+    or v_result#>>'{definitions,0,definition,fdmExcludedCategory}'
+      is distinct from 'TransferOutToAccount' then
+    raise exception 'Adyen v2 manual analysis gate rejected its managed definition: %.',
+      v_result;
+  end if;
+end
+$$;
 
 -- Completed automatic proposal history does not block unlocked records
 do $$
