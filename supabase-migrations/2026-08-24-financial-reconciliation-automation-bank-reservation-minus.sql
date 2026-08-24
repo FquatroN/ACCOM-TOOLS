@@ -366,7 +366,7 @@ begin
               'fdm_bank_transfer_cgd_bank_statement_combination'
             then '-'$expected$
       in pg_get_functiondef(
-        'public.claim_financial_reconciliation_automatic_schedule(text)'::regprocedure
+        'public.claim_financial_reconciliation_automatic_schedule(timestamptz,text)'::regprocedure
       )
     ) = 0
     or position(

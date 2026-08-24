@@ -1173,6 +1173,10 @@ test("Bank Reservation version 2 uses subtraction in both managed directions", (
     /ruleVersion'\)::integer = 1[\s\S]*operator' is distinct from '\+'[\s\S]*ruleVersion'\)::integer = 2[\s\S]*operator' is distinct from '-'/i);
   assert.match(migration,
     /Historical Bank Reservation proposal members require a finished run/i);
+  assert.match(migration,
+    /public\.claim_financial_reconciliation_automatic_schedule\(timestamptz,text\)'::regprocedure/i);
+  assert.doesNotMatch(migration,
+    /public\.claim_financial_reconciliation_automatic_schedule\(text\)'::regprocedure/i);
 
   const smoke = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
   assert.match(smoke, /Completed v1 details remain readable/i);
