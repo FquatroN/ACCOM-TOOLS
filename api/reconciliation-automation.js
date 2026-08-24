@@ -171,11 +171,12 @@ const MANAGED_RULE_CONTRACTS = Object.freeze({
   [ADYEN_MONTHLY_RULE_KEY]: {
     baseSourceType: "import_cgd_extrato_ordem",
     destinationSourceType: "import_fdm_accounts",
-    logicDescription: "Every eligible unlocked CGD Bank Statement and FDM Adyen record in the same closed calendar month forms one proposal; both sides are required and the signed difference must be within the configured allowance.",
+    logicDescription: "Every eligible unlocked CGD Bank Statement and FDM Adyen record whose category is not TransferOutToAccount in the same closed calendar month forms one proposal; both sides are required and the signed difference must be within the configured allowance.",
     definition: {
       strategy: "closed_calendar_month",
       bankDescriptionContains: "Adyen",
       fdmAccount: "Adyen",
+      fdmExcludedCategory: "TransferOutToAccount",
       requiresBothSides: true,
       monthMarkerDays: 31,
     },

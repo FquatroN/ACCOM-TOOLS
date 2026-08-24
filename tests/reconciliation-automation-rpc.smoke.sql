@@ -15460,4 +15460,167 @@ begin
 end
 $$;
 
+-- Adyen v2 excludes TransferOutToAccount and NULL destination categories
+-- during both analysis and execution-time live membership revalidation.
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql
+
+do $$
+declare
+  v_actor text := 'smoke:adyen-v2-category-exclusion';
+  v_result jsonb;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_attempt integer := 0;
+begin
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_definitions definition
+    where definition.rule_key = 'cgd_bank_statement_fdm_adyen_monthly_payments'
+      and definition.version = 2
+      and definition.definition = jsonb_build_object(
+        'strategy', 'closed_calendar_month',
+        'bankDescriptionContains', 'Adyen',
+        'fdmAccount', 'Adyen',
+        'fdmExcludedCategory', 'TransferOutToAccount',
+        'requiresBothSides', true,
+        'monthMarkerDays', 31
+      )
+  ) or not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    where config.rule_key = 'cgd_bank_statement_fdm_adyen_monthly_payments'
+      and config.rule_version = 2
+  ) then
+    raise exception 'Adyen v2 managed definition/config was not installed.';
+  end if;
+
+  update public.import_cgd_extrato_ordem
+  set descritivo = 'non-Adyen prior smoke row'
+  where descritivo ilike '%Adyen%';
+  update public.import_fdm_accounts
+  set category = 'TransferOutToAccount'
+  where account = 'Adyen';
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    'a2400000-0000-0000-0000-000000000001',
+    'smoke-adyen-v2-category', 'adyen-v2-april-bank', date '2026-04-15',
+    'Adyen April settlement', 50.00
+  );
+  insert into public.import_fdm_accounts (
+    id, import_batch, source_row_number, account, date_time_raw, event_date,
+    category, amount, description
+  ) values
+    (
+      'a2410000-0000-0000-0000-000000000001',
+      'smoke-adyen-v2-category', 1, 'Adyen', '2026-04-15', date '2026-04-15',
+      'Reservation', 50.00, 'eligible Adyen destination'
+    ),
+    (
+      'a2410000-0000-0000-0000-000000000002',
+      'smoke-adyen-v2-category', 2, 'Adyen', '2026-04-16', date '2026-04-16',
+      'TransferOutToAccount', 99.00, 'excluded transfer-out destination'
+    ),
+    (
+      'a2410000-0000-0000-0000-000000000003',
+      'smoke-adyen-v2-category', 3, 'Adyen', '2026-04-17', date '2026-04-17',
+      null, 77.00, 'excluded null-category destination'
+    ),
+    (
+      'a2410000-0000-0000-0000-000000000006',
+      'smoke-adyen-v2-category', 6, 'Adyen', '2026-05-17', date '2026-05-17',
+      'TransferOutToAccount', 88.00,
+      'excluded-only month must not affect analysis total'
+    );
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true,
+      allow_manual_execution = true,
+      difference_allowed = 0,
+      max_difference_days = 31,
+      updated_at = now()
+  where rule_key = 'cgd_bank_statement_fdm_adyen_monthly_payments';
+
+  v_result := public.create_financial_reconciliation_automatic_analysis(
+    array['cgd_bank_statement_fdm_adyen_monthly_payments'],
+    'manual_rule', v_actor, 'a2420000-0000-0000-0000-000000000001'
+  );
+  v_run_id := (v_result->>'runId')::uuid;
+  while v_result->>'status' = 'analyzing' loop
+    v_attempt := v_attempt + 1;
+    if v_attempt > 10 then
+      raise exception 'Adyen v2 analysis did not terminate: %.', v_result;
+    end if;
+    v_result := public.continue_financial_reconciliation_automatic_analysis(
+      v_run_id, v_actor
+    );
+  end loop;
+
+  select proposal.id into strict v_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_run_id
+    and proposal.rule_key = 'cgd_bank_statement_fdm_adyen_monthly_payments'
+    and proposal.rule_version = 2
+    and proposal.grouping_key = '2026-04'
+    and proposal.status = 'proposed';
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.run_id = v_run_id
+      and proposal.grouping_key = '2026-05'
+  ) then
+    raise exception 'Adyen v2 analyzed an excluded-only calendar month.';
+  end if;
+
+  if (select count(*)
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal_id
+        and member.source_type = 'import_fdm_accounts') <> 1
+    or not exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal_id
+        and member.source_id = 'a2410000-0000-0000-0000-000000000001'
+    )
+    or exists (
+      select 1
+      from public.financial_reconciliation_automatic_proposal_memberships member
+      where member.proposal_id = v_proposal_id
+        and member.source_id in (
+          'a2410000-0000-0000-0000-000000000002',
+          'a2410000-0000-0000-0000-000000000003'
+        )
+    ) then
+    raise exception 'Adyen v2 analysis included an ineligible FDM category.';
+  end if;
+
+  -- Rows appearing after analysis must also be ignored by live execution.
+  insert into public.import_fdm_accounts (
+    id, import_batch, source_row_number, account, date_time_raw, event_date,
+    category, amount, description
+  ) values
+    (
+      'a2410000-0000-0000-0000-000000000004',
+      'smoke-adyen-v2-category', 4, 'Adyen', '2026-04-18', date '2026-04-18',
+      'TransferOutToAccount', 20.00, 'late excluded transfer-out destination'
+    ),
+    (
+      'a2410000-0000-0000-0000-000000000005',
+      'smoke-adyen-v2-category', 5, 'Adyen', '2026-04-19', date '2026-04-19',
+      null, 20.00, 'late excluded null-category destination'
+    );
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, v_actor
+  );
+  if v_result->>'status' is distinct from 'completed' then
+    raise exception 'Adyen v2 execution did not ignore excluded live rows: %.',
+      v_result;
+  end if;
+end
+$$;
+
 rollback;

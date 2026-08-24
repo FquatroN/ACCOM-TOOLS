@@ -289,6 +289,7 @@ function managedDefinition(ruleKey) {
       strategy: "closed_calendar_month",
       bankDescriptionContains: "Adyen",
       fdmAccount: "Adyen",
+      fdmExcludedCategory: "TransferOutToAccount",
       requiresBothSides: true,
       monthMarkerDays: 31,
     };
@@ -316,7 +317,7 @@ function managedLogicDescription(ruleKey) {
     return "Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records with opposite signed totals that equal zero exactly in integer cents within the inclusive configured date window.";
   }
   if (ruleKey === ADYEN_MONTHLY_RULE_KEY) {
-    return "Every eligible unlocked CGD Bank Statement and FDM Adyen record in the same closed calendar month forms one proposal; both sides are required and the signed difference must be within the configured allowance.";
+    return "Every eligible unlocked CGD Bank Statement and FDM Adyen record whose category is not TransferOutToAccount in the same closed calendar month forms one proposal; both sides are required and the signed difference must be within the configured allowance.";
   }
   throw new Error(`Unexpected managed rule ${ruleKey}`);
 }
@@ -1091,7 +1092,7 @@ test("managed settings accept exactly the seven supported rule versions", () => 
     [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, 1],
     [MONTHLY_INCOME_RULE_KEY, 2],
     [BANK_RESERVATION_RULE_KEY, 1],
-    [ADYEN_MONTHLY_RULE_KEY, 1],
+    [ADYEN_MONTHLY_RULE_KEY, 2],
   ]);
   assert.equal(isCombinationAggregateRule(BANK_RESERVATION_RULE_KEY), true);
   assert.equal(isCombinationAggregateRule(ADYEN_MONTHLY_RULE_KEY), false);
@@ -1102,6 +1103,40 @@ test("managed settings accept exactly the seven supported rule versions", () => 
   assert.equal(Object.keys(AUTOMATIC_RULE_DISPLAY_NAMES).length, 7);
   assert.equal(AUTOMATIC_RULE_DISPLAY_NAMES[BANK_RESERVATION_RULE_KEY], "FDM Accounts – Bank Reservation Payments");
   assert.equal(AUTOMATIC_RULE_DISPLAY_NAMES[ADYEN_MONTHLY_RULE_KEY], "FDM Accounts – Adyen Reservation Payments");
+});
+
+test("Adyen version 2 requires TransferOutToAccount destination exclusion", async () => {
+  const managed = sevenRuleSettings();
+  const managedAdyen = managed.rules.find((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY);
+  managedAdyen.ruleVersion = 2;
+  assert.equal(
+    normalizeAutomationSettingsPayload(managed).rules.find((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY).ruleVersion,
+    2,
+  );
+
+  const valid = responseRecorder();
+  await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => sevenRuleRpcCatalog(),
+  }), async (handler) => handler({ method: "GET" }, valid));
+  assert.equal(valid.statusCode, 200);
+  assert.equal(
+    valid.body.rules.find((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY)
+      .definition.fdmExcludedCategory,
+    "TransferOutToAccount",
+  );
+
+  for (const invalidExcludedCategory of [undefined, "TransferOutToOtherAccount"]) {
+    const invalid = structuredClone(sevenRuleRpcCatalog());
+    const invalidAdyen = invalid.rules.find((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY);
+    if (invalidExcludedCategory === undefined) delete invalidAdyen.definition.fdmExcludedCategory;
+    else invalidAdyen.definition.fdmExcludedCategory = invalidExcludedCategory;
+    const response = responseRecorder();
+    await withMockedHandler(SETTINGS_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => invalid,
+    }), async (handler) => handler({ method: "GET" }, response));
+    assert.equal(response.statusCode, 500);
+    assert.deepEqual(response.body, { error: "Unexpected server error." });
+  }
 });
 
 test("Bank Reservation fixes zero tolerance while Adyen fixes calendar-month mode", () => {
@@ -1201,16 +1236,17 @@ test("public mapping preserves membership and group summary fields in camel case
 
 test("new rule versions and near-name keys fail closed in managed and RPC settings", () => {
   for (const ruleKey of [BANK_RESERVATION_RULE_KEY, ADYEN_MONTHLY_RULE_KEY]) {
+    const unsupportedVersion = AUTOMATIC_RULE_VERSIONS[ruleKey] + 1;
     const managedUnsupportedVersion = sevenRuleSettings({
       rules: sevenRuleSettings().rules.map((rule) => rule.ruleKey === ruleKey
-        ? { ...rule, ruleVersion: 2 }
+        ? { ...rule, ruleVersion: unsupportedVersion }
         : rule),
     });
     assert.throws(() => normalizeAutomationSettingsPayload(managedUnsupportedVersion), /rule version/i, ruleKey);
 
     const rpcUnsupportedVersion = sevenRuleRpcSettings({
       rules: sevenRuleRpcSettings().rules.map((rule) => rule.ruleKey === ruleKey
-        ? { ...rule, ruleVersion: 2 }
+        ? { ...rule, ruleVersion: unsupportedVersion }
         : rule),
     });
     assert.throws(() => normalizeRpcSettings(rpcUnsupportedVersion), /rule version/i, ruleKey);
@@ -7200,7 +7236,8 @@ test("Task 6 installs RPC-only manual, membership, serializer, and seven-child s
     [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION],
     [MONTHLY_INCOME_RULE_KEY, 2],
     [BANK_RESERVATION_RULE_KEY, BANK_RESERVATION_RULE_VERSION],
-    [ADYEN_MONTHLY_RULE_KEY, ADYEN_MONTHLY_RULE_VERSION],
+    // This gate verifies migration 13 as deployed; v2 is a forward migration.
+    [ADYEN_MONTHLY_RULE_KEY, 1],
   ];
 
   const manualRules = functionSource("get_financial_reconciliation_automatic_manual_rules");
