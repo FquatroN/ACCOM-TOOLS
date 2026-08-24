@@ -15651,7 +15651,10 @@ insert into public.financial_reconciliation_automatic_runs (
 );
 \ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql
 \ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-completed-overlap-fix.sql
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-completed-overlap-fix.sql
 
+-- Completed automatic proposal history does not block unlocked records
 do $$
 declare
   v_actor text := 'smoke-bank-reservation-v2@example.com';
@@ -15659,7 +15662,11 @@ declare
   v_run_id uuid;
   v_proposal_id uuid;
   v_reconciliation_id uuid;
+  v_second_run_id uuid;
+  v_second_proposal_id uuid;
+  v_second_reconciliation_id uuid;
   v_attempt integer := 0;
+  v_completed_proposal_snapshot jsonb;
   v_historical jsonb;
   v_historical_page jsonb;
   v_historical_proposal_id uuid :=
@@ -15858,6 +15865,79 @@ begin
       from public.financial_reconciliations reconciliation
       where reconciliation.id = v_reconciliation_id) is distinct from '-' then
     raise exception 'Bank Reservation v2 persisted the wrong arithmetic.';
+  end if;
+
+  select to_jsonb(proposal) - array['reconciliation_id','updated_at']::text[]
+  into strict v_completed_proposal_snapshot
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.id = v_proposal_id;
+
+  perform public.finish_financial_reconciliation_automatic_run(v_run_id);
+  perform public.financial_reconciliation_action(
+    'delete', v_actor, v_reconciliation_id, null, null, null
+  );
+
+  if exists (
+    select 1
+    from public.financial_reconciliation_items item
+    where (item.source_type = 'import_cgd_extrato_ordem'
+        and item.source_id = 'b2400000-0000-0000-0000-000000000001')
+       or (item.source_type = 'import_fdm_accounts'
+        and item.source_id = 'b2410000-0000-0000-0000-000000000001')
+  ) or not exists (
+    select 1
+    from public.financial_reconciliation_automatic_proposals proposal
+    where proposal.id = v_proposal_id
+      and proposal.status = 'completed'
+  ) then
+    raise exception
+      'Deleting the reconciliation did not unlock items while retaining completed audit history.';
+  end if;
+
+  v_result := public.create_financial_reconciliation_automatic_analysis(
+    array['fdm_bank_transfer_cgd_bank_statement_combination'],
+    'manual_rule', v_actor, 'b2420000-0000-0000-0000-000000000002'
+  );
+  v_second_run_id := (v_result->>'runId')::uuid;
+  v_attempt := 0;
+  while v_result->>'status' = 'analyzing' loop
+    v_attempt := v_attempt + 1;
+    if v_attempt > 1000 then
+      raise exception
+        'Second Bank Reservation v2 analysis did not terminate: %.', v_result;
+    end if;
+    v_result := public.continue_financial_reconciliation_automatic_analysis(
+      v_second_run_id, v_actor
+    );
+  end loop;
+
+  select proposal.id into strict v_second_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_second_run_id
+    and proposal.rule_key =
+      'fdm_bank_transfer_cgd_bank_statement_combination'
+    and proposal.rule_version = 2
+    and proposal.grouping_key =
+      'b2400000-0000-0000-0000-000000000001'
+    and proposal.status = 'proposed';
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_second_proposal_id, v_actor
+  );
+  if v_result->>'status' is distinct from 'completed' then
+    raise exception
+      'Completed automatic proposal history still blocks unlocked records: %.',
+      v_result;
+  end if;
+  v_second_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+
+  if v_second_reconciliation_id is null
+    or (select to_jsonb(proposal) - array['reconciliation_id','updated_at']::text[]
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = v_proposal_id)
+      is distinct from v_completed_proposal_snapshot then
+    raise exception
+      'Re-execution did not preserve the first completed proposal audit snapshot.';
   end if;
 end
 $$;

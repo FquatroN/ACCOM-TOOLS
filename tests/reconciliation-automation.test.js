@@ -124,6 +124,12 @@ const BANK_RESERVATION_MINUS_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql",
 );
+const COMPLETED_OVERLAP_FIX_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-24-financial-reconciliation-automation-completed-overlap-fix.sql",
+);
 const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
 const PROPOSAL_ID_2 = "00000000-0000-0000-0000-000000000004";
 const PROPOSAL_ID_3 = "00000000-0000-0000-0000-000000000005";
@@ -7293,6 +7299,38 @@ test("Bank Reservation and Adyen proposals execute atomically from immutable mem
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
   }
+});
+
+test("completed historical proposals do not block unlocked Bank Reservation records", () => {
+  const migration = fs.readFileSync(COMPLETED_OVERLAP_FIX_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+
+  for (const signature of [
+    "public.financial_reconciliation_execute_bank_reservation_proposal(uuid,text)",
+    "public.financial_reconciliation_execute_adyen_monthly_proposal(uuid,text)",
+  ]) {
+    assert.match(migration, new RegExp(signature.replace(/[().]/g, "\\$&"), "i"));
+  }
+  assert.match(
+    migration,
+    /overlap_proposal\.status in \(\s*'proposed','executing'\s*\)/i,
+  );
+  assert.match(
+    migration,
+    /'proposed'\\s\*,\\s\*'executing'\\s\*,\\s\*'completed'/i,
+  );
+  assert.match(migration, /Unexpected automatic overlap predicate definition/i);
+  assert.match(migration, /Completed automatic proposal history still blocks unlocked records/i);
+  assert.doesNotMatch(migration, /^\s*(begin|commit)\s*;/im);
+
+  assert.match(
+    smokeSql,
+    /-- Completed automatic proposal history does not block unlocked records/i,
+  );
+  assert.match(
+    smokeSql,
+    /financial_reconciliation_action\(\s*'delete'[\s\S]*create_financial_reconciliation_automatic_analysis[\s\S]*status'\s+is distinct from 'completed'/i,
+  );
 });
 
 test("Bank execution revalidates live combinations and excludes non-executable ambiguous overlap evidence", () => {

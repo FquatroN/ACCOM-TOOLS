@@ -59,6 +59,7 @@ migrations in this exact order:
 13. `supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql`
 14. `supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql`
 15. `supabase-migrations/2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql`
+16. `supabase-migrations/2026-08-24-financial-reconciliation-automation-completed-overlap-fix.sql`
 
 If the database is already current through Banco v2, apply migrations 7 and 8
 and then migration 9 in that order. If it is already current through the
@@ -89,6 +90,11 @@ and requires `-` for both Bank Statement/FDM directions. Its matching and
 execution equation is FDM total minus Bank Statement amount. Completed v1
 audit rows remain unchanged; unfinished v1 analyses must be analyzed again.
 The migration is safe to apply twice.
+Installations current through migration 15 apply only migration 16. Migration
+16 keeps completed automatic proposals as immutable audit history without
+treating them as active record locks after their reconciliation is deleted.
+Existing reconciliation items remain the authority for records that are still
+locked. The migration is safe to apply twice.
 
 ### Amount-only rollout sequence
 
