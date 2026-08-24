@@ -118,6 +118,12 @@ const ADYEN_CATEGORY_EXCLUSION_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql",
 );
+const ADYEN_V2_EXECUTION_VALIDATOR_FIX_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-24-financial-reconciliation-automation-adyen-v2-execution-validator-fix.sql",
+);
 const BANK_RESERVATION_MINUS_MIGRATION_PATH = path.join(
   __dirname,
   "..",
@@ -1200,6 +1206,30 @@ test("Adyen version 2 migration never asks pg_get_functiondef for aggregates", (
   assert.match(catalogLoop[1], /procedure\.prokind = 'f'/);
   assert.match(catalogLoop[1], /position\(v_rule_key in procedure\.prosrc\) > 0/);
   assert.doesNotMatch(catalogLoop[1], /pg_get_functiondef\(procedure\.oid\)/);
+});
+
+test("Adyen v2 execution validates the same immutable definition used by analysis", () => {
+  const migration = fs.readFileSync(
+    ADYEN_V2_EXECUTION_VALIDATOR_FIX_MIGRATION_PATH,
+    "utf8",
+  );
+  const smoke = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+
+  assert.match(
+    migration,
+    /financial_reconciliation_execute_adyen_monthly_proposal\(uuid,text\)'::regprocedure/,
+  );
+  assert.match(migration, /'fdmExcludedCategory', 'TransferOutToAccount'/);
+  assert.match(migration, /fdmAccount''\\s\*,\\s\*''Adyen/);
+  assert.match(migration, /could not be upgraded safely/i);
+  assert.equal(
+    (smoke.match(/adyen-v2-execution-validator-fix\.sql/g) || []).length,
+    2,
+  );
+  assert.match(
+    smoke,
+    /Adyen v2 execution did not ignore excluded live rows/,
+  );
 });
 
 test("Bank Reservation fixes zero tolerance while Adyen fixes calendar-month mode", () => {

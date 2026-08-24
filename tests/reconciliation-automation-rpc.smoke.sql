@@ -15464,6 +15464,8 @@ $$;
 -- during both analysis and execution-time live membership revalidation.
 \ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql
 \ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-v2-execution-validator-fix.sql
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-v2-execution-validator-fix.sql
 
 do $$
 declare
