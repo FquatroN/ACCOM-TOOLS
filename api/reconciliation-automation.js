@@ -156,7 +156,7 @@ const MANAGED_RULE_CONTRACTS = Object.freeze({
   [BANK_RESERVATION_RULE_KEY]: {
     baseSourceType: "import_fdm_accounts",
     destinationSourceType: "import_cgd_extrato_ordem",
-    logicDescription: "Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records with opposite signed totals that equal zero exactly in integer cents within the inclusive configured date window.",
+    logicDescription: "Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records whose total minus the Bank Statement amount equals zero exactly in integer cents within the inclusive configured date window.",
     definition: {
       strategy: "bounded_exact_combination",
       sourceAccount: "Bank Transfer",
@@ -272,7 +272,12 @@ function isoDayNumber(value) {
   return Date.parse(`${value}T00:00:00Z`) / 86400000;
 }
 
-function requireManagedTuple(ruleKey, ruleVersion, label = "run") {
+function isHistoricalBankReservationV1(ruleKey, ruleVersion) {
+  return ruleKey === BANK_RESERVATION_RULE_KEY && ruleVersion === 1;
+}
+
+function requireManagedTuple(ruleKey, ruleVersion, label = "run", allowHistoricalBankV1 = false) {
+  if (allowHistoricalBankV1 && isHistoricalBankReservationV1(ruleKey, ruleVersion)) return;
   if (!Object.hasOwn(AUTOMATIC_RULE_VERSIONS, ruleKey)
     || ruleVersion !== AUTOMATIC_RULE_VERSIONS[ruleKey]) failUnexpected(label);
 }
@@ -294,6 +299,7 @@ function requireRuleValues(rule, label) {
     || !isPlainRecord(rule.definition)) failUnexpected(label);
   requireManagedDefinition(rule.ruleKey, rule.definition, label);
   const expectedOperator = rule.ruleKey === MONTHLY_INCOME_RULE_KEY
+    || rule.ruleKey === BANK_RESERVATION_RULE_KEY
     || rule.ruleKey === ADYEN_MONTHLY_RULE_KEY ? "-" : "+";
   if (rule.operator !== expectedOperator
     || (AMOUNT_ONLY_RULES.has(rule.ruleKey) && Number(rule.differenceAllowed) !== 0)
@@ -304,6 +310,19 @@ function requireRuleValues(rule, label) {
       && (Number(rule.differenceAllowed) < 0 || rule.maxDifferenceDays !== 31))
     || (rule.ruleKey === MONTHLY_INCOME_RULE_KEY
       && rule.maxDifferenceDays !== 31)) failUnexpected(label);
+}
+
+function requireHistoricalBankRuleValues(rule, label) {
+  if (!isHistoricalBankReservationV1(rule.ruleKey, rule.ruleVersion)
+    || rule.displayName !== AUTOMATIC_RULE_DISPLAY_NAMES[BANK_RESERVATION_RULE_KEY]
+    || !Number.isSafeInteger(rule.priority) || rule.priority < 1
+    || !isDecimal(rule.differenceAllowed) || Number(rule.differenceAllowed) !== 0
+    || !Number.isSafeInteger(rule.maxDifferenceDays)
+    || rule.maxDifferenceDays < 0 || rule.maxDifferenceDays > 90
+    || !isPlainRecord(rule.definition)
+    || rule.destinationSourceType !== "import_cgd_extrato_ordem"
+    || rule.operator !== "+") failUnexpected(label);
+  requireManagedDefinition(rule.ruleKey, rule.definition, label);
 }
 
 function requireManualRuleCatalog(value) {
@@ -344,6 +363,7 @@ function requireBankGroupedProposal(value, run) {
   const baseDay = isoDayNumber(value.baseSourceDate);
   const anchorDay = isoDayNumber(summary.bankAnchorDate);
   const maxDifferenceDays = run.definitions[0].maxDifferenceDays;
+  const historicalV1 = isHistoricalBankReservationV1(value.ruleKey, value.ruleVersion);
   if (!UUID_PATTERN.test(value.groupingKey)
     || value.groupingKey !== value.groupingKey.toLowerCase()
     || value.baseSourceType !== "import_fdm_accounts"
@@ -361,14 +381,19 @@ function requireBankGroupedProposal(value, run) {
     if (summary.sourceCount < 1 || summary.sourceCount > 10
       || summary.candidateCount < summary.sourceCount || summary.candidateCount > 60
       || sourceTotal === 0n || destinationTotal === 0n
-      || (sourceTotal < 0n) === (destinationTotal < 0n)
-      || sourceTotal + destinationTotal !== 0n) failUnexpected();
+      || (historicalV1
+        ? (sourceTotal < 0n) === (destinationTotal < 0n)
+          || sourceTotal + destinationTotal !== 0n
+        : (sourceTotal < 0n) !== (destinationTotal < 0n)
+          || sourceTotal - destinationTotal !== 0n)) failUnexpected();
   } else if (summary.sourceCount < 1 || summary.sourceCount > 60
     || summary.sourceCount > summary.candidateCount
     || summary.candidateCount < (multiple ? 2 : 1)
     || summary.candidateCount > (candidateLimit ? 61 : 60)
     || sourceTotal === 0n || destinationTotal === 0n
-    || (sourceTotal < 0n) === (destinationTotal < 0n)) failUnexpected();
+    || (historicalV1
+      ? (sourceTotal < 0n) === (destinationTotal < 0n)
+      : (sourceTotal < 0n) !== (destinationTotal < 0n))) failUnexpected();
 
   const lifecycleIsValid = value.status === "proposed"
     ? unique && value.reason === "unique_qualifying_combination"
@@ -451,7 +476,10 @@ function requireGroupedSummary(value, run) {
 
 function requireProposal(value, run) {
   requireExactFields(value, PROPOSAL_FIELDS);
-  requireManagedTuple(value.ruleKey, value.ruleVersion);
+  const historicalBankV1 = isHistoricalBankReservationV1(
+    run.definitions[0]?.ruleKey, run.definitions[0]?.ruleVersion,
+  );
+  requireManagedTuple(value.ruleKey, value.ruleVersion, "run", historicalBankV1);
   const groupingKeyIsValid = GROUPED_RULES.has(value.ruleKey)
     ? typeof value.groupingKey === "string" && Boolean(value.groupingKey)
     : CLASSIC_RULES.has(value.ruleKey) && value.groupingKey === null;
@@ -500,7 +528,17 @@ function requireManualRun(value, expected = {}, allowNull = false) {
   if (expected.clientRequestId
     && run.clientRequestId.toLowerCase() !== expected.clientRequestId.toLowerCase()) failUnexpected();
   requireExactFields(run.definitions[0], DEFINITION_FIELDS);
-  requireRuleValues(run.definitions[0], "run");
+  const historicalBankV1 = isHistoricalBankReservationV1(
+    run.definitions[0].ruleKey, run.definitions[0].ruleVersion,
+  );
+  if (historicalBankV1) {
+    if (!run.finishedAt || !new Set(["completed", "partial", "failed"]).has(run.status)) {
+      failUnexpected();
+    }
+    requireHistoricalBankRuleValues(run.definitions[0], "run");
+  } else {
+    requireRuleValues(run.definitions[0], "run");
+  }
   const destination = run.definitions[0].destinationSourceType;
   if (destination !== MANAGED_RULE_CONTRACTS[run.definitions[0].ruleKey]?.destinationSourceType) {
     failUnexpected();

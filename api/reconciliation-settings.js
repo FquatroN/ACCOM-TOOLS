@@ -36,7 +36,7 @@ const requireManagedAutomaticSourceRules = (rules) => {
     {
       baseSourceType: "import_fdm_accounts",
       matchingSourceType: "import_cgd_extrato_ordem",
-      operator: "+",
+      operator: "-",
       displayName: "Bank Reservation",
     },
   ]) {

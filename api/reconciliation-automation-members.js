@@ -74,7 +74,8 @@ function isPlainRecord(value) {
 
 function isPagedRulePair(ruleKey, ruleVersion) {
   return (ruleKey === MONTHLY_INCOME_RULE_KEY && (ruleVersion === 1 || ruleVersion === 2))
-    || (ruleKey === BANK_RESERVATION_RULE_KEY && ruleVersion === BANK_RESERVATION_RULE_VERSION)
+    || (ruleKey === BANK_RESERVATION_RULE_KEY
+      && (ruleVersion === 1 || ruleVersion === BANK_RESERVATION_RULE_VERSION))
     || (ruleKey === ADYEN_MONTHLY_RULE_KEY && ruleVersion === ADYEN_MONTHLY_RULE_VERSION);
 }
 

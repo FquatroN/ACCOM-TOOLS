@@ -15623,4 +15623,243 @@ begin
 end
 $$;
 
+-- Bank Reservation v2 uses FDM minus Bank and both source directions stay '-'.
+-- Completed v1 details remain readable and an unfinished v1 scheduled child
+-- terminalizes its parent batch instead of stranding the schedule.
+insert into public.financial_reconciliation_automatic_batches (
+  id, scheduled_slot, actor, status, rule_snapshot
+) values (
+  'b2430000-0000-0000-0000-000000000001', '2099-12-30',
+  'smoke-bank-reservation-v1-batch', 'pending',
+  (select run.definition_config_snapshot
+   from public.financial_reconciliation_automatic_runs run
+   where run.id = 'f5200000-0000-0000-0000-000000000001')
+);
+insert into public.financial_reconciliation_automatic_runs (
+  id, trigger, scope, status, actor, scheduled_slot, batch_id,
+  batch_rule_key, batch_rule_position, batch_rule_count,
+  definition_config_snapshot, analysis_processed, analysis_total
+) values (
+  'b2430000-0000-0000-0000-000000000002', 'scheduled', 'rule',
+  'analyzing', 'smoke-bank-reservation-v1-batch', '2099-12-30',
+  'b2430000-0000-0000-0000-000000000001',
+  'fdm_bank_transfer_cgd_bank_statement_combination', 1, 1,
+  (select run.definition_config_snapshot
+   from public.financial_reconciliation_automatic_runs run
+   where run.id = 'f5200000-0000-0000-0000-000000000001'),
+  0, 1
+);
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql
+\ir ../supabase-migrations/2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql
+
+do $$
+declare
+  v_actor text := 'smoke-bank-reservation-v2@example.com';
+  v_result jsonb;
+  v_run_id uuid;
+  v_proposal_id uuid;
+  v_reconciliation_id uuid;
+  v_attempt integer := 0;
+  v_historical jsonb;
+  v_historical_page jsonb;
+  v_historical_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+begin
+  if (select count(*)
+      from public.financial_reconciliation_source_rules source_rule
+      where source_rule.base_source_type = 'import_cgd_extrato_ordem'
+        and source_rule.matching_source_type = 'import_fdm_accounts'
+        and source_rule.operator = '-') <> 1
+    or (select count(*)
+      from public.financial_reconciliation_source_rules source_rule
+      where source_rule.base_source_type = 'import_fdm_accounts'
+        and source_rule.matching_source_type = 'import_cgd_extrato_ordem'
+        and source_rule.operator = '-') <> 1 then
+    raise exception 'Bank/FDM managed source-rule directions are not both subtraction.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_rule_configs config
+    where config.rule_key =
+      'fdm_bank_transfer_cgd_bank_statement_combination'
+      and config.rule_version = 2
+  ) then
+    raise exception 'Bank Reservation v2 managed configuration is missing.';
+  end if;
+
+  v_historical := public.get_financial_reconciliation_automatic_run(
+    'f5200000-0000-0000-0000-000000000001'
+  );
+  if v_historical#>>'{definitions,0,ruleVersion}' is distinct from '1'
+    or v_historical#>>'{definitions,0,operator}' is distinct from '+'
+    or v_historical->>'finishedAt' is null
+    or not exists (
+      select 1
+      from jsonb_array_elements(v_historical->'proposals') proposal(value)
+      where proposal.value->>'id' = v_historical_proposal_id::text
+        and proposal.value->>'ruleVersion' = '1'
+        and proposal.value->>'status' = 'completed'
+    ) then
+    raise exception 'Completed Bank Reservation v1 audit details were not preserved: %.',
+      v_historical;
+  end if;
+  v_historical_page :=
+    public.get_financial_reconciliation_automatic_proposal_members(
+      'f5200000-0000-0000-0000-000000000001',
+      v_historical_proposal_id, 'source', 0, 50, 'historical-reader'
+    );
+  if v_historical_page->>'ruleVersion' is distinct from '1'
+    or jsonb_array_length(v_historical_page->'members') < 1 then
+    raise exception 'Completed Bank Reservation v1 member evidence is unreadable: %.',
+      v_historical_page;
+  end if;
+  begin
+    update public.financial_reconciliation_automatic_runs run
+    set status = 'ready', finished_at = null
+    where run.id = 'f5200000-0000-0000-0000-000000000001';
+    perform public.get_financial_reconciliation_automatic_proposal_members(
+      'f5200000-0000-0000-0000-000000000001',
+      v_historical_proposal_id, 'source', 0, 50, 'smoke:task5-bank'
+    );
+    raise exception 'Unfinished Bank Reservation v1 member paging was accepted.';
+  exception when others then
+    if sqlerrm = 'Unfinished Bank Reservation v1 member paging was accepted.'
+      or sqlerrm not ilike
+        '%Historical Bank Reservation proposal members require a finished run%' then
+      raise;
+    end if;
+  end;
+  if not exists (
+    select 1
+    from public.financial_reconciliation_automatic_runs run
+    where run.id = 'b2430000-0000-0000-0000-000000000002'
+      and run.status = 'failed'
+      and run.finished_at is not null
+      and run.analysis_error_code = 'rule_version_changed'
+  ) or not exists (
+    select 1
+    from public.financial_reconciliation_automatic_batches batch
+    where batch.id = 'b2430000-0000-0000-0000-000000000001'
+      and batch.status = 'failed'
+      and batch.finished_at is not null
+  ) then
+    raise exception 'Unfinished Bank Reservation v1 scheduled work was stranded.';
+  end if;
+
+  begin
+    perform public.replace_financial_reconciliation_source_rules((
+      select jsonb_agg(jsonb_build_object(
+        'base_source_type', source_rule.base_source_type,
+        'matching_source_type', source_rule.matching_source_type,
+        'operator', case
+          when source_rule.base_source_type = 'import_fdm_accounts'
+            and source_rule.matching_source_type = 'import_cgd_extrato_ordem'
+            then '+'
+          else source_rule.operator
+        end
+      ) order by source_rule.base_source_type, source_rule.matching_source_type)
+      from public.financial_reconciliation_source_rules source_rule
+    ));
+    raise exception 'Managed Bank Reservation source rule accepted operator +.';
+  exception when others then
+    if sqlerrm = 'Managed Bank Reservation source rule accepted operator +.'
+      or sqlerrm not ilike '%managed Bank Reservation source rule%operator -%' then
+      raise;
+    end if;
+  end;
+
+  if not exists (
+    select 1 from public.financial_reconciliation_source_rules source_rule
+    where source_rule.base_source_type = 'financial_documents'
+      and source_rule.matching_source_type = 'import_cgd_cartao_credito'
+      and source_rule.operator = '+'
+  ) then
+    raise exception 'Bank Reservation upgrade changed an unrelated source operator.';
+  end if;
+
+  update public.import_fdm_accounts
+  set account = 'Bank Transfer prior smoke'
+  where account = 'Bank Transfer';
+
+  insert into public.import_cgd_extrato_ordem (
+    id, import_batch, row_key, data, descritivo, montante
+  ) values (
+    'b2400000-0000-0000-0000-000000000001',
+    'smoke-bank-reservation-v2', 'bank-reservation-v2-bank',
+    date '2026-12-31', 'Bank Reservation v2 anchor', 98765.43
+  );
+  insert into public.import_fdm_accounts (
+    id, import_batch, source_row_number, account, date_time_raw, event_date,
+    category, amount, description
+  ) values (
+    'b2410000-0000-0000-0000-000000000001',
+    'smoke-bank-reservation-v2', 1, 'Bank Transfer', '2026-12-31',
+    date '2026-12-31', 'Reservation', 98765.43,
+    'Bank Reservation v2 same-sign destination'
+  );
+
+  update public.financial_reconciliation_automatic_rule_configs
+  set enabled = true,
+      allow_manual_execution = true,
+      difference_allowed = 0,
+      max_difference_days = 0,
+      updated_at = now()
+  where rule_key = 'fdm_bank_transfer_cgd_bank_statement_combination';
+
+  v_result := public.create_financial_reconciliation_automatic_analysis(
+    array['fdm_bank_transfer_cgd_bank_statement_combination'],
+    'manual_rule', v_actor, 'b2420000-0000-0000-0000-000000000001'
+  );
+  v_run_id := (v_result->>'runId')::uuid;
+  while v_result->>'status' = 'analyzing' loop
+    v_attempt := v_attempt + 1;
+    if v_attempt > 1000 then
+      raise exception 'Bank Reservation v2 analysis did not terminate: %.',
+        v_result;
+    end if;
+    v_result := public.continue_financial_reconciliation_automatic_analysis(
+      v_run_id, v_actor
+    );
+  end loop;
+
+  select proposal.id into strict v_proposal_id
+  from public.financial_reconciliation_automatic_proposals proposal
+  where proposal.run_id = v_run_id
+    and proposal.rule_key =
+      'fdm_bank_transfer_cgd_bank_statement_combination'
+    and proposal.rule_version = 2
+    and proposal.grouping_key =
+      'b2400000-0000-0000-0000-000000000001'
+    and proposal.status = 'proposed';
+
+  if (select proposal.summary_snapshot->>'operator'
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = v_proposal_id) is distinct from '-'
+    or (select proposal.summary_snapshot#>>'{candidateGroups,0,equationCents}'
+      from public.financial_reconciliation_automatic_proposals proposal
+      where proposal.id = v_proposal_id) is distinct from '0' then
+    raise exception 'Bank Reservation v2 proposal did not snapshot subtraction.';
+  end if;
+
+  v_result := public.execute_financial_reconciliation_automatic_proposal(
+    v_proposal_id, v_actor
+  );
+  if v_result->>'status' is distinct from 'completed' then
+    raise exception 'Bank Reservation v2 execution did not complete: %.',
+      v_result;
+  end if;
+  v_reconciliation_id := (v_result->>'reconciliationId')::uuid;
+
+  if (select reconciliation.difference_amount
+      from public.financial_reconciliations reconciliation
+      where reconciliation.id = v_reconciliation_id) is distinct from 0
+    or (select reconciliation.matching_source_rules#>>'{0,operator}'
+      from public.financial_reconciliations reconciliation
+      where reconciliation.id = v_reconciliation_id) is distinct from '-' then
+    raise exception 'Bank Reservation v2 persisted the wrong arithmetic.';
+  end if;
+end
+$$;
+
 rollback;

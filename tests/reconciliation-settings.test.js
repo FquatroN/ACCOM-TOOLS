@@ -82,7 +82,7 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
           {
             baseSourceType: "import_fdm_accounts",
             matchingSourceType: "import_cgd_extrato_ordem",
-            operator: "+",
+            operator: "-",
           },
         ],
       },
@@ -110,7 +110,7 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
       {
         baseSourceType: "import_fdm_accounts",
         matchingSourceType: "import_cgd_extrato_ordem",
-        operator: "+",
+        operator: "-",
       },
     ],
   });
@@ -138,7 +138,7 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
           {
             base_source_type: "import_fdm_accounts",
             matching_source_type: "import_cgd_extrato_ordem",
-            operator: "+",
+            operator: "-",
           },
         ],
       },
@@ -146,7 +146,7 @@ test("PUT validates rules then calls one replacement RPC without direct table mu
   }]);
 });
 
-test("GET and PUT preserve the production Bank Reservation plus rule while allowing unrelated edits", async () => {
+test("GET and PUT preserve both managed Bank/FDM directions with minus operators", async () => {
   const calls = [];
   const getResponse = responseRecorder();
   const putResponse = responseRecorder();
@@ -169,7 +169,7 @@ test("GET and PUT preserve the production Bank Reservation plus rule while allow
     {
       base_source_type: "import_fdm_accounts",
       matching_source_type: "import_cgd_extrato_ordem",
-      operator: "+",
+      operator: "-",
     },
     {
       base_source_type: "import_cgd_cartao_credito",
@@ -196,7 +196,7 @@ test("GET and PUT preserve the production Bank Reservation plus rule while allow
     {
       baseSourceType: "import_fdm_accounts",
       matchingSourceType: "import_cgd_extrato_ordem",
-      operator: "+",
+      operator: "-",
     },
     {
       baseSourceType: "import_cgd_cartao_credito",
@@ -241,7 +241,7 @@ test("GET and PUT preserve the production Bank Reservation plus rule while allow
       {
         baseSourceType: "import_fdm_accounts",
         matchingSourceType: "import_cgd_extrato_ordem",
-        operator: "+",
+        operator: "-",
       },
       {
         baseSourceType: "import_cgd_cartao_credito",
@@ -255,7 +255,7 @@ test("GET and PUT preserve the production Bank Reservation plus rule while allow
   assert.deepEqual(putResponse.body.rules[3], {
     baseSourceType: "import_fdm_accounts",
     matchingSourceType: "import_cgd_extrato_ordem",
-    operator: "+",
+    operator: "-",
   });
   assert.deepEqual(putResponse.body.rules[4], {
     baseSourceType: "import_cgd_cartao_credito",
@@ -291,7 +291,7 @@ test("GET and PUT preserve the production Bank Reservation plus rule while allow
             {
               base_source_type: "import_fdm_accounts",
               matching_source_type: "import_cgd_extrato_ordem",
-              operator: "+",
+              operator: "-",
             },
             {
               base_source_type: "import_cgd_cartao_credito",
@@ -476,12 +476,12 @@ test("PUT rejects changing or removing the managed Bank Reservation source rule 
     { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
     { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_cartao_credito", operator: "+" },
     { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "import_fdm_accounts", operator: "-" },
-    { baseSourceType: "import_fdm_accounts", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
+    { baseSourceType: "import_fdm_accounts", matchingSourceType: "import_cgd_extrato_ordem", operator: "-" },
   ];
   const invalidRules = [
     requiredRules.map((rule) => rule.baseSourceType === "import_fdm_accounts"
       && rule.matchingSourceType === "import_cgd_extrato_ordem"
-      ? { ...rule, operator: "-" }
+      ? { ...rule, operator: "+" }
       : rule),
     requiredRules.filter((rule) => rule.baseSourceType !== "import_fdm_accounts"
       || rule.matchingSourceType !== "import_cgd_extrato_ordem"),
@@ -504,7 +504,7 @@ test("PUT rejects changing or removing the managed Bank Reservation source rule 
 
     assert.equal(response.statusCode, 400);
     assert.deepEqual(response.body, {
-      error: "The managed Bank Reservation source rule must remain enabled with operator +.",
+      error: "The managed Bank Reservation source rule must remain enabled with operator -.",
     });
     assert.deepEqual(rpcCalls, []);
   }
@@ -515,7 +515,7 @@ test("PUT preserves the managed Adyen source rule while allowing unrelated sourc
     { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
     { baseSourceType: "financial_documents", matchingSourceType: "import_cgd_cartao_credito", operator: "+" },
     { baseSourceType: "import_cgd_extrato_ordem", matchingSourceType: "import_fdm_accounts", operator: "-" },
-    { baseSourceType: "import_fdm_accounts", matchingSourceType: "import_cgd_extrato_ordem", operator: "+" },
+    { baseSourceType: "import_fdm_accounts", matchingSourceType: "import_cgd_extrato_ordem", operator: "-" },
   ];
   const invalidRules = [
     requiredRules.map((rule) => rule.baseSourceType === "import_cgd_extrato_ordem"

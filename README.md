@@ -58,6 +58,7 @@ migrations in this exact order:
 12. `supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql`
 13. `supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql`
 14. `supabase-migrations/2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql`
+15. `supabase-migrations/2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql`
 
 If the database is already current through Banco v2, apply migrations 7 and 8
 and then migration 9 in that order. If it is already current through the
@@ -82,6 +83,12 @@ Installations current through migration 13 apply only migration 14. Migration
 FDM destinations require `Account = 'Adyen'`, a non-null `Category`, and
 `Category <> 'TransferOutToAccount'`. It preserves completed v1 audit history,
 terminalizes unfinished v1 analyses for review, and is safe to apply twice.
+Installations current through migration 14 apply only migration 15. Migration
+15 upgrades **FDM Accounts – Bank Reservation Payments** to managed version 2
+and requires `-` for both Bank Statement/FDM directions. Its matching and
+execution equation is FDM total minus Bank Statement amount. Completed v1
+audit rows remain unchanged; unfinished v1 analyses must be analyzed again.
+The migration is safe to apply twice.
 
 ### Amount-only rollout sequence
 

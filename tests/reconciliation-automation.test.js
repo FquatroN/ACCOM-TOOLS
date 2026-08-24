@@ -118,6 +118,12 @@ const ADYEN_CATEGORY_EXCLUSION_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql",
 );
+const BANK_RESERVATION_MINUS_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-24-financial-reconciliation-automation-bank-reservation-minus.sql",
+);
 const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
 const PROPOSAL_ID_2 = "00000000-0000-0000-0000-000000000004";
 const PROPOSAL_ID_3 = "00000000-0000-0000-0000-000000000005";
@@ -320,7 +326,7 @@ function managedLogicDescription(ruleKey) {
     return "Every unlocked CGD Bank Statement POS VENDAS record is reconciled against every unlocked FDM Credit Card record in the same closed calendar month, except FDM records categorized as TransferOutToAccount; the difference is Bank Statement total minus FDM Accounts total.";
   }
   if (ruleKey === BANK_RESERVATION_RULE_KEY) {
-    return "Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records with opposite signed totals that equal zero exactly in integer cents within the inclusive configured date window.";
+    return "Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records whose total minus the Bank Statement amount equals zero exactly in integer cents within the inclusive configured date window.";
   }
   if (ruleKey === ADYEN_MONTHLY_RULE_KEY) {
     return "Every eligible unlocked CGD Bank Statement and FDM Adyen record whose category is not TransferOutToAccount in the same closed calendar month forms one proposal; both sides are required and the signed difference must be within the configured allowance.";
@@ -335,7 +341,9 @@ function manualDefinition(ruleKey, priority = 6) {
     : ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
       ? "import_fdm_accounts"
       : "import_cgd_extrato_ordem";
-  const operator = ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+  const operator = ruleKey === MONTHLY_INCOME_RULE_KEY
+    || ruleKey === BANK_RESERVATION_RULE_KEY
+    || ruleKey === ADYEN_MONTHLY_RULE_KEY
     ? "-"
     : "+";
   return {
@@ -435,7 +443,7 @@ function manualProposal(id = PROPOSAL_ID, overrides = {}) {
       candidateCount: 2,
       bankAnchorDate: "2026-08-24",
       sourceCount: 2,
-      sourceTotal: "-150.00",
+      sourceTotal: "150.00",
       destinationCount: 1,
       destinationTotal: "150.00",
     }
@@ -1097,7 +1105,7 @@ test("managed settings accept exactly the seven supported rule versions", () => 
     [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, 1],
     [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, 1],
     [MONTHLY_INCOME_RULE_KEY, 2],
-    [BANK_RESERVATION_RULE_KEY, 1],
+    [BANK_RESERVATION_RULE_KEY, 2],
     [ADYEN_MONTHLY_RULE_KEY, 2],
   ]);
   assert.equal(isCombinationAggregateRule(BANK_RESERVATION_RULE_KEY), true);
@@ -1143,6 +1151,35 @@ test("Adyen version 2 requires TransferOutToAccount destination exclusion", asyn
     assert.equal(response.statusCode, 500);
     assert.deepEqual(response.body, { error: "Unexpected server error." });
   }
+});
+
+test("Bank Reservation version 2 uses subtraction in both managed directions", () => {
+  assert.equal(BANK_RESERVATION_RULE_VERSION, 2);
+  assert.equal(manualDefinition(BANK_RESERVATION_RULE_KEY).operator, "-");
+
+  const migration = fs.readFileSync(BANK_RESERVATION_MINUS_MIGRATION_PATH, "utf8");
+  assert.match(migration, /fdm_bank_transfer_cgd_bank_statement_combination/i);
+  assert.match(migration, /import_fdm_accounts[\s\S]*import_cgd_extrato_ordem[\s\S]*'-'/i);
+  assert.match(migration, /v_rule_version[^\n]*2|ruleVersion[^\n]*2/i);
+  assert.match(migration, /v_operator is distinct from '-'/i);
+  assert.match(migration, /v_source_total_cents - v_bank_amount_cents/i);
+  assert.match(migration, /rule_version_changed/i);
+  assert.match(migration, /procedure\.prokind = 'f'/i);
+  assert.match(migration,
+    /get_financial_reconciliation_automatic_run[\s\S]*financial_reconciliation_automatic_progress_or_run[\s\S]*get_financial_reconciliation_automatic_proposal_members[\s\S]*financial_reconciliation_refresh_automatic_batch/i);
+  assert.match(migration,
+    /fdm_bank_transfer_cgd_bank_statement_combination', 1\)[\s\S]*fdm_bank_transfer_cgd_bank_statement_combination', 2\)/i);
+  assert.match(migration,
+    /ruleVersion'\)::integer = 1[\s\S]*operator' is distinct from '\+'[\s\S]*ruleVersion'\)::integer = 2[\s\S]*operator' is distinct from '-'/i);
+  assert.match(migration,
+    /Historical Bank Reservation proposal members require a finished run/i);
+
+  const smoke = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  assert.match(smoke, /Completed v1 details remain readable/i);
+  assert.match(smoke, /Unfinished Bank Reservation v1 member paging was accepted/i);
+  assert.match(smoke, /Unfinished Bank Reservation v1 scheduled work was stranded/i);
+  assert.match(smoke, /Managed Bank Reservation source rule accepted operator \+/i);
+  assert.match(smoke, /Bank Reservation upgrade changed an unrelated source operator/i);
 });
 
 test("Adyen version 2 migration never asks pg_get_functiondef for aggregates", () => {
@@ -3686,7 +3723,7 @@ test("automation settings GET accepts the seven supported tuples and rejects mal
 
   const invalidCatalogs = [
     ["unsupported version", sevenRpcRules.map((rule) => rule.ruleKey === BANK_RESERVATION_RULE_KEY
-      ? { ...rule, ruleVersion: 2 }
+      ? { ...rule, ruleVersion: 1 }
       : rule)],
     ["unknown key", sevenRpcRules.map((rule) => rule.ruleKey === ADYEN_MONTHLY_RULE_KEY
       ? { ...rule, ruleKey: `${ADYEN_MONTHLY_RULE_KEY}_near` }
@@ -3837,6 +3874,50 @@ test("manual automation GET authorizes app access and validates the run detail R
   });
   assert.equal(invalidResponse.statusCode, 400);
   assert.equal(invalidRpcCalled, false);
+});
+
+test("completed Bank Reservation v1 audit runs remain readable while unfinished v1 runs fail closed", async () => {
+  const historicalDefinition = {
+    ...manualDefinition(BANK_RESERVATION_RULE_KEY),
+    ruleVersion: 1,
+    operator: "+",
+  };
+  const historicalProposal = manualProposal(PROPOSAL_ID, {
+    ruleVersion: 1,
+    status: "completed",
+    reason: "",
+    summarySnapshot: {
+      classification: "proposed",
+      reason: "unique_qualifying_combination",
+      candidateCount: 2,
+      bankAnchorDate: "2026-08-24",
+      sourceCount: 2,
+      sourceTotal: "-150.00",
+      destinationCount: 1,
+      destinationTotal: "150.00",
+    },
+    reconciliationId: uuidFor(702),
+  });
+  const completed = manualRun({
+    status: "completed",
+    definitions: [historicalDefinition],
+    proposals: [historicalProposal],
+    counts: { bases: 1, proposed: 0, ambiguous: 0, skipped: 0, completed: 1 },
+  });
+  const completedResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => completed,
+  }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, completedResponse));
+  assert.equal(completedResponse.statusCode, 200);
+  assert.equal(completedResponse.body.definitions[0].ruleVersion, 1);
+  assert.equal(completedResponse.body.definitions[0].operator, "+");
+
+  const unfinishedResponse = responseRecorder();
+  await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => manualRun({ definitions: [historicalDefinition] }),
+  }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, unfinishedResponse));
+  assert.equal(unfinishedResponse.statusCode, 500);
+  assert.deepEqual(unfinishedResponse.body, { error: "Unexpected server error." });
 });
 
 test("monthly member paging binds the authenticated app actor to the only data RPC", async () => {
@@ -4005,6 +4086,52 @@ test("grouped member paging accepts an empty page past the end and rejects incon
   }, invalidResponse));
   assert.equal(invalidResponse.statusCode, 500);
   assert.deepEqual(invalidResponse.body, { error: "Unexpected server error." });
+});
+
+test("grouped member paging preserves completed Bank Reservation v1 audit access", async () => {
+  const response = responseRecorder();
+  await withMockedHandler(MEMBERS_HANDLER_PATH, mockedSupabase({
+    restQuery: async () => ({
+      run_id: RUN_ID,
+      proposal_id: PROPOSAL_ID,
+      rule_key: BANK_RESERVATION_RULE_KEY,
+      rule_version: 1,
+      grouping_key: uuidFor(701),
+      summary_snapshot: {
+        classification: "proposed",
+        reason: "unique_qualifying_combination",
+        candidateCount: 1,
+      },
+      source_count: 1,
+      source_total: "-100.00",
+      destination_count: 1,
+      destination_total: "100.00",
+      role: "source",
+      offset: 0,
+      limit: 50,
+      total_count: 1,
+      members: [{
+        role: "source",
+        source_type: "import_fdm_accounts",
+        source_id: uuidFor(710),
+        ordinal: 1,
+        source_date: "2026-08-23",
+        amount: "-100.00",
+        description: "Reservation",
+        account: "Bank Transfer",
+        row_snapshot: { id: uuidFor(710), description: "Reservation", account: "Bank Transfer" },
+      }],
+    }),
+  }), async (handler) => handler({
+    method: "GET",
+    query: {
+      run_id: RUN_ID, proposal_id: PROPOSAL_ID,
+      role: "source", offset: "0", limit: "50",
+    },
+  }, response));
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.ruleVersion, 1);
+  assert.equal(response.body.members[0].sourceId, uuidFor(710));
 });
 
 test("grouped member paging explicitly shapes summary and source rows without private nested fields", async () => {
@@ -4651,7 +4778,7 @@ test("grouped proposal validation rejects cross-strategy reasons and malformed r
     ["Bank nonzero allowance", BANK_RESERVATION_RULE_KEY, { ...bank, allowedDifference: "0.01" }],
     ["Bank broken equation", BANK_RESERVATION_RULE_KEY, {
       ...bank,
-      summarySnapshot: { ...bank.summarySnapshot, sourceTotal: "-149.99" },
+      summarySnapshot: { ...bank.summarySnapshot, sourceTotal: "149.99" },
     }],
     ["Bank zero-total unique group", BANK_RESERVATION_RULE_KEY, {
       ...bank,
@@ -4734,7 +4861,7 @@ test("grouped proposal validation preserves exact ambiguity and terminal lifecyc
         reason: "candidate_limit",
         candidateCount: 61,
         sourceCount: 1,
-        sourceTotal: "-1.00",
+        sourceTotal: "1.00",
       },
     }],
     ["Bank multiple combinations", BANK_RESERVATION_RULE_KEY, {
@@ -4745,7 +4872,7 @@ test("grouped proposal validation preserves exact ambiguity and terminal lifecyc
         ...bank.summarySnapshot,
         classification: "ambiguous",
         reason: "multiple_qualifying_combinations",
-        sourceTotal: "-300.00",
+        sourceTotal: "300.00",
       },
     }],
     ["Bank overlap", BANK_RESERVATION_RULE_KEY, {
@@ -4960,7 +5087,7 @@ test("settings and manual catalogs reject incomplete rule contracts, wrong opera
     ["Bank allowance", { ...validSettings, rules: validSettings.rules.map((rule) =>
       rule.ruleKey === BANK_RESERVATION_RULE_KEY ? { ...rule, differenceAllowed: 1 } : rule) }],
     ["Bank operator", { ...validSettings, rules: validSettings.rules.map((rule) =>
-      rule.ruleKey === BANK_RESERVATION_RULE_KEY ? { ...rule, operator: "-" } : rule) }],
+      rule.ruleKey === BANK_RESERVATION_RULE_KEY ? { ...rule, operator: "+" } : rule) }],
     ["Adyen days", { ...validSettings, rules: validSettings.rules.map((rule) =>
       rule.ruleKey === ADYEN_MONTHLY_RULE_KEY ? { ...rule, maxDifferenceDays: 30 } : rule) }],
     ["Adyen operator", { ...validSettings, rules: validSettings.rules.map((rule) =>
@@ -4986,7 +5113,7 @@ test("settings and manual catalogs reject incomplete rule contracts, wrong opera
   delete bankCatalogRule.updatedAt;
   for (const [name, rule] of [
     ["missing definition", { ...bankCatalogRule, definition: undefined }],
-    ["wrong operator", { ...bankCatalogRule, operator: "-" }],
+    ["wrong operator", { ...bankCatalogRule, operator: "+" }],
     ["not enabled", { ...bankCatalogRule, enabled: false }],
     ["unknown nested field", { ...bankCatalogRule, definition: {
       ...bankCatalogRule.definition, privateCandidateRows: [],
@@ -5088,7 +5215,7 @@ test("Bank grouped runs expose only immutable aggregate scalars and their Bank a
       candidateCount: 2,
       bankAnchorDate: "2026-08-24",
       sourceCount: 2,
-      sourceTotal: "-150.00",
+      sourceTotal: "150.00",
       destinationCount: 1,
       destinationTotal: "150.00",
     },
@@ -7251,8 +7378,8 @@ test("Task 6 installs RPC-only manual, membership, serializer, and seven-child s
     [BANK_STATEMENT_AMOUNT_ONLY_RULE_KEY, BANK_STATEMENT_AMOUNT_ONLY_RULE_VERSION],
     [CREDIT_CARD_AMOUNT_ONLY_RULE_KEY, CREDIT_CARD_AMOUNT_ONLY_RULE_VERSION],
     [MONTHLY_INCOME_RULE_KEY, 2],
-    [BANK_RESERVATION_RULE_KEY, BANK_RESERVATION_RULE_VERSION],
-    // This gate verifies migration 13 as deployed; v2 is a forward migration.
+    // This gate verifies migration 13 as deployed; v2 rules are forward migrations.
+    [BANK_RESERVATION_RULE_KEY, 1],
     [ADYEN_MONTHLY_RULE_KEY, 1],
   ];
 

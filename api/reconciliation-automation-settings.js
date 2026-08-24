@@ -117,7 +117,7 @@ const MANAGED_RULE_CONTRACTS = Object.freeze({
   [BANK_RESERVATION_RULE_KEY]: {
     baseSourceType: "import_fdm_accounts",
     destinationSourceType: "import_cgd_extrato_ordem",
-    logicDescription: "Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records with opposite signed totals that equal zero exactly in integer cents within the inclusive configured date window.",
+    logicDescription: "Exactly one CGD Bank Statement record is matched to one through ten eligible FDM Bank Transfer records whose total minus the Bank Statement amount equals zero exactly in integer cents within the inclusive configured date window.",
     definition: {
       strategy: "bounded_exact_combination",
       sourceAccount: "Bank Transfer",
@@ -228,7 +228,9 @@ function requireSettingsResult(value) {
       || priorities.has(rule.priority)) {
       failUnexpected();
     }
-    const expectedOperator = ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+    const expectedOperator = ruleKey === MONTHLY_INCOME_RULE_KEY
+      || ruleKey === BANK_RESERVATION_RULE_KEY
+      || ruleKey === ADYEN_MONTHLY_RULE_KEY
       ? "-" : "+";
     if (rule.operator !== expectedOperator
       || (ruleKey === BANK_RESERVATION_RULE_KEY
