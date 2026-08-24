@@ -59,8 +59,9 @@ begin
     from pg_proc procedure
     join pg_namespace namespace on namespace.oid = procedure.pronamespace
     where namespace.nspname = 'public'
+      and procedure.prokind = 'f'
       and (
-        position(v_rule_key in pg_get_functiondef(procedure.oid)) > 0
+        position(v_rule_key in procedure.prosrc) > 0
         or procedure.proname in (
           'financial_reconciliation_automatic_adyen_month_count',
           'financial_reconciliation_automatic_adyen_month_page'

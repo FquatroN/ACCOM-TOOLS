@@ -112,6 +112,12 @@ const FDM_BANK_ADYEN_MIGRATION_PATH = path.join(
   "supabase-migrations",
   "2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql",
 );
+const ADYEN_CATEGORY_EXCLUSION_MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "supabase-migrations",
+  "2026-08-24-financial-reconciliation-automation-adyen-category-exclusion.sql",
+);
 const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
 const PROPOSAL_ID_2 = "00000000-0000-0000-0000-000000000004";
 const PROPOSAL_ID_3 = "00000000-0000-0000-0000-000000000005";
@@ -1137,6 +1143,16 @@ test("Adyen version 2 requires TransferOutToAccount destination exclusion", asyn
     assert.equal(response.statusCode, 500);
     assert.deepEqual(response.body, { error: "Unexpected server error." });
   }
+});
+
+test("Adyen version 2 migration never asks pg_get_functiondef for aggregates", () => {
+  const migration = fs.readFileSync(ADYEN_CATEGORY_EXCLUSION_MIGRATION_PATH, "utf8");
+  const catalogLoop = migration.match(/for v_proc in([\s\S]*?)order by procedure\.oid/);
+
+  assert.ok(catalogLoop, "expected the migration catalog loop");
+  assert.match(catalogLoop[1], /procedure\.prokind = 'f'/);
+  assert.match(catalogLoop[1], /position\(v_rule_key in procedure\.prosrc\) > 0/);
+  assert.doesNotMatch(catalogLoop[1], /pg_get_functiondef\(procedure\.oid\)/);
 });
 
 test("Bank Reservation fixes zero tolerance while Adyen fixes calendar-month mode", () => {
