@@ -720,7 +720,7 @@ git commit -m "feat: review FDM Bank and Adyen proposals"
 - Consumes: completed Tasks 1–7 and every required local/external gate.
 - Produces: exact migration order, reapply/smoke commands, disabled-by-default rollout, verification evidence, and production activation hold.
 
-- [ ] **Step 1: Document migration order and rollback-safe smoke**
+- [x] **Step 1: Document migration order and rollback-safe smoke**
 
 Add the dated migration after the currently documented migrations. Document applying it once, reapplying it once, then running:
 
@@ -731,7 +731,7 @@ psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f tests/reconciliation-automation-
 
 State explicitly that the migration contains no `BEGIN`/`COMMIT`, both new rules remain disabled, and no administrator flags are overwritten on reapply.
 
-- [ ] **Step 2: Run final local verification from a clean committed tree**
+- [x] **Step 2: Run final local verification from a clean committed tree**
 
 Run:
 
@@ -752,11 +752,15 @@ git status --short
 
 Expected: every command exits `0`; status contains only intentionally untracked user files and the scoped documentation change before its commit.
 
+**Recorded 2026-08-24:** on hardened head `0a1c12c5acb73f9b700c6a1d58deff0e8c233c0c`, with only the two scoped Task 8 documentation changes present, all six requested syntax checks passed; the automation/Settings focused suite passed `144/144`; the UI/density focused suite passed `123/123`; the complete Node suite passed `323/323`; `vercel.json` parsed as valid JSON; and `git diff --check` passed. The working tree status showed only those scoped documentation changes before their commit.
+
 - [ ] **Step 3: Run authoritative PostgreSQL gates**
 
 Apply and reapply the migration against non-production, run both SQL smokes with `ON_ERROR_STOP=1`, and record exact command output. Add a real two-session contention check proving deterministic locks do not deadlock and only one executor consumes shared members.
 
 Production rollout remains blocked if PostgreSQL is unavailable or any smoke assertion fails.
+
+**Not run / production hold retained:** this workstation has no `psql`, `pg_isready`, `supabase`, `docker`, or `podman` command, and both `SUPABASE_DB_URL` and `DATABASE_URL` are unset. Therefore migration apply/reapply, both SQL smokes, PostgreSQL parsing/catalog/ACL/lock validation, and real two-session contention remain external gates rather than claimed successes.
 
 - [ ] **Step 4: Run authenticated browser and protected scheduler gates**
 
@@ -770,18 +774,24 @@ When a signed-in non-production session is available, verify:
 
 Disable both rules again after verification unless the administrator explicitly authorizes activation.
 
-- [ ] **Step 5: Request final independent review**
+**Not run / production hold retained:** the default in-app browser connection has no open tabs (`[]`), so no authenticated non-production application session was available. No Settings/manual flow, responsive browser check, protected heartbeat, retry, or seven-child live schedule was exercised.
+
+- [x] **Step 5: Request final independent review**
 
 Use `superpowers:requesting-code-review` across the full implementation range. Require the reviewer to inspect exact-cents search bounds, candidate-limit behavior, membership overlap, monthly completeness, lock order, stale detection, reapply safety, ACLs, seven-child scheduling, UI selection/focus, and behavior-bearing tests. Resolve every Critical or Important finding with a new RED/GREEN cycle and repeat review.
 
-- [ ] **Step 6: Commit release documentation**
+**Recorded 2026-08-24:** the initial full-range independent review found three Important defects. Hardening commit `0a1c12c5acb73f9b700c6a1d58deff0e8c233c0c` added RED/GREEN regressions for live Bank-combination drift, non-executable ambiguity overlap, and strategy-specific public grouped-proposal validation. The repeated independent review of `5a22eb06886d59076c0d2f5220ee93a2672c44b7..0a1c12c5acb73f9b700c6a1d58deff0e8c233c0c` returned `0 Critical`, `0 Important`, and `0 Minor` findings. It did not claim any PostgreSQL, browser, or heartbeat result.
+
+- [x] **Step 6: Commit release documentation**
 
 ```powershell
 git add -- README.md docs/superpowers/plans/2026-08-23-fdm-bank-adyen-automatic-reconciliation.md
 git commit -m "docs: document FDM Bank and Adyen rollout"
 ```
 
-- [ ] **Step 7: Keep activation as a separate administrator action**
+**Recorded 2026-08-24:** the scoped commit uses the required message and includes only `README.md` and this plan. It does not merge, push, publish, apply SQL, or enable a rule.
+
+- [x] **Step 7: Keep activation as a separate administrator action**
 
 Report separately:
 
@@ -792,3 +802,5 @@ Report separately:
 - commit range ready for local merge.
 
 Do not merge, push, publish, or enable either rule unless the user separately requests that action.
+
+**Recorded 2026-08-24:** local verification passed, while PostgreSQL and authenticated browser/protected-heartbeat results remain unavailable exactly as recorded above. The migration's static seed configuration is disabled for both new rules' enabled/manual/scheduled flags; no live database flag state was observed or changed. Activation remains a separate administrator action and no merge, push, publication, SQL application, or rule enablement occurred.

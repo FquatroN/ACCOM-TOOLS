@@ -56,6 +56,7 @@ migrations in this exact order:
 10. `supabase-migrations/2026-08-18-financial-reconciliation-automation-proposal-details.sql`
 11. `supabase-migrations/2026-08-22-financial-reconciliation-history-search.sql`
 12. `supabase-migrations/2026-08-22-financial-reconciliation-automation-pos-income.sql`
+13. `supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql`
 
 If the database is already current through Banco v2, apply migrations 7 and 8
 and then migration 9 in that order. If it is already current through the
@@ -71,6 +72,10 @@ History tab and is safe to apply twice. Installations current through migration
 11 apply only migration 12. Migration 12 installs the **Card Payments - POS -
 Income** managed rule and is safe to apply twice without overwriting later
 administrator tolerance, execution flags, or priority changes.
+Installations current through migration 12 apply only migration 13. Migration 13
+installs the FDM Bank Reservation and Adyen managed rules and is safe to apply
+twice without overwriting their saved administrator enable/manual/scheduled
+flags, editable tolerance or day-window values, or priority.
 
 ### Amount-only rollout sequence
 
@@ -254,6 +259,64 @@ production enablement.
 7. Keep the production rule disabled until the two SQL smokes, authenticated
    desktop/narrow browser checks, and protected scheduled-heartbeat verification
    are all recorded as passing.
+
+### FDM Bank and Adyen migration 13 rollout
+
+Keep **FDM Accounts – Bank Reservation Payments** and **FDM Accounts – Adyen
+Reservation Payments** disabled for manual and scheduled execution. Applying
+migration 13 deploys definitions, execution paths, and disabled configurations;
+it does **not** authorize production activation.
+
+1. Deploy the compatibility-tolerant application/API/UI code, then apply
+   automatic reconciliation migrations 1–12 in the exact order above.
+2. In a disposable or protected non-production database, apply migration 13
+   once and immediately apply the same dated file a second time to prove
+   reapply safety:
+
+   ```powershell
+   psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+   psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f supabase-migrations/2026-08-23-financial-reconciliation-automation-fdm-bank-adyen-rules.sql
+   ```
+
+   The migration deliberately contains no `BEGIN`/`COMMIT`. Its reapply guards
+   preserve existing administrator enable/manual/scheduled flags, priority, and
+   editable tolerance/day-window values; do not use an application redeploy or
+   a reapply as a rollback mechanism.
+3. Run both transaction-safe SQL smoke suites, also only against disposable or
+   protected non-production data. Each smoke owns its rollback boundary and
+   must exit successfully before activation is considered:
+
+   ```powershell
+   psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f tests/reconciliation-rpc.smoke.sql
+   psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f tests/reconciliation-automation-rpc.smoke.sql
+   ```
+
+4. In an authenticated non-production Settings session, verify both new rules
+   appear with **Enabled**, **Manual**, and **Scheduled** unchecked. Bank
+   Reservation has read-only `0.00` difference and `10` maximum FDM records,
+   with a configurable `0`–`90` day window. Adyen has an editable non-negative
+   difference allowance and a read-only `31`-day calendar-month marker. The
+   managed definitions and the fixed values are read-only.
+5. Validate manually, one rule at a time, while scheduled participation remains
+   off. First enable Bank Reservation plus Manual only; verify unique and
+   ambiguous groups, Execute Selected, Execute Selected (0), member review,
+   history, audit, and stale behavior. Disable it again. Then enable Adyen plus
+   Manual only; verify a closed month exposes all Bank/FDM members, zero and
+   within-allowance forced completion, history, and audit. Disable it again.
+6. Only after the SQL and authenticated manual/browser checks pass, temporarily
+   enable the required scheduled configurations and shared schedule in protected
+   non-production. Verify the configured seven children snapshot in
+   priority/key order. One protected heartbeat must advance only the current
+   child; verify retry, terminal-child continuation, and oldest unfinished
+   child resumption across midnight. Disable both new rules' scheduled flags
+   and the shared schedule again after the test unless a separate administrator
+   activation has been approved.
+7. If the apply, reapply, smoke, manual, browser, contention, or protected
+   heartbeat gate fails, stop and leave both rules disabled. Do not attempt a
+   production data rollback by deleting reconciliation/audit records; use an
+   approved rollback plan in non-production first. Production enablement stays
+   blocked until every database, browser, and protected-heartbeat gate is
+   recorded as passing, followed by an explicit administrator decision.
 
 Vercel calls `/api/reconciliation-automation-cron` every minute as a heartbeat.
 The database—not the Vercel schedule—atomically claims at most one configured
