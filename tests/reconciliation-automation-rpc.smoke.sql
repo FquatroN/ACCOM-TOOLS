@@ -14014,6 +14014,209 @@ begin
 end
 $$;
 
+-- bank execution becomes stale when a new live candidate creates a second qualifying combination
+do $$
+declare
+  v_source_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+begin
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'deselected' where id = v_source_proposal_id;
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5400000-0000-0000-0000-000000000001',
+      'f5410000-0000-0000-0000-000000000001',
+      'smoke:task5-live-second-group', ''
+    );
+    insert into public.import_fdm_accounts (
+      id, import_batch, source_row_number, account, date_time_raw, event_date,
+      category, amount, description
+    ) values (
+      'f5120000-0000-0000-0000-000000000001',
+      'smoke-task5-live-second-group', 1, 'Bank Transfer', '2099-11-15',
+      date '2099-11-15', 'Reservation', -100.00,
+      'Task 5 new independently qualifying candidate'
+    );
+    perform pg_temp.task5_assert_stale(
+      'f5410000-0000-0000-0000-000000000001',
+      'source_snapshot_changed'
+    );
+    raise sqlstate 'T5001' using message = 'rollback task5 live second group';
+  exception when sqlstate 'T5001' then null;
+  end;
+end
+$$;
+
+-- bank execution becomes stale when a new live candidate pool reaches candidate_limit
+do $$
+declare
+  v_source_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+begin
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'deselected' where id = v_source_proposal_id;
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5400000-0000-0000-0000-000000000002',
+      'f5410000-0000-0000-0000-000000000002',
+      'smoke:task5-live-candidate-limit', ''
+    );
+    insert into public.import_fdm_accounts (
+      id, import_batch, source_row_number, account, date_time_raw, event_date,
+      category, amount, description
+    )
+    select
+      ('f5130000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+      'smoke-task5-live-candidate-limit', series, 'Bank Transfer',
+      '2099-11-15', date '2099-11-15', 'Reservation', -0.01,
+      'Task 5 candidate-limit addition ' || series
+    from generate_series(1, 51) series;
+    perform pg_temp.task5_assert_stale(
+      'f5410000-0000-0000-0000-000000000002',
+      'source_snapshot_changed'
+    );
+    raise sqlstate 'T5001' using message = 'rollback task5 live candidate limit';
+  exception when sqlstate 'T5001' then null;
+  end;
+end
+$$;
+
+-- bank execution accepts a harmless new live candidate when the immutable group stays unique
+do $$
+declare
+  v_source_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+  v_result jsonb;
+begin
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'deselected' where id = v_source_proposal_id;
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5400000-0000-0000-0000-000000000003',
+      'f5410000-0000-0000-0000-000000000003',
+      'smoke:task5-live-harmless-candidate', ''
+    );
+    insert into public.import_fdm_accounts (
+      id, import_batch, source_row_number, account, date_time_raw, event_date,
+      category, amount, description
+    ) values (
+      'f5140000-0000-0000-0000-000000000001',
+      'smoke-task5-live-harmless-candidate', 1, 'Bank Transfer',
+      '2099-11-15', date '2099-11-15', 'Reservation', -0.50,
+      'Task 5 harmless nonqualifying candidate'
+    );
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      'f5410000-0000-0000-0000-000000000003',
+      'smoke:task5-live-harmless-candidate'
+    );
+    if v_result->>'status' is distinct from 'completed'
+      or jsonb_typeof(v_result->'reconciliationId') is distinct from 'string'
+      or not exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = 'f5410000-0000-0000-0000-000000000003'
+          and proposal.status = 'completed'
+          and proposal.reconciliation_id =
+            (v_result->>'reconciliationId')::uuid
+      ) then
+      raise exception 'Task 5 harmless live candidate changed the unique immutable group: %.',
+        v_result;
+    end if;
+    raise sqlstate 'T5001' using message = 'rollback task5 harmless live candidate';
+  exception when sqlstate 'T5001' then null;
+  end;
+end
+$$;
+
+-- bank execution becomes stale when changed live candidates leave no qualifying combination
+do $$
+declare
+  v_source_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+begin
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'deselected' where id = v_source_proposal_id;
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5400000-0000-0000-0000-000000000006',
+      'f5410000-0000-0000-0000-000000000006',
+      'smoke:task5-live-no-match', ''
+    );
+    update public.import_fdm_accounts
+    set amount = -90.99
+    where id = 'f5110000-0000-0000-0000-000000000010';
+    perform pg_temp.task5_assert_stale(
+      'f5410000-0000-0000-0000-000000000006',
+      'source_snapshot_changed'
+    );
+    raise sqlstate 'T5001' using message = 'rollback task5 live no match';
+  exception when sqlstate 'T5001' then null;
+  end;
+end
+$$;
+
+-- candidate-limit evidence does not overlap an otherwise-proposed group
+do $$
+declare
+  v_source_proposal_id uuid :=
+    (select target.proposal_id from task5_bank_target target);
+  v_result jsonb;
+begin
+  begin
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'deselected' where id = v_source_proposal_id;
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5400000-0000-0000-0000-000000000004',
+      'f5410000-0000-0000-0000-000000000004',
+      'smoke:task5-proposed-overlap-authority', ''
+    );
+    perform pg_temp.task5_clone_grouped_proposal(
+      v_source_proposal_id,
+      'f5400000-0000-0000-0000-000000000005',
+      'f5410000-0000-0000-0000-000000000005',
+      'smoke:task5-candidate-limit-evidence', ''
+    );
+    update public.financial_reconciliation_automatic_proposals
+    set status = 'ambiguous', reason = 'candidate_limit',
+        summary_snapshot = jsonb_set(
+          jsonb_set(summary_snapshot, '{classification}', '"ambiguous"'),
+          '{reason}', '"candidate_limit"'
+        )
+    where id = 'f5410000-0000-0000-0000-000000000005';
+
+    v_result := public.execute_financial_reconciliation_automatic_proposal(
+      'f5410000-0000-0000-0000-000000000004',
+      'smoke:task5-proposed-overlap-authority'
+    );
+    if v_result->>'status' is distinct from 'completed'
+      or jsonb_typeof(v_result->'reconciliationId') is distinct from 'string'
+      or not exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = 'f5410000-0000-0000-0000-000000000004'
+          and proposal.status = 'completed'
+      )
+      or not exists (
+        select 1
+        from public.financial_reconciliation_automatic_proposals proposal
+        where proposal.id = 'f5410000-0000-0000-0000-000000000005'
+          and proposal.status = 'ambiguous'
+          and proposal.reason = 'candidate_limit'
+      ) then
+      raise exception 'Task 5 candidate-limit evidence falsely blocked proposed execution: %.',
+        v_result;
+    end if;
+    raise sqlstate 'T5001' using message = 'rollback task5 overlap authority';
+  exception when sqlstate 'T5001' then null;
+  end;
+end
+$$;
+
 -- Every case runs in its own subtransaction and deliberately rolls its fixture
 -- back after assertions, so the exact same analyzed evidence can prove that
 -- each independent mismatch is sufficient to produce stale.

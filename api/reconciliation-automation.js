@@ -67,6 +67,10 @@ const BANK_GROUPED_SUMMARY_FIELDS = new Set([
 const MONTHLY_GROUPED_SUMMARY_FIELDS = new Set([
   "calendarMonth", "sourceCount", "sourceTotal", "destinationCount", "destinationTotal",
 ]);
+const GROUPED_STALE_REASONS = new Set([
+  "analysis_population_changed", "operator_changed", "rule_snapshot_changed",
+  "rule_version_changed", "source_snapshot_changed", "tolerance_changed",
+]);
 const MANAGED_RULE_CONTRACTS = Object.freeze({
   [BANK_STATEMENT_RULE_KEY]: {
     baseSourceType: "financial_documents",
@@ -240,6 +244,33 @@ function isDecimal(value) {
     || (typeof value === "string" && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value));
 }
 
+function decimalCents(value) {
+  const text = typeof value === "number" && Number.isFinite(value) ? String(value) : value;
+  if (typeof text !== "string") return null;
+  const match = /^(-?)(0|[1-9]\d{0,11})(?:\.(\d{1,2}))?$/.exec(text);
+  if (!match) return null;
+  const cents = BigInt(match[2]) * 100n
+    + BigInt((match[3] || "").padEnd(2, "0"));
+  return match[1] ? -cents : cents;
+}
+
+function isIsoDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= days[month - 1];
+}
+
+function isoDayNumber(value) {
+  if (!isIsoDate(value)) return null;
+  return Date.parse(`${value}T00:00:00Z`) / 86400000;
+}
+
 function requireManagedTuple(ruleKey, ruleVersion, label = "run") {
   if (!Object.hasOwn(AUTOMATIC_RULE_VERSIONS, ruleKey)
     || ruleVersion !== AUTOMATIC_RULE_VERSIONS[ruleKey]) failUnexpected(label);
@@ -296,24 +327,120 @@ function requireManualRuleCatalog(value) {
   return result;
 }
 
-function requireGroupedSummary(value) {
+function requireBankGroupedProposal(value, run) {
+  const summary = value.summarySnapshot;
+  requireExactFields(summary, BANK_GROUPED_SUMMARY_FIELDS);
+  const sourceTotal = decimalCents(summary.sourceTotal);
+  const destinationTotal = decimalCents(summary.destinationTotal);
+  const calculatedDifference = decimalCents(value.calculatedDifference);
+  const allowedDifference = decimalCents(value.allowedDifference);
+  const unique = summary.classification === "proposed"
+    && summary.reason === "unique_qualifying_combination";
+  const candidateLimit = summary.classification === "ambiguous"
+    && summary.reason === "candidate_limit";
+  const multiple = summary.classification === "ambiguous"
+    && summary.reason === "multiple_qualifying_combinations";
+  const baseDay = isoDayNumber(value.baseSourceDate);
+  const anchorDay = isoDayNumber(summary.bankAnchorDate);
+  const maxDifferenceDays = run.definitions[0].maxDifferenceDays;
+  if (!UUID_PATTERN.test(value.groupingKey)
+    || value.groupingKey !== value.groupingKey.toLowerCase()
+    || value.baseSourceType !== "import_fdm_accounts"
+    || baseDay === null || anchorDay === null
+    || value.baseSourceDate < "2026-01-01" || summary.bankAnchorDate < "2026-01-01"
+    || Math.abs(baseDay - anchorDay) > maxDifferenceDays
+    || !Number.isSafeInteger(summary.candidateCount)
+    || !Number.isSafeInteger(summary.sourceCount)
+    || summary.destinationCount !== 1
+    || sourceTotal === null || destinationTotal === null
+    || calculatedDifference !== 0n || allowedDifference !== 0n
+    || (!unique && !candidateLimit && !multiple)) failUnexpected();
+
+  if (unique) {
+    if (summary.sourceCount < 1 || summary.sourceCount > 10
+      || summary.candidateCount < summary.sourceCount || summary.candidateCount > 60
+      || sourceTotal === 0n || destinationTotal === 0n
+      || (sourceTotal < 0n) === (destinationTotal < 0n)
+      || sourceTotal + destinationTotal !== 0n) failUnexpected();
+  } else if (summary.sourceCount < 1 || summary.sourceCount > 60
+    || summary.sourceCount > summary.candidateCount
+    || summary.candidateCount < (multiple ? 2 : 1)
+    || summary.candidateCount > (candidateLimit ? 61 : 60)
+    || sourceTotal === 0n || destinationTotal === 0n
+    || (sourceTotal < 0n) === (destinationTotal < 0n)) failUnexpected();
+
+  const lifecycleIsValid = value.status === "proposed"
+    ? unique && value.reason === "unique_qualifying_combination"
+    : value.status === "ambiguous"
+      ? value.reason === "overlapping_records" ? unique
+        : (candidateLimit || multiple) && value.reason === summary.reason
+      : new Set(["executing", "completed"]).has(value.status)
+        ? unique && value.reason === ""
+        : value.status === "deselected"
+          ? unique && value.reason === "not_selected"
+          : value.status === "failed"
+            ? unique && value.reason === "execution_failed"
+            : value.status === "stale" && GROUPED_STALE_REASONS.has(value.reason);
+  if (!lifecycleIsValid
+    || ((value.status === "completed") !== (value.reconciliationId !== null))) failUnexpected();
+}
+
+function requireAdyenGroupedProposal(value, run) {
+  const summary = value.summarySnapshot;
+  requireExactFields(summary, MONTHLY_GROUPED_SUMMARY_FIELDS);
+  const sourceTotal = decimalCents(summary.sourceTotal);
+  const destinationTotal = decimalCents(summary.destinationTotal);
+  const calculatedDifference = decimalCents(value.calculatedDifference);
+  const allowedDifference = decimalCents(value.allowedDifference);
+  const configuredDifference = decimalCents(run.definitions[0].differenceAllowed);
+  const calendarMonth = typeof summary.calendarMonth === "string"
+    ? summary.calendarMonth : "";
+  const groupingKey = calendarMonth.slice(0, 7);
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  if (!isIsoDate(calendarMonth) || !calendarMonth.endsWith("-01")
+    || value.groupingKey !== groupingKey || !/^\d{4}-\d{2}$/.test(value.groupingKey)
+    || value.groupingKey < "2026-01" || value.groupingKey >= currentMonth
+    || value.baseSourceType !== "import_cgd_extrato_ordem"
+    || !isIsoDate(value.baseSourceDate)
+    || !value.baseSourceDate.startsWith(`${value.groupingKey}-`)
+    || !Number.isSafeInteger(summary.sourceCount) || summary.sourceCount < 1
+    || !Number.isSafeInteger(summary.destinationCount) || summary.destinationCount < 1
+    || sourceTotal === null || destinationTotal === null
+    || calculatedDifference === null || allowedDifference === null
+    || configuredDifference === null || allowedDifference < 0n
+    || allowedDifference !== configuredDifference
+    || calculatedDifference !== sourceTotal - destinationTotal) failUnexpected();
+
+  const withinAllowance = calculatedDifference < 0n
+    ? -calculatedDifference <= allowedDifference
+    : calculatedDifference <= allowedDifference;
+  const lifecycleIsValid = value.status === "proposed"
+    ? value.reason === "" && withinAllowance
+    : value.status === "ambiguous"
+      ? value.reason === "monthly_difference_exceeded" && !withinAllowance
+      : new Set(["executing", "completed"]).has(value.status)
+        ? value.reason === "" && withinAllowance
+        : value.status === "deselected"
+          ? value.reason === "not_selected" && withinAllowance
+          : value.status === "failed"
+            ? value.reason === "execution_failed" && withinAllowance
+            : value.status === "stale" && GROUPED_STALE_REASONS.has(value.reason);
+  if (!lifecycleIsValid
+    || ((value.status === "completed") !== (value.reconciliationId !== null))) failUnexpected();
+}
+
+function requireGroupedSummary(value, run) {
   if (value.ruleKey === BANK_RESERVATION_RULE_KEY) {
-    requireExactFields(value.summarySnapshot, BANK_GROUPED_SUMMARY_FIELDS);
-    if (typeof value.summarySnapshot.classification !== "string"
-      || typeof value.summarySnapshot.reason !== "string"
-      || !Number.isSafeInteger(value.summarySnapshot.candidateCount)
-      || value.summarySnapshot.candidateCount < 0
-      || !DATE_PATTERN.test(value.summarySnapshot.bankAnchorDate)
-      || !Number.isSafeInteger(value.summarySnapshot.sourceCount)
-      || value.summarySnapshot.sourceCount < 0
-      || !isDecimal(value.summarySnapshot.sourceTotal)
-      || !Number.isSafeInteger(value.summarySnapshot.destinationCount)
-      || value.summarySnapshot.destinationCount < 0
-      || !isDecimal(value.summarySnapshot.destinationTotal)) failUnexpected();
+    requireBankGroupedProposal(value, run);
+    return;
+  }
+  if (value.ruleKey === ADYEN_MONTHLY_RULE_KEY) {
+    requireAdyenGroupedProposal(value, run);
     return;
   }
   requireExactFields(value.summarySnapshot, MONTHLY_GROUPED_SUMMARY_FIELDS);
-  if (!/^\d{4}-\d{2}-01$/.test(value.summarySnapshot.calendarMonth)
+  if (!isIsoDate(value.summarySnapshot.calendarMonth)
+    || !value.summarySnapshot.calendarMonth.endsWith("-01")
     || !Number.isSafeInteger(value.summarySnapshot.sourceCount) || value.summarySnapshot.sourceCount < 0
     || !isDecimal(value.summarySnapshot.sourceTotal)
     || !Number.isSafeInteger(value.summarySnapshot.destinationCount)
@@ -345,7 +472,7 @@ function requireProposal(value, run) {
     if (value.baseSnapshot.sourceType !== value.baseSourceType
       || value.baseSnapshot.sourceId !== value.baseSourceId
       || value.baseSnapshot.sourceDate !== value.baseSourceDate) failUnexpected();
-    requireGroupedSummary(value);
+    requireGroupedSummary(value, run);
   }
 }
 

@@ -4119,6 +4119,9 @@ declare
   v_source_count bigint;
   v_destination_count bigint;
   v_source_ids uuid[];
+  v_stored_source_ids uuid[];
+  v_live_source_ids uuid[];
+  v_live_groups jsonb;
   v_source_total numeric(14,2);
   v_source_total_cents bigint;
   v_bank_id uuid;
@@ -4383,6 +4386,8 @@ begin
       count(*) filter (where membership.role = 'destination'),
       array_agg(membership.source_id order by membership.ordinal)
         filter (where membership.role = 'source'),
+      array_agg(membership.source_id order by membership.source_id)
+        filter (where membership.role = 'source'),
       sum(membership.amount) filter (where membership.role = 'source'),
       sum(round(membership.amount * 100)::bigint)
         filter (where membership.role = 'source'),
@@ -4405,10 +4410,34 @@ begin
       ) order by membership.source_type, membership.source_id)
     into
       v_stored_count, v_source_count, v_destination_count,
-      v_source_ids, v_source_total, v_source_total_cents,
+      v_source_ids, v_stored_source_ids, v_source_total, v_source_total_cents,
       v_bank_id, v_bank_date, v_bank_amount, v_membership_snapshots
     from public.financial_reconciliation_automatic_proposal_memberships membership
     where membership.proposal_id = v_proposal.id;
+
+    v_live_groups :=
+      public.financial_reconciliation_automatic_bank_reservation_groups(
+        v_bank_id,
+        v_snapshot_max_difference_days,
+        60,
+        250000,
+        12
+      );
+    if jsonb_typeof(v_live_groups) is distinct from 'object'
+      or v_live_groups->>'classification' is distinct from 'proposed'
+      or v_live_groups->>'reason' is distinct from
+        'unique_qualifying_combination'
+      or jsonb_typeof(v_live_groups->'candidateGroups') is distinct from
+        'array'
+      or jsonb_array_length(v_live_groups->'candidateGroups') <> 1 then
+      raise exception 'Automatic specialized source snapshot changed.';
+    end if;
+    select array_agg(live_id.value::uuid order by live_id.value::uuid)
+    into v_live_source_ids
+    from jsonb_array_elements_text(
+      v_live_groups#>'{candidateGroups,0,fdmIds}'
+    ) live_id(value);
+
     v_bank_amount_cents := round(v_bank_amount * 100)::bigint;
     v_equation_cents := v_source_total_cents + v_bank_amount_cents;
 
@@ -4448,6 +4477,7 @@ begin
       or v_equation_cents <> 0
       or v_source_total + v_bank_amount <> 0
       or v_proposal.calculated_difference <> 0
+      or v_live_source_ids is distinct from v_stored_source_ids
       or v_proposal.base_source_id is distinct from v_source_ids[1]
       or v_proposal.base_source_date is distinct from (
         select membership.source_date
@@ -4510,7 +4540,7 @@ begin
           on overlap_proposal.id = overlap_member.proposal_id
         where membership.proposal_id = v_proposal.id
           and overlap_proposal.status in (
-            'proposed','ambiguous','executing','completed'
+            'proposed','executing','completed'
           )
       )
       or v_proposal.summary_snapshot#>'{candidateGroups,0,fdmIds}'
@@ -4621,6 +4651,8 @@ begin
         when 'Automatic specialized tolerance changed.'
           then 'tolerance_changed'
         when 'Automatic specialized source snapshot changed.'
+          then 'source_snapshot_changed'
+        when 'Automatic Bank Reservation Bank anchor is not eligible.'
           then 'source_snapshot_changed'
         when 'Automatic grouped reconciliation lifecycle snapshots changed after revalidation.'
           then 'source_snapshot_changed'
@@ -5156,7 +5188,7 @@ begin
           on overlap_proposal.id = overlap_member.proposal_id
         where membership.proposal_id = v_proposal.id
           and overlap_proposal.status in (
-            'proposed','ambiguous','executing','completed'
+            'proposed','executing','completed'
           )
       )
       or (v_proposal.summary_snapshot->>'sourceCount')::bigint <>

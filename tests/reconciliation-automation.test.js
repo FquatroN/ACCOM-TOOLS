@@ -400,32 +400,45 @@ function publicManualRun(overrides = {}) {
 function manualProposal(id = PROPOSAL_ID, overrides = {}) {
   const ruleKey = overrides.ruleKey || BANK_RESERVATION_RULE_KEY;
   const status = overrides.status || "proposed";
-  const reason = overrides.reason || "";
+  const monthly = new Set([MONTHLY_INCOME_RULE_KEY, ADYEN_MONTHLY_RULE_KEY]).has(ruleKey);
+  const defaultReason = ruleKey === BANK_RESERVATION_RULE_KEY
+    ? status === "proposed" ? "unique_qualifying_combination"
+      : status === "ambiguous" ? "multiple_qualifying_combinations"
+        : status === "deselected" ? "not_selected"
+          : status === "stale" ? "source_snapshot_changed"
+            : status === "failed" ? "execution_failed" : ""
+    : status === "ambiguous" ? "monthly_difference_exceeded"
+      : status === "deselected" ? "not_selected"
+        : status === "stale" ? "source_snapshot_changed"
+          : status === "failed" ? "execution_failed" : "";
+  const reason = Object.hasOwn(overrides, "reason") ? overrides.reason : defaultReason;
   const baseSourceType = ruleKey === BANK_RESERVATION_RULE_KEY
     ? "import_fdm_accounts"
-    : ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+    : monthly
       ? "import_cgd_extrato_ordem"
       : "financial_documents";
   const baseSourceId = uuidFor(700);
-  const baseSourceDate = "2026-08-23";
+  const baseSourceDate = monthly ? "2026-07-23" : "2026-08-23";
   const summarySnapshot = ruleKey === BANK_RESERVATION_RULE_KEY
     ? {
-      classification: status,
-      reason,
-      candidateCount: 0,
+      classification: status === "ambiguous" && reason !== "overlapping_records"
+        ? "ambiguous" : status === "skipped" ? "skipped" : "proposed",
+      reason: status === "ambiguous" && reason !== "overlapping_records"
+        ? reason : status === "skipped" ? reason : "unique_qualifying_combination",
+      candidateCount: 2,
       bankAnchorDate: "2026-08-24",
       sourceCount: 2,
       sourceTotal: "-150.00",
       destinationCount: 1,
       destinationTotal: "150.00",
     }
-    : ruleKey === MONTHLY_INCOME_RULE_KEY || ruleKey === ADYEN_MONTHLY_RULE_KEY
+    : monthly
       ? {
-        calendarMonth: "2026-08-01",
-        sourceCount: 0,
-        sourceTotal: 0,
-        destinationCount: 0,
-        destinationTotal: 0,
+        calendarMonth: "2026-07-01",
+        sourceCount: 1,
+        sourceTotal: 100,
+        destinationCount: 1,
+        destinationTotal: 100,
       }
       : {};
   return {
@@ -438,11 +451,11 @@ function manualProposal(id = PROPOSAL_ID, overrides = {}) {
     baseSourceDate,
     baseSnapshot: { sourceType: baseSourceType, sourceId: baseSourceId, sourceDate: baseSourceDate },
     items: [], evidence: [], candidateGroups: [],
-    groupingKey: new Set([MONTHLY_INCOME_RULE_KEY, BANK_RESERVATION_RULE_KEY, ADYEN_MONTHLY_RULE_KEY])
-      .has(ruleKey) ? `group:${id}` : null,
+    groupingKey: ruleKey === BANK_RESERVATION_RULE_KEY ? uuidFor(701)
+      : monthly ? "2026-07" : null,
     summarySnapshot,
     calculatedDifference: 0,
-    allowedDifference: 0,
+    allowedDifference: manualDefinition(ruleKey).differenceAllowed,
     status,
     reason,
     signature: `signature:${id}`,
@@ -4540,26 +4553,198 @@ test("manual catalog and run snapshots reject nonzero amount-only difference all
   }
 });
 
-test("manual runs preserve schema-authorized ambiguous and skipped proposal statuses", async () => {
-  for (const [ruleKey, status] of [
-    [BANK_RESERVATION_RULE_KEY, "ambiguous"],
-    [ADYEN_MONTHLY_RULE_KEY, "ambiguous"],
-    [BANK_RESERVATION_RULE_KEY, "skipped"],
-  ]) {
+test("grouped proposal validation rejects cross-strategy reasons and malformed rule semantics", async () => {
+  const bank = manualProposal();
+  const adyen = manualProposal(PROPOSAL_ID, { ruleKey: ADYEN_MONTHLY_RULE_KEY });
+  const openMonth = new Date().toISOString().slice(0, 7);
+  const invalidCases = [
+    ["Bank proposed reason", BANK_RESERVATION_RULE_KEY, { ...bank, reason: "" }],
+    ["Bank cross-strategy reason", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      status: "ambiguous",
+      reason: "monthly_difference_exceeded",
+      summarySnapshot: {
+        ...bank.summarySnapshot,
+        classification: "ambiguous",
+        reason: "monthly_difference_exceeded",
+      },
+    }],
+    ["Bank persisted no-match", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      status: "skipped",
+      reason: "no_qualifying_combination",
+      summarySnapshot: {
+        ...bank.summarySnapshot,
+        classification: "skipped",
+        reason: "no_qualifying_combination",
+      },
+    }],
+    ["Bank non-UUID grouping", BANK_RESERVATION_RULE_KEY, { ...bank, groupingKey: "bank-anchor" }],
+    ["Bank dates precede the reconciliation floor", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      baseSourceDate: "2025-12-31",
+      baseSnapshot: { ...bank.baseSnapshot, sourceDate: "2025-12-31" },
+      summarySnapshot: { ...bank.summarySnapshot, bankAnchorDate: "2025-12-31" },
+    }],
+    ["Bank anchor exceeds the configured day window", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      baseSourceDate: "2026-01-01",
+      baseSnapshot: { ...bank.baseSnapshot, sourceDate: "2026-01-01" },
+      summarySnapshot: { ...bank.summarySnapshot, bankAnchorDate: "2026-08-24" },
+    }],
+    ["Bank invalid cardinality", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      summarySnapshot: { ...bank.summarySnapshot, sourceCount: 11 },
+    }],
+    ["Bank nonzero allowance", BANK_RESERVATION_RULE_KEY, { ...bank, allowedDifference: "0.01" }],
+    ["Bank broken equation", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      summarySnapshot: { ...bank.summarySnapshot, sourceTotal: "-149.99" },
+    }],
+    ["Bank zero-total unique group", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      summarySnapshot: {
+        ...bank.summarySnapshot,
+        sourceTotal: "0.00",
+        destinationTotal: "0.00",
+      },
+    }],
+    ["Bank malformed overlap shape", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      status: "ambiguous",
+      reason: "overlapping_records",
+      summarySnapshot: {
+        ...bank.summarySnapshot,
+        classification: "ambiguous",
+        reason: "overlapping_records",
+      },
+    }],
+    ["Adyen grouping mismatch", ADYEN_MONTHLY_RULE_KEY, { ...adyen, groupingKey: "2026-06" }],
+    ["Adyen empty source", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen,
+      summarySnapshot: { ...adyen.summarySnapshot, sourceCount: 0 },
+    }],
+    ["Adyen cross-strategy reason", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen,
+      status: "ambiguous",
+      reason: "candidate_limit",
+    }],
+    ["Adyen totals disagree with difference", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen,
+      calculatedDifference: 1,
+    }],
+    ["Adyen malformed calendar month", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen,
+      groupingKey: "2026-02",
+      summarySnapshot: { ...adyen.summarySnapshot, calendarMonth: "2026-02-30" },
+    }],
+    ["Adyen month before the reconciliation floor", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen,
+      groupingKey: "2025-12",
+      baseSourceDate: "2025-12-23",
+      baseSnapshot: { ...adyen.baseSnapshot, sourceDate: "2025-12-23" },
+      summarySnapshot: { ...adyen.summarySnapshot, calendarMonth: "2025-12-01" },
+    }],
+    ["Adyen month is not closed", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen,
+      groupingKey: openMonth,
+      baseSourceDate: `${openMonth}-15`,
+      baseSnapshot: { ...adyen.baseSnapshot, sourceDate: `${openMonth}-15` },
+      summarySnapshot: { ...adyen.summarySnapshot, calendarMonth: `${openMonth}-01` },
+    }],
+  ];
+  for (const [name, ruleKey, proposal] of invalidCases) {
     const response = responseRecorder();
     await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
       restQuery: async () => manualRun({
         ruleKey,
         status: "ready",
-        proposals: [manualProposal(PROPOSAL_ID, {
-          ruleKey,
-          status,
-          reason: status === "ambiguous" ? "monthly_difference_exceeded" : "no_qualifying_combination",
-        })],
+        proposals: [proposal],
       }),
     }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
-    assert.equal(response.statusCode, 200, `${ruleKey}:${status}`);
-    assert.equal(response.body.proposals[0].status, status, `${ruleKey}:${status}`);
+    assert.equal(response.statusCode, 500, name);
+    assert.deepEqual(response.body, { error: "Unexpected server error." }, name);
+  }
+});
+
+test("grouped proposal validation preserves exact ambiguity and terminal lifecycle shapes", async () => {
+  const bank = manualProposal();
+  const adyen = manualProposal(PROPOSAL_ID, { ruleKey: ADYEN_MONTHLY_RULE_KEY });
+  const validCases = [
+    ["Bank proposed", BANK_RESERVATION_RULE_KEY, bank],
+    ["Bank candidate limit", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      status: "ambiguous",
+      reason: "candidate_limit",
+      summarySnapshot: {
+        ...bank.summarySnapshot,
+        classification: "ambiguous",
+        reason: "candidate_limit",
+        candidateCount: 61,
+        sourceCount: 1,
+        sourceTotal: "-1.00",
+      },
+    }],
+    ["Bank multiple combinations", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      status: "ambiguous",
+      reason: "multiple_qualifying_combinations",
+      summarySnapshot: {
+        ...bank.summarySnapshot,
+        classification: "ambiguous",
+        reason: "multiple_qualifying_combinations",
+        sourceTotal: "-300.00",
+      },
+    }],
+    ["Bank overlap", BANK_RESERVATION_RULE_KEY, {
+      ...bank,
+      status: "ambiguous",
+      reason: "overlapping_records",
+    }],
+    ["Bank completed", BANK_RESERVATION_RULE_KEY, {
+      ...bank, status: "completed", reason: "", reconciliationId: uuidFor(702),
+    }],
+    ["Bank stale", BANK_RESERVATION_RULE_KEY, {
+      ...bank, status: "stale", reason: "source_snapshot_changed",
+    }],
+    ["Bank failed", BANK_RESERVATION_RULE_KEY, {
+      ...bank, status: "failed", reason: "execution_failed",
+    }],
+    ["Adyen proposed", ADYEN_MONTHLY_RULE_KEY, adyen],
+    ["Adyen monthly ambiguity", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen,
+      status: "ambiguous",
+      reason: "monthly_difference_exceeded",
+      calculatedDifference: 2,
+      allowedDifference: 1,
+      summarySnapshot: {
+        ...adyen.summarySnapshot,
+        sourceTotal: 102,
+        destinationTotal: 100,
+      },
+    }],
+    ["Adyen completed", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen, status: "completed", reason: "", reconciliationId: uuidFor(703),
+    }],
+    ["Adyen stale", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen, status: "stale", reason: "source_snapshot_changed",
+    }],
+    ["Adyen failed", ADYEN_MONTHLY_RULE_KEY, {
+      ...adyen, status: "failed", reason: "execution_failed",
+    }],
+  ];
+  for (const [name, ruleKey, proposal] of validCases) {
+    const terminal = new Set(["completed", "stale", "failed"]).has(proposal.status);
+    const response = responseRecorder();
+    await withMockedHandler(MANUAL_HANDLER_PATH, mockedSupabase({
+      restQuery: async () => manualRun({
+        ruleKey,
+        status: terminal ? "partial" : "ready",
+        proposals: [proposal],
+      }),
+    }), async (handler) => handler({ method: "GET", query: { run_id: RUN_ID } }, response));
+    assert.equal(response.statusCode, 200, name);
+    assert.equal(response.body.proposals[0].status, proposal.status, name);
   }
 });
 
@@ -4638,7 +4823,8 @@ test("manual proposal execution fails closed when a successful result contradict
           status: "ready",
           proposals: [manualProposal(PROPOSAL_ID, {
             status: runReads === 1 ? "proposed" : "failed",
-            reason: runReads === 1 ? "" : "execution_failed",
+            reason: runReads === 1
+              ? "unique_qualifying_combination" : "execution_failed",
           })],
         });
       }
@@ -4846,7 +5032,7 @@ test("Bank grouped runs expose only immutable aggregate scalars and their Bank a
     },
     summarySnapshot: {
       classification: "proposed",
-      reason: "",
+      reason: "unique_qualifying_combination",
       candidateCount: 2,
       bankAnchorDate: "2026-08-24",
       sourceCount: 2,
@@ -6923,6 +7109,76 @@ test("Bank Reservation and Adyen proposals execute atomically from immutable mem
     "Task 5 execution helpers are private and top-level dispatch is literal",
   ]) {
     assert.match(smokeSql, new RegExp(`-- ${contract}`));
+  }
+});
+
+test("Bank execution revalidates live combinations and excludes non-executable ambiguous overlap evidence", () => {
+  const migration = fs.readFileSync(FDM_BANK_ADYEN_MIGRATION_PATH, "utf8");
+  const smokeSql = fs.readFileSync(RPC_SMOKE_PATH, "utf8");
+  const functionSource = (functionName) => {
+    const matches = [...migration.matchAll(new RegExp(
+      `create or replace function public\\.${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+      "gi",
+    ))];
+    assert.ok(matches.length, `${functionName} must be installed by the dated migration`);
+    return matches.at(-1)[0];
+  };
+  const bankExecutor = functionSource(
+    "financial_reconciliation_execute_bank_reservation_proposal",
+  );
+  const adyenExecutor = functionSource(
+    "financial_reconciliation_execute_adyen_monthly_proposal",
+  );
+
+  const memberLockIndex = bankExecutor.indexOf(
+    "financial_reconciliation_lock_fdm_bank_automatic_members",
+  );
+  const liveSearchIndex = bankExecutor.indexOf(
+    "financial_reconciliation_automatic_bank_reservation_groups",
+  );
+  assert.ok(memberLockIndex >= 0 && liveSearchIndex > memberLockIndex,
+    "the exact live search must run only after deterministic member locks");
+  assert.match(
+    bankExecutor,
+    /financial_reconciliation_automatic_bank_reservation_groups\(\s*v_bank_id,\s*v_snapshot_max_difference_days,\s*60,\s*250000,\s*12\s*\)/i,
+  );
+  assert.match(
+    bankExecutor,
+    /v_live_groups->>'classification' is distinct from 'proposed'[\s\S]*v_live_groups->>'reason' is distinct from\s*'unique_qualifying_combination'[\s\S]*jsonb_array_length\(v_live_groups->'candidateGroups'\) <> 1/i,
+  );
+  assert.match(
+    bankExecutor,
+    /array_agg\(live_id\.value::uuid order by live_id\.value::uuid\)[\s\S]*v_live_source_ids/i,
+  );
+  assert.match(
+    bankExecutor,
+    /array_agg\(membership\.source_id order by membership\.source_id\)[\s\S]*v_stored_source_ids/i,
+  );
+  assert.match(bankExecutor, /v_live_source_ids is distinct from v_stored_source_ids/i);
+  assert.match(
+    bankExecutor,
+    /when 'Automatic Bank Reservation Bank anchor is not eligible\.'[\s\S]*then 'source_snapshot_changed'/i,
+  );
+
+  for (const executor of [bankExecutor, adyenExecutor]) {
+    const overlapLists = [...executor.matchAll(
+      /overlap_proposal\.status in\s*\(([^)]*)\)/gi,
+    )];
+    assert.equal(overlapLists.length, 1);
+    assert.match(overlapLists[0][1], /'proposed'/i);
+    assert.match(overlapLists[0][1], /'executing'/i);
+    assert.match(overlapLists[0][1], /'completed'/i);
+    assert.doesNotMatch(overlapLists[0][1], /'ambiguous'/i);
+  }
+
+  for (const fixture of [
+    "bank execution becomes stale when a new live candidate creates a second qualifying combination",
+    "bank execution becomes stale when a new live candidate pool reaches candidate_limit",
+    "bank execution accepts a harmless new live candidate when the immutable group stays unique",
+    "bank execution becomes stale when changed live candidates leave no qualifying combination",
+    "candidate-limit evidence does not overlap an otherwise-proposed group",
+  ]) {
+    assert.match(smokeSql, new RegExp(`-- ${fixture}`, "i"));
   }
 });
 
