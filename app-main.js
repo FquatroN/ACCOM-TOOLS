@@ -1241,6 +1241,7 @@ const state = {
   financialDocEntities: [],
   financialDocsLoaded: false,
   financialDocsLoading: false,
+  financialDocsLoadRequestId: 0,
   financialDocEntitiesLoaded: false,
   financialDocsSettingsLoaded: false,
   financialDocsSettingsTab: "attributes",
@@ -19849,10 +19850,13 @@ async function fileToUploadPayload(file) {
 }
 
 async function loadFinancialDocsData({ silent = false } = {}) {
+  const requestId = state.financialDocsLoadRequestId + 1;
+  state.financialDocsLoadRequestId = requestId;
   state.financialDocsLoading = true;
   try {
     ensureFinancialDocsDefaultFilters();
     const result = await api(buildFinancialDocsListUrlClient());
+    if (requestId !== state.financialDocsLoadRequestId) return false;
     state.financialDocsRows = sortFinancialDocRows((Array.isArray(result?.rows) ? result.rows : []).map(normalizeFinancialDocRowClient));
     if (result?.settings) {
       state.financialDocsSettings = normalizeFinancialDocsSettingsClient(result.settings);
@@ -19865,7 +19869,9 @@ async function loadFinancialDocsData({ silent = false } = {}) {
     renderFinancialDocsSettings();
     renderFinancialDocs();
     if (!silent) setFinancialDocsStatus("Financial documents loaded.");
+    return true;
   } catch (error) {
+    if (requestId !== state.financialDocsLoadRequestId) return false;
     state.financialDocsRows = [];
     state.financialDocsSettings = clone(DEFAULT_FINANCIAL_DOCS_SETTINGS);
     state.financialDocsLoaded = false;
@@ -19875,8 +19881,9 @@ async function loadFinancialDocsData({ silent = false } = {}) {
     renderFinancialDocsSettings();
     renderFinancialDocs();
     if (!silent) setFinancialDocsStatus(`Failed to load financial documents: ${error.message}`);
+    return false;
   } finally {
-    state.financialDocsLoading = false;
+    if (requestId === state.financialDocsLoadRequestId) state.financialDocsLoading = false;
   }
 }
 
@@ -28292,9 +28299,15 @@ async function saveFinancialDocInline() {
     ]);
     state.financialDocsListDuplicateWarning = "";
     resetFinancialDocListDraft();
-    await refreshFinancialDocEntitiesAfterSave();
     renderFinancialDocs();
-    setFinancialDocsStatus("Financial document saved.");
+    const [, reloaded] = await Promise.all([
+      refreshFinancialDocEntitiesAfterSave(),
+      loadFinancialDocsData({ silent: true }),
+    ]);
+    const isVisible = !reloaded || state.financialDocsRows.some((row) => clean(row?.id) === clean(savedRow.id));
+    setFinancialDocsStatus(isVisible
+      ? "Financial document saved."
+      : "Financial document saved, but it does not match the current filters.");
     showToast("Financial document saved.", "success");
   } catch (error) {
     state.financialDocsListDraft = draft;
