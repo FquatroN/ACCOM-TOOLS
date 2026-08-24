@@ -17,7 +17,7 @@ const DEFAULT_REVIEW_SOURCES = [
 
 const LOST_FOUND_STORED_OPTIONS = ["Receção", "Arrecadação 21"];
 const LOST_FOUND_NUMBER_OFFSET = 8719;
-const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "bank-accounts", "financial-reconciliation", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
+const APP_FEATURE_OPTIONS = ["communications", "guests", "cash", "lost-found", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "backoffice", "financial-docs", "import-data", "bank-accounts", "fdm-accounts", "financial-reconciliation", "business-intelligence", "guests-bi", "bookings-bi", "financial-bi", "sales-bi"];
 const SETTINGS_FEATURE_OPTIONS = ["general", "communications", "guests", "financial-docs", "import-data", "financial-reconciliation", "bi-settings", "cash", "reviews", "maintenance", "groups", "services", "shopping", "hours", "bakery", "laundry", "admin-users"];
 const SHOPPING_CATEGORY_OPTIONS = ["Breakfast", "Cleaning", "Sales", "Activities", "Other", "Tapas", "Utensils"];
 const SHOPPING_STORED_OPTIONS = [
@@ -846,6 +846,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Financial Documents", kind: "app", key: "financial-docs" },
   { label: "App: Import Data", kind: "app", key: "import-data" },
   { label: "App: Bank Accounts", kind: "app", key: "bank-accounts" },
+  { label: "App: FDM Accounts", kind: "app", key: "fdm-accounts" },
   { label: "App: Business Intelligence", kind: "app", key: "business-intelligence" },
   { label: "App: Guests BI", kind: "app", key: "guests-bi" },
   { label: "App: Bookings BI", kind: "app", key: "bookings-bi" },
@@ -1314,6 +1315,15 @@ const state = {
   bankAccountsDateSort: "desc",
   bankAccountsRequestToken: 0,
   bankAccountsSearchTimer: 0,
+  fdmAccountsRows: [],
+  fdmAccountsLoaded: false,
+  fdmAccountsLoading: false,
+  fdmAccountsTruncated: false,
+  fdmAccountsOptions: { accounts: [], categories: [] },
+  fdmAccountsFilters: { dateFrom: "", dateTo: "", description: "", reservationId: "", account: "", category: "", amountFrom: "", amountTo: "" },
+  fdmAccountsDateSort: "desc",
+  fdmAccountsRequestToken: 0,
+  fdmAccountsSearchTimer: 0,
   financialReconciliation: {
     activeTab: "manual",
     loaded: false,
@@ -1525,6 +1535,7 @@ const els = {
   navFinancialDocs: document.getElementById("nav-financial-docs"),
   navImportData: document.getElementById("nav-import-data"),
   navBankAccounts: document.getElementById("nav-bank-accounts"),
+  navFdmAccounts: document.getElementById("nav-fdm-accounts"),
   navFinancialReconciliation: document.getElementById("nav-financial-reconciliation"),
   navGuestsBi: document.getElementById("nav-guests-bi"),
   navBookingsBi: document.getElementById("nav-bookings-bi"),
@@ -1549,6 +1560,7 @@ const els = {
   viewFinancialDocs: document.getElementById("view-financial-docs"),
   viewImportData: document.getElementById("view-import-data"),
   viewBankAccounts: document.getElementById("view-bank-accounts"),
+  viewFdmAccounts: document.getElementById("view-fdm-accounts"),
   viewFinancialReconciliation: document.getElementById("view-financial-reconciliation"),
   viewGuestsBi: document.getElementById("view-guests-bi"),
   viewBookingsBi: document.getElementById("view-bookings-bi"),
@@ -2061,6 +2073,18 @@ const els = {
   bankAccountsCount: document.getElementById("bank-accounts-count"),
   bankAccountsHead: document.getElementById("bank-accounts-head"),
   bankAccountsRows: document.getElementById("bank-accounts-rows"),
+  fdmAccountsDateFrom: document.getElementById("fdm-accounts-date-from"),
+  fdmAccountsDateTo: document.getElementById("fdm-accounts-date-to"),
+  fdmAccountsDescription: document.getElementById("fdm-accounts-description"),
+  fdmAccountsReservationId: document.getElementById("fdm-accounts-reservation-id"),
+  fdmAccountsAccount: document.getElementById("fdm-accounts-account"),
+  fdmAccountsCategory: document.getElementById("fdm-accounts-category"),
+  fdmAccountsAmountFrom: document.getElementById("fdm-accounts-amount-from"),
+  fdmAccountsAmountTo: document.getElementById("fdm-accounts-amount-to"),
+  fdmAccountsStatus: document.getElementById("fdm-accounts-status"),
+  fdmAccountsCount: document.getElementById("fdm-accounts-count"),
+  fdmAccountsHead: document.getElementById("fdm-accounts-head"),
+  fdmAccountsRows: document.getElementById("fdm-accounts-rows"),
   importDataSaveSettings: document.getElementById("import-data-save-settings"),
   importDataSettingsBody: document.getElementById("import-data-settings-body"),
   importDataSettingsStatus: document.getElementById("import-data-settings-status"),
@@ -2655,7 +2679,7 @@ async function init() {
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && canApp("laundry")) state.currentView = "laundry";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && canApp("reviews")) state.currentView = "reviews";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && canApp("maintenance")) state.currentView = "maintenance";
-  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : canAppBankAccounts() ? "bank-accounts" : "financial-reconciliation";
+  else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && canUseBackoffice()) state.currentView = canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : canAppBankAccounts() ? "bank-accounts" : canAppFdmAccounts() ? "fdm-accounts" : "financial-reconciliation";
   else if (!canApp("communications") && !canApp("guests") && !canApp("cash") && !canApp("lost-found") && !canApp("groups") && !canApp("services") && !canApp("shopping") && !canApp("hours") && !canApp("bakery") && !canApp("laundry") && !canApp("reviews") && !canApp("maintenance") && !canUseBackoffice() && canUseBusinessIntelligence()) state.currentView = canUseGuestsBi() ? "guests-bi" : canUseBookingsBi() ? "bookings-bi" : canUseFinancialBi() ? "financial-bi" : "sales-bi";
   else if (!canApp("communications") && state.access.settingsFeatures.length > 0) state.currentView = "settings";
   applyInitialRouteFromUrl();
@@ -2700,12 +2724,23 @@ function bindEvents() {
   els.navFinancialDocs?.addEventListener("click", () => setView("financial-docs"));
   els.navImportData?.addEventListener("click", () => setView("import-data"));
   els.navBankAccounts?.addEventListener("click", () => setView("bank-accounts"));
+  els.navFdmAccounts?.addEventListener("click", () => setView("fdm-accounts"));
   els.bankAccountsSource?.addEventListener("change", onBankAccountsSourceChange);
   els.bankAccountsDateFrom?.addEventListener("change", onBankAccountsFilterChange);
   els.bankAccountsDateTo?.addEventListener("change", onBankAccountsFilterChange);
   els.bankAccountsDescription?.addEventListener("input", onBankAccountsDescriptionInput);
   els.bankAccountsHead?.addEventListener("click", onBankAccountsHeaderClick);
   els.bankAccountsRows?.addEventListener("click", onBankAccountsRowsClick);
+  els.fdmAccountsDateFrom?.addEventListener("change", onFdmAccountsFilterChange);
+  els.fdmAccountsDateTo?.addEventListener("change", onFdmAccountsFilterChange);
+  els.fdmAccountsDescription?.addEventListener("input", onFdmAccountsTextFilterInput);
+  els.fdmAccountsReservationId?.addEventListener("input", onFdmAccountsTextFilterInput);
+  els.fdmAccountsAccount?.addEventListener("change", onFdmAccountsFilterChange);
+  els.fdmAccountsCategory?.addEventListener("change", onFdmAccountsFilterChange);
+  els.fdmAccountsAmountFrom?.addEventListener("change", onFdmAccountsFilterChange);
+  els.fdmAccountsAmountTo?.addEventListener("change", onFdmAccountsFilterChange);
+  els.fdmAccountsHead?.addEventListener("click", onFdmAccountsHeaderClick);
+  els.fdmAccountsRows?.addEventListener("click", onFdmAccountsRowsClick);
   els.navFinancialReconciliation?.addEventListener("click", () => setView("financial-reconciliation"));
   els.financialReconciliationManualTab?.addEventListener("click", () => setFinancialReconciliationTab("manual"));
   els.financialReconciliationAutomaticTab?.addEventListener("click", () => setFinancialReconciliationTab("automatic"));
@@ -3513,7 +3548,7 @@ function canSettings(feature) {
 }
 
 function canUseBackoffice() {
-  return canApp("backoffice") && (canApp("financial-docs") || canApp("import-data") || canApp("bank-accounts") || canApp("financial-reconciliation"));
+  return canApp("backoffice") && (canApp("financial-docs") || canApp("import-data") || canApp("bank-accounts") || canApp("fdm-accounts") || canApp("financial-reconciliation"));
 }
 
 function canAppFinancialDocs() {
@@ -3526,6 +3561,10 @@ function canAppImportData() {
 
 function canAppBankAccounts() {
   return canApp("backoffice") && canApp("bank-accounts");
+}
+
+function canAppFdmAccounts() {
+  return canApp("backoffice") && canApp("fdm-accounts");
 }
 
 function canAppFinancialReconciliation() {
@@ -3626,6 +3665,9 @@ function applyInitialRouteFromUrl() {
     if (view === "bank-accounts" && canAppBankAccounts()) {
       state.currentView = "bank-accounts";
     }
+    if (view === "fdm-accounts" && canAppFdmAccounts()) {
+      state.currentView = "fdm-accounts";
+    }
     if (view === "financial-reconciliation" && canAppFinancialReconciliation()) {
       state.currentView = "financial-reconciliation";
     }
@@ -3679,6 +3721,9 @@ function syncAppRoute() {
     } else if (state.currentView === "bank-accounts") {
       url.searchParams.set("view", "bank-accounts");
       url.searchParams.delete("service");
+    } else if (state.currentView === "fdm-accounts") {
+      url.searchParams.set("view", "fdm-accounts");
+      url.searchParams.delete("service");
     } else if (state.currentView === "financial-reconciliation") {
       url.searchParams.set("view", "financial-reconciliation");
       url.searchParams.delete("service");
@@ -3711,6 +3756,7 @@ async function setView(view, options = {}) {
   if (view === "financial-docs" && !canAppFinancialDocs()) return showToast("No financial documents access.", "error");
   if (view === "import-data" && !canAppImportData()) return showToast("No import data access.", "error");
   if (view === "bank-accounts" && !canAppBankAccounts()) return showToast("No bank accounts access.", "error");
+  if (view === "fdm-accounts" && !canAppFdmAccounts()) return showToast("No FDM Accounts access.", "error");
   if (view === "financial-reconciliation" && !canAppFinancialReconciliation()) return showToast("No reconciliation access.", "error");
   if (view === "financial-reconciliation") {
     state.financialReconciliation.activeTab = financialReconciliationEntryTab(options);
@@ -3731,7 +3777,7 @@ async function setView(view, options = {}) {
   if (view === "bakery" && !canApp("bakery")) return showToast("No bakery access.", "error");
   if (view === "laundry" && !canApp("laundry")) return showToast("No laundry access.", "error");
   setMobileNavOpen(false);
-  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "bank-accounts" && state.currentView !== "financial-reconciliation" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi" && state.currentView !== "financial-bi" && state.currentView !== "sales-bi") {
+  if (state.currentView !== "settings" && state.currentView !== "financial-docs" && state.currentView !== "import-data" && state.currentView !== "bank-accounts" && state.currentView !== "fdm-accounts" && state.currentView !== "financial-reconciliation" && state.currentView !== "guests-bi" && state.currentView !== "bookings-bi" && state.currentView !== "financial-bi" && state.currentView !== "sales-bi") {
     state.lastMainView = state.currentView;
   }
   const previousView = state.currentView;
@@ -3847,6 +3893,12 @@ async function ensureCurrentViewData() {
   }
   if (state.currentView === "bank-accounts") {
     await ensureBankAccountsData();
+    renderSettingsSection();
+    render();
+    return;
+  }
+  if (state.currentView === "fdm-accounts") {
+    await ensureFdmAccountsData();
     renderSettingsSection();
     render();
     return;
@@ -4375,6 +4427,7 @@ function renderLayout() {
   const financialDocs = state.currentView === "financial-docs";
   const importData = state.currentView === "import-data";
   const bankAccounts = state.currentView === "bank-accounts";
+  const fdmAccounts = state.currentView === "fdm-accounts";
   const financialReconciliation = state.currentView === "financial-reconciliation";
   const guestsBi = state.currentView === "guests-bi";
   const bookingsBi = state.currentView === "bookings-bi";
@@ -4394,13 +4447,14 @@ function renderLayout() {
   const bakery = state.currentView === "bakery";
   const laundry = state.currentView === "laundry";
   const settingsMode = state.currentView === "settings";
-  const backofficeMode = financialDocs || importData || bankAccounts || financialReconciliation || backofficeSettings || importDataSettings;
+  const backofficeMode = financialDocs || importData || bankAccounts || fdmAccounts || financialReconciliation || backofficeSettings || importDataSettings;
   const businessIntelligenceMode = guestsBi || bookingsBi || financialBi || salesBi;
   const workspaceMode = backofficeMode || businessIntelligenceMode;
   const canComm = canApp("communications");
   const canFinancialDocs = canAppFinancialDocs();
   const canImportData = canAppImportData();
   const canBankAccounts = canAppBankAccounts();
+  const canFdmAccounts = canAppFdmAccounts();
   const canFinancialReconciliation = canAppFinancialReconciliation();
   const canGuestsBi = canUseGuestsBi();
   const canBookingsBi = canUseBookingsBi();
@@ -4426,6 +4480,7 @@ function renderLayout() {
   els.navFinancialDocs?.classList.toggle("active", financialDocs);
   els.navImportData?.classList.toggle("active", importData);
   els.navBankAccounts?.classList.toggle("active", bankAccounts);
+  els.navFdmAccounts?.classList.toggle("active", fdmAccounts);
   els.navFinancialReconciliation?.classList.toggle("active", financialReconciliation);
   els.navGuestsBi?.classList.toggle("active", guestsBi);
   els.navBookingsBi?.classList.toggle("active", bookingsBi);
@@ -4446,6 +4501,7 @@ function renderLayout() {
   if (els.navFinancialDocs) els.navFinancialDocs.hidden = !canFinancialDocs;
   if (els.navImportData) els.navImportData.hidden = !canImportData;
   if (els.navBankAccounts) els.navBankAccounts.hidden = !canBankAccounts;
+  if (els.navFdmAccounts) els.navFdmAccounts.hidden = !canFdmAccounts;
   if (els.navFinancialReconciliation) els.navFinancialReconciliation.hidden = !canFinancialReconciliation;
   if (els.navGuestsBi) els.navGuestsBi.hidden = !canGuestsBi;
   if (els.navBookingsBi) els.navBookingsBi.hidden = !canBookingsBi;
@@ -4488,6 +4544,7 @@ function renderLayout() {
   if (els.viewFinancialDocs) els.viewFinancialDocs.hidden = !financialDocs;
   if (els.viewImportData) els.viewImportData.hidden = !importData;
   if (els.viewBankAccounts) els.viewBankAccounts.hidden = !bankAccounts;
+  if (els.viewFdmAccounts) els.viewFdmAccounts.hidden = !fdmAccounts;
   if (els.viewFinancialReconciliation) els.viewFinancialReconciliation.hidden = !financialReconciliation;
   if (els.viewGuestsBi) els.viewGuestsBi.hidden = !guestsBi;
   if (els.viewBookingsBi) els.viewBookingsBi.hidden = !bookingsBi;
@@ -4947,6 +5004,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-financial-docs="${id}"]`)?.checked) appFeatures.push("financial-docs");
   if (els.profilesBody.querySelector(`[data-profile-app-import-data="${id}"]`)?.checked) appFeatures.push("import-data");
   if (els.profilesBody.querySelector(`[data-profile-app-bank-accounts="${id}"]`)?.checked) appFeatures.push("bank-accounts");
+  if (els.profilesBody.querySelector(`[data-profile-app-fdm-accounts="${id}"]`)?.checked) appFeatures.push("fdm-accounts");
   if (els.profilesBody.querySelector(`[data-profile-app-business-intelligence="${id}"]`)?.checked) appFeatures.push("business-intelligence");
   if (els.profilesBody.querySelector(`[data-profile-app-guests-bi="${id}"]`)?.checked) appFeatures.push("guests-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-bookings-bi="${id}"]`)?.checked) appFeatures.push("bookings-bi");
@@ -19705,7 +19763,7 @@ function isBackofficeSettingsContext() {
 }
 
 function onLogoHomeClick() {
-  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "bank-accounts" || state.currentView === "financial-reconciliation" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi" || state.currentView === "sales-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
+  if (state.currentView === "financial-docs" || state.currentView === "import-data" || state.currentView === "bank-accounts" || state.currentView === "fdm-accounts" || state.currentView === "financial-reconciliation" || state.currentView === "guests-bi" || state.currentView === "bookings-bi" || state.currentView === "financial-bi" || state.currentView === "sales-bi" || state.currentView === "settings" || isBackofficeSettingsContext()) {
     const next = preferredMainAppView();
     if (next) setView(next);
   }
@@ -19740,7 +19798,7 @@ function openBackofficeHome() {
     showToast("No backoffice access.", "error");
     return;
   }
-  setView(canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : canAppBankAccounts() ? "bank-accounts" : "financial-reconciliation");
+  setView(canAppFinancialDocs() ? "financial-docs" : canAppImportData() ? "import-data" : canAppBankAccounts() ? "bank-accounts" : canAppFdmAccounts() ? "fdm-accounts" : "financial-reconciliation");
 }
 
 function openBusinessIntelligenceHome() {
@@ -19775,6 +19833,7 @@ function reconciliationSettingsAppDestination() {
   if (canAppFinancialDocs()) return "financial-docs";
   if (canAppImportData()) return "import-data";
   if (canAppBankAccounts()) return "bank-accounts";
+  if (canAppFdmAccounts()) return "fdm-accounts";
   const mainView = preferredMainAppView();
   if (mainView) return mainView;
   if (canUseGuestsBi()) return "guests-bi";
@@ -21530,6 +21589,7 @@ function reconciliationListButton(row, {
   action = "",
   sourceType = "",
   bankAccounts = false,
+  fdmAccounts = false,
   className = "",
 } = {}) {
   const reconciliationId = clean(row?.reconciliationId || row?.reconciliation_id);
@@ -21552,6 +21612,7 @@ function reconciliationListButton(row, {
     `data-reconciliation-id="${escape(reconciliationId)}"`,
     action ? `data-action="${escape(action)}"` : "",
     bankAccounts ? "data-bank-accounts-reconciliation" : "",
+    fdmAccounts ? "data-fdm-accounts-reconciliation" : "",
     sourceType ? `data-reconciliation-source-type="${escape(sourceType)}"` : "",
   ].filter(Boolean).join(" ");
   return `<button type="button" class="${escape(classes)}" ${attributes} title="${escape(label)}" aria-label="${escape(label)}">&#10003;</button>`;
@@ -21600,6 +21661,172 @@ function renderBankAccounts() {
   if (els.bankAccountsCount) {
     const suffix = state.bankAccountsTruncated ? " shown - refine filters to see more" : "";
     els.bankAccountsCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}${suffix}`;
+  }
+}
+
+const FDM_ACCOUNTS_COLUMNS = Object.freeze([
+  { key: "event_date", label: "Date", type: "date", sortable: true },
+  { key: "event_time", label: "Time", type: "text" },
+  { key: "account", label: "Account", type: "text" },
+  { key: "category", label: "Category", type: "text" },
+  { key: "amount", label: "Amount", type: "money" },
+  { key: "reservation_id", label: "Reservation ID", type: "text" },
+  { key: "guest", label: "Guest", type: "text" },
+  { key: "description", label: "Description", type: "text" },
+  { key: "reporting_date", label: "Reporting Date", type: "date" },
+  { key: "user_name", label: "User", type: "text" },
+  { key: "bill_number", label: "Bill Number", type: "text" },
+  { key: "item", label: "Item", type: "text" },
+  { key: "invoice_number", label: "Invoice Number", type: "text" },
+  { key: "currency", label: "Currency", type: "text" },
+  { key: "invoice_amount", label: "Invoice Amount", type: "money" },
+  { key: "designation", label: "Designation", type: "text" },
+  { key: "invoice", label: "Invoice", type: "text" },
+]);
+
+function setFdmAccountsStatus(message = "", tone = "") {
+  if (!els.fdmAccountsStatus) return;
+  els.fdmAccountsStatus.textContent = message;
+  els.fdmAccountsStatus.classList.toggle("status-error", tone === "error");
+}
+
+function currentFdmAccountsFilters() {
+  return {
+    dateFrom: clean(els.fdmAccountsDateFrom?.value || state.fdmAccountsFilters.dateFrom),
+    dateTo: clean(els.fdmAccountsDateTo?.value || state.fdmAccountsFilters.dateTo),
+    description: clean(els.fdmAccountsDescription?.value || state.fdmAccountsFilters.description),
+    reservationId: clean(els.fdmAccountsReservationId?.value || state.fdmAccountsFilters.reservationId),
+    account: clean(els.fdmAccountsAccount?.value || state.fdmAccountsFilters.account),
+    category: clean(els.fdmAccountsCategory?.value || state.fdmAccountsFilters.category),
+    amountFrom: clean(els.fdmAccountsAmountFrom?.value || state.fdmAccountsFilters.amountFrom),
+    amountTo: clean(els.fdmAccountsAmountTo?.value || state.fdmAccountsFilters.amountTo),
+  };
+}
+
+function buildFdmAccountsRowsUrl() {
+  const filters = currentFdmAccountsFilters();
+  const params = new URLSearchParams({ sort: state.fdmAccountsDateSort });
+  if (!state.fdmAccountsOptions.accounts.length && !state.fdmAccountsOptions.categories.length) params.set("include_options", "1");
+  if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+  if (filters.dateTo) params.set("date_to", filters.dateTo);
+  if (filters.description) params.set("description", filters.description);
+  if (filters.reservationId) params.set("reservation_id", filters.reservationId);
+  if (filters.account) params.set("account", filters.account);
+  if (filters.category) params.set("category", filters.category);
+  if (filters.amountFrom) params.set("amount_from", filters.amountFrom);
+  if (filters.amountTo) params.set("amount_to", filters.amountTo);
+  return `/api/fdm-accounts?${params.toString()}`;
+}
+
+async function loadFdmAccountsRows({ silent = false } = {}) {
+  const requestToken = ++state.fdmAccountsRequestToken;
+  state.fdmAccountsLoading = true;
+  if (!silent) setFdmAccountsStatus("Loading records...");
+  try {
+    const result = await api(buildFdmAccountsRowsUrl());
+    if (requestToken !== state.fdmAccountsRequestToken) return;
+    state.fdmAccountsRows = Array.isArray(result?.rows) ? result.rows : [];
+    if (Array.isArray(result?.accounts)) state.fdmAccountsOptions.accounts = result.accounts;
+    if (Array.isArray(result?.categories)) state.fdmAccountsOptions.categories = result.categories;
+    state.fdmAccountsLoaded = true;
+    state.fdmAccountsLoading = false;
+    state.fdmAccountsTruncated = Boolean(result?.truncated);
+    renderFdmAccounts();
+    if (!silent) setFdmAccountsStatus(result?.truncated ? "Showing the first 500 matching records." : "Records loaded.");
+  } catch (error) {
+    if (requestToken !== state.fdmAccountsRequestToken) return;
+    state.fdmAccountsRows = [];
+    state.fdmAccountsLoaded = false;
+    state.fdmAccountsLoading = false;
+    state.fdmAccountsTruncated = false;
+    renderFdmAccounts();
+    setFdmAccountsStatus(`Failed to load records: ${error.message}`, "error");
+  }
+}
+
+async function ensureFdmAccountsData() {
+  if (!state.fdmAccountsLoaded && canAppFdmAccounts()) {
+    await loadFdmAccountsRows({ silent: true });
+  }
+}
+
+function onFdmAccountsFilterChange() {
+  state.fdmAccountsFilters = currentFdmAccountsFilters();
+  loadFdmAccountsRows({ silent: true }).catch(() => {});
+}
+
+function onFdmAccountsTextFilterInput() {
+  state.fdmAccountsFilters = currentFdmAccountsFilters();
+  window.clearTimeout(state.fdmAccountsSearchTimer);
+  state.fdmAccountsSearchTimer = window.setTimeout(() => {
+    loadFdmAccountsRows({ silent: true }).catch(() => {});
+  }, 350);
+}
+
+function onFdmAccountsHeaderClick(event) {
+  const button = event.target instanceof HTMLElement ? event.target.closest("[data-fdm-accounts-sort-date]") : null;
+  if (!button) return;
+  state.fdmAccountsDateSort = state.fdmAccountsDateSort === "asc" ? "desc" : "asc";
+  loadFdmAccountsRows({ silent: true }).catch(() => {});
+  renderFdmAccounts();
+}
+
+function onFdmAccountsRowsClick(event) {
+  const button = event.target instanceof HTMLElement
+    ? event.target.closest("button[data-fdm-accounts-reconciliation]")
+    : null;
+  if (!button) return;
+  openListReconciliation(
+    clean(button.dataset.reconciliationId),
+    clean(button.dataset.reconciliationSourceType),
+  );
+}
+
+function renderFdmAccountsSelect(element, values, selectedValue, allLabel) {
+  if (!element) return;
+  const selected = clean(selectedValue);
+  const options = [...new Set([selected, ...(Array.isArray(values) ? values : [])].filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+  element.innerHTML = `<option value="">${escape(allLabel)}</option>${options.map((value) => `<option value="${escape(value)}">${escape(value)}</option>`).join("")}`;
+  element.value = selected;
+}
+
+function renderFdmAccounts() {
+  const columns = FDM_ACCOUNTS_COLUMNS;
+  const filters = state.fdmAccountsFilters;
+  if (els.fdmAccountsDateFrom) els.fdmAccountsDateFrom.value = clean(filters.dateFrom);
+  if (els.fdmAccountsDateTo) els.fdmAccountsDateTo.value = clean(filters.dateTo);
+  if (els.fdmAccountsDescription) els.fdmAccountsDescription.value = clean(filters.description);
+  if (els.fdmAccountsReservationId) els.fdmAccountsReservationId.value = clean(filters.reservationId);
+  if (els.fdmAccountsAmountFrom) els.fdmAccountsAmountFrom.value = clean(filters.amountFrom);
+  if (els.fdmAccountsAmountTo) els.fdmAccountsAmountTo.value = clean(filters.amountTo);
+  renderFdmAccountsSelect(els.fdmAccountsAccount, state.fdmAccountsOptions.accounts, filters.account, "All accounts");
+  renderFdmAccountsSelect(els.fdmAccountsCategory, state.fdmAccountsOptions.categories, filters.category, "All categories");
+  if (!canAppFdmAccounts()) {
+    if (els.fdmAccountsCount) els.fdmAccountsCount.textContent = "0 rows";
+    if (els.fdmAccountsHead) els.fdmAccountsHead.innerHTML = `<tr>${columns.map((column) => `<th>${escape(column.label)}</th>`).join("")}<th>Reconciliation</th></tr>`;
+    if (els.fdmAccountsRows) els.fdmAccountsRows.innerHTML = `<tr><td colspan="${columns.length + 1}" class="empty">Your profile has no access to FDM Accounts.</td></tr>`;
+    return;
+  }
+  if (els.fdmAccountsHead) {
+    els.fdmAccountsHead.innerHTML = `<tr>${columns.map((column) => {
+      if (!column.sortable) return `<th>${escape(column.label)}</th>`;
+      const arrow = state.fdmAccountsDateSort === "asc" ? "&uarr;" : "&darr;";
+      return `<th><button type="button" class="bank-accounts-sort-button" data-fdm-accounts-sort-date>${escape(column.label)} ${arrow}</button></th>`;
+    }).join("")}<th>Reconciliation</th></tr>`;
+  }
+  const rows = Array.isArray(state.fdmAccountsRows) ? state.fdmAccountsRows : [];
+  if (els.fdmAccountsRows) {
+    els.fdmAccountsRows.innerHTML = rows.length
+      ? rows.map((row) => `<tr>${columns.map((column) => `<td class="fdm-accounts-${escape(column.key)}">${renderBankAccountsCell(row, column)}</td>`).join("")}<td class="fdm-accounts-reconciliation center-cell">${reconciliationListButton(row, {
+        fdmAccounts: true,
+        sourceType: "import_fdm_accounts",
+      })}</td></tr>`).join("")
+      : `<tr><td colspan="${columns.length + 1}" class="empty">${state.fdmAccountsLoading ? "Loading records..." : "No records found."}</td></tr>`;
+  }
+  if (els.fdmAccountsCount) {
+    const suffix = state.fdmAccountsTruncated ? " shown - refine filters to see more" : "";
+    els.fdmAccountsCount.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}${suffix}`;
   }
 }
 
@@ -28688,6 +28915,10 @@ function render() {
   }
   if (state.currentView === "bank-accounts") {
     renderBankAccounts();
+    return;
+  }
+  if (state.currentView === "fdm-accounts") {
+    renderFdmAccounts();
     return;
   }
   if (state.currentView === "financial-reconciliation") {

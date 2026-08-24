@@ -7689,6 +7689,51 @@ button[id^="close-settings"] {
   white-space: nowrap;
 }
 
+.fdm-accounts-filters {
+  grid-template-columns: repeat(4, minmax(9rem, 1fr));
+  align-items: end;
+}
+
+.fdm-accounts-description-filter {
+  grid-column: span 2;
+  min-width: 0;
+}
+
+.fdm-accounts-table-wrap {
+  max-height: calc(100vh - 20rem);
+  min-height: 24rem;
+}
+
+.fdm-accounts-table {
+  min-width: 116rem;
+}
+
+.fdm-accounts-table th,
+.fdm-accounts-table td {
+  font-size: 0.74rem;
+  padding: 0.3rem 0.4rem;
+  vertical-align: top;
+}
+
+.fdm-accounts-table th {
+  white-space: nowrap;
+}
+
+.fdm-accounts-description,
+.fdm-accounts-guest,
+.fdm-accounts-designation {
+  min-width: 14rem;
+  max-width: 24rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.fdm-accounts-amount,
+.fdm-accounts-invoice_amount {
+  text-align: right;
+  white-space: nowrap;
+}
+
 @media (max-width: 800px) {
   .bank-accounts-filters {
     grid-template-columns: 1fr 1fr;
@@ -7698,7 +7743,19 @@ button[id^="close-settings"] {
     grid-column: 1 / -1;
   }
 
+  .fdm-accounts-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .fdm-accounts-description-filter {
+    grid-column: 1 / -1;
+  }
+
   .bank-accounts-table-wrap {
+    min-height: 18rem;
+  }
+
+  .fdm-accounts-table-wrap {
     min-height: 18rem;
   }
 }

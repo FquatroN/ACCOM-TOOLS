@@ -11,14 +11,14 @@
       rel="stylesheet"
     />
     <link rel="icon" href="/favicon.ico" sizes="any" />
-    <link rel="stylesheet" href="styles.css?v=20260823-financial-docs-file-action-width" />
+    <link rel="stylesheet" href="styles.css?v=20260824-fdm-accounts" />
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script defer src="config.js"></script>
     <script defer src="auth-guard.js"></script>
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script defer src="recent20.js?v=20260416-reviews-expedia"></script>
-    <script defer src="app-main.js?v=20260824-financial-docs-inline-refresh"></script>
+    <script defer src="app-main.js?v=20260824-fdm-accounts"></script>
   </head>
   <body style="visibility: hidden">
     <main id="app-shell" class="app-layout">
@@ -94,6 +94,7 @@
             <button id="nav-financial-docs" type="button" class="nav-link">Financial Documents</button>
             <button id="nav-import-data" type="button" class="nav-link">Import Data</button>
             <button id="nav-bank-accounts" type="button" class="nav-link">Bank Accounts</button>
+            <button id="nav-fdm-accounts" type="button" class="nav-link">FDM Accounts</button>
             <button id="nav-financial-reconciliation" type="button" class="nav-link">Reconciliation</button>
           </div>
         </section>
@@ -3901,6 +3902,66 @@
               <table class="compact-table bank-accounts-table">
                 <thead id="bank-accounts-head"></thead>
                 <tbody id="bank-accounts-rows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="view-fdm-accounts" class="view" hidden>
+          <section class="feature-title">
+            <h2>FDM Accounts</h2>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>Filters</h2>
+              <p id="fdm-accounts-status" class="auth-status" aria-live="polite"></p>
+            </div>
+            <div class="grid filters fdm-accounts-filters">
+              <label>
+                Date From
+                <input id="fdm-accounts-date-from" type="date" />
+              </label>
+              <label>
+                Date To
+                <input id="fdm-accounts-date-to" type="date" />
+              </label>
+              <label class="fdm-accounts-description-filter">
+                Description
+                <input id="fdm-accounts-description" type="search" placeholder="Search description or guest" />
+              </label>
+              <label>
+                Reservation ID
+                <input id="fdm-accounts-reservation-id" type="search" placeholder="Reservation ID" />
+              </label>
+              <label>
+                Account
+                <select id="fdm-accounts-account"><option value="">All accounts</option></select>
+              </label>
+              <label>
+                Category
+                <select id="fdm-accounts-category"><option value="">All categories</option></select>
+              </label>
+              <label>
+                Amount From
+                <input id="fdm-accounts-amount-from" type="number" step="0.01" inputmode="decimal" />
+              </label>
+              <label>
+                Amount To
+                <input id="fdm-accounts-amount-to" type="number" step="0.01" inputmode="decimal" />
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="bar">
+              <h2>FDM Accounts</h2>
+              <p id="fdm-accounts-count">0 rows</p>
+            </div>
+            <div class="table-wrap compact-table-wrap fdm-accounts-table-wrap">
+              <table class="compact-table fdm-accounts-table">
+                <thead id="fdm-accounts-head"></thead>
+                <tbody id="fdm-accounts-rows"></tbody>
               </table>
             </div>
           </section>
