@@ -11,14 +11,14 @@
       rel="stylesheet"
     />
     <link rel="icon" href="/favicon.ico" sizes="any" />
-    <link rel="stylesheet" href="styles.css?v=20260824-fdm-accounts" />
+    <link rel="stylesheet" href="styles.css?v=20260827-fdm-accounts-filters" />
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script defer src="config.js"></script>
     <script defer src="auth-guard.js"></script>
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script defer src="recent20.js?v=20260416-reviews-expedia"></script>
-    <script defer src="app-main.js?v=20260824-fdm-accounts"></script>
+    <script defer src="app-main.js?v=20260827-fdm-accounts-filters"></script>
   </head>
   <body style="visibility: hidden">
     <main id="app-shell" class="app-layout">
@@ -3928,11 +3928,7 @@
               </label>
               <label class="fdm-accounts-description-filter">
                 Description
-                <input id="fdm-accounts-description" type="search" placeholder="Search description or guest" />
-              </label>
-              <label>
-                Reservation ID
-                <input id="fdm-accounts-reservation-id" type="search" placeholder="Reservation ID" />
+                <input id="fdm-accounts-description" type="search" placeholder="Description, guest or reservation ID" />
               </label>
               <label>
                 Account

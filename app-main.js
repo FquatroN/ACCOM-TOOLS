@@ -1320,7 +1320,7 @@ const state = {
   fdmAccountsLoading: false,
   fdmAccountsTruncated: false,
   fdmAccountsOptions: { accounts: [], categories: [] },
-  fdmAccountsFilters: { dateFrom: "", dateTo: "", description: "", reservationId: "", account: "", category: "", amountFrom: "", amountTo: "" },
+  fdmAccountsFilters: { dateFrom: "", dateTo: "", description: "", account: "", category: "", amountFrom: "", amountTo: "" },
   fdmAccountsDateSort: "desc",
   fdmAccountsRequestToken: 0,
   fdmAccountsSearchTimer: 0,
@@ -2076,7 +2076,6 @@ const els = {
   fdmAccountsDateFrom: document.getElementById("fdm-accounts-date-from"),
   fdmAccountsDateTo: document.getElementById("fdm-accounts-date-to"),
   fdmAccountsDescription: document.getElementById("fdm-accounts-description"),
-  fdmAccountsReservationId: document.getElementById("fdm-accounts-reservation-id"),
   fdmAccountsAccount: document.getElementById("fdm-accounts-account"),
   fdmAccountsCategory: document.getElementById("fdm-accounts-category"),
   fdmAccountsAmountFrom: document.getElementById("fdm-accounts-amount-from"),
@@ -2734,7 +2733,6 @@ function bindEvents() {
   els.fdmAccountsDateFrom?.addEventListener("change", onFdmAccountsFilterChange);
   els.fdmAccountsDateTo?.addEventListener("change", onFdmAccountsFilterChange);
   els.fdmAccountsDescription?.addEventListener("input", onFdmAccountsTextFilterInput);
-  els.fdmAccountsReservationId?.addEventListener("input", onFdmAccountsTextFilterInput);
   els.fdmAccountsAccount?.addEventListener("change", onFdmAccountsFilterChange);
   els.fdmAccountsCategory?.addEventListener("change", onFdmAccountsFilterChange);
   els.fdmAccountsAmountFrom?.addEventListener("change", onFdmAccountsFilterChange);
@@ -21695,7 +21693,6 @@ function currentFdmAccountsFilters() {
     dateFrom: clean(els.fdmAccountsDateFrom?.value || state.fdmAccountsFilters.dateFrom),
     dateTo: clean(els.fdmAccountsDateTo?.value || state.fdmAccountsFilters.dateTo),
     description: clean(els.fdmAccountsDescription?.value || state.fdmAccountsFilters.description),
-    reservationId: clean(els.fdmAccountsReservationId?.value || state.fdmAccountsFilters.reservationId),
     account: clean(els.fdmAccountsAccount?.value || state.fdmAccountsFilters.account),
     category: clean(els.fdmAccountsCategory?.value || state.fdmAccountsFilters.category),
     amountFrom: clean(els.fdmAccountsAmountFrom?.value || state.fdmAccountsFilters.amountFrom),
@@ -21710,7 +21707,6 @@ function buildFdmAccountsRowsUrl() {
   if (filters.dateFrom) params.set("date_from", filters.dateFrom);
   if (filters.dateTo) params.set("date_to", filters.dateTo);
   if (filters.description) params.set("description", filters.description);
-  if (filters.reservationId) params.set("reservation_id", filters.reservationId);
   if (filters.account) params.set("account", filters.account);
   if (filters.category) params.set("category", filters.category);
   if (filters.amountFrom) params.set("amount_from", filters.amountFrom);
@@ -21797,7 +21793,6 @@ function renderFdmAccounts() {
   if (els.fdmAccountsDateFrom) els.fdmAccountsDateFrom.value = clean(filters.dateFrom);
   if (els.fdmAccountsDateTo) els.fdmAccountsDateTo.value = clean(filters.dateTo);
   if (els.fdmAccountsDescription) els.fdmAccountsDescription.value = clean(filters.description);
-  if (els.fdmAccountsReservationId) els.fdmAccountsReservationId.value = clean(filters.reservationId);
   if (els.fdmAccountsAmountFrom) els.fdmAccountsAmountFrom.value = clean(filters.amountFrom);
   if (els.fdmAccountsAmountTo) els.fdmAccountsAmountTo.value = clean(filters.amountTo);
   renderFdmAccountsSelect(els.fdmAccountsAccount, state.fdmAccountsOptions.accounts, filters.account, "All accounts");

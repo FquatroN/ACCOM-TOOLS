@@ -7690,13 +7690,25 @@ button[id^="close-settings"] {
 }
 
 .fdm-accounts-filters {
-  grid-template-columns: repeat(4, minmax(9rem, 1fr));
+  grid-template-columns: 7.25rem 7.25rem minmax(14rem, 1.8fr) minmax(8rem, 1fr) minmax(8rem, 1fr) 6.5rem 6.5rem;
+  gap: 0.45rem;
   align-items: end;
 }
 
 .fdm-accounts-description-filter {
-  grid-column: span 2;
   min-width: 0;
+}
+
+.fdm-accounts-filters label {
+  gap: 0.18rem;
+  font-size: 0.66rem;
+}
+
+.fdm-accounts-filters input,
+.fdm-accounts-filters select {
+  min-height: 1.75rem;
+  padding: 0.18rem 0.34rem;
+  font-size: 0.7rem;
 }
 
 .fdm-accounts-table-wrap {

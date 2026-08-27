@@ -1,7 +1,7 @@
 const { cleanText, requireFeature, restQuery, sendError } = require("./_supabase");
 
 const MAX_ROWS = 500;
-const OPTIONS_LIMIT = 1000;
+const OPTIONS_PAGE_SIZE = 1000;
 const TABLE = "import_fdm_accounts";
 const SELECT = "id,event_date,event_time,account,category,amount,reservation_id,guest,description,reporting_date,user_name,bill_number,item,invoice_number,currency,invoice_amount,designation,invoice";
 
@@ -39,10 +39,8 @@ function buildQuery(query = {}) {
 
   const description = normalizeTextFilter(query.description);
   if (description) {
-    params.push(`or=${encodeURIComponent(`(description.ilike.*${description}*,guest.ilike.*${description}*)`)}`);
+    params.push(`or=${encodeURIComponent(`(description.ilike.*${description}*,guest.ilike.*${description}*,reservation_id.ilike.*${description}*)`)}`);
   }
-  const reservationId = normalizeTextFilter(query.reservation_id);
-  if (reservationId) params.push(`reservation_id=ilike.${encodeURIComponent(`*${reservationId}*`)}`);
   const account = normalizeTextFilter(query.account);
   if (account) params.push(`account=eq.${encodeURIComponent(account)}`);
   const category = normalizeTextFilter(query.category);
@@ -115,13 +113,19 @@ function uniqueValues(rows, field) {
 }
 
 async function loadOptions() {
-  const [accountRows, categoryRows] = await Promise.all([
-    restQuery(`${TABLE}?select=account&account=not.is.null&order=account.asc&limit=${OPTIONS_LIMIT}`, { method: "GET" }),
-    restQuery(`${TABLE}?select=category&category=not.is.null&order=category.asc&limit=${OPTIONS_LIMIT}`, { method: "GET" }),
-  ]);
+  const rows = [];
+  for (let offset = 0; ; offset += OPTIONS_PAGE_SIZE) {
+    const page = await restQuery(
+      `${TABLE}?select=account,category&order=id.asc&limit=${OPTIONS_PAGE_SIZE}&offset=${offset}`,
+      { method: "GET" },
+    );
+    if (!Array.isArray(page) || !page.length) break;
+    rows.push(...page);
+    if (page.length < OPTIONS_PAGE_SIZE) break;
+  }
   return {
-    accounts: uniqueValues(accountRows, "account"),
-    categories: uniqueValues(categoryRows, "category"),
+    accounts: uniqueValues(rows, "account"),
+    categories: uniqueValues(rows, "category"),
   };
 }
 
