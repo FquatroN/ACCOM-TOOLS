@@ -15,6 +15,10 @@
     <script defer src="config.js"></script>
     <script defer src="auth-guard.js"></script>
     <script defer src="gate.js"></script>
+    <script type="module">
+      import { injectSpeedInsights } from 'https://cdn.jsdelivr.net/npm/@vercel/speed-insights@1/dist/index.mjs';
+      injectSpeedInsights();
+    </script>
     <style>
       :root {
         --bg-1: #fff9ef;
