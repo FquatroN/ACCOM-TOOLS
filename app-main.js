@@ -31470,7 +31470,10 @@ function agodaPlainLine(value) {
 }
 
 function isAgodaRatingLine(value) {
-  return /^\d{1,2}(?:[.,]\d+)?\s*(?:excellent|exceptional|very good|good|satisfactory|pleasant|average|poor|bad)\b/i.test(agodaPlainLine(value));
+  const line = agodaPlainLine(value);
+  if (/^\d{1,2}(?:[.,]\d+)?\s*(?:excellent|exceptional|very good|good|satisfactory|pleasant|average|poor|bad)\b/i.test(line)) return true;
+  const numericScore = normalizeNumber(line);
+  return /^\d{1,2}(?:[.,]\d+)?$/.test(line) && numericScore !== null && numericScore >= 0 && numericScore <= 10;
 }
 
 function splitAgodaReviewBlocks(text) {

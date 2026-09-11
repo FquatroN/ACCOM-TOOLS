@@ -183,3 +183,20 @@ test("Agoda pasted review text parses the supplied five-review format", () => {
   assert.equal(rows[3].reviewDate, "2026-07-27");
   assert.equal(rows[4].title, "Very good");
 });
+
+test("Agoda pasted review text accepts a score label split onto the next clipboard line", () => {
+  const rows = agodaParser()(`8.4
+Excellent
+Farman from Spain
+Solo traveler
+1 Person in 10-Bed Dormitory - Mixed
+Stayed 1 night in September 2026
+“Satisfactory services and nice place to stay”
+During my stay the overall services was satisfactory.
+Reviewed September 06, 2026`, "pasted Agoda reviews");
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].ratingRaw, 8.4);
+  assert.equal(rows[0].reviewerName, "Farman");
+  assert.equal(rows[0].reviewDate, "2026-09-06");
+});
