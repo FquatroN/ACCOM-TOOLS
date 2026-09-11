@@ -9,6 +9,7 @@ const DEFAULT_REVIEW_SOURCES = [
   { key: "booking", label: "Booking.com", active: true },
   { key: "hostelworld", label: "Hostelworld", active: true },
   { key: "expedia", label: "Expedia", active: true },
+  { key: "agoda", label: "Agoda", active: true },
   { key: "airbnb", label: "Airbnb", active: true },
   { key: "vrbo", label: "VRBO", active: true },
   { key: "tripadvisor", label: "Tripadvisor", active: true },
@@ -31202,6 +31203,7 @@ function parseReviewPastedText(text, source) {
   if (sourceKey === "airbnb") return extractAirbnbReviewCandidatesFromText(text, "pasted Airbnb reviews");
   if (sourceKey === "vrbo") return extractVrboReviewCandidatesFromText(text, "pasted VRBO reviews");
   if (sourceKey === "tripadvisor") return extractTripadvisorReviewCandidatesFromText(text, "pasted Tripadvisor reviews");
+  if (sourceKey === "agoda") return extractAgodaReviewCandidatesFromText(text, "pasted Agoda reviews");
   if (!window.XLSX) throw new Error("Spreadsheet parser not available.");
   const workbook = XLSX.read(text, { type: "string", raw: false });
   const rows = [];
@@ -31463,6 +31465,93 @@ function extractVrboReviewCandidatesFromText(text, fileName) {
   return blocks.map((block) => parseVrboReviewBlock(block, fileName)).filter(Boolean);
 }
 
+function agodaPlainLine(value) {
+  return clean(value).replace(/^\d+\.\s+/, "").replace(/^#{1,6}\s*/, "").replace(/\*\*/g, "").trim();
+}
+
+function isAgodaRatingLine(value) {
+  return /^\d{1,2}(?:[.,]\d+)?\s*(?:excellent|exceptional|very good|good|satisfactory|pleasant|average|poor|bad)\b/i.test(agodaPlainLine(value));
+}
+
+function splitAgodaReviewBlocks(text) {
+  const blocks = [];
+  let current = [];
+  String(text ?? "").replace(/\r/g, "\n").split("\n").forEach((line) => {
+    if (isAgodaRatingLine(line) && current.some((item) => /^Reviewed\s+/i.test(agodaPlainLine(item)))) {
+      blocks.push(current.join("\n"));
+      current = [];
+    }
+    current.push(line);
+  });
+  if (current.length) blocks.push(current.join("\n"));
+  return blocks.filter((block) => {
+    const firstMeaningfulLine = block.split("\n").find((line) => agodaPlainLine(line));
+    return isAgodaRatingLine(firstMeaningfulLine) && /\bReviewed\s+/i.test(block);
+  });
+}
+
+function isAgodaStayDetailLine(line) {
+  return /^(solo traveler|couple|group|business traveler|family with young children|family with older children)$/i.test(line)
+    || /^\d+\s+person\b/i.test(line)
+    || /^Stayed\s+\d+\s+nights?\b/i.test(line);
+}
+
+function agodaSourceReviewId(reviewerName, reviewDate, title) {
+  const slug = (value) => clean(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return [slug(reviewerName), clean(reviewDate), slug(title)].filter(Boolean).join(":");
+}
+
+function parseAgodaReviewBlock(block, fileName) {
+  const lines = block.split("\n").map(agodaPlainLine).filter(Boolean);
+  const ratingIndex = lines.findIndex(isAgodaRatingLine);
+  const reviewedIndex = lines.findIndex((line, index) => index > ratingIndex && /^Reviewed\s+/i.test(line));
+  if (ratingIndex === -1 || reviewedIndex === -1) return null;
+
+  const ratingRaw = normalizeNumber(lines[ratingIndex].match(/^\d+(?:[.,]\d+)?/)?.[0]);
+  const reviewerIndex = lines.findIndex((line, index) => index > ratingIndex && /\s+from\s+/i.test(line));
+  const reviewerMatch = clean(lines[reviewerIndex]).match(/^(.*?)\s+from\s+(.+)$/i);
+  const reviewerName = clean(reviewerMatch?.[1]) || "Agoda guest";
+  const reviewerCountry = clean(reviewerMatch?.[2]);
+  const titleIndex = lines.findIndex((line, index) => index > ratingIndex && /[“\"](.+?)[”\"]/.test(line));
+  const titleMatch = clean(lines[titleIndex]).match(/[“\"](.+?)[”\"]/);
+  const title = clean(titleMatch?.[1]) || "Agoda review";
+  const body = clean(lines.slice(titleIndex + 1, reviewedIndex).filter((line) => !isAgodaStayDetailLine(line)).join("\n"));
+  const reviewDate = normalizeDate(lines[reviewedIndex].replace(/^Reviewed\s+/i, ""));
+  const warnings = [clean(fileName).toLowerCase().includes("pasted") ? "agoda_text" : "ocr", ...(clean(fileName).toLowerCase().includes("pasted") ? [] : ["agoda_screenshot"])];
+  if (!body) warnings.push("missing_body");
+  if (!reviewDate) warnings.push("missing_date");
+  if (ratingRaw === null) warnings.push("missing_rating");
+
+  return {
+    source: "agoda",
+    sourceReviewId: agodaSourceReviewId(reviewerName, reviewDate, title),
+    sourceReservationId: "",
+    reviewDate,
+    reviewerName,
+    reviewerCountry,
+    language: "",
+    ratingRaw,
+    ratingScale: 10,
+    title,
+    positiveReviewText: "",
+    negativeReviewText: "",
+    body,
+    subscores: {},
+    hostReplyText: "",
+    hostReplyDate: "",
+    rawText: block,
+    parseConfidence: ratingRaw !== null && reviewDate && body ? 0.9 : 0.72,
+    warningFlags: warnings,
+    isValid: ratingRaw !== null && Boolean(reviewDate),
+    selectedForImport: true,
+    rawPayload: { fileName, text: block },
+  };
+}
+
+function extractAgodaReviewCandidatesFromText(text, fileName) {
+  return splitAgodaReviewBlocks(text).map((block) => parseAgodaReviewBlock(block, fileName)).filter(Boolean);
+}
+
 function splitVrboReviewBlocks(text) {
   return clean(text)
     .replace(/\r/g, "\n")
@@ -31634,6 +31723,7 @@ function estimatePastedReviewCount(text, source) {
   if (sourceKey === "vrbo") return splitVrboReviewBlocks(text).length;
   if (sourceKey === "airbnb") return estimateAirbnbCardCount(text);
   if (sourceKey === "tripadvisor") return splitTripadvisorReviewBlocks(text).length;
+  if (sourceKey === "agoda") return splitAgodaReviewBlocks(text).length;
   return 0;
 }
 
@@ -31651,6 +31741,10 @@ function extractReviewCandidatesFromText(text, source, fileName) {
   if (normalizeReviewSourceKey(source) === "airbnb") {
     const airbnbRows = extractAirbnbReviewCandidatesFromText(text, fileName);
     if (airbnbRows.length) return airbnbRows;
+  }
+  if (normalizeReviewSourceKey(source) === "agoda") {
+    const agodaRows = extractAgodaReviewCandidatesFromText(text, fileName);
+    if (agodaRows.length) return agodaRows;
   }
   const blocks = text
     .split(/\n{2,}/)
@@ -31834,6 +31928,7 @@ function reviewSourceLabel(source) {
   if (raw === "hostelworld") return "Hostelworld";
   if (raw === "expedia") return "Expedia";
   if (raw === "hotels") return "Expedia";
+  if (raw === "agoda") return "Agoda";
   if (raw === "airbnb") return "Airbnb";
   if (raw === "vrbo") return "VRBO";
   if (raw === "tripadvisor") return "Tripadvisor";
@@ -31862,6 +31957,7 @@ function reviewSourceIconDomain(source) {
   if (raw === "booking") return "booking.com";
   if (raw === "hostelworld") return "hostelworld.com";
   if (raw === "expedia" || raw === "hotels") return "expedia.com";
+  if (raw === "agoda") return "agoda.com";
   if (raw === "airbnb") return "airbnb.com";
   if (raw === "vrbo") return "vrbo.com";
   if (raw === "tripadvisor") return "tripadvisor.com";
@@ -31966,6 +32062,7 @@ function normalizeReviewSourceKey(value) {
   const raw = clean(value).toLowerCase();
   if (raw.includes("booking")) return "booking";
   if (raw.includes("hostelworld")) return "hostelworld";
+  if (raw.includes("agoda")) return "agoda";
   if (raw.includes("travelocity")) return "expedia";
   if (raw.includes("expedia") || raw.includes("hotel")) return "expedia";
   if (raw.includes("airbnb")) return "airbnb";
@@ -31979,6 +32076,7 @@ function inferRatingScale(source, ratingRaw) {
   const raw = clean(source).toLowerCase();
   if (raw === "booking") return 10;
   if (raw === "hostelworld") return 10;
+  if (raw === "agoda") return 10;
   if (raw === "hotels") return 10;
   if (raw === "airbnb") return ratingRaw && ratingRaw > 5 ? 10 : 5;
   if (raw === "vrbo") return 10;

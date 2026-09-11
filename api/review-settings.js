@@ -4,6 +4,7 @@ const DEFAULT_SOURCES = [
   { key: "booking", label: "Booking.com", active: true },
   { key: "hostelworld", label: "Hostelworld", active: true },
   { key: "expedia", label: "Expedia", active: true },
+  { key: "agoda", label: "Agoda", active: true },
   { key: "airbnb", label: "Airbnb", active: true },
   { key: "vrbo", label: "VRBO", active: true },
   { key: "tripadvisor", label: "Tripadvisor", active: true },
