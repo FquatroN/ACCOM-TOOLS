@@ -31966,6 +31966,7 @@ function normalizeReviewSourceKey(value) {
   const raw = clean(value).toLowerCase();
   if (raw.includes("booking")) return "booking";
   if (raw.includes("hostelworld")) return "hostelworld";
+  if (raw.includes("travelocity")) return "expedia";
   if (raw.includes("expedia") || raw.includes("hotel")) return "expedia";
   if (raw.includes("airbnb")) return "airbnb";
   if (raw.includes("vrbo") || raw.includes("homeaway")) return "vrbo";
