@@ -31519,7 +31519,9 @@ function parseAgodaReviewBlock(block, fileName) {
   const titleMatch = clean(lines[titleIndex]).match(/[“\"](.+?)[”\"]/);
   const title = clean(titleMatch?.[1]) || "Agoda review";
   const body = clean(lines.slice(titleIndex + 1, reviewedIndex).filter((line) => !isAgodaStayDetailLine(line)).join("\n"));
-  const reviewDate = normalizeDate(lines[reviewedIndex].replace(/^Reviewed\s+/i, ""));
+  const reviewedText = clean(lines[reviewedIndex].replace(/^Reviewed\s+/i, ""));
+  const explicitReviewDate = reviewedText.match(/\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},\s+\d{4}\b/i)?.[0];
+  const reviewDate = normalizeDate(explicitReviewDate || reviewedText);
   const warnings = [clean(fileName).toLowerCase().includes("pasted") ? "agoda_text" : "ocr", ...(clean(fileName).toLowerCase().includes("pasted") ? [] : ["agoda_screenshot"])];
   if (!body) warnings.push("missing_body");
   if (!reviewDate) warnings.push("missing_date");

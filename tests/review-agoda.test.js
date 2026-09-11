@@ -200,3 +200,17 @@ Reviewed September 06, 2026`, "pasted Agoda reviews");
   assert.equal(rows[0].reviewerName, "Farman");
   assert.equal(rows[0].reviewDate, "2026-09-06");
 });
+
+test("Agoda pasted review text ignores the Translate label appended to a review date", () => {
+  const rows = agodaParser()(`9.2Exceptional
+Andrei
+Solo traveler
+1 Person in 4-Bed Dormitory - Mixed
+Stayed 3 nights in December 2023
+“Great place to stay”
+It's really a nice place.
+Reviewed December 17, 2023 Translate`, "pasted Agoda reviews");
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].reviewDate, "2023-12-17");
+});
