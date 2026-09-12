@@ -102,3 +102,22 @@ test("Review Snapshot source selector defaults to all and returns the requested 
   assert.deepEqual(sourceSummaryForProperty(summary, "cruz"), [{ source: "expedia" }]);
   assert.deepEqual(sourceSummaryForProperty(summary, "unknown"), [{ source: "agoda" }]);
 });
+
+test("Review Snapshot property selector does not trigger the clickable card navigation", async () => {
+  const state = { reviewScreen: "list" };
+  const calls = [];
+  const onCardClick = new Function("state", "setView", "setReviewScreen", `async ${appFunctionSource("onSidebarReviewSummaryCardClick")}\nreturn onSidebarReviewSummaryCardClick;`)(
+    state,
+    async (view) => calls.push(`view:${view}`),
+    (screen) => calls.push(`screen:${screen}`),
+  );
+
+  await onCardClick({ target: { closest: (selector) => selector === "[data-sidebar-review-source-property]" ? {} : null } });
+  assert.deepEqual(calls, []);
+  assert.equal(state.reviewScreen, "list");
+
+  await onCardClick({ target: { closest: () => null } });
+  assert.deepEqual(calls, ["view:reviews", "screen:resume"]);
+  assert.equal(state.reviewScreen, "resume");
+  assert.doesNotMatch(appMain, /<span class="sr-only">Property for source averages<\/span>/);
+});

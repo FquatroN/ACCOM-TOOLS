@@ -2788,11 +2788,7 @@ function bindEvents() {
   els.navHours.addEventListener("click", () => setView("hours"));
   els.navBakery.addEventListener("click", () => setView("bakery"));
   els.navLaundry.addEventListener("click", () => setView("laundry"));
-  els.sidebarReviewSummaryCard?.addEventListener("click", async () => {
-    state.reviewScreen = "resume";
-    await setView("reviews");
-    setReviewScreen("resume");
-  });
+  els.sidebarReviewSummaryCard?.addEventListener("click", onSidebarReviewSummaryCardClick);
   els.mobileMenuToggle?.addEventListener("click", toggleMobileNav);
   els.openBackoffice?.addEventListener("click", openBackofficeHome);
   els.openBusinessIntelligence?.addEventListener("click", openBusinessIntelligenceHome);
@@ -32228,6 +32224,13 @@ function onSidebarReviewSourcePropertyChange(event) {
   renderSidebarReviewSummary();
 }
 
+async function onSidebarReviewSummaryCardClick(event) {
+  if (event.target.closest("[data-sidebar-review-source-property]")) return;
+  state.reviewScreen = "resume";
+  await setView("reviews");
+  setReviewScreen("resume");
+}
+
 function renderSidebarReviewSummary() {
   if (!els.sidebarReviewSummaryCard || !els.sidebarReviewSummaryBody || !els.sidebarReviewSummaryStatus) return;
   if (!canApp("communications")) {
@@ -32262,14 +32265,13 @@ function renderSidebarReviewSummary() {
     <div class="sidebar-summary-source-section">
       <div class="sidebar-summary-source-header">
         <div class="sidebar-summary-source-title">Source averages</div>
-        <label class="sidebar-summary-source-filter">
-          <span class="sr-only">Property for source averages</span>
+        <div class="sidebar-summary-source-filter">
           <select data-sidebar-review-source-property aria-label="Property for source averages">
             <option value="all" ${sourceProperty === "all" ? "selected" : ""}>All</option>
             <option value="hostel" ${sourceProperty === "hostel" ? "selected" : ""}>Hostel</option>
             <option value="cruz" ${sourceProperty === "cruz" ? "selected" : ""}>Cruz</option>
           </select>
-        </label>
+        </div>
       </div>
       <div class="sidebar-summary-grid sidebar-summary-source-grid">
         <div class="sidebar-summary-grid-head">
