@@ -1073,6 +1073,7 @@ const state = {
   reviews: [],
   sidebarReviewSummary: null,
   sidebarReviewSummaryLoaded: false,
+  sidebarReviewSourceProperty: "all",
   reviewProperties: [],
   reviewImportRuns: [],
   reviewStagingRows: [],
@@ -3459,6 +3460,7 @@ function bindEvents() {
   els.reviewsPrevPage.addEventListener("click", () => setReviewListPage(state.reviewListPage - 1));
   els.reviewsNextPage.addEventListener("click", () => setReviewListPage(state.reviewListPage + 1));
   els.reviewsParseUpload.addEventListener("click", parseReviewUploads);
+  els.sidebarReviewSummaryBody.addEventListener("change", onSidebarReviewSourcePropertyChange);
   els.reviewsImportFiles.addEventListener("change", renderReviewImportFileSummary);
   els.reviewsBrowseFiles.addEventListener("click", () => els.reviewsImportFiles.click());
   els.reviewsImportDropzone.addEventListener("click", () => els.reviewsImportDropzone.focus());
@@ -32212,6 +32214,20 @@ function renderSidebarReviewSummaryAverage(value, count) {
   return `${renderSidebarReviewSummaryValue(value)}<small class="sidebar-summary-review-count">(${escape(String(numericCount))})</small>`;
 }
 
+function sourceSummaryForProperty(summary, property = "all") {
+  const key = ["hostel", "cruz"].includes(clean(property).toLowerCase()) ? clean(property).toLowerCase() : "all";
+  const rows = summary?.sourceSummaries?.[key];
+  if (Array.isArray(rows)) return rows;
+  return key === "all" && Array.isArray(summary?.sources) ? summary.sources : [];
+}
+
+function onSidebarReviewSourcePropertyChange(event) {
+  const select = event.target.closest("[data-sidebar-review-source-property]");
+  if (!select) return;
+  state.sidebarReviewSourceProperty = ["hostel", "cruz"].includes(clean(select.value).toLowerCase()) ? clean(select.value).toLowerCase() : "all";
+  renderSidebarReviewSummary();
+}
+
 function renderSidebarReviewSummary() {
   if (!els.sidebarReviewSummaryCard || !els.sidebarReviewSummaryBody || !els.sidebarReviewSummaryStatus) return;
   if (!canApp("communications")) {
@@ -32231,7 +32247,8 @@ function renderSidebarReviewSummary() {
   const hostel = summary.properties?.hostel || {};
   const cruz = summary.properties?.cruz || {};
   const overall = summary.properties?.overall || {};
-  const sources = Array.isArray(summary.sources) ? summary.sources : [];
+  const sourceProperty = ["hostel", "cruz"].includes(state.sidebarReviewSourceProperty) ? state.sidebarReviewSourceProperty : "all";
+  const sources = sourceSummaryForProperty(summary, sourceProperty);
   const sourceRows = sources
     .sort((a, b) => reviewSourceLabel(a.source).localeCompare(reviewSourceLabel(b.source)))
     .map((source) => `
@@ -32243,7 +32260,17 @@ function renderSidebarReviewSummary() {
     .join("");
   const sourceSummaryMarkup = sourceRows ? `
     <div class="sidebar-summary-source-section">
-      <div class="sidebar-summary-source-title">Source averages</div>
+      <div class="sidebar-summary-source-header">
+        <div class="sidebar-summary-source-title">Source averages</div>
+        <label class="sidebar-summary-source-filter">
+          <span class="sr-only">Property for source averages</span>
+          <select data-sidebar-review-source-property aria-label="Property for source averages">
+            <option value="all" ${sourceProperty === "all" ? "selected" : ""}>All</option>
+            <option value="hostel" ${sourceProperty === "hostel" ? "selected" : ""}>Hostel</option>
+            <option value="cruz" ${sourceProperty === "cruz" ? "selected" : ""}>Cruz</option>
+          </select>
+        </label>
+      </div>
       <div class="sidebar-summary-grid sidebar-summary-source-grid">
         <div class="sidebar-summary-grid-head">
           <span class="sidebar-summary-head-label">Source</span>

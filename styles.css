@@ -207,9 +207,22 @@ body {
 }
 
 .sidebar-summary-source-title {
-  margin-bottom: 0.34rem;
   font-size: 0.7rem;
   font-weight: 700;
+}
+
+.sidebar-summary-source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin-bottom: 0.34rem;
+}
+
+.sidebar-summary-source-filter select {
+  min-height: 1.65rem;
+  padding: 0.08rem 0.3rem;
+  font-size: 0.66rem;
 }
 
 .sidebar-summary-source-icon {

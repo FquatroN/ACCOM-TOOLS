@@ -79,7 +79,11 @@ module.exports = async function handler(req, res) {
       hostel: { current: [], previous: [] },
       cruz: { current: [], previous: [] },
     };
-    const sourceBuckets = new Map();
+    const sourceBuckets = {
+      all: new Map(),
+      hostel: new Map(),
+      cruz: new Map(),
+    };
 
     rows.forEach((row) => {
       const key = propertyBucket(row?.properties?.name);
@@ -94,11 +98,28 @@ module.exports = async function handler(req, res) {
 
       const source = cleanText(row?.source).toLowerCase();
       if (!source) return;
-      const sourceBucket = sourceBuckets.get(source) || { last2Months: [], last6Months: [] };
-      if (reviewDate >= last2MonthsStart && reviewDate < nextStart) sourceBucket.last2Months.push(rating);
-      if (reviewDate >= last6MonthsStart && reviewDate < nextStart) sourceBucket.last6Months.push(rating);
-      sourceBuckets.set(source, sourceBucket);
+      const sourceScopes = [sourceBuckets.all];
+      if (key) sourceScopes.push(sourceBuckets[key]);
+      sourceScopes.forEach((scope) => {
+        const sourceBucket = scope.get(source) || { last2Months: [], last6Months: [] };
+        if (reviewDate >= last2MonthsStart && reviewDate < nextStart) sourceBucket.last2Months.push(rating);
+        if (reviewDate >= last6MonthsStart && reviewDate < nextStart) sourceBucket.last6Months.push(rating);
+        scope.set(source, sourceBucket);
+      });
     });
+
+    const sourceSummaries = Object.fromEntries(Object.entries(sourceBuckets).map(([scope, bucketsBySource]) => [
+      scope,
+      Array.from(bucketsBySource.entries())
+        .map(([source, bucket]) => ({
+          source,
+          last2MonthsAverage: average(bucket.last2Months),
+          last6MonthsAverage: average(bucket.last6Months),
+          last2MonthsCount: bucket.last2Months.length,
+          last6MonthsCount: bucket.last6Months.length,
+        }))
+        .sort((a, b) => a.source.localeCompare(b.source)),
+    ]));
 
     res.status(200).json({
       summary: {
@@ -128,15 +149,8 @@ module.exports = async function handler(req, res) {
             previousCount: buckets.hostel.previous.length + buckets.cruz.previous.length,
           },
         },
-        sources: Array.from(sourceBuckets.entries())
-          .map(([source, bucket]) => ({
-            source,
-            last2MonthsAverage: average(bucket.last2Months),
-            last6MonthsAverage: average(bucket.last6Months),
-            last2MonthsCount: bucket.last2Months.length,
-            last6MonthsCount: bucket.last6Months.length,
-          }))
-          .sort((a, b) => a.source.localeCompare(b.source)),
+        sources: sourceSummaries.all,
+        sourceSummaries,
       },
     });
   } catch (error) {
