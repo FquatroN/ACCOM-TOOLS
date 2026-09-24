@@ -10,6 +10,7 @@ const {
   validateAttachmentBundle,
 } = require("../api/_financial-docs-supplier-emails");
 const { buildSupplierPeriodDocumentsPath } = require("../api/_financial-docs-supplier-email-service");
+const { sendSupplierInvoiceEmail } = require("../api/_financial-docs-supplier-email-automation");
 
 test("normalizes one supplier schedule and rejects invalid values", () => {
   assert.deepEqual(
@@ -90,4 +91,30 @@ test("supplier-period lookup uses supplier identity and document date only, not 
   assert.match(path, /document_date=gte\.2026-09-01/);
   assert.match(path, /document_date=lte\.2026-09-30/);
   assert.doesNotMatch(path, /status=/);
+});
+
+test("sends the configured invoice email with stable Resend idempotency", async () => {
+  let request;
+  const result = await sendSupplierInvoiceEmail({
+    schedule: { id: "schedule-1", recipients: ["a@example.com"], subject: "Invoices" },
+    period: { key: "2026-09" },
+    html: "<p>Invoices</p>",
+    text: "Invoices",
+    attachments: [{ filename: "invoice.pdf", content: Buffer.from("pdf").toString("base64") }],
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return { ok: true, json: async () => ({ id: "resend-1" }) };
+    },
+    env: { RESEND_API_KEY: "key", EMAIL_FROM: "from@example.com" },
+  });
+  assert.equal(result.id, "resend-1");
+  assert.equal(request.options.headers["Idempotency-Key"], "financial-document-supplier-email/schedule-1/2026-09");
+  assert.equal(JSON.parse(request.options.body).subject, "Invoices");
+});
+
+test("Financial Documents settings exposes the Supplier Emails configuration tab", () => {
+  const html = readFileSync("index.html", "utf8");
+  assert.match(html, /id="financial-docs-settings-supplier-emails-tab"/);
+  assert.match(html, /id="financial-docs-settings-supplier-email-subject"/);
+  assert.match(html, /id="financial-docs-settings-supplier-emails-body"/);
 });

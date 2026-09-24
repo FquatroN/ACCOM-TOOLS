@@ -1247,6 +1247,7 @@ const state = {
   financialDocsLoadRequestId: 0,
   financialDocEntitiesLoaded: false,
   financialDocsSettingsLoaded: false,
+  financialDocsSupplierEmailSchedules: [],
   financialDocsSettingsTab: "attributes",
   financialDocsScreen: "list",
   financialDocsFiltersInitialized: false,
@@ -1958,9 +1959,18 @@ const els = {
   financialDocsSettingsAttributesTab: document.getElementById("financial-docs-settings-attributes-tab"),
   financialDocsSettingsRulesTab: document.getElementById("financial-docs-settings-rules-tab"),
   financialDocsSettingsDriveTab: document.getElementById("financial-docs-settings-drive-tab"),
+  financialDocsSettingsSupplierEmailsTab: document.getElementById("financial-docs-settings-supplier-emails-tab"),
   financialDocsSettingsAttributesPanel: document.getElementById("financial-docs-settings-attributes-panel"),
   financialDocsSettingsRulesPanel: document.getElementById("financial-docs-settings-rules-panel"),
   financialDocsSettingsDrivePanel: document.getElementById("financial-docs-settings-drive-panel"),
+  financialDocsSettingsSupplierEmailsPanel: document.getElementById("financial-docs-settings-supplier-emails-panel"),
+  financialDocsSettingsSupplierEmailSupplier: document.getElementById("financial-docs-settings-supplier-email-supplier"),
+  financialDocsSettingsSupplierEmailDay: document.getElementById("financial-docs-settings-supplier-email-day"),
+  financialDocsSettingsSupplierEmailSubject: document.getElementById("financial-docs-settings-supplier-email-subject"),
+  financialDocsSettingsSupplierEmailRecipients: document.getElementById("financial-docs-settings-supplier-email-recipients"),
+  financialDocsSettingsSupplierEmailEnabled: document.getElementById("financial-docs-settings-supplier-email-enabled"),
+  financialDocsSettingsSupplierEmailAdd: document.getElementById("financial-docs-settings-supplier-email-add"),
+  financialDocsSettingsSupplierEmailsBody: document.getElementById("financial-docs-settings-supplier-emails-body"),
   financialDocsSaveSettings: document.getElementById("financial-docs-save-settings"),
   financialDocsSettingsCc: document.getElementById("financial-docs-settings-cc"),
   financialDocsSettingsPayment: document.getElementById("financial-docs-settings-payment"),
@@ -2995,6 +3005,9 @@ function bindEvents() {
   els.financialDocsSettingsAttributesTab?.addEventListener("click", () => setFinancialDocsSettingsTab("attributes"));
   els.financialDocsSettingsRulesTab?.addEventListener("click", () => setFinancialDocsSettingsTab("rules"));
   els.financialDocsSettingsDriveTab?.addEventListener("click", () => setFinancialDocsSettingsTab("drive"));
+  els.financialDocsSettingsSupplierEmailsTab?.addEventListener("click", () => setFinancialDocsSettingsTab("supplier-emails"));
+  els.financialDocsSettingsSupplierEmailAdd?.addEventListener("click", saveFinancialDocsSupplierEmailSchedule);
+  els.financialDocsSettingsSupplierEmailsBody?.addEventListener("click", onFinancialDocsSupplierEmailAction);
   els.financialDocsSaveSettings?.addEventListener("click", saveFinancialDocsSettings);
   els.financialDocsSettingsRulesBody?.addEventListener("click", onFinancialDocRulesAction);
   els.financialDocsSettingsRulesBody?.addEventListener("input", onFinancialDocRulesInput);
@@ -27789,6 +27802,7 @@ function renderFinancialDocsSettingsTabs() {
   const isAttributes = state.financialDocsSettingsTab === "attributes";
   const isRules = state.financialDocsSettingsTab === "rules";
   const isDrive = state.financialDocsSettingsTab === "drive";
+  const isSupplierEmails = state.financialDocsSettingsTab === "supplier-emails";
   if (els.financialDocsSettingsAttributesTab) {
     els.financialDocsSettingsAttributesTab.classList.toggle("active-tab", isAttributes);
     els.financialDocsSettingsAttributesTab.classList.toggle("ghost", !isAttributes);
@@ -27801,14 +27815,58 @@ function renderFinancialDocsSettingsTabs() {
     els.financialDocsSettingsDriveTab.classList.toggle("active-tab", isDrive);
     els.financialDocsSettingsDriveTab.classList.toggle("ghost", !isDrive);
   }
+  if (els.financialDocsSettingsSupplierEmailsTab) {
+    els.financialDocsSettingsSupplierEmailsTab.classList.toggle("active-tab", isSupplierEmails);
+    els.financialDocsSettingsSupplierEmailsTab.classList.toggle("ghost", !isSupplierEmails);
+  }
   if (els.financialDocsSettingsAttributesPanel) els.financialDocsSettingsAttributesPanel.hidden = !isAttributes;
   if (els.financialDocsSettingsRulesPanel) els.financialDocsSettingsRulesPanel.hidden = !isRules;
   if (els.financialDocsSettingsDrivePanel) els.financialDocsSettingsDrivePanel.hidden = !isDrive;
+  if (els.financialDocsSettingsSupplierEmailsPanel) els.financialDocsSettingsSupplierEmailsPanel.hidden = !isSupplierEmails;
 }
 
 function setFinancialDocsSettingsTab(tab) {
-  state.financialDocsSettingsTab = tab === "drive" ? "drive" : tab === "rules" ? "rules" : "attributes";
+  state.financialDocsSettingsTab = ["attributes", "rules", "drive", "supplier-emails"].includes(tab) ? tab : "attributes";
   renderFinancialDocsSettingsTabs();
+  if (state.financialDocsSettingsTab === "supplier-emails") loadFinancialDocsSupplierEmailSchedules();
+}
+
+function renderFinancialDocsSupplierEmailSchedules() {
+  const entities = Array.isArray(state.financialDocEntities) ? state.financialDocEntities : [];
+  if (els.financialDocsSettingsSupplierEmailSupplier) {
+    const current = clean(els.financialDocsSettingsSupplierEmailSupplier.value);
+    els.financialDocsSettingsSupplierEmailSupplier.innerHTML = `<option value="">Select supplier</option>${entities.map((entity) => `<option value="${escape(clean(entity.nif))}" ${clean(entity.nif) === current ? "selected" : ""}>${escape(clean(entity.name))}</option>`).join("")}`;
+  }
+  if (!els.financialDocsSettingsSupplierEmailsBody) return;
+  const rows = Array.isArray(state.financialDocsSupplierEmailSchedules) ? state.financialDocsSupplierEmailSchedules : [];
+  els.financialDocsSettingsSupplierEmailsBody.innerHTML = rows.length ? rows.map((row) => `<tr><td>${escape(row.supplierName)}</td><td>${escape((row.recipients || []).join(", "))}</td><td>${escape(row.dayOfMonth)}</td><td>${escape(row.subject)}</td><td>${escape(row.lastRun?.status || "Not sent")}</td><td><button type="button" class="ghost" data-supplier-email-action="delete" data-supplier-email-id="${escape(row.id)}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6">No supplier email schedules configured.</td></tr>';
+}
+
+async function loadFinancialDocsSupplierEmailSchedules() {
+  try {
+    const result = await api("/api/financial-docs-supplier-email-schedules");
+    state.financialDocsSupplierEmailSchedules = Array.isArray(result?.rows) ? result.rows : [];
+    renderFinancialDocsSupplierEmailSchedules();
+  } catch (error) { setFinancialDocsSettingsStatus(`Supplier emails failed to load: ${error.message}`); }
+}
+
+async function saveFinancialDocsSupplierEmailSchedule() {
+  const supplierNif = clean(els.financialDocsSettingsSupplierEmailSupplier?.value);
+  const supplier = (state.financialDocEntities || []).find((entity) => clean(entity.nif) === supplierNif);
+  try {
+    await api("/api/financial-docs-supplier-email-schedules", { method: "POST", body: { supplierNif, supplierName: clean(supplier?.name), recipients: els.financialDocsSettingsSupplierEmailRecipients?.value, dayOfMonth: els.financialDocsSettingsSupplierEmailDay?.value, subject: els.financialDocsSettingsSupplierEmailSubject?.value, enabled: !!els.financialDocsSettingsSupplierEmailEnabled?.checked } });
+    if (els.financialDocsSettingsSupplierEmailRecipients) els.financialDocsSettingsSupplierEmailRecipients.value = "";
+    if (els.financialDocsSettingsSupplierEmailSubject) els.financialDocsSettingsSupplierEmailSubject.value = "";
+    await loadFinancialDocsSupplierEmailSchedules();
+    showToast("Supplier email schedule added.", "success");
+  } catch (error) { setFinancialDocsSettingsStatus(`Supplier email schedule failed: ${error.message}`); showToast(`Supplier email schedule failed: ${error.message}`, "error"); }
+}
+
+async function onFinancialDocsSupplierEmailAction(event) {
+  const button = event.target.closest("[data-supplier-email-action]");
+  if (!button || button.dataset.supplierEmailAction !== "delete") return;
+  try { await api(`/api/financial-docs-supplier-email-schedules?id=${encodeURIComponent(button.dataset.supplierEmailId)}`, { method: "DELETE", body: {} }); await loadFinancialDocsSupplierEmailSchedules(); showToast("Supplier email schedule deleted.", "success"); }
+  catch (error) { showToast(`Supplier email schedule delete failed: ${error.message}`, "error"); }
 }
 
 function renderFinancialDocsSettings() {
@@ -27826,6 +27884,7 @@ function renderFinancialDocsSettings() {
     loadFinancialDocRulesDraftFromSettings();
   }
   renderFinancialDocRulesSettings();
+  renderFinancialDocsSupplierEmailSchedules();
   setFinancialDocsDriveStatus(settings.drive.connected
     ? `Connected${settings.drive.connectedAt ? ` on ${formatDateTimeShort(settings.drive.connectedAt)}` : ""}.`
     : "Google Drive is not connected yet.");

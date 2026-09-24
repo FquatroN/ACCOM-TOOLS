@@ -382,6 +382,10 @@ never exposes the secret to browser code.
 The Reconciliation workbench calls the server-side `/api/reconciliation` route;
 it is available to users with the `financial-reconciliation` app feature.
 
+### Supplier invoice email schedules
+
+Financial Documents Settings includes a **Supplier Emails** tab. Each enabled supplier schedule runs at 09:00 Europe/Lisbon on its configured day and sends all document attachments whose `document_date` is in the previous calendar month. It requires the Financial Documents Google Drive connection plus `RESEND_API_KEY`, `EMAIL_FROM`, and `CRON_SECRET`. The service preflights the complete attachment pack, so it does not send a partial email when a file is missing or the Resend attachment limit would be exceeded.
+
 ## 4) Deploy online
 
 ### Option A: Netlify

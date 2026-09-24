@@ -118,13 +118,39 @@ async function deleteSupplierEmailSchedule(id) {
   await restQuery(`financial_document_supplier_email_schedules?id=eq.${encodeURIComponent(safeId)}`, { method: "DELETE" });
 }
 
+async function claimSupplierEmailRun({ scheduleId, periodStart, periodEnd, triggerType = "cron" }) {
+  return restQuery("rpc/claim_financial_document_supplier_email_run", {
+    method: "POST",
+    body: { p_schedule_id: scheduleId, p_period_start: periodStart, p_period_end: periodEnd, p_trigger_type: triggerType },
+  });
+}
+
+async function completeSupplierEmailRun({ runId, status, documents = [], attachmentCount = 0, attachmentRawBytes = 0, resendMessageId = "", errorCode = "", errorMessage = "", retryable = false }) {
+  return restQuery("rpc/complete_financial_document_supplier_email_run", {
+    method: "POST",
+    body: {
+      p_run_id: runId, p_status: status, p_document_snapshot: documents,
+      p_attachment_count: attachmentCount, p_attachment_raw_bytes: attachmentRawBytes,
+      p_resend_message_id: resendMessageId, p_error_code: errorCode,
+      p_error_message: errorMessage, p_retryable: retryable,
+    },
+  });
+}
+
+async function retrySupplierEmailRun(runId) {
+  return restQuery("rpc/retry_financial_document_supplier_email_run", { method: "POST", body: { p_run_id: runId } });
+}
+
 module.exports = {
   buildSupplierPeriodDocumentsPath,
+  claimSupplierEmailRun,
+  completeSupplierEmailRun,
   createSupplierEmailSchedule,
   deleteSupplierEmailSchedule,
   listSupplierEmailRuns,
   listSupplierEmailSchedules,
   listSupplierPeriodDocuments,
+  retrySupplierEmailRun,
   toClientRun,
   toClientSchedule,
   updateSupplierEmailSchedule,

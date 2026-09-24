@@ -2406,6 +2406,7 @@
                   <button id="financial-docs-settings-attributes-tab" type="button" class="active-tab">Attributes</button>
                   <button id="financial-docs-settings-rules-tab" type="button" class="ghost">Rules</button>
                   <button id="financial-docs-settings-drive-tab" type="button" class="ghost">Drive settings</button>
+                  <button id="financial-docs-settings-supplier-emails-tab" type="button" class="ghost">Supplier Emails</button>
                   <button id="financial-docs-save-settings" type="button" class="ghost">Save Configuration</button>
                 </div>
 
@@ -2489,6 +2490,20 @@
                   <p id="financial-docs-drive-status" class="auth-status"></p>
                   <p id="financial-docs-drive-redirect" class="field-hint"></p>
                   <p id="financial-docs-drive-client-id" class="field-hint"></p>
+                </section>
+
+                <section id="financial-docs-settings-supplier-emails-panel" class="settings-block" hidden>
+                  <div class="bar"><h3>Supplier invoice emails</h3></div>
+                  <div class="grid settings-grid">
+                    <label>Supplier<select id="financial-docs-settings-supplier-email-supplier"></select></label>
+                    <label>Day of the month<input id="financial-docs-settings-supplier-email-day" type="number" min="1" max="31" value="5" /></label>
+                    <label>Subject<input id="financial-docs-settings-supplier-email-subject" type="text" required /></label>
+                    <label class="settings-email-recipients">Emails<textarea id="financial-docs-settings-supplier-email-recipients" rows="2" placeholder="accounts@example.com, manager@example.com"></textarea></label>
+                    <label class="filter-checkbox"><span>Enabled</span><input id="financial-docs-settings-supplier-email-enabled" type="checkbox" checked /></label>
+                  </div>
+                  <div class="actions"><button id="financial-docs-settings-supplier-email-add" type="button" class="ghost">Add schedule</button></div>
+                  <div class="table-wrap compact-table-wrap"><table class="compact-table"><thead><tr><th>Supplier</th><th>Emails</th><th>Day</th><th>Subject</th><th>Last result</th><th>Action</th></tr></thead><tbody id="financial-docs-settings-supplier-emails-body"></tbody></table></div>
+                  <p class="field-hint">At 09:00 Lisbon time on the selected day, all documents dated in the previous calendar month are emailed as attachments.</p>
                 </section>
 
                 <p id="financial-docs-settings-status" class="auth-status"></p>
