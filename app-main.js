@@ -27839,7 +27839,7 @@ function renderFinancialDocsSupplierEmailSchedules() {
   }
   if (!els.financialDocsSettingsSupplierEmailsBody) return;
   const rows = Array.isArray(state.financialDocsSupplierEmailSchedules) ? state.financialDocsSupplierEmailSchedules : [];
-  els.financialDocsSettingsSupplierEmailsBody.innerHTML = rows.length ? rows.map((row) => `<tr><td>${escape(row.supplierName)}</td><td>${escape((row.recipients || []).join(", "))}</td><td>${escape(row.dayOfMonth)}</td><td>${escape(row.subject)}</td><td>${escape(row.lastRun?.status || "Not sent")}</td><td><button type="button" class="ghost" data-supplier-email-action="delete" data-supplier-email-id="${escape(row.id)}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6">No supplier email schedules configured.</td></tr>';
+  els.financialDocsSettingsSupplierEmailsBody.innerHTML = rows.length ? rows.map((row) => `<tr><td>${escape(row.supplierName)}</td><td>${escape((row.recipients || []).join(", "))}</td><td>${escape(row.dayOfMonth)}</td><td>${escape(row.subject)}</td><td>${escape(row.lastRun?.status || "Not sent")}</td><td><input type="email" data-supplier-email-test="${escape(row.id)}" placeholder="test@example.com" aria-label="Test email for ${escape(row.supplierName)}" /></td><td><button type="button" class="ghost" data-supplier-email-action="test" data-supplier-email-id="${escape(row.id)}">Send test</button> <button type="button" class="ghost" data-supplier-email-action="delete" data-supplier-email-id="${escape(row.id)}">Delete</button></td></tr>`).join("") : '<tr><td colspan="7">No supplier email schedules configured.</td></tr>';
 }
 
 async function loadFinancialDocsSupplierEmailSchedules() {
@@ -27864,8 +27864,23 @@ async function saveFinancialDocsSupplierEmailSchedule() {
 
 async function onFinancialDocsSupplierEmailAction(event) {
   const button = event.target.closest("[data-supplier-email-action]");
-  if (!button || button.dataset.supplierEmailAction !== "delete") return;
-  try { await api(`/api/financial-docs-supplier-email-schedules?id=${encodeURIComponent(button.dataset.supplierEmailId)}`, { method: "DELETE", body: {} }); await loadFinancialDocsSupplierEmailSchedules(); showToast("Supplier email schedule deleted.", "success"); }
+  if (!button) return;
+  const scheduleId = button.dataset.supplierEmailId;
+  if (button.dataset.supplierEmailAction === "test") {
+    const emailField = Array.from(els.financialDocsSettingsSupplierEmailsBody.querySelectorAll("[data-supplier-email-test]"))
+      .find((field) => field.dataset.supplierEmailTest === scheduleId);
+    const testEmail = clean(emailField?.value);
+    if (!testEmail) { showToast("Enter a test email address.", "error"); return; }
+    button.disabled = true;
+    try {
+      await api(`/api/financial-docs-supplier-email-schedules?action=test&id=${encodeURIComponent(scheduleId)}`, { method: "POST", body: { testEmail } });
+      showToast("Test invoice email sent.", "success");
+    } catch (error) { showToast(`Test invoice email failed: ${error.message}`, "error"); }
+    finally { button.disabled = false; }
+    return;
+  }
+  if (button.dataset.supplierEmailAction !== "delete") return;
+  try { await api(`/api/financial-docs-supplier-email-schedules?id=${encodeURIComponent(scheduleId)}`, { method: "DELETE", body: {} }); await loadFinancialDocsSupplierEmailSchedules(); showToast("Supplier email schedule deleted.", "success"); }
   catch (error) { showToast(`Supplier email schedule delete failed: ${error.message}`, "error"); }
 }
 

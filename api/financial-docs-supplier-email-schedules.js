@@ -5,6 +5,7 @@ const {
   listSupplierEmailSchedules,
   updateSupplierEmailSchedule,
 } = require("./_financial-docs-supplier-email-service");
+const { sendSupplierInvoiceTestEmail } = require("./_financial-docs-supplier-email-automation");
 
 module.exports = async function handler(req, res) {
   try {
@@ -15,6 +16,13 @@ module.exports = async function handler(req, res) {
     }
     const body = await parseBody(req);
     const id = cleanText(req.query?.id || body?.id);
+    if (req.method === "POST" && String(req.query?.action || "") === "test") {
+      const schedule = (await listSupplierEmailSchedules()).find((row) => row.id === id);
+      if (!schedule) { res.status(404).json({ error: "Supplier email schedule not found." }); return; }
+      const result = await sendSupplierInvoiceTestEmail({ schedule, recipient: body?.testEmail });
+      res.status(200).json({ ok: true, messageId: cleanText(result?.id) });
+      return;
+    }
     if (req.method === "POST") {
       res.status(200).json({ row: await createSupplierEmailSchedule(body) });
       return;

@@ -10,7 +10,7 @@ const {
   validateAttachmentBundle,
 } = require("../api/_financial-docs-supplier-emails");
 const { buildSupplierPeriodDocumentsPath } = require("../api/_financial-docs-supplier-email-service");
-const { sendSupplierInvoiceEmail } = require("../api/_financial-docs-supplier-email-automation");
+const { sendSupplierInvoiceEmail, sendSupplierInvoiceTestEmail } = require("../api/_financial-docs-supplier-email-automation");
 
 test("normalizes one supplier schedule and rejects invalid values", () => {
   assert.deepEqual(
@@ -112,9 +112,31 @@ test("sends the configured invoice email with stable Resend idempotency", async 
   assert.equal(JSON.parse(request.options.body).subject, "Invoices");
 });
 
+test("test invoice email sends the prior-month attachment pack only to its test recipient", async () => {
+  let request;
+  await sendSupplierInvoiceTestEmail({
+    schedule: { id: "schedule-1", supplierNif: "123", supplierName: "Supplier", recipients: ["real@example.com"], subject: "Invoices" },
+    recipient: "test@example.com",
+    now: new Date("2026-10-05T08:00:00Z"),
+    dependencies: {
+      listSupplierPeriodDocuments: async () => [{ id: "doc-1", document_date: "2026-09-03", supplier_name: "Supplier", description: "Invoice", amount: 10, drive_file_id: "drive-1", stored_filename: "invoice.pdf", mime_type: "application/pdf" }],
+      loadFinancialDocsSettings: async () => ({}),
+      refreshDriveAccessToken: async () => ({ accessToken: "drive-token" }),
+      downloadDriveFile: async () => ({ buffer: Buffer.from("pdf"), mimeType: "application/pdf" }),
+      fetchImpl: async (_url, options) => { request = options; return { ok: true, json: async () => ({ id: "test-message" }) }; },
+      env: { RESEND_API_KEY: "key", EMAIL_FROM: "from@example.com" },
+    },
+  });
+  const payload = JSON.parse(request.body);
+  assert.deepEqual(payload.to, ["test@example.com"]);
+  assert.equal(payload.attachments.length, 1);
+  assert.equal(request.headers["Idempotency-Key"], "financial-document-supplier-email/test/schedule-1/2026-09/test@example.com");
+});
+
 test("Financial Documents settings exposes the Supplier Emails configuration tab", () => {
   const html = readFileSync("index.html", "utf8");
   assert.match(html, /id="financial-docs-settings-supplier-emails-tab"/);
   assert.match(html, /id="financial-docs-settings-supplier-email-subject"/);
   assert.match(html, /id="financial-docs-settings-supplier-emails-body"/);
+  assert.match(readFileSync("app-main.js", "utf8"), /data-supplier-email-test/);
 });

@@ -11,7 +11,7 @@ function safeError(error) {
   return message.slice(0, 500);
 }
 
-async function sendSupplierInvoiceEmail({ schedule, period, html, text, attachments, fetchImpl = fetch, env = process.env }) {
+async function sendSupplierInvoiceEmail({ schedule, period, html, text, attachments, recipients = schedule.recipients, idempotencyKey = `financial-document-supplier-email/${schedule.id}/${period.key}`, fetchImpl = fetch, env = process.env }) {
   const apiKey = cleanText(env.RESEND_API_KEY);
   const rawFrom = cleanText(env.EMAIL_FROM);
   if (!apiKey || !rawFrom) throw new Error("Resend email configuration is incomplete.");
@@ -23,9 +23,9 @@ async function sendSupplierInvoiceEmail({ schedule, period, html, text, attachme
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "Idempotency-Key": `financial-document-supplier-email/${schedule.id}/${period.key}`,
+        "Idempotency-Key": idempotencyKey,
       },
-      body: JSON.stringify({ from, to: schedule.recipients, subject: schedule.subject, html, text, attachments }),
+      body: JSON.stringify({ from, to: recipients, subject: schedule.subject, html, text, attachments }),
     });
   } catch (error) {
     const uncertain = new Error(safeError(error));
@@ -48,19 +48,13 @@ function toSnapshot(document) {
   };
 }
 
-async function processSupplierEmailSchedule({ schedule, now = new Date(), triggerType = "cron", dependencies = {} }) {
-  const period = previousCalendarMonth(now, "Europe/Lisbon");
-  const claim = dependencies.claimSupplierEmailRun || claimSupplierEmailRun;
-  const complete = dependencies.completeSupplierEmailRun || completeSupplierEmailRun;
+async function loadSupplierInvoiceAttachments({ schedule, period, dependencies = {} }) {
   const listDocuments = dependencies.listSupplierPeriodDocuments || listSupplierPeriodDocuments;
-  const claimed = await claim({ scheduleId: schedule.id, periodStart: period.start, periodEnd: period.end, triggerType });
-  if (!claimed?.claimed) return { status: "already_processed", run: claimed?.run || null };
-  const runId = cleanText(claimed?.run?.id);
   const documents = await listDocuments({ supplierNif: schedule.supplierNif, periodStart: period.start, periodEnd: period.end });
   const snapshots = documents.map(toSnapshot);
-  if (!documents.length) return complete({ runId, status: "skipped", documents: snapshots });
+  if (!documents.length) { const error = new Error("There are no invoice documents for the previous calendar month."); error.code = "NO_DOCUMENTS"; error.documents = snapshots; throw error; }
   const missing = documents.filter((document) => !cleanText(document.drive_file_id));
-  if (missing.length) return complete({ runId, status: "failed", documents: snapshots, errorCode: "missing_attachment", errorMessage: `Missing attachment for ${missing.length} invoice document(s).`, retryable: true });
+  if (missing.length) { const error = new Error(`Missing attachment for ${missing.length} invoice document(s).`); error.code = "MISSING_ATTACHMENT"; error.documents = snapshots; throw error; }
   try {
     const settings = await (dependencies.loadFinancialDocsSettings || loadFinancialDocsSettings)();
     const access = await (dependencies.refreshDriveAccessToken || refreshDriveAccessToken)(settings);
@@ -71,13 +65,44 @@ async function processSupplierEmailSchedule({ schedule, now = new Date(), trigge
       if (!ALLOWED_ATTACHMENT_TYPES.has(mimeType)) throw new Error(`Unsupported attachment type: ${mimeType || "unknown"}.`);
       return { buffer: downloaded.buffer, filename: cleanText(document.stored_filename) || "invoice", contentType: mimeType };
     }));
-    const bundle = validateAttachmentBundle(files, SAFE_RAW_ATTACHMENT_BYTES);
+    return { snapshots, files, bundle: validateAttachmentBundle(files, SAFE_RAW_ATTACHMENT_BYTES) };
+  } catch (error) {
+    error.documents = snapshots;
+    throw error;
+  }
+}
+
+async function sendSupplierInvoiceTestEmail({ schedule, recipient, now = new Date(), dependencies = {} }) {
+  const testRecipient = cleanText(recipient).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testRecipient)) throw new Error("Enter a valid test email address.");
+  const period = previousCalendarMonth(now, "Europe/Lisbon");
+  const { snapshots, files } = await loadSupplierInvoiceAttachments({ schedule, period, dependencies });
+  const content = buildSupplierInvoiceEmail({ schedule, period, documents: snapshots });
+  return sendSupplierInvoiceEmail({
+    schedule, period, html: content.html, text: content.text,
+    attachments: files.map((file) => ({ filename: file.filename, content: file.buffer.toString("base64") })),
+    recipients: [testRecipient],
+    idempotencyKey: `financial-document-supplier-email/test/${schedule.id}/${period.key}/${testRecipient}`,
+    fetchImpl: dependencies.fetchImpl || fetch, env: dependencies.env || process.env,
+  });
+}
+
+async function processSupplierEmailSchedule({ schedule, now = new Date(), triggerType = "cron", dependencies = {} }) {
+  const period = previousCalendarMonth(now, "Europe/Lisbon");
+  const claim = dependencies.claimSupplierEmailRun || claimSupplierEmailRun;
+  const complete = dependencies.completeSupplierEmailRun || completeSupplierEmailRun;
+  const claimed = await claim({ scheduleId: schedule.id, periodStart: period.start, periodEnd: period.end, triggerType });
+  if (!claimed?.claimed) return { status: "already_processed", run: claimed?.run || null };
+  const runId = cleanText(claimed?.run?.id);
+  try {
+    const { snapshots, files, bundle } = await loadSupplierInvoiceAttachments({ schedule, period, dependencies });
     const content = buildSupplierInvoiceEmail({ schedule, period, documents: snapshots });
     const sent = await sendSupplierInvoiceEmail({ schedule, period, html: content.html, text: content.text, attachments: files.map((file) => ({ filename: file.filename, content: file.buffer.toString("base64") })), fetchImpl: dependencies.fetchImpl || fetch, env: dependencies.env || process.env });
     return complete({ runId, status: "sent", documents: snapshots, attachmentCount: bundle.count, attachmentRawBytes: bundle.rawBytes, resendMessageId: cleanText(sent?.id) });
   } catch (error) {
+    if (error?.code === "NO_DOCUMENTS") return complete({ runId, status: "skipped", documents: [] });
     const uncertain = error?.code === "TRANSPORT_UNCERTAIN";
-    return complete({ runId, status: uncertain ? "uncertain" : "failed", documents: snapshots, errorCode: uncertain ? "transport_uncertain" : cleanText(error?.code) || "delivery_failed", errorMessage: safeError(error), retryable: !uncertain });
+    return complete({ runId, status: uncertain ? "uncertain" : "failed", documents: error?.documents || [], errorCode: uncertain ? "transport_uncertain" : cleanText(error?.code) || "delivery_failed", errorMessage: safeError(error), retryable: !uncertain });
   }
 }
 
@@ -88,4 +113,4 @@ async function processDueSupplierEmailSchedules({ now = new Date(), dependencies
   return Promise.all(due.map((schedule) => process({ schedule, now, dependencies })));
 }
 
-module.exports = { ALLOWED_ATTACHMENT_TYPES, SAFE_RAW_ATTACHMENT_BYTES, processDueSupplierEmailSchedules, processSupplierEmailSchedule, sendSupplierInvoiceEmail };
+module.exports = { ALLOWED_ATTACHMENT_TYPES, SAFE_RAW_ATTACHMENT_BYTES, processDueSupplierEmailSchedules, processSupplierEmailSchedule, sendSupplierInvoiceEmail, sendSupplierInvoiceTestEmail };
