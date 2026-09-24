@@ -57,7 +57,7 @@ A unique supplier identity constraint prevents duplicate active configurations a
 An append-only delivery audit. Key fields:
 
 - `id`, `schedule_id`, `period_start`, `period_end`
-- `status`: `running`, `sent`, `failed`, or `skipped`
+- `status`: `running`, `sent`, `failed`, `skipped`, or `uncertain`
 - a snapshot of recipients and subject used for the run
 - selected document IDs and attachment metadata
 - attachment count and raw-byte total
@@ -94,9 +94,10 @@ An invoice pack is all-or-nothing. The service does not send a partial pack:
 - If any selected document lacks a Drive attachment, the run fails before sending and records the affected documents.
 - If a Drive download fails, the file is unsupported, or the bundle exceeds the safe attachment threshold, the run fails before sending and records the reason.
 - If Resend rejects the email, the run is marked failed with a sanitized provider error.
+- If the Resend request times out after submission, the run is marked uncertain rather than assumed failed. It may use the same idempotency key only within Resend's retention window; after that, the UI does not offer a duplicate-risk retry.
 - If no matching documents exist, the run is marked skipped and no empty email is sent.
 
-The settings tab surfaces the most recent result. A failed run may be retried explicitly after correction; successful runs remain immutable.
+The settings tab surfaces the most recent result. A failed run may be retried explicitly after correction when no Resend submission was accepted or its rejection was confirmed; uncertain and successful runs remain immutable.
 
 ## Security and observability
 
