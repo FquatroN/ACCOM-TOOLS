@@ -64,7 +64,7 @@ An append-only delivery audit. Key fields:
 - Resend message ID, sent timestamp, and safe error information
 - timestamps and retry linkage
 
-A uniqueness constraint on the schedule and the calendar period makes each scheduled delivery idempotent. The database record is created/claimed before fetching attachments or calling Resend.
+The active delivery claim is unique for the schedule and calendar period. The database record is created/claimed before fetching attachments or calling Resend. Each Resend request also carries a stable idempotency key derived from the schedule and calendar period, so a timeout can be retried without creating a second provider email.
 
 ## Scheduling and selection
 
@@ -72,7 +72,7 @@ A protected Vercel Cron endpoint runs continuously using the same `CRON_SECRET` 
 
 For a due schedule it calculates the prior calendar month's inclusive range, then selects every Financial Document with the saved supplier identity and a `document_date` in that range. Status is deliberately not filtered.
 
-If the request is retried or two cron requests overlap, only the successful database claim may continue. A completed run is never resent automatically.
+If the request is retried or two cron requests overlap, only the successful database claim may continue. A completed run is never resent automatically. A transport-uncertain call uses the same Resend idempotency key on retry, so Resend returns the original message rather than delivering a duplicate.
 
 ## Email assembly and delivery
 
