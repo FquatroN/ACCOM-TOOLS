@@ -9,6 +9,7 @@ const {
   buildSupplierInvoiceEmail,
   validateAttachmentBundle,
 } = require("../api/_financial-docs-supplier-emails");
+const { buildSupplierPeriodDocumentsPath } = require("../api/_financial-docs-supplier-email-service");
 
 test("normalizes one supplier schedule and rejects invalid values", () => {
   assert.deepEqual(
@@ -81,4 +82,12 @@ test("migration provides atomic schedule-period claiming and no duplicate sent r
   assert.match(sql, /financial_document_supplier_email_schedules/);
   assert.match(sql, /claim_financial_document_supplier_email_run/);
   assert.match(sql, /unique/i);
+});
+
+test("supplier-period lookup uses supplier identity and document date only, not status", () => {
+  const path = buildSupplierPeriodDocumentsPath({ supplierNif: "123", periodStart: "2026-09-01", periodEnd: "2026-09-30" });
+  assert.match(path, /supplier_nif=eq\.123/);
+  assert.match(path, /document_date=gte\.2026-09-01/);
+  assert.match(path, /document_date=lte\.2026-09-30/);
+  assert.doesNotMatch(path, /status=/);
 });
