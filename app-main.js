@@ -848,6 +848,7 @@ const PROFILE_MATRIX_ROWS = [
   { label: "App: Import Data", kind: "app", key: "import-data" },
   { label: "App: Bank Accounts", kind: "app", key: "bank-accounts" },
   { label: "App: FDM Accounts", kind: "app", key: "fdm-accounts" },
+  { label: "App: Reconciliation", kind: "app", key: "financial-reconciliation" },
   { label: "App: Business Intelligence", kind: "app", key: "business-intelligence" },
   { label: "App: Guests BI", kind: "app", key: "guests-bi" },
   { label: "App: Bookings BI", kind: "app", key: "bookings-bi" },
@@ -5015,6 +5016,7 @@ function collectProfilePayload(id) {
   if (els.profilesBody.querySelector(`[data-profile-app-import-data="${id}"]`)?.checked) appFeatures.push("import-data");
   if (els.profilesBody.querySelector(`[data-profile-app-bank-accounts="${id}"]`)?.checked) appFeatures.push("bank-accounts");
   if (els.profilesBody.querySelector(`[data-profile-app-fdm-accounts="${id}"]`)?.checked) appFeatures.push("fdm-accounts");
+  if (els.profilesBody.querySelector(`[data-profile-app-financial-reconciliation="${id}"]`)?.checked) appFeatures.push("financial-reconciliation");
   if (els.profilesBody.querySelector(`[data-profile-app-business-intelligence="${id}"]`)?.checked) appFeatures.push("business-intelligence");
   if (els.profilesBody.querySelector(`[data-profile-app-guests-bi="${id}"]`)?.checked) appFeatures.push("guests-bi");
   if (els.profilesBody.querySelector(`[data-profile-app-bookings-bi="${id}"]`)?.checked) appFeatures.push("bookings-bi");
