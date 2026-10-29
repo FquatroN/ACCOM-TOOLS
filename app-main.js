@@ -4405,6 +4405,7 @@ async function ensureSettingsSectionData() {
   }
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
+    if (state.communicationsSettingsScreen === "audit") await loadCommunicationsAudit();
     return;
   }
   if (state.settingsSection === "reviews") {
@@ -6963,7 +6964,7 @@ async function loadLostFound({ silent = false } = {}) {
 function setCommunicationsSettingsScreen(screen, loadData = true) {
   state.communicationsSettingsScreen = screen === "audit" ? "audit" : "configuration";
   renderCommunicationsSettingsTabs();
-  if (loadData && state.communicationsSettingsScreen === "audit" && !state.communicationsAuditLoaded && !state.communicationsAuditLoading) {
+  if (loadData && state.communicationsSettingsScreen === "audit" && !state.communicationsAuditLoading) {
     loadCommunicationsAudit();
   }
 }

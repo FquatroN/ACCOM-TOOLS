@@ -14,6 +14,23 @@ create index if not exists communications_audit_events_occurred_at_idx
 alter table public.communications_audit_events enable row level security;
 
 revoke all on table public.communications_audit_events from public, anon, authenticated;
+revoke delete on table public.communications from public, anon, authenticated;
+
+do $$
+declare
+  p record;
+begin
+  for p in
+    select policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'communications'
+      and cmd = 'DELETE'
+  loop
+    execute format('drop policy if exists %I on public.communications', p.policyname);
+  end loop;
+end
+$$;
 
 create or replace function public.delete_communication_with_audit(
   p_communication_id uuid,

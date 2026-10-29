@@ -174,4 +174,3 @@ Confirm the database function is the only production delete path, audit data has
 **Step 4: Apply and deploy in the correct order when publishing is requested.**
 
 Apply the Supabase migration before deploying the Vercel code, because the new delete route depends on the RPC. Then publish the committed branch and verify the production deployment is Ready. Smoke-test one disposable Communications deletion: confirm it disappears from the list and one audit entry shows the signed-in user's email and intact snapshot.
-

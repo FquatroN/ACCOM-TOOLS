@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 
 const SUPABASE_MODULE_PATH = require.resolve("../api/_supabase");
 const COMMUNICATIONS_HANDLER_PATH = require.resolve("../api/communications");
@@ -61,6 +62,53 @@ function mockedSupabase(overrides = {}) {
   };
 }
 
+function extractFunction(source, name) {
+  const asyncStart = source.indexOf(`async function ${name}(`);
+  const start = asyncStart === -1 ? source.indexOf(`function ${name}(`) : asyncStart;
+  if (start === -1) throw new Error(`Could not find ${name}.`);
+  const bodyStart = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") depth -= 1;
+    if (depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`Could not parse ${name}.`);
+}
+
+function communicationsAuditUiHarness(api) {
+  const source = readFileSync("app-main.js", "utf8");
+  const noOpClassList = { toggle() {} };
+  const context = {
+    state: {
+      communicationsSettingsScreen: "configuration",
+      communicationsAuditRows: [],
+      communicationsAuditLoaded: false,
+      communicationsAuditLoading: false,
+      communicationsAuditError: "",
+    },
+    els: {
+      settingsCommunicationsConfigTab: { classList: noOpClassList },
+      settingsCommunicationsAuditTab: { classList: noOpClassList },
+      settingsCommunicationsConfigPanel: { hidden: false },
+      settingsCommunicationsAuditPanel: { hidden: true },
+      settingsCommunicationsAuditBody: { innerHTML: "" },
+      settingsCommunicationsAuditStatus: { textContent: "" },
+    },
+    api,
+    clean: (value) => String(value ?? "").trim(),
+    escape: (value) => String(value ?? ""),
+  };
+  const script = [
+    extractFunction(source, "setCommunicationsSettingsScreen"),
+    extractFunction(source, "renderCommunicationsSettingsTabs"),
+    extractFunction(source, "renderCommunicationsAudit"),
+    extractFunction(source, "loadCommunicationsAudit"),
+  ].join("\n");
+  vm.runInNewContext(script, context);
+  return context;
+}
+
 test("communications deletion audit migration protects and atomically snapshots deleted rows", () => {
   const sql = readFileSync("supabase-migrations/2026-10-29-communications-delete-audit.sql", "utf8");
 
@@ -71,6 +119,8 @@ test("communications deletion audit migration protects and atomically snapshots 
   assert.match(sql, /record_snapshot\s+jsonb\s+not null/i);
   assert.match(sql, /alter table public\.communications_audit_events enable row level security/i);
   assert.match(sql, /revoke all on table public\.communications_audit_events from public, anon, authenticated/i);
+  assert.match(sql, /revoke delete on table public\.communications from public, anon, authenticated/i);
+  assert.match(sql, /tablename = 'communications'[\s\S]*cmd = 'DELETE'[\s\S]*drop policy if exists/i);
   assert.match(sql, /create or replace function public\.delete_communication_with_audit/i);
   assert.match(sql, /security definer/i);
   assert.match(sql, /for update/i);
@@ -223,4 +273,37 @@ test("Communications Settings exposes a read-only, escaped audit tab", () => {
   assert.match(script, /api\("\/api\/communications-audit"\)/);
   assert.match(script, /function renderCommunicationsAudit\([\s\S]*escape\(clean\(snapshot\.message\) \|\| "-"\)/);
   assert.doesNotMatch(html, /settings-communications-audit[^\n]*data-[^\n]*(delete|restore|edit)/i);
+});
+
+test("reopening Communications Audit refreshes the deletion history", async () => {
+  let requests = 0;
+  const context = communicationsAuditUiHarness(async () => {
+    requests += 1;
+    return { rows: [] };
+  });
+
+  context.setCommunicationsSettingsScreen("audit");
+  await new Promise((resolve) => setImmediate(resolve));
+  context.setCommunicationsSettingsScreen("configuration");
+  context.setCommunicationsSettingsScreen("audit");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(requests, 2);
+});
+
+test("re-entering Communications Settings refreshes an already-selected Audit tab", async () => {
+  const source = readFileSync("app-main.js", "utf8");
+  let communicationsLoads = 0;
+  let auditLoads = 0;
+  const context = {
+    state: { settingsSection: "communications", communicationsSettingsScreen: "audit" },
+    ensureCommunicationsData: async () => { communicationsLoads += 1; },
+    loadCommunicationsAudit: async () => { auditLoads += 1; },
+  };
+  vm.runInNewContext(extractFunction(source, "ensureSettingsSectionData"), context);
+
+  await context.ensureSettingsSectionData();
+
+  assert.equal(communicationsLoads, 1);
+  assert.equal(auditLoads, 1);
 });
