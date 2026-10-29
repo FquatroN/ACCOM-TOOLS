@@ -25,7 +25,7 @@ async function getExistingById(id) {
 
 module.exports = async function handler(req, res) {
   try {
-    await requireFeature(req, "app", "communications");
+    const { user } = await requireFeature(req, "app", "communications");
 
     if (req.method === "GET") {
       const rows = await restQuery(
@@ -93,8 +93,13 @@ module.exports = async function handler(req, res) {
         return;
       }
 
-      const deleted = await restQuery(withSelect(`communications?id=eq.${encodeURIComponent(id)}`), {
-        method: "DELETE",
+      const deleted = await restQuery("rpc/delete_communication_with_audit", {
+        method: "POST",
+        body: {
+          p_communication_id: id,
+          p_actor_user_id: cleanText(user?.id),
+          p_actor_email: cleanText(user?.email).toLowerCase(),
+        },
       });
       res.status(200).json({ rows: Array.isArray(deleted) ? deleted : [] });
       return;
