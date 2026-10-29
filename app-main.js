@@ -1511,6 +1511,11 @@ const state = {
   communicationsLoaded: false,
   lostFoundLoaded: false,
   communicationsSettingsLoaded: false,
+  communicationsSettingsScreen: "configuration",
+  communicationsAuditRows: [],
+  communicationsAuditLoaded: false,
+  communicationsAuditLoading: false,
+  communicationsAuditError: "",
   groupsLoaded: false,
   groupSettingsLoaded: false,
   reviewDateFilterApplied: false,
@@ -1695,6 +1700,12 @@ const els = {
   settingsViewBakery: document.getElementById("settings-view-bakery"),
   settingsViewLaundry: document.getElementById("settings-view-laundry"),
   settingsViewAdminUsers: document.getElementById("settings-view-admin-users"),
+  settingsCommunicationsConfigTab: document.getElementById("settings-communications-config-tab"),
+  settingsCommunicationsAuditTab: document.getElementById("settings-communications-audit-tab"),
+  settingsCommunicationsConfigPanel: document.getElementById("settings-communications-config-panel"),
+  settingsCommunicationsAuditPanel: document.getElementById("settings-communications-audit-panel"),
+  settingsCommunicationsAuditBody: document.getElementById("settings-communications-audit-body"),
+  settingsCommunicationsAuditStatus: document.getElementById("settings-communications-audit-status"),
   settingsReviewsImportTab: document.getElementById("settings-reviews-import-tab"),
   settingsReviewsConfigTab: document.getElementById("settings-reviews-config-tab"),
   settingsReviewsImportPanel: document.getElementById("settings-reviews-import-panel"),
@@ -2823,6 +2834,8 @@ function bindEvents() {
   els.closeSettingsMaintenance?.addEventListener("click", () => setView("maintenance"));
   els.settingsMenuGeneral?.addEventListener("click", () => setSettingsSection("general"));
   els.settingsMenuCommunications.addEventListener("click", () => setSettingsSection("communications"));
+  els.settingsCommunicationsConfigTab?.addEventListener("click", () => setCommunicationsSettingsScreen("configuration"));
+  els.settingsCommunicationsAuditTab?.addEventListener("click", () => setCommunicationsSettingsScreen("audit"));
   els.settingsMenuGuests?.addEventListener("click", () => setSettingsSection("guests"));
   els.settingsMenuFinancialDocs?.addEventListener("click", () => setSettingsSection("financial-docs"));
   els.settingsMenuImportData?.addEventListener("click", () => setSettingsSection("import-data"));
@@ -4187,7 +4200,7 @@ function hasLostFoundDraft() {
 }
 
 async function ensureCommunicationsData() {
-  if (canApp("communications") && !state.communicationsSettingsLoaded) {
+  if ((canApp("communications") || canSettings("communications")) && !state.communicationsSettingsLoaded) {
     await loadSettings();
     state.communicationsSettingsLoaded = true;
     renderSettings();
@@ -4392,6 +4405,7 @@ async function ensureSettingsSectionData() {
   }
   if (state.settingsSection === "communications") {
     await ensureCommunicationsData();
+    if (state.communicationsSettingsScreen === "audit") await loadCommunicationsAudit();
     return;
   }
   if (state.settingsSection === "reviews") {
@@ -4732,6 +4746,7 @@ function renderSettingsSection() {
   els.settingsViewBakery.hidden = !isBakery;
   els.settingsViewLaundry.hidden = !isLaundry;
   els.settingsViewAdminUsers.hidden = !isAdmin;
+  if (isComm) renderCommunicationsSettingsTabs();
   if (isBiSettings) renderBiSettings();
   if (isFinancialReconciliation) {
     renderReconciliationSettings();
@@ -6946,6 +6961,84 @@ async function loadLostFound({ silent = false } = {}) {
   }
 }
 
+function setCommunicationsSettingsScreen(screen, loadData = true) {
+  state.communicationsSettingsScreen = screen === "audit" ? "audit" : "configuration";
+  renderCommunicationsSettingsTabs();
+  if (loadData && state.communicationsSettingsScreen === "audit" && !state.communicationsAuditLoading) {
+    loadCommunicationsAudit();
+  }
+}
+
+function renderCommunicationsSettingsTabs() {
+  const isAudit = state.communicationsSettingsScreen === "audit";
+  if (els.settingsCommunicationsConfigTab) {
+    els.settingsCommunicationsConfigTab.classList.toggle("active-tab", !isAudit);
+    els.settingsCommunicationsConfigTab.classList.toggle("ghost", isAudit);
+  }
+  if (els.settingsCommunicationsAuditTab) {
+    els.settingsCommunicationsAuditTab.classList.toggle("active-tab", isAudit);
+    els.settingsCommunicationsAuditTab.classList.toggle("ghost", !isAudit);
+  }
+  if (els.settingsCommunicationsConfigPanel) els.settingsCommunicationsConfigPanel.hidden = isAudit;
+  if (els.settingsCommunicationsAuditPanel) els.settingsCommunicationsAuditPanel.hidden = !isAudit;
+  if (isAudit) renderCommunicationsAudit();
+}
+
+function renderCommunicationsAudit() {
+  if (!els.settingsCommunicationsAuditBody || !els.settingsCommunicationsAuditStatus) return;
+  const rows = Array.isArray(state.communicationsAuditRows) ? state.communicationsAuditRows : [];
+  if (state.communicationsAuditLoading) {
+    els.settingsCommunicationsAuditStatus.textContent = "Loading deletion audit…";
+    els.settingsCommunicationsAuditBody.innerHTML = '<tr><td colspan="7">Loading audit entries…</td></tr>';
+    return;
+  }
+  if (state.communicationsAuditError) {
+    els.settingsCommunicationsAuditStatus.textContent = state.communicationsAuditError;
+    els.settingsCommunicationsAuditBody.innerHTML = '<tr><td colspan="7">Deletion audit could not be loaded.</td></tr>';
+    return;
+  }
+  els.settingsCommunicationsAuditStatus.textContent = rows.length
+    ? `${rows.length} deletion audit entr${rows.length === 1 ? "y" : "ies"}.`
+    : "No deletions have been recorded.";
+  els.settingsCommunicationsAuditBody.innerHTML = rows.length
+    ? rows.map((row) => {
+      const snapshot = row?.recordSnapshot && typeof row.recordSnapshot === "object" && !Array.isArray(row.recordSnapshot)
+        ? row.recordSnapshot
+        : {};
+      const originalDateTime = [clean(snapshot.date), clean(snapshot.time)].filter(Boolean).join(" ") || "-";
+      const actor = clean(row?.actorEmail) || clean(row?.actorUserId) || "-";
+      return `<tr>
+        <td>${escape(formatDateTimeShort(row?.occurredAt))}</td>
+        <td>${escape(actor)}</td>
+        <td>${escape(originalDateTime)}</td>
+        <td>${escape(clean(snapshot.person) || "-")}</td>
+        <td>${escape(clean(snapshot.status) || "-")}</td>
+        <td>${escape(clean(snapshot.category) || "-")}</td>
+        <td>${escape(clean(snapshot.message) || "-")}</td>
+      </tr>`;
+    }).join("")
+    : '<tr><td colspan="7">No deletions have been recorded.</td></tr>';
+}
+
+async function loadCommunicationsAudit() {
+  if (state.communicationsAuditLoading) return;
+  state.communicationsAuditLoading = true;
+  state.communicationsAuditError = "";
+  renderCommunicationsAudit();
+  try {
+    const result = await api("/api/communications-audit");
+    state.communicationsAuditRows = Array.isArray(result?.rows) ? result.rows : [];
+    state.communicationsAuditLoaded = true;
+  } catch (error) {
+    state.communicationsAuditRows = [];
+    state.communicationsAuditLoaded = false;
+    state.communicationsAuditError = `Deletion audit failed to load: ${error.message}`;
+  } finally {
+    state.communicationsAuditLoading = false;
+    renderCommunicationsAudit();
+  }
+}
+
 function renderSettings() {
   const general = state.settings.general?.emailConfig || normalizeBakeryEmailConfigClient();
   if (els.generalEmailProvider) els.generalEmailProvider.value = general.provider;
@@ -6977,6 +7070,7 @@ function renderSettings() {
   els.settingEmailRecipients2.value = (cfg.emailAutomation.recipients2 || []).join("\n");
   els.settingEmailPreview.textContent = emailPreview(cfg.emailAutomation);
   els.settingEmailNextPreview.textContent = nextSendTimesPreview(cfg.emailAutomation);
+  renderCommunicationsSettingsTabs();
 }
 
 function onGeneralSettingsInput(event) {

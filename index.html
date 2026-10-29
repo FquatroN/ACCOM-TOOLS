@@ -18,7 +18,7 @@
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script defer src="recent20.js?v=20260416-reviews-expedia"></script>
-    <script defer src="app-main.js?v=20260827-fdm-accounts-filters"></script>
+    <script defer src="app-main.js?v=20261029-communications-audit"></script>
   </head>
   <body style="visibility: hidden">
     <main id="app-shell" class="app-layout">
@@ -2220,8 +2220,11 @@
               <div id="settings-view-communications">
                 <div class="actions">
                   <button id="close-settings" type="button" class="ghost">Back To App</button>
+                  <button id="settings-communications-config-tab" type="button" class="active-tab">Configuration</button>
+                  <button id="settings-communications-audit-tab" type="button" class="ghost">Audit</button>
                 </div>
 
+                <div id="settings-communications-config-panel">
                 <section class="settings-block">
                   <div class="bar">
                     <h3>Categories</h3>
@@ -2316,6 +2319,30 @@
                   <button id="save-settings" type="button">Save Settings</button>
                   <p id="settings-status" class="auth-status"></p>
                 </div>
+                </div>
+
+                <section id="settings-communications-audit-panel" class="settings-block" hidden>
+                  <div class="bar">
+                    <h3>Deletion Audit</h3>
+                    <p id="settings-communications-audit-status" class="auth-status"></p>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="settings-table">
+                      <thead>
+                        <tr>
+                          <th>Deleted at</th>
+                          <th>Deleted by</th>
+                          <th>Original date/time</th>
+                          <th>Person</th>
+                          <th>Status</th>
+                          <th>Category</th>
+                          <th>Message</th>
+                        </tr>
+                      </thead>
+                      <tbody id="settings-communications-audit-body"></tbody>
+                    </table>
+                  </div>
+                </section>
               </div>
 
               <div id="settings-view-guests" hidden>
